@@ -1,7 +1,12 @@
 package com.billing.pos.data
 
 import android.content.Context
+import com.billing.pos.auth.PasswordHasher
 import kotlinx.coroutines.flow.Flow
+import org.json.JSONArray
+import org.json.JSONObject
+
+data class ImportResult(val billsAdded: Int, val billsSkipped: Int, val source: String)
 
 /** Single access point for all data operations. */
 class Repository(context: Context) {
@@ -10,33 +15,188 @@ class Repository(context: Context) {
     private val customerDao = db.customerDao()
     private val itemDao = db.itemDao()
     private val billDao = db.billDao()
+    private val userDao = db.userDao()
 
     val customers: Flow<List<Customer>> = customerDao.observeAll()
     val items: Flow<List<Item>> = itemDao.observeAll()
+    val users: Flow<List<User>> = userDao.observeAll()
+    val allBills: Flow<List<Bill>> = billDao.observeAll()
 
-    /** Ensures a default "Cash" customer exists. Returns nothing; UI observes the flow. */
+    /** Seeds the default Cash customer and the initial super user. */
     suspend fun ensureDefaults() {
         if (customerDao.count() == 0) {
             customerDao.insert(Customer(name = "Cash Customer", isDefault = true))
         }
+        if (userDao.count() == 0) {
+            userDao.insert(
+                User(
+                    username = "superadmin",
+                    passwordHash = PasswordHasher.hash("admin123"),
+                    role = Role.SUPER_USER,
+                    canCreateInvoice = true,
+                    canEditInvoice = true,
+                    canDeleteInvoice = true,
+                    canExport = true,
+                    canImport = true,
+                    canManageUsers = true
+                )
+            )
+        }
     }
 
+    // ---- auth / users ----
+    suspend fun login(username: String, password: String): User? {
+        val user = userDao.byUsername(username.trim()) ?: return null
+        return if (PasswordHasher.verify(password, user.passwordHash)) user else null
+    }
+
+    suspend fun createUser(user: User, password: String): Result<Unit> = runCatching {
+        userDao.insert(user.copy(passwordHash = PasswordHasher.hash(password)))
+        Unit
+    }
+
+    suspend fun deleteUser(user: User) = userDao.delete(user)
+
+    // ---- customers / items ----
     suspend fun addCustomer(name: String, phone: String, address: String): Long =
         customerDao.insert(Customer(name = name.trim(), phone = phone.trim(), address = address.trim()))
 
     suspend fun addItem(name: String, price: Double, taxPercent: Double): Long =
         itemDao.insert(Item(name = name.trim(), price = price, taxPercent = taxPercent))
 
-    /** Bill number for the *next* bill, e.g. INV-0001. */
+    /** Bill number for the next locally-created bill, e.g. INV-0001. */
     suspend fun nextBillNo(): String {
-        val n = billDao.count() + 1
+        val n = billDao.localCount() + 1
         return "INV-" + n.toString().padStart(4, '0')
     }
 
-    suspend fun saveBill(bill: Bill, lines: List<BillItem>): Long =
-        billDao.saveBill(bill, lines)
-
+    // ---- bills ----
+    suspend fun saveBill(bill: Bill, lines: List<BillItem>): Long = billDao.saveBill(bill, lines)
+    suspend fun updateBill(bill: Bill, lines: List<BillItem>) = billDao.updateBill(bill, lines)
+    suspend fun deleteBill(bill: Bill) = billDao.deleteBill(bill)
+    suspend fun linesFor(billId: Long): List<BillItem> = billDao.linesFor(billId)
+    suspend fun billById(id: Long): Bill? = billDao.byId(id)
     fun billsBetween(from: Long, to: Long): Flow<List<Bill>> = billDao.observeBetween(from, to)
 
-    suspend fun linesFor(billId: Long): List<BillItem> = billDao.linesFor(billId)
+    // ---- data export / import (invoices, customers, items — NOT users) ----
+
+    /** Serialises this device's own data to a JSON string, stamped with [sourceLabel]. */
+    suspend fun exportJson(sourceLabel: String): String {
+        val root = JSONObject()
+        root.put("version", 1)
+        root.put("source", sourceLabel)
+        root.put("exportedAt", System.currentTimeMillis())
+
+        val custArr = JSONArray()
+        customerDao.all().filter { !it.isDefault }.forEach { c ->
+            custArr.put(JSONObject().put("name", c.name).put("phone", c.phone).put("address", c.address))
+        }
+        root.put("customers", custArr)
+
+        val itemArr = JSONArray()
+        itemDao.all().forEach { i ->
+            itemArr.put(JSONObject().put("name", i.name).put("price", i.price).put("taxPercent", i.taxPercent))
+        }
+        root.put("items", itemArr)
+
+        val billArr = JSONArray()
+        billDao.all().filter { it.source.isEmpty() }.forEach { b ->
+            val bo = JSONObject()
+                .put("billNo", b.billNo)
+                .put("dateMillis", b.dateMillis)
+                .put("customerName", b.customerName)
+                .put("paymentMethod", b.paymentMethod)
+                .put("subTotal", b.subTotal)
+                .put("taxTotal", b.taxTotal)
+                .put("additionalCharge", b.additionalCharge)
+                .put("discount", b.discount)
+                .put("grandTotal", b.grandTotal)
+            val lineArr = JSONArray()
+            billDao.linesFor(b.id).forEach { l ->
+                lineArr.put(
+                    JSONObject().put("name", l.name).put("qty", l.qty)
+                        .put("price", l.price).put("taxPercent", l.taxPercent).put("lineTotal", l.lineTotal)
+                )
+            }
+            bo.put("lines", lineArr)
+            billArr.put(bo)
+        }
+        root.put("bills", billArr)
+        return root.toString()
+    }
+
+    /**
+     * Merges an exported JSON into this database. Users/roles are never touched.
+     * Bills are deduped by (source, billNo) so re-importing the same file is safe.
+     */
+    suspend fun importJson(json: String): ImportResult {
+        val root = JSONObject(json)
+        val source = root.optString("source", "imported").ifBlank { "imported" }
+
+        root.optJSONArray("customers")?.let { arr ->
+            for (i in 0 until arr.length()) {
+                val o = arr.getJSONObject(i)
+                val name = o.optString("name")
+                if (name.isNotBlank() && customerDao.byName(name) == null) {
+                    customerDao.insert(
+                        Customer(name = name, phone = o.optString("phone"), address = o.optString("address"))
+                    )
+                }
+            }
+        }
+
+        root.optJSONArray("items")?.let { arr ->
+            for (i in 0 until arr.length()) {
+                val o = arr.getJSONObject(i)
+                val name = o.optString("name")
+                if (name.isNotBlank() && itemDao.byName(name) == null) {
+                    itemDao.insert(Item(name = name, price = o.optDouble("price", 0.0), taxPercent = o.optDouble("taxPercent", 0.0)))
+                }
+            }
+        }
+
+        var added = 0
+        var skipped = 0
+        root.optJSONArray("bills")?.let { arr ->
+            for (i in 0 until arr.length()) {
+                val o = arr.getJSONObject(i)
+                val billNo = o.optString("billNo")
+                if (billNo.isBlank()) { skipped++; continue }
+                if (billDao.findBySourceAndNo(source, billNo) != null) { skipped++; continue }
+
+                val bill = Bill(
+                    billNo = billNo,
+                    dateMillis = o.optLong("dateMillis", System.currentTimeMillis()),
+                    customerId = 0,
+                    customerName = o.optString("customerName", "Cash Customer"),
+                    paymentMethod = o.optString("paymentMethod", "Cash"),
+                    subTotal = o.optDouble("subTotal", 0.0),
+                    taxTotal = o.optDouble("taxTotal", 0.0),
+                    additionalCharge = o.optDouble("additionalCharge", 0.0),
+                    discount = o.optDouble("discount", 0.0),
+                    grandTotal = o.optDouble("grandTotal", 0.0),
+                    source = source
+                )
+                val lines = mutableListOf<BillItem>()
+                o.optJSONArray("lines")?.let { la ->
+                    for (j in 0 until la.length()) {
+                        val lo = la.getJSONObject(j)
+                        lines.add(
+                            BillItem(
+                                billId = 0,
+                                name = lo.optString("name"),
+                                qty = lo.optDouble("qty", 0.0),
+                                price = lo.optDouble("price", 0.0),
+                                taxPercent = lo.optDouble("taxPercent", 0.0),
+                                lineTotal = lo.optDouble("lineTotal", 0.0)
+                            )
+                        )
+                    }
+                }
+                billDao.saveBill(bill, lines)
+                added++
+            }
+        }
+        return ImportResult(added, skipped, source)
+    }
 }

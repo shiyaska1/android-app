@@ -55,6 +55,10 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
     var billNo by mutableStateOf("INV-0001"); private set
     var dateMillis by mutableStateOf(System.currentTimeMillis()); private set
 
+    /** Non-null when editing an existing bill. */
+    var editingBillId by mutableStateOf<Long?>(null); private set
+    private var editingSource: String = ""
+
     private var dirty = true
     private var lastSaved: BillWithItems? = null
 
@@ -144,7 +148,9 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
 
         if (!dirty && lastSaved != null) return lastSaved
 
+        val editId = editingBillId
         val bill = Bill(
+            id = editId ?: 0,
             billNo = billNo,
             dateMillis = dateMillis,
             customerId = customer.id,
@@ -154,11 +160,12 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
             taxTotal = taxTotal,
             additionalCharge = additionalCharge,
             discount = discount,
-            grandTotal = grandTotal
+            grandTotal = grandTotal,
+            source = editingSource
         )
         val lines = cart.map {
             BillItem(
-                billId = 0,
+                billId = editId ?: 0,
                 name = it.name,
                 qty = it.qty,
                 price = it.price,
@@ -166,12 +173,41 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
                 lineTotal = it.total
             )
         }
-        val id = repo.saveBill(bill, lines)
-        val saved = BillWithItems(bill.copy(id = id), lines)
+        val saved: BillWithItems
+        if (editId != null) {
+            repo.updateBill(bill, lines)
+            saved = BillWithItems(bill, lines)
+            _message.value = "Bill $billNo updated"
+        } else {
+            val id = repo.saveBill(bill, lines)
+            saved = BillWithItems(bill.copy(id = id), lines)
+            _message.value = "Bill $billNo saved"
+        }
         lastSaved = saved
         dirty = false
-        _message.value = "Bill $billNo saved"
         return saved
+    }
+
+    /** Loads an existing bill for editing. Called once from the UI. */
+    fun startEditing(billId: Long) {
+        if (editingBillId == billId) return
+        viewModelScope.launch {
+            val bill = repo.billById(billId) ?: return@launch
+            val lines = repo.linesFor(billId)
+            editingBillId = bill.id
+            editingSource = bill.source
+            billNo = bill.billNo
+            dateMillis = bill.dateMillis
+            payment = PaymentMethod.values().firstOrNull { it.label == bill.paymentMethod } ?: PaymentMethod.CASH
+            additionalChargeText = if (bill.additionalCharge != 0.0) bill.additionalCharge.toString() else ""
+            discountText = if (bill.discount != 0.0) bill.discount.toString() else ""
+            selectedCustomer = customers.value.firstOrNull { it.id == bill.customerId }
+                ?: Customer(id = bill.customerId, name = bill.customerName)
+            cart.clear()
+            lines.forEach { cart.add(CartLine(0, it.name, it.price, it.taxPercent, it.qty)) }
+            dirty = false
+            lastSaved = BillWithItems(bill, lines)
+        }
     }
 
     /** Clears the form for a brand-new bill and refreshes the auto bill number. */
@@ -182,6 +218,8 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
         payment = PaymentMethod.CASH
         dateMillis = System.currentTimeMillis()
         selectedCustomer = customers.value.firstOrNull { it.isDefault } ?: customers.value.firstOrNull()
+        editingBillId = null
+        editingSource = ""
         lastSaved = null
         dirty = true
         viewModelScope.launch { billNo = repo.nextBillNo() }

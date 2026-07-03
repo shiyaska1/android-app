@@ -21,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Assessment
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.NoteAdd
 import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.Remove
@@ -28,6 +29,7 @@ import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Divider
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -58,6 +60,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.billing.pos.auth.Session
 import com.billing.pos.data.BillWithItems
 import com.billing.pos.data.PaymentMethod
 import com.billing.pos.pdf.InvoicePdf
@@ -70,12 +73,18 @@ import kotlinx.coroutines.withContext
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BillingScreen(
+    editBillId: Long? = null,
     onOpenReports: () -> Unit,
+    onOpenInvoices: () -> Unit,
+    onOpenUsers: () -> Unit,
+    onLogout: () -> Unit,
     vm: BillingViewModel = viewModel()
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
+
+    LaunchedEffect(editBillId) { if (editBillId != null && editBillId > 0) vm.startEditing(editBillId) }
 
     val customers by vm.customers.collectAsStateSafe()
     val items by vm.items.collectAsStateSafe()
@@ -102,18 +111,40 @@ fun BillingScreen(
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             TopAppBar(
-                title = { Text("New Bill") },
+                title = { Text(if (vm.editingBillId != null) "Edit Bill" else "New Bill") },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                     titleContentColor = MaterialTheme.colorScheme.onPrimary,
                     actionIconContentColor = MaterialTheme.colorScheme.onPrimary
                 ),
                 actions = {
-                    IconButton(onClick = onOpenReports) {
-                        Icon(Icons.Filled.Assessment, contentDescription = "Sales report")
-                    }
                     IconButton(onClick = { vm.newBill() }) {
                         Icon(Icons.Filled.NoteAdd, contentDescription = "New bill")
+                    }
+                    var menu by remember { mutableStateOf(false) }
+                    IconButton(onClick = { menu = true }) {
+                        Icon(Icons.Filled.MoreVert, contentDescription = "Menu")
+                    }
+                    DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                        DropdownMenuItem(
+                            text = { Text("Invoices") },
+                            onClick = { menu = false; onOpenInvoices() }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("Sales Report") },
+                            onClick = { menu = false; onOpenReports() }
+                        )
+                        if (Session.canManageUsers) {
+                            DropdownMenuItem(
+                                text = { Text("Manage Users") },
+                                onClick = { menu = false; onOpenUsers() }
+                            )
+                        }
+                        Divider()
+                        DropdownMenuItem(
+                            text = { Text("Logout (${Session.current?.username ?: ""})") },
+                            onClick = { menu = false; onLogout() }
+                        )
                     }
                 }
             )
