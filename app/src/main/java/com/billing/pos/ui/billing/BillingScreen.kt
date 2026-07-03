@@ -187,7 +187,7 @@ fun BillingScreen(
                 PaymentMethod.values().forEach { m ->
                     FilterChip(
                         selected = vm.payment == m,
-                        onClick = { vm.setPayment(m) },
+                        onClick = { vm.selectPayment(m) },
                         label = { Text(m.label) }
                     )
                 }

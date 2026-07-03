@@ -86,7 +86,7 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---- mutations ----
     fun selectCustomer(c: Customer) { selectedCustomer = c; dirty = true }
-    fun setPayment(m: PaymentMethod) { payment = m; dirty = true }
+    fun selectPayment(m: PaymentMethod) { payment = m; dirty = true }
     fun setAdditionalCharge(v: String) { additionalChargeText = v; dirty = true }
     fun setDiscount(v: String) { discountText = v; dirty = true }
 
