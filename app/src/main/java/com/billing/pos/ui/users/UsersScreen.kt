@@ -206,7 +206,7 @@ private fun CreateUserDialog(
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(roleExpanded) },
                         modifier = Modifier.menuAnchor().fillMaxWidth()
                     )
-                    androidx.compose.material3.ExposedDropdownMenu(
+                    ExposedDropdownMenu(
                         expanded = roleExpanded,
                         onDismissRequest = { roleExpanded = false }
                     ) {
