@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Assessment
 import androidx.compose.material.icons.filled.Delete
@@ -75,6 +76,7 @@ import kotlinx.coroutines.withContext
 @Composable
 fun BillingScreen(
     editBillId: Long? = null,
+    onBack: () -> Unit = {},
     onOpenReports: () -> Unit,
     onOpenInvoices: () -> Unit,
     onOpenUsers: () -> Unit,
@@ -129,9 +131,15 @@ fun BillingScreen(
         topBar = {
             TopAppBar(
                 title = { Text(if (vm.editingBillId != null) "Edit Bill" else "New Bill") },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                     titleContentColor = MaterialTheme.colorScheme.onPrimary,
+                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary,
                     actionIconContentColor = MaterialTheme.colorScheme.onPrimary
                 ),
                 actions = {
@@ -500,7 +508,7 @@ fun BillingScreen(
     if (showCustomLine) {
         CustomLineDialog(
             onDismiss = { showCustomLine = false },
-            onAdd = { desc, price, tax -> vm.addCustomLine(desc, price, tax); showCustomLine = false }
+            onAdd = { desc, price, tax -> vm.addCustomLine(desc, price, tax) }
         )
     }
     if (showItemPicker) {

@@ -25,6 +25,7 @@ import com.billing.pos.ui.backup.BackupScreen
 import com.billing.pos.ui.billing.BillingScreen
 import com.billing.pos.ui.cashbook.CashBookScreen
 import com.billing.pos.ui.customers.CustomersScreen
+import com.billing.pos.ui.dashboard.DashboardScreen
 import com.billing.pos.ui.diary.DiaryEditScreen
 import com.billing.pos.ui.diary.DiaryListScreen
 import com.billing.pos.ui.expenses.ExpensesScreen
@@ -85,6 +86,7 @@ private fun AppNav() {
     fun billing(editId: Long?) {
         BillingScreen(
             editBillId = editId,
+            onBack = { nav.popBackStack() },
             onOpenReports = { nav.navigate("reports") },
             onOpenInvoices = { nav.navigate("invoices") },
             onOpenUsers = { nav.navigate("users") },
@@ -102,9 +104,25 @@ private fun AppNav() {
     NavHost(navController = nav, startDestination = "boot") {
         composable("boot") {
             BootScreen(onResolved = { route ->
-                val dest = if (route == "billing" && PendingImport.uri != null) "invoices" else route
+                val dest = if (route == "dashboard" && PendingImport.uri != null) "invoices" else route
                 nav.navigate(dest) { popUpTo("boot") { inclusive = true } }
             })
+        }
+        composable("dashboard") {
+            DashboardScreen(
+                onNewBill = { nav.navigate("billing") },
+                onInvoices = { nav.navigate("invoices") },
+                onReceipts = { nav.navigate("receipts") },
+                onExpenses = { nav.navigate("expenses") },
+                onCashbook = { nav.navigate("cashbook") },
+                onReports = { nav.navigate("reports") },
+                onCustomers = { nav.navigate("customers") },
+                onDiary = { nav.navigate("diary") },
+                onUsers = { nav.navigate("users") },
+                onSettings = { nav.navigate("settings") },
+                onBackup = { nav.navigate("backup") },
+                onLogout = logout
+            )
         }
         composable("register") {
             RegisterScreen(onDone = {
@@ -118,7 +136,7 @@ private fun AppNav() {
         }
         composable("login") {
             LoginScreen(onLoggedIn = {
-                val dest = if (PendingImport.uri != null) "invoices" else "billing"
+                val dest = if (PendingImport.uri != null) "invoices" else "dashboard"
                 nav.navigate(dest) { popUpTo(0) { inclusive = true } }
             })
         }

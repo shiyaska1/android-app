@@ -33,7 +33,7 @@ class BootViewModel(app: Application) : AndroidViewModel(app) {
                     val user = if (id >= 0) repo.userById(id) else null
                     if (user != null) {
                         Session.login(user)
-                        onResolved("billing")
+                        onResolved("dashboard")
                     } else {
                         prefs.clearSession()
                         onResolved("login")
