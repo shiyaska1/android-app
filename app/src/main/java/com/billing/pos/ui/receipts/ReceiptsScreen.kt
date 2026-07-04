@@ -3,6 +3,7 @@ package com.billing.pos.ui.receipts
 import android.Manifest
 import android.app.Application
 import android.content.Context
+import android.content.Intent
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -20,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Print
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -63,6 +65,7 @@ import com.billing.pos.data.Bill
 import com.billing.pos.data.PayMode
 import com.billing.pos.data.Receipt
 import com.billing.pos.data.Repository
+import com.billing.pos.pdf.ReceiptPdf
 import com.billing.pos.print.ThermalPrinter
 import com.billing.pos.ui.billing.collectAsStateSafe
 import com.billing.pos.util.Format
@@ -196,6 +199,9 @@ fun ReceiptsScreen(
                             )
                         }
                         Text("+ " + Format.rupee(r.amount), fontWeight = FontWeight.Bold)
+                        IconButton(onClick = { sharePdf(context, r) }) {
+                            Icon(Icons.Filled.PictureAsPdf, "Share PDF")
+                        }
                         IconButton(onClick = { requestPrint(r) }) {
                             Icon(Icons.Filled.Print, "Print")
                         }
@@ -237,6 +243,19 @@ fun ReceiptsScreen(
             dismissButton = { TextButton(onClick = { deleteFor = null }) { Text("Cancel") } }
         )
     }
+}
+
+private fun sharePdf(context: Context, r: Receipt) {
+    val company = AppPrefs(context).company
+    val uri = ReceiptPdf.generate(context, company, r)
+    val intent = Intent(Intent.ACTION_SEND).apply {
+        type = "application/pdf"
+        putExtra(Intent.EXTRA_STREAM, uri)
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+    context.startActivity(
+        Intent.createChooser(intent, "Share receipt").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    )
 }
 
 private suspend fun doPrintReceipt(context: Context, r: Receipt, snackbar: SnackbarHostState) {
