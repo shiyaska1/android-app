@@ -136,8 +136,10 @@ class DiaryEditViewModel(app: Application) : AndroidViewModel(app) {
             val id = repo.upsert(entry)
             loadedId = id
             attachments.filter { it.id == 0L }.forEach { repo.insertAttachment(it.copy(entryId = id)) }
-            ReminderScheduler.schedule(context, entry.copy(id = id))
-            message.value = "Saved"
+            val scheduled = runCatching { ReminderScheduler.schedule(context, entry.copy(id = id)) }
+                .getOrDefault(false)
+            message.value =
+                if (entry.reminderEnabled && !scheduled) "Saved (reminder could not be set)" else "Saved"
             onDone()
         }
     }

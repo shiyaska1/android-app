@@ -11,24 +11,41 @@ import java.util.Calendar
 /** Schedules diary reminders via AlarmManager.setAlarmClock (exact, no special permission). */
 object ReminderScheduler {
 
-    fun schedule(context: Context, entry: DiaryEntry) {
-        val am = context.getSystemService(AlarmManager::class.java) ?: return
-        if (!entry.reminderEnabled || entry.reminderAt <= 0L) {
-            am.cancel(pendingFor(context, entry.id))
-            return
-        }
-        val triggerAt =
-            if (entry.reminderDaily) nextDaily(entry.reminderAt) else entry.reminderAt
-        // Skip a one-time reminder whose time has already passed.
-        if (!entry.reminderDaily && triggerAt <= System.currentTimeMillis()) return
+    /** Returns true if the alarm was scheduled. Never throws (scheduling must not crash a save). */
+    fun schedule(context: Context, entry: DiaryEntry): Boolean {
+        val am = context.getSystemService(AlarmManager::class.java) ?: return false
+        return try {
+            if (!entry.reminderEnabled || entry.reminderAt <= 0L) {
+                am.cancel(pendingFor(context, entry.id))
+                return false
+            }
+            val triggerAt =
+                if (entry.reminderDaily) nextDaily(entry.reminderAt) else entry.reminderAt
+            // Skip a one-time reminder whose time has already passed.
+            if (!entry.reminderDaily && triggerAt <= System.currentTimeMillis()) return false
 
-        Notifications.ensureChannel(context)
-        val show = PendingIntent.getActivity(
-            context, entry.id.toInt(),
-            Intent(context, MainActivity::class.java),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-        am.setAlarmClock(AlarmManager.AlarmClockInfo(triggerAt, show), pendingFor(context, entry))
+            Notifications.ensureChannel(context)
+            val pi = pendingFor(context, entry)
+            // setAlarmClock is exempt from the exact-alarm permission; if an OEM still
+            // rejects it, fall back so a save never crashes.
+            try {
+                val show = PendingIntent.getActivity(
+                    context, entry.id.toInt(),
+                    Intent(context, MainActivity::class.java),
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                )
+                am.setAlarmClock(AlarmManager.AlarmClockInfo(triggerAt, show), pi)
+            } catch (e: Exception) {
+                try {
+                    am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pi)
+                } catch (e2: Exception) {
+                    am.set(AlarmManager.RTC_WAKEUP, triggerAt, pi)
+                }
+            }
+            true
+        } catch (e: Exception) {
+            false
+        }
     }
 
     fun cancel(context: Context, entryId: Long) {
