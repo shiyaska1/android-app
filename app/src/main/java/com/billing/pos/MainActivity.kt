@@ -26,6 +26,8 @@ import com.billing.pos.ui.diary.DiaryEditScreen
 import com.billing.pos.ui.diary.DiaryListScreen
 import com.billing.pos.ui.expenses.ExpensesScreen
 import com.billing.pos.ui.invoices.InvoiceListScreen
+import com.billing.pos.ui.license.LicenseScreen
+import com.billing.pos.ui.license.RegisterScreen
 import com.billing.pos.ui.receipts.ReceiptsScreen
 import com.billing.pos.ui.reports.ReportsScreen
 import com.billing.pos.ui.settings.SettingsScreen
@@ -93,13 +95,19 @@ private fun AppNav() {
 
     NavHost(navController = nav, startDestination = "boot") {
         composable("boot") {
-            BootScreen(onResolved = { loggedIn ->
-                val dest = when {
-                    loggedIn && PendingImport.uri != null -> "invoices"
-                    loggedIn -> "billing"
-                    else -> "login"
-                }
+            BootScreen(onResolved = { route ->
+                val dest = if (route == "billing" && PendingImport.uri != null) "invoices" else route
                 nav.navigate(dest) { popUpTo("boot") { inclusive = true } }
+            })
+        }
+        composable("register") {
+            RegisterScreen(onDone = {
+                nav.navigate("login") { popUpTo(0) { inclusive = true } }
+            })
+        }
+        composable("license") {
+            LicenseScreen(onActivated = {
+                nav.navigate("login") { popUpTo(0) { inclusive = true } }
             })
         }
         composable("login") {

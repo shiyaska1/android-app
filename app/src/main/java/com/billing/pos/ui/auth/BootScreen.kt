@@ -13,6 +13,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.billing.pos.auth.Session
 import com.billing.pos.data.AppPrefs
+import com.billing.pos.data.License
 import com.billing.pos.data.Repository
 import kotlinx.coroutines.launch
 
@@ -20,29 +21,36 @@ class BootViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = Repository(app)
     private val prefs = AppPrefs(app)
 
-    fun restore(onResolved: (loggedIn: Boolean) -> Unit) {
+    /** Resolves the start route: "register", "license", "billing", or "login". */
+    fun resolve(onResolved: (route: String) -> Unit) {
         viewModelScope.launch {
             repo.ensureDefaults()
-            val id = prefs.loggedInUserId
-            val user = if (id >= 0) repo.userById(id) else null
-            if (user != null) {
-                Session.login(user)
-                onResolved(true)
-            } else {
-                prefs.clearSession()
-                onResolved(false)
+            when {
+                prefs.mobileNumber.isBlank() -> onResolved("register")
+                !prefs.licensed && License.trialExpired(prefs.installDateMillis) -> onResolved("license")
+                else -> {
+                    val id = prefs.loggedInUserId
+                    val user = if (id >= 0) repo.userById(id) else null
+                    if (user != null) {
+                        Session.login(user)
+                        onResolved("billing")
+                    } else {
+                        prefs.clearSession()
+                        onResolved("login")
+                    }
+                }
             }
         }
     }
 }
 
-/** Splash that restores a persisted session, then routes to billing or login. */
+/** Splash that checks trial/license, restores a session, then routes onward. */
 @Composable
 fun BootScreen(
-    onResolved: (loggedIn: Boolean) -> Unit,
+    onResolved: (route: String) -> Unit,
     vm: BootViewModel = viewModel()
 ) {
-    LaunchedEffect(Unit) { vm.restore(onResolved) }
+    LaunchedEffect(Unit) { vm.resolve(onResolved) }
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         CircularProgressIndicator()
     }

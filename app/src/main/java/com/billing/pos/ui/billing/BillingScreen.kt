@@ -101,6 +101,10 @@ fun BillingScreen(
     var showCustomLine by remember { mutableStateOf(false) }
     var showWhatsApp by remember { mutableStateOf(false) }
 
+    val prefs = remember { com.billing.pos.data.AppPrefs(context) }
+    var licensed by remember { mutableStateOf(prefs.licensed) }
+    var showBuy by remember { mutableStateOf(false) }
+
     // View-only: an existing invoice opened by a user without edit permission.
     val readOnly = vm.editingBillId != null && !Session.canEdit
 
@@ -168,6 +172,12 @@ fun BillingScreen(
                             DropdownMenuItem(
                                 text = { Text("Company Settings") },
                                 onClick = { menu = false; onOpenSettings() }
+                            )
+                        }
+                        if (!licensed) {
+                            DropdownMenuItem(
+                                text = { Text("Buy app") },
+                                onClick = { menu = false; showBuy = true }
                             )
                         }
                         Divider()
@@ -430,6 +440,13 @@ fun BillingScreen(
         }
     }
 
+    if (showBuy) {
+        BuyDialog(
+            mobile = prefs.mobileNumber,
+            onDismiss = { showBuy = false },
+            onActivated = { prefs.licensed = true; licensed = true; showBuy = false }
+        )
+    }
     if (showWhatsApp) {
         WhatsAppDialog(
             defaultName = vm.selectedCustomer?.name?.takeIf { it != "Cash Customer" } ?: "",
@@ -537,6 +554,53 @@ private fun sendWhatsApp(
         )
     }.onFailure { onInfo("Could not open WhatsApp") }
     onInfo("WhatsApp not found — shared via chooser")
+}
+
+@Composable
+private fun BuyDialog(
+    mobile: String,
+    onDismiss: () -> Unit,
+    onActivated: () -> Unit
+) {
+    val context = LocalContext.current
+    var key by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf<String?>(null) }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Buy / Activate app") },
+        text = {
+            Column {
+                Text(
+                    "Purchase to remove the trial limit. After buying, enter the license key to activate.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.outline
+                )
+                OutlinedButton(
+                    onClick = {
+                        runCatching {
+                            context.startActivity(
+                                Intent(Intent.ACTION_VIEW, android.net.Uri.parse(com.billing.pos.data.License.BUY_URL))
+                            )
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                ) { Text("Open buy link") }
+                OutlinedTextField(
+                    value = key, onValueChange = { key = it; error = null },
+                    label = { Text("License key") }, singleLine = true,
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                )
+                error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 4.dp)) }
+            }
+        },
+        confirmButton = {
+            Button(onClick = {
+                if (com.billing.pos.data.License.isValid(mobile, key)) onActivated()
+                else error = "Invalid license key"
+            }) { Text("Activate") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Close") } }
+    )
 }
 
 @Composable

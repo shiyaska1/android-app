@@ -26,5 +26,18 @@ class AppPrefs(context: Context) {
 
     val company: CompanyInfo get() = CompanyInfo(companyName, companyAddress, companyPhone)
 
+    // ---- licensing / trial ----
+    var mobileNumber: String
+        get() = p.getString("mobile", "") ?: ""
+        set(v) { p.edit().putString("mobile", v).apply() }
+
+    var installDateMillis: Long
+        get() = p.getLong("install_date", 0L)
+        set(v) { p.edit().putLong("install_date", v).apply() }
+
+    var licensed: Boolean
+        get() = p.getBoolean("licensed", false)
+        set(v) { p.edit().putBoolean("licensed", v).apply() }
+
     fun clearSession() { loggedInUserId = -1L }
 }
