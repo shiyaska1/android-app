@@ -47,6 +47,10 @@ object FullBackup {
         val attachments = db.diaryDao().allAttachments()
         root.put("diaryAttachments", JSONArray().apply { attachments.forEach { put(attJson(it)) } })
 
+        root.put("suppliers", JSONArray().apply { db.supplierDao().all().forEach { put(supplierJson(it)) } })
+        root.put("purchases", JSONArray().apply { db.purchaseDao().all().forEach { put(purchaseJson(it)) } })
+        root.put("purchaseItems", JSONArray().apply { db.purchaseDao().allLines().forEach { put(pLineJson(it)) } })
+
         val dir = File(context.cacheDir, "shared").apply { mkdirs() }
         val zip = File(dir, "pos-full-backup.zip")
         ZipOutputStream(zip.outputStream().buffered()).use { zos ->
@@ -114,22 +118,30 @@ object FullBackup {
         root.optJSONArray("diaryAttachments")?.let {
             for (i in 0 until it.length()) db.diaryDao().insertAttachment(readAtt(context, it.getJSONObject(i)))
         }
+        root.optJSONArray("suppliers")?.let { for (i in 0 until it.length()) db.supplierDao().insert(readSupplier(it.getJSONObject(i))) }
+        root.optJSONArray("purchases")?.let { for (i in 0 until it.length()) db.purchaseDao().insertPurchase(readPurchase(it.getJSONObject(i))) }
+        root.optJSONArray("purchaseItems")?.let {
+            val lines = ArrayList<PurchaseItem>()
+            for (i in 0 until it.length()) lines.add(readPLine(it.getJSONObject(i)))
+            if (lines.isNotEmpty()) db.purchaseDao().insertLines(lines)
+        }
 
         "Restore complete"
     }
 
     // ---- serialisers ----
     private fun custJson(c: Customer) = JSONObject().put("id", c.id).put("name", c.name)
-        .put("phone", c.phone).put("address", c.address).put("isDefault", c.isDefault)
+        .put("phone", c.phone).put("address", c.address).put("gstin", c.gstin).put("isDefault", c.isDefault)
 
     private fun itemJson(i: Item) = JSONObject().put("id", i.id).put("name", i.name)
-        .put("price", i.price).put("taxPercent", i.taxPercent).put("barcode", i.barcode)
+        .put("price", i.price).put("taxPercent", i.taxPercent).put("barcode", i.barcode).put("hsn", i.hsn)
 
     private fun billJson(b: Bill) = JSONObject().put("id", b.id).put("billNo", b.billNo)
         .put("dateMillis", b.dateMillis).put("customerId", b.customerId).put("customerName", b.customerName)
         .put("paymentMethod", b.paymentMethod).put("subTotal", b.subTotal).put("taxTotal", b.taxTotal)
         .put("additionalCharge", b.additionalCharge).put("discount", b.discount)
-        .put("grandTotal", b.grandTotal).put("paidAmount", b.paidAmount).put("source", b.source)
+        .put("grandTotal", b.grandTotal).put("paidAmount", b.paidAmount)
+        .put("customerGstin", b.customerGstin).put("source", b.source)
 
     private fun lineJson(l: BillItem) = JSONObject().put("id", l.id).put("billId", l.billId)
         .put("name", l.name).put("qty", l.qty).put("price", l.price)
@@ -161,6 +173,19 @@ object FullBackup {
         .put("reminderEnabled", e.reminderEnabled).put("reminderAt", e.reminderAt)
         .put("reminderDaily", e.reminderDaily)
 
+    private fun supplierJson(s: Supplier) = JSONObject().put("id", s.id).put("name", s.name)
+        .put("phone", s.phone).put("address", s.address).put("gstin", s.gstin).put("isDefault", s.isDefault)
+
+    private fun purchaseJson(p: Purchase) = JSONObject().put("id", p.id).put("purchaseNo", p.purchaseNo)
+        .put("dateMillis", p.dateMillis).put("supplierId", p.supplierId).put("supplierName", p.supplierName)
+        .put("paymentMethod", p.paymentMethod).put("subTotal", p.subTotal).put("taxTotal", p.taxTotal)
+        .put("additionalCharge", p.additionalCharge).put("discount", p.discount).put("grandTotal", p.grandTotal)
+        .put("paidAmount", p.paidAmount).put("supplierGstin", p.supplierGstin).put("source", p.source)
+
+    private fun pLineJson(l: PurchaseItem) = JSONObject().put("id", l.id).put("purchaseId", l.purchaseId)
+        .put("name", l.name).put("qty", l.qty).put("price", l.price)
+        .put("taxPercent", l.taxPercent).put("lineTotal", l.lineTotal)
+
     private fun attJson(a: DiaryAttachment) = JSONObject().put("id", a.id).put("entryId", a.entryId)
         .put("file", if (a.type == AttachmentType.LOCATION) "" else File(a.path).name)
         .put("locUrl", if (a.type == AttachmentType.LOCATION) a.path else "")
@@ -169,13 +194,13 @@ object FullBackup {
     // ---- deserialisers ----
     private fun readCust(o: JSONObject) = Customer(
         id = o.optLong("id"), name = o.optString("name"), phone = o.optString("phone"),
-        address = o.optString("address"), isDefault = o.optBoolean("isDefault", false)
+        address = o.optString("address"), gstin = o.optString("gstin"), isDefault = o.optBoolean("isDefault", false)
     )
 
     private fun readItem(o: JSONObject) = Item(
         id = o.optLong("id"), name = o.optString("name"),
         price = o.optDouble("price", 0.0), taxPercent = o.optDouble("taxPercent", 0.0),
-        barcode = o.optString("barcode")
+        barcode = o.optString("barcode"), hsn = o.optString("hsn")
     )
 
     private fun readBill(o: JSONObject) = Bill(
@@ -184,7 +209,8 @@ object FullBackup {
         paymentMethod = o.optString("paymentMethod"), subTotal = o.optDouble("subTotal", 0.0),
         taxTotal = o.optDouble("taxTotal", 0.0), additionalCharge = o.optDouble("additionalCharge", 0.0),
         discount = o.optDouble("discount", 0.0), grandTotal = o.optDouble("grandTotal", 0.0),
-        paidAmount = o.optDouble("paidAmount", 0.0), source = o.optString("source")
+        paidAmount = o.optDouble("paidAmount", 0.0), customerGstin = o.optString("customerGstin"),
+        source = o.optString("source")
     )
 
     private fun readLine(o: JSONObject) = BillItem(
@@ -225,6 +251,27 @@ object FullBackup {
         createdAt = o.optLong("createdAt"), updatedAt = o.optLong("updatedAt"),
         reminderEnabled = o.optBoolean("reminderEnabled", false), reminderAt = o.optLong("reminderAt"),
         reminderDaily = o.optBoolean("reminderDaily", false)
+    )
+
+    private fun readSupplier(o: JSONObject) = Supplier(
+        id = o.optLong("id"), name = o.optString("name"), phone = o.optString("phone"),
+        address = o.optString("address"), gstin = o.optString("gstin"), isDefault = o.optBoolean("isDefault", false)
+    )
+
+    private fun readPurchase(o: JSONObject) = Purchase(
+        id = o.optLong("id"), purchaseNo = o.optString("purchaseNo"), dateMillis = o.optLong("dateMillis"),
+        supplierId = o.optLong("supplierId"), supplierName = o.optString("supplierName"),
+        paymentMethod = o.optString("paymentMethod"), subTotal = o.optDouble("subTotal", 0.0),
+        taxTotal = o.optDouble("taxTotal", 0.0), additionalCharge = o.optDouble("additionalCharge", 0.0),
+        discount = o.optDouble("discount", 0.0), grandTotal = o.optDouble("grandTotal", 0.0),
+        paidAmount = o.optDouble("paidAmount", 0.0), supplierGstin = o.optString("supplierGstin"),
+        source = o.optString("source")
+    )
+
+    private fun readPLine(o: JSONObject) = PurchaseItem(
+        id = o.optLong("id"), purchaseId = o.optLong("purchaseId"), name = o.optString("name"),
+        qty = o.optDouble("qty", 0.0), price = o.optDouble("price", 0.0),
+        taxPercent = o.optDouble("taxPercent", 0.0), lineTotal = o.optDouble("lineTotal", 0.0)
     )
 
     private fun readAtt(context: Context, o: JSONObject): DiaryAttachment {

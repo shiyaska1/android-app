@@ -61,11 +61,11 @@ class CustomersViewModel(app: Application) : AndroidViewModel(app) {
     val message = MutableStateFlow<String?>(null)
     fun consumeMessage() { message.value = null }
 
-    fun save(existing: Customer?, name: String, phone: String, address: String, onDone: () -> Unit) {
+    fun save(existing: Customer?, name: String, phone: String, address: String, gstin: String, onDone: () -> Unit) {
         if (name.isBlank()) { message.value = "Enter a name"; return }
         viewModelScope.launch {
-            if (existing == null) repo.addCustomer(name, phone, address)
-            else repo.updateCustomer(existing.copy(name = name.trim(), phone = phone.trim(), address = address.trim()))
+            if (existing == null) repo.addCustomer(name, phone, address, gstin)
+            else repo.updateCustomer(existing.copy(name = name.trim(), phone = phone.trim(), address = address.trim(), gstin = gstin.trim()))
             message.value = "Saved"
             onDone()
         }
@@ -147,7 +147,7 @@ fun CustomersScreen(
         CustomerDialog(
             existing = editing,
             onDismiss = { showDialog = false },
-            onSave = { name, phone, addr -> vm.save(editing, name, phone, addr) { showDialog = false } }
+            onSave = { name, phone, addr, gstin -> vm.save(editing, name, phone, addr, gstin) { showDialog = false } }
         )
     }
     deleteFor?.let { c ->
@@ -165,11 +165,12 @@ fun CustomersScreen(
 private fun CustomerDialog(
     existing: Customer?,
     onDismiss: () -> Unit,
-    onSave: (String, String, String) -> Unit
+    onSave: (String, String, String, String) -> Unit
 ) {
     var name by remember { mutableStateOf(existing?.name ?: "") }
     var phone by remember { mutableStateOf(existing?.phone ?: "") }
     var address by remember { mutableStateOf(existing?.address ?: "") }
+    var gstin by remember { mutableStateOf(existing?.gstin ?: "") }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (existing == null) "New customer" else "Edit customer") },
@@ -187,13 +188,18 @@ private fun CustomerDialog(
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
                 )
                 OutlinedTextField(
+                    value = gstin, onValueChange = { gstin = it },
+                    label = { Text("GSTIN / TIN") }, singleLine = true,
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                )
+                OutlinedTextField(
                     value = address, onValueChange = { address = it },
                     label = { Text("Address") },
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
                 )
             }
         },
-        confirmButton = { TextButton(onClick = { onSave(name, phone, address) }) { Text("Save") } },
+        confirmButton = { TextButton(onClick = { onSave(name, phone, address, gstin) }) { Text("Save") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
 }

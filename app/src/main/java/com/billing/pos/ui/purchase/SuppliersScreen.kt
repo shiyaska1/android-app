@@ -59,11 +59,11 @@ class SuppliersViewModel(app: Application) : AndroidViewModel(app) {
     val message = MutableStateFlow<String?>(null)
     fun consumeMessage() { message.value = null }
 
-    fun save(existing: Supplier?, name: String, phone: String, address: String, onDone: () -> Unit) {
+    fun save(existing: Supplier?, name: String, phone: String, address: String, gstin: String, onDone: () -> Unit) {
         if (name.isBlank()) { message.value = "Enter a name"; return }
         viewModelScope.launch {
-            if (existing == null) repo.addSupplier(name, phone, address)
-            else repo.updateSupplier(existing.copy(name = name.trim(), phone = phone.trim(), address = address.trim()))
+            if (existing == null) repo.addSupplier(name, phone, address, gstin)
+            else repo.updateSupplier(existing.copy(name = name.trim(), phone = phone.trim(), address = address.trim(), gstin = gstin.trim()))
             message.value = "Saved"; onDone()
         }
     }
@@ -132,7 +132,7 @@ fun SuppliersScreen(
     }
 
     if (showDialog) {
-        SupplierDialog(existing = editing, onDismiss = { showDialog = false }, onSave = { n, p, a -> vm.save(editing, n, p, a) { showDialog = false } })
+        SupplierDialog(existing = editing, onDismiss = { showDialog = false }, onSave = { n, p, a, g -> vm.save(editing, n, p, a, g) { showDialog = false } })
     }
     deleteFor?.let { s ->
         AlertDialog(
@@ -146,10 +146,11 @@ fun SuppliersScreen(
 }
 
 @Composable
-private fun SupplierDialog(existing: Supplier?, onDismiss: () -> Unit, onSave: (String, String, String) -> Unit) {
+private fun SupplierDialog(existing: Supplier?, onDismiss: () -> Unit, onSave: (String, String, String, String) -> Unit) {
     var name by remember { mutableStateOf(existing?.name ?: "") }
     var phone by remember { mutableStateOf(existing?.phone ?: "") }
     var address by remember { mutableStateOf(existing?.address ?: "") }
+    var gstin by remember { mutableStateOf(existing?.gstin ?: "") }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (existing == null) "New supplier" else "Edit supplier") },
@@ -157,10 +158,11 @@ private fun SupplierDialog(existing: Supplier?, onDismiss: () -> Unit, onSave: (
             Column {
                 OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Name *") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(value = phone, onValueChange = { phone = it }, label = { Text("Phone") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone), modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
+                OutlinedTextField(value = gstin, onValueChange = { gstin = it }, label = { Text("GSTIN / TIN") }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
                 OutlinedTextField(value = address, onValueChange = { address = it }, label = { Text("Address") }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
             }
         },
-        confirmButton = { TextButton(onClick = { onSave(name, phone, address) }) { Text("Save") } },
+        confirmButton = { TextButton(onClick = { onSave(name, phone, address, gstin) }) { Text("Save") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
 }

@@ -121,6 +121,13 @@ interface BillDao {
     @Query("SELECT name AS name, SUM(qty) AS qty FROM bill_items GROUP BY name COLLATE NOCASE")
     fun observeSoldQty(): Flow<List<NameQty>>
 
+    @Query(
+        "SELECT (bi.qty*bi.price) AS taxable, (bi.qty*bi.price*bi.taxPercent/100.0) AS tax, " +
+            "bi.taxPercent AS rate, b.dateMillis AS dateMillis " +
+            "FROM bill_items bi JOIN bills b ON bi.billId = b.id"
+    )
+    suspend fun taxLines(): List<TaxLineInfo>
+
     @Query("SELECT * FROM bills WHERE source = :source AND billNo = :billNo LIMIT 1")
     suspend fun findBySourceAndNo(source: String, billNo: String): Bill?
 }

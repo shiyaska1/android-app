@@ -95,11 +95,11 @@ class ItemsViewModel(app: Application) : AndroidViewModel(app) {
     val message = MutableStateFlow<String?>(null)
     fun consumeMessage() { message.value = null }
 
-    fun save(existing: Item?, name: String, price: Double, tax: Double, barcode: String, onDone: () -> Unit) {
+    fun save(existing: Item?, name: String, price: Double, tax: Double, barcode: String, hsn: String, onDone: () -> Unit) {
         if (name.isBlank()) { message.value = "Enter a name"; return }
         viewModelScope.launch {
-            if (existing == null) repo.addItem(name, price, tax, barcode)
-            else repo.updateItem(existing.copy(name = name.trim(), price = price, taxPercent = tax, barcode = barcode.trim()))
+            if (existing == null) repo.addItem(name, price, tax, barcode, hsn)
+            else repo.updateItem(existing.copy(name = name.trim(), price = price, taxPercent = tax, barcode = barcode.trim(), hsn = hsn.trim()))
             message.value = "Saved"; onDone()
         }
     }
@@ -202,7 +202,7 @@ fun ItemsScreen(
     }
 
     if (showDialog) {
-        ItemDialog(existing = editing, onDismiss = { showDialog = false }, onSave = { n, p, t, b -> vm.save(editing, n, p, t, b) { showDialog = false } })
+        ItemDialog(existing = editing, onDismiss = { showDialog = false }, onSave = { n, p, t, b, h -> vm.save(editing, n, p, t, b, h) { showDialog = false } })
     }
     deleteFor?.let { item ->
         AlertDialog(
@@ -219,12 +219,13 @@ fun ItemsScreen(
 }
 
 @Composable
-private fun ItemDialog(existing: Item?, onDismiss: () -> Unit, onSave: (String, Double, Double, String) -> Unit) {
+private fun ItemDialog(existing: Item?, onDismiss: () -> Unit, onSave: (String, Double, Double, String, String) -> Unit) {
     var name by remember { mutableStateOf(existing?.name ?: "") }
     var price by remember { mutableStateOf(existing?.price?.let { Format.money(it) } ?: "") }
     var taxable by remember { mutableStateOf((existing?.taxPercent ?: 0.0) > 0.0) }
     var taxPercent by remember { mutableStateOf(if ((existing?.taxPercent ?: 0.0) > 0.0) Format.money(existing!!.taxPercent) else "18") }
     var barcode by remember { mutableStateOf(existing?.barcode ?: "") }
+    var hsn by remember { mutableStateOf(existing?.hsn ?: "") }
     val scanLauncher = rememberLauncherForActivityResult(ScanContract()) { result ->
         result.contents?.let { barcode = it }
     }
@@ -263,13 +264,17 @@ private fun ItemDialog(existing: Item?, onDismiss: () -> Unit, onSave: (String, 
                         modifier = Modifier.weight(1f)
                     ) { Text("Scan") }
                 }
+                OutlinedTextField(
+                    value = hsn, onValueChange = { hsn = it },
+                    label = { Text("HSN / SAC (optional)") }, singleLine = true, modifier = Modifier.fillMaxWidth()
+                )
             }
         },
         confirmButton = {
             TextButton(onClick = {
                 val p = price.toDoubleOrNull() ?: 0.0
                 val t = if (taxable) (taxPercent.toDoubleOrNull() ?: 0.0) else 0.0
-                onSave(name, p, t, barcode)
+                onSave(name, p, t, barcode, hsn)
             }) { Text("Save") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }

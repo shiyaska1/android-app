@@ -41,6 +41,7 @@ fun SettingsScreen(onBack: () -> Unit) {
     var name by remember { mutableStateOf(prefs.companyName) }
     var address by remember { mutableStateOf(prefs.companyAddress) }
     var phone by remember { mutableStateOf(prefs.companyPhone) }
+    var gstin by remember { mutableStateOf(prefs.companyGstin) }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
@@ -86,11 +87,17 @@ fun SettingsScreen(onBack: () -> Unit) {
                 label = { Text("Phone") }, singleLine = true,
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
             )
+            OutlinedTextField(
+                value = gstin, onValueChange = { gstin = it },
+                label = { Text("GSTIN / TIN") }, singleLine = true,
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+            )
             Button(
                 onClick = {
                     prefs.companyName = name.trim().ifBlank { "My Shop" }
                     prefs.companyAddress = address.trim()
                     prefs.companyPhone = phone.trim()
+                    prefs.companyGstin = gstin.trim()
                     scope.launch { snackbar.showSnackbar("Settings saved") }
                 },
                 modifier = Modifier.fillMaxWidth().padding(top = 16.dp)

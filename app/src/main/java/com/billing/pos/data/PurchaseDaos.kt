@@ -15,6 +15,9 @@ data class PurchaseLineInfo(val name: String, val price: Double, val qty: Double
 /** Aggregated quantity by item name. */
 data class NameQty(val name: String, val qty: Double)
 
+/** A tax line (taxable value, tax, rate) with its document date, for VAT reports. */
+data class TaxLineInfo(val taxable: Double, val tax: Double, val rate: Double, val dateMillis: Long)
+
 @Dao
 interface SupplierDao {
     @Query("SELECT * FROM suppliers ORDER BY isDefault DESC, name COLLATE NOCASE ASC")
@@ -82,6 +85,16 @@ interface PurchaseDao {
     @Query("SELECT * FROM purchases ORDER BY dateMillis DESC")
     fun observeAll(): Flow<List<Purchase>>
 
+    @Query("SELECT * FROM purchases")
+    suspend fun all(): List<Purchase>
+
+    @Query(
+        "SELECT (pi.qty*pi.price) AS taxable, (pi.qty*pi.price*pi.taxPercent/100.0) AS tax, " +
+            "pi.taxPercent AS rate, p.dateMillis AS dateMillis " +
+            "FROM purchase_items pi JOIN purchases p ON pi.purchaseId = p.id"
+    )
+    suspend fun taxLines(): List<TaxLineInfo>
+
     @Query("SELECT * FROM purchases WHERE id = :id LIMIT 1")
     suspend fun byId(id: Long): Purchase?
 
@@ -90,6 +103,9 @@ interface PurchaseDao {
 
     @Query("SELECT * FROM purchase_items WHERE purchaseId = :purchaseId")
     suspend fun linesFor(purchaseId: Long): List<PurchaseItem>
+
+    @Query("SELECT * FROM purchase_items")
+    suspend fun allLines(): List<PurchaseItem>
 
     @Query(
         "SELECT pi.name AS name, pi.price AS price, pi.qty AS qty, p.dateMillis AS dateMillis " +

@@ -11,6 +11,7 @@ data class Customer(
     val name: String,
     val phone: String = "",
     val address: String = "",
+    val gstin: String = "",
     val isDefault: Boolean = false
 )
 
@@ -21,7 +22,8 @@ data class Item(
     val name: String,
     val price: Double,
     val taxPercent: Double = 0.0,
-    val barcode: String = ""
+    val barcode: String = "",
+    val hsn: String = ""
 )
 
 /** A saved bill (invoice header). `source` marks where it came from ("" = this device). */
@@ -40,6 +42,7 @@ data class Bill(
     val grandTotal: Double,
     /** Amount already received. Credit invoices start at 0; others = grandTotal. */
     val paidAmount: Double = 0.0,
+    val customerGstin: String = "",
     val source: String = ""
 ) {
     val balance: Double get() = (grandTotal - paidAmount).coerceAtLeast(0.0)

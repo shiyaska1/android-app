@@ -40,6 +40,7 @@ import com.billing.pos.ui.receipts.ReceiptsScreen
 import com.billing.pos.ui.reports.ReportsScreen
 import com.billing.pos.ui.settings.SettingsScreen
 import com.billing.pos.ui.theme.POSTheme
+import com.billing.pos.ui.vat.VatReportScreen
 import com.billing.pos.ui.users.UsersScreen
 
 class MainActivity : ComponentActivity() {
@@ -125,6 +126,7 @@ private fun AppNav() {
                 onNewPurchase = { nav.navigate("purchase") },
                 onPurchases = { nav.navigate("purchases") },
                 onSuppliers = { nav.navigate("suppliers") },
+                onVatReport = { nav.navigate("vat") },
                 onDiary = { nav.navigate("diary") },
                 onUsers = { nav.navigate("users") },
                 onSettings = { nav.navigate("settings") },
@@ -194,6 +196,9 @@ private fun AppNav() {
         }
         composable("items") {
             ItemsScreen(onBack = { nav.popBackStack() })
+        }
+        composable("vat") {
+            VatReportScreen(onBack = { nav.popBackStack() })
         }
         composable("cashbook") {
             CashBookScreen(

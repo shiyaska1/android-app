@@ -10,6 +10,7 @@ data class Supplier(
     val name: String,
     val phone: String = "",
     val address: String = "",
+    val gstin: String = "",
     val isDefault: Boolean = false
 )
 
@@ -28,6 +29,7 @@ data class Purchase(
     val discount: Double,
     val grandTotal: Double,
     val paidAmount: Double = 0.0,
+    val supplierGstin: String = "",
     val source: String = ""
 ) {
     val balance: Double get() = (grandTotal - paidAmount).coerceAtLeast(0.0)

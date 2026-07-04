@@ -184,6 +184,7 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
             discount = discount,
             grandTotal = grandTotal,
             paidAmount = paid,
+            customerGstin = customer.gstin,
             source = editingSource
         )
         val lines = cart.map {

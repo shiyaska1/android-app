@@ -16,6 +16,7 @@ import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.Assessment
 import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.Category
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.LocalShipping
 import androidx.compose.material.icons.filled.ManageAccounts
@@ -62,6 +63,7 @@ fun DashboardScreen(
     onNewPurchase: () -> Unit,
     onPurchases: () -> Unit,
     onSuppliers: () -> Unit,
+    onVatReport: () -> Unit,
     onDiary: () -> Unit,
     onUsers: () -> Unit,
     onSettings: () -> Unit,
@@ -80,6 +82,7 @@ fun DashboardScreen(
         add(Tile("New Purchase", Icons.Filled.ShoppingCart, onNewPurchase))
         if (Session.canViewInvoice) add(Tile("Purchases", Icons.Filled.Inventory2, onPurchases))
         add(Tile("Suppliers", Icons.Filled.LocalShipping, onSuppliers))
+        if (Session.canViewInvoice) add(Tile("VAT Report", Icons.Filled.Description, onVatReport))
         add(Tile("My Diary", Icons.Filled.MenuBook, onDiary))
         if (Session.canManageUsers) add(Tile("Users", Icons.Filled.ManageAccounts, onUsers))
         if (Session.canManageUsers) add(Tile("Settings", Icons.Filled.Settings, onSettings))

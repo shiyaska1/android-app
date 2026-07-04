@@ -150,6 +150,7 @@ class PurchaseViewModel(app: Application) : AndroidViewModel(app) {
             discount = discount,
             grandTotal = grandTotal,
             paidAmount = paid,
+            supplierGstin = supplier.gstin,
             source = editingSource
         )
         val lines = cart.map {

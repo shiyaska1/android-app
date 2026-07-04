@@ -2,7 +2,7 @@ package com.billing.pos.data
 
 import android.content.Context
 
-data class CompanyInfo(val name: String, val address: String, val phone: String)
+data class CompanyInfo(val name: String, val address: String, val phone: String, val gstin: String = "")
 
 /** Simple SharedPreferences store for the persisted session and company/print settings. */
 class AppPrefs(context: Context) {
@@ -24,7 +24,11 @@ class AppPrefs(context: Context) {
         get() = p.getString("company_phone", "") ?: ""
         set(v) { p.edit().putString("company_phone", v).apply() }
 
-    val company: CompanyInfo get() = CompanyInfo(companyName, companyAddress, companyPhone)
+    var companyGstin: String
+        get() = p.getString("company_gstin", "") ?: ""
+        set(v) { p.edit().putString("company_gstin", v).apply() }
+
+    val company: CompanyInfo get() = CompanyInfo(companyName, companyAddress, companyPhone, companyGstin)
 
     // ---- licensing / trial ----
     var mobileNumber: String

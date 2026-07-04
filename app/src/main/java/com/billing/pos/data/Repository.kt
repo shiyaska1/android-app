@@ -86,8 +86,8 @@ class Repository(context: Context) {
     suspend fun deleteUser(user: User) = userDao.delete(user)
 
     // ---- customers / items ----
-    suspend fun addCustomer(name: String, phone: String, address: String): Long =
-        customerDao.insert(Customer(name = name.trim(), phone = phone.trim(), address = address.trim()))
+    suspend fun addCustomer(name: String, phone: String, address: String, gstin: String = ""): Long =
+        customerDao.insert(Customer(name = name.trim(), phone = phone.trim(), address = address.trim(), gstin = gstin.trim()))
 
     suspend fun addCustomerReturning(name: String, phone: String): Customer {
         val id = customerDao.insert(Customer(name = name.trim(), phone = phone.trim()))
@@ -109,8 +109,8 @@ class Repository(context: Context) {
 
     val allCustomers: Flow<List<Customer>> get() = customers
 
-    suspend fun addItem(name: String, price: Double, taxPercent: Double, barcode: String = ""): Long =
-        itemDao.insert(Item(name = name.trim(), price = price, taxPercent = taxPercent, barcode = barcode.trim()))
+    suspend fun addItem(name: String, price: Double, taxPercent: Double, barcode: String = "", hsn: String = ""): Long =
+        itemDao.insert(Item(name = name.trim(), price = price, taxPercent = taxPercent, barcode = barcode.trim(), hsn = hsn.trim()))
 
     suspend fun updateItem(item: Item) = itemDao.update(item)
     suspend fun deleteItem(item: Item) = itemDao.delete(item)
@@ -217,10 +217,17 @@ class Repository(context: Context) {
     suspend fun deleteExpense(expense: Expense) = expenseDao.delete(expense)
 
     // ---- suppliers ----
-    suspend fun addSupplier(name: String, phone: String, address: String): Supplier {
-        val id = supplierDao.insert(Supplier(name = name.trim(), phone = phone.trim(), address = address.trim()))
-        return Supplier(id = id, name = name.trim(), phone = phone.trim(), address = address.trim())
+    suspend fun addSupplier(name: String, phone: String, address: String, gstin: String = ""): Supplier {
+        val s = Supplier(name = name.trim(), phone = phone.trim(), address = address.trim(), gstin = gstin.trim())
+        val id = supplierDao.insert(s)
+        return s.copy(id = id)
     }
+
+    // ---- VAT / tax report data ----
+    suspend fun billsAll(): List<Bill> = billDao.all()
+    suspend fun purchasesAll(): List<Purchase> = purchaseDao.all()
+    suspend fun saleTaxLines(): List<TaxLineInfo> = billDao.taxLines()
+    suspend fun purchaseTaxLines(): List<TaxLineInfo> = purchaseDao.taxLines()
 
     suspend fun updateSupplier(supplier: Supplier) = supplierDao.update(supplier)
 
