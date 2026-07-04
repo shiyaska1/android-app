@@ -61,6 +61,8 @@ import com.billing.pos.data.Repository
 import com.billing.pos.pdf.BarcodePdf
 import com.billing.pos.ui.billing.collectAsStateSafe
 import com.billing.pos.util.Format
+import com.journeyapps.barcodescanner.ScanContract
+import com.journeyapps.barcodescanner.ScanOptions
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -199,6 +201,9 @@ private fun ItemDialog(existing: Item?, onDismiss: () -> Unit, onSave: (String, 
     var taxable by remember { mutableStateOf((existing?.taxPercent ?: 0.0) > 0.0) }
     var taxPercent by remember { mutableStateOf(if ((existing?.taxPercent ?: 0.0) > 0.0) Format.money(existing!!.taxPercent) else "18") }
     var barcode by remember { mutableStateOf(existing?.barcode ?: "") }
+    val scanLauncher = rememberLauncherForActivityResult(ScanContract()) { result ->
+        result.contents?.let { barcode = it }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -223,12 +228,16 @@ private fun ItemDialog(existing: Item?, onDismiss: () -> Unit, onSave: (String, 
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth()
                     )
                 }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    OutlinedTextField(
-                        value = barcode, onValueChange = { barcode = it },
-                        label = { Text("Barcode (optional)") }, singleLine = true, modifier = Modifier.weight(1f)
-                    )
-                    TextButton(onClick = { barcode = System.currentTimeMillis().toString() }) { Text("Auto") }
+                OutlinedTextField(
+                    value = barcode, onValueChange = { barcode = it },
+                    label = { Text("Barcode (optional)") }, singleLine = true, modifier = Modifier.fillMaxWidth()
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { barcode = System.currentTimeMillis().toString() }, modifier = Modifier.weight(1f)) { Text("Auto") }
+                    OutlinedButton(
+                        onClick = { scanLauncher.launch(ScanOptions().setPrompt("Scan barcode").setBeepEnabled(true).setOrientationLocked(false)) },
+                        modifier = Modifier.weight(1f)
+                    ) { Text("Scan") }
                 }
             }
         },
