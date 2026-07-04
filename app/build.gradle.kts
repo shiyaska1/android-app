@@ -18,9 +18,23 @@ android {
         vectorDrawables { useSupportLibrary = true }
     }
 
+    signingConfigs {
+        create("stable") {
+            storeFile = file("keystore.jks")
+            storePassword = "poskey123"
+            keyAlias = "posbilling"
+            keyPassword = "poskey123"
+        }
+    }
+
     buildTypes {
+        debug {
+            // Sign with the committed stable key so customers can update without data loss.
+            signingConfig = signingConfigs.getByName("stable")
+        }
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("stable")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
