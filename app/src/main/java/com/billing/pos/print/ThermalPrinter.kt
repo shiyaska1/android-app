@@ -11,6 +11,7 @@ import android.os.Build
 import androidx.core.content.ContextCompat
 import com.billing.pos.data.Bill
 import com.billing.pos.data.BillItem
+import com.billing.pos.data.CompanyInfo
 import com.billing.pos.util.Format
 import java.util.UUID
 
@@ -34,7 +35,7 @@ object ThermalPrinter {
     }
 
     @SuppressLint("MissingPermission")
-    fun printBill(context: Context, shopName: String, bill: Bill, lines: List<BillItem>) {
+    fun printBill(context: Context, company: CompanyInfo, bill: Bill, lines: List<BillItem>) {
         if (!hasConnectPermission(context)) throw PrinterException("Bluetooth permission not granted")
 
         val adapter = BluetoothAdapter.getDefaultAdapter()
@@ -50,7 +51,7 @@ object ThermalPrinter {
             adapter.cancelDiscovery()
             socket.connect()
             val out = socket.outputStream
-            out.write(buildReceipt(shopName, bill, lines))
+            out.write(buildReceipt(company, bill, lines))
             out.flush()
             Thread.sleep(400) // let the buffer flush before closing
         } catch (e: Exception) {
@@ -74,9 +75,11 @@ object ThermalPrinter {
     private const val ESC = 0x1B
     private const val GS = 0x1D
 
-    private fun buildReceipt(shopName: String, bill: Bill, lines: List<BillItem>): ByteArray {
+    private fun buildReceipt(company: CompanyInfo, bill: Bill, lines: List<BillItem>): ByteArray {
         val sb = StringBuilder()
-        sb.append(center(shopName)).append('\n')
+        sb.append(center(company.name)).append('\n')
+        if (company.address.isNotBlank()) sb.append(center(company.address)).append('\n')
+        if (company.phone.isNotBlank()) sb.append(center("Ph: ${company.phone}")).append('\n')
         sb.append(center("TAX INVOICE")).append('\n')
         sb.append(line()).append('\n')
         sb.append("Bill: ${bill.billNo}\n")

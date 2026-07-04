@@ -32,6 +32,7 @@ import kotlinx.coroutines.launch
 
 class LoginViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = Repository(app)
+    private val prefs = com.billing.pos.data.AppPrefs(app)
 
     var loading by mutableStateOf(false); private set
     var error by mutableStateOf<String?>(null); private set
@@ -48,6 +49,7 @@ class LoginViewModel(app: Application) : AndroidViewModel(app) {
                 error = "Invalid username or password"
             } else {
                 Session.login(user)
+                prefs.loggedInUserId = user.id   // persist so login survives app restart
                 onSuccess()
             }
         }

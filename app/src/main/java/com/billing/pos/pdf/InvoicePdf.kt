@@ -8,6 +8,7 @@ import androidx.core.content.FileProvider
 import android.net.Uri
 import com.billing.pos.data.Bill
 import com.billing.pos.data.BillItem
+import com.billing.pos.data.CompanyInfo
 import com.billing.pos.util.Format
 import java.io.File
 
@@ -17,7 +18,7 @@ object InvoicePdf {
     private const val PAGE_W = 420   // ~ A5 width in points
     private const val MARGIN = 24f
 
-    fun generate(context: Context, shopName: String, bill: Bill, lines: List<BillItem>): Uri {
+    fun generate(context: Context, company: CompanyInfo, bill: Bill, lines: List<BillItem>): Uri {
         val doc = PdfDocument()
         val lineHeight = 20f
         val bodyRows = lines.size
@@ -36,7 +37,10 @@ object InvoicePdf {
         val right = PAGE_W - MARGIN
         var y = 40f
 
-        c.drawText(shopName, MARGIN, y, title); y += 24f
+        c.drawText(company.name, MARGIN, y, title); y += 22f
+        if (company.address.isNotBlank()) { c.drawText(company.address, MARGIN, y, p); y += 14f }
+        if (company.phone.isNotBlank()) { c.drawText("Ph: ${company.phone}", MARGIN, y, p); y += 14f }
+        y += 4f
         c.drawText("TAX INVOICE", MARGIN, y, h); y += 18f
 
         c.drawText("Bill No: ${bill.billNo}", MARGIN, y, p)

@@ -25,6 +25,9 @@ interface CustomerDao {
 
     @Insert
     suspend fun insert(customer: Customer): Long
+
+    @Update
+    suspend fun update(customer: Customer)
 }
 
 @Dao
@@ -156,6 +159,9 @@ interface UserDao {
 
     @Query("SELECT * FROM users WHERE username = :username COLLATE NOCASE AND active = 1 LIMIT 1")
     suspend fun byUsername(username: String): User?
+
+    @Query("SELECT * FROM users WHERE id = :id AND active = 1 LIMIT 1")
+    suspend fun byId(id: Long): User?
 
     @Query("SELECT COUNT(*) FROM users")
     suspend fun count(): Int

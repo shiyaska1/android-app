@@ -58,6 +58,8 @@ class Repository(context: Context) {
         return if (PasswordHasher.verify(password, user.passwordHash)) user else null
     }
 
+    suspend fun userById(id: Long): User? = userDao.byId(id)
+
     suspend fun createUser(user: User, password: String): Result<Unit> = runCatching {
         userDao.insert(user.copy(passwordHash = PasswordHasher.hash(password)))
         Unit
@@ -76,6 +78,13 @@ class Repository(context: Context) {
     // ---- customers / items ----
     suspend fun addCustomer(name: String, phone: String, address: String): Long =
         customerDao.insert(Customer(name = name.trim(), phone = phone.trim(), address = address.trim()))
+
+    suspend fun addCustomerReturning(name: String, phone: String): Customer {
+        val id = customerDao.insert(Customer(name = name.trim(), phone = phone.trim()))
+        return Customer(id = id, name = name.trim(), phone = phone.trim())
+    }
+
+    suspend fun updateCustomer(customer: Customer) = customerDao.update(customer)
 
     suspend fun addItem(name: String, price: Double, taxPercent: Double): Long =
         itemDao.insert(Item(name = name.trim(), price = price, taxPercent = taxPercent))

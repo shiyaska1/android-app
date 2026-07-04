@@ -14,15 +14,21 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.navArgument
 import com.billing.pos.auth.PendingImport
 import com.billing.pos.auth.Session
+import com.billing.pos.data.AppPrefs
+import com.billing.pos.ui.auth.BootScreen
 import com.billing.pos.ui.auth.LoginScreen
 import com.billing.pos.ui.billing.BillingScreen
 import com.billing.pos.ui.diary.DiaryEditScreen
 import com.billing.pos.ui.diary.DiaryListScreen
+import com.billing.pos.ui.expenses.ExpensesScreen
 import com.billing.pos.ui.invoices.InvoiceListScreen
+import com.billing.pos.ui.receipts.ReceiptsScreen
 import com.billing.pos.ui.reports.ReportsScreen
+import com.billing.pos.ui.settings.SettingsScreen
 import com.billing.pos.ui.theme.POSTheme
 import com.billing.pos.ui.users.UsersScreen
 
@@ -63,43 +69,50 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun AppNav() {
     val nav = rememberNavController()
+    val context = LocalContext.current
+    val logout: () -> Unit = {
+        AppPrefs(context).clearSession()
+        Session.logout()
+        nav.navigate("login") { popUpTo(0) { inclusive = true } }
+    }
 
-    NavHost(navController = nav, startDestination = "login") {
+    @Composable
+    fun billing(editId: Long?) {
+        BillingScreen(
+            editBillId = editId,
+            onOpenReports = { nav.navigate("reports") },
+            onOpenInvoices = { nav.navigate("invoices") },
+            onOpenUsers = { nav.navigate("users") },
+            onOpenDiary = { nav.navigate("diary") },
+            onOpenReceipts = { nav.navigate("receipts") },
+            onOpenExpenses = { nav.navigate("expenses") },
+            onOpenSettings = { nav.navigate("settings") },
+            onLogout = logout
+        )
+    }
+
+    NavHost(navController = nav, startDestination = "boot") {
+        composable("boot") {
+            BootScreen(onResolved = { loggedIn ->
+                val dest = when {
+                    loggedIn && PendingImport.uri != null -> "invoices"
+                    loggedIn -> "billing"
+                    else -> "login"
+                }
+                nav.navigate(dest) { popUpTo("boot") { inclusive = true } }
+            })
+        }
         composable("login") {
             LoginScreen(onLoggedIn = {
                 val dest = if (PendingImport.uri != null) "invoices" else "billing"
-                nav.navigate(dest) { popUpTo("login") { inclusive = true } }
+                nav.navigate(dest) { popUpTo(0) { inclusive = true } }
             })
         }
-        composable("billing") {
-            BillingScreen(
-                editBillId = null,
-                onOpenReports = { nav.navigate("reports") },
-                onOpenInvoices = { nav.navigate("invoices") },
-                onOpenUsers = { nav.navigate("users") },
-                onOpenDiary = { nav.navigate("diary") },
-                onLogout = {
-                    Session.logout()
-                    nav.navigate("login") { popUpTo(0) { inclusive = true } }
-                }
-            )
-        }
+        composable("billing") { billing(null) }
         composable(
             route = "billing/edit/{id}",
             arguments = listOf(navArgument("id") { type = NavType.LongType })
-        ) { entry ->
-            BillingScreen(
-                editBillId = entry.arguments?.getLong("id"),
-                onOpenReports = { nav.navigate("reports") },
-                onOpenInvoices = { nav.navigate("invoices") },
-                onOpenUsers = { nav.navigate("users") },
-                onOpenDiary = { nav.navigate("diary") },
-                onLogout = {
-                    Session.logout()
-                    nav.navigate("login") { popUpTo(0) { inclusive = true } }
-                }
-            )
-        }
+        ) { entry -> billing(entry.arguments?.getLong("id")) }
         composable("invoices") {
             InvoiceListScreen(
                 onBack = { nav.popBackStack() },
@@ -108,6 +121,15 @@ private fun AppNav() {
         }
         composable("reports") {
             ReportsScreen(onBack = { nav.popBackStack() })
+        }
+        composable("receipts") {
+            ReceiptsScreen(onBack = { nav.popBackStack() })
+        }
+        composable("expenses") {
+            ExpensesScreen(onBack = { nav.popBackStack() })
+        }
+        composable("settings") {
+            SettingsScreen(onBack = { nav.popBackStack() })
         }
         composable("users") {
             UsersScreen(onBack = { nav.popBackStack() })

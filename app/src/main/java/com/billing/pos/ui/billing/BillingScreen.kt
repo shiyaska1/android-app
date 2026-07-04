@@ -44,6 +44,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -78,6 +79,9 @@ fun BillingScreen(
     onOpenInvoices: () -> Unit,
     onOpenUsers: () -> Unit,
     onOpenDiary: () -> Unit,
+    onOpenReceipts: () -> Unit,
+    onOpenExpenses: () -> Unit,
+    onOpenSettings: () -> Unit,
     onLogout: () -> Unit,
     vm: BillingViewModel = viewModel()
 ) {
@@ -95,6 +99,10 @@ fun BillingScreen(
     var showNewItem by remember { mutableStateOf(false) }
     var showItemPicker by remember { mutableStateOf(false) }
     var showCustomLine by remember { mutableStateOf(false) }
+    var showWhatsApp by remember { mutableStateOf(false) }
+
+    // View-only: an existing invoice opened by a user without edit permission.
+    val readOnly = vm.editingBillId != null && !Session.canEdit
 
     // Show one-off messages.
     LaunchedEffect(message) {
@@ -136,6 +144,18 @@ fun BillingScreen(
                             text = { Text("Sales Report") },
                             onClick = { menu = false; onOpenReports() }
                         )
+                        if (Session.canViewReceipt) {
+                            DropdownMenuItem(
+                                text = { Text("Receipts") },
+                                onClick = { menu = false; onOpenReceipts() }
+                            )
+                        }
+                        if (Session.canViewPayment) {
+                            DropdownMenuItem(
+                                text = { Text("Payments / Expenses") },
+                                onClick = { menu = false; onOpenExpenses() }
+                            )
+                        }
                         DropdownMenuItem(
                             text = { Text("My Diary") },
                             onClick = { menu = false; onOpenDiary() }
@@ -144,6 +164,10 @@ fun BillingScreen(
                             DropdownMenuItem(
                                 text = { Text("Manage Users") },
                                 onClick = { menu = false; onOpenUsers() }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Company Settings") },
+                                onClick = { menu = false; onOpenSettings() }
                             )
                         }
                         Divider()
@@ -183,30 +207,39 @@ fun BillingScreen(
 
             Spacer(Modifier.padding(6.dp))
 
-            // --- Customer selector + New ---
+            // --- Customer selector (searchable) + New ---
             Row(verticalAlignment = Alignment.CenterVertically) {
                 var expanded by remember { mutableStateOf(false) }
+                var custQuery by remember { mutableStateOf("") }
+                val filteredCustomers = remember(custQuery, customers) {
+                    if (custQuery.isBlank()) customers
+                    else customers.filter { it.name.contains(custQuery, ignoreCase = true) }
+                }
                 ExposedDropdownMenuBox(
                     expanded = expanded,
                     onExpandedChange = { expanded = it },
                     modifier = Modifier.weight(1f)
                 ) {
                     OutlinedTextField(
-                        readOnly = true,
-                        value = vm.selectedCustomer?.name ?: "Select customer",
-                        onValueChange = {},
+                        value = if (expanded) custQuery else (vm.selectedCustomer?.name ?: ""),
+                        onValueChange = { custQuery = it; expanded = true },
                         label = { Text("Customer") },
+                        placeholder = { Text("Search customer") },
+                        singleLine = true,
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
                         modifier = Modifier
                             .menuAnchor()
                             .fillMaxWidth()
                     )
                     ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                        customers.forEach { c ->
+                        filteredCustomers.forEach { c ->
                             DropdownMenuItem(
                                 text = { Text(c.name + if (c.isDefault) "  (default)" else "") },
-                                onClick = { vm.selectCustomer(c); expanded = false }
+                                onClick = { vm.selectCustomer(c); custQuery = ""; expanded = false }
                             )
+                        }
+                        if (filteredCustomers.isEmpty()) {
+                            DropdownMenuItem(text = { Text("No match") }, onClick = { expanded = false })
                         }
                     }
                 }
@@ -333,18 +366,49 @@ fun BillingScreen(
 
             Spacer(Modifier.padding(4.dp))
 
-            // --- Actions: Save / PDF+Share / Print ---
+            if (readOnly) {
+                Text(
+                    "View only — you don't have permission to edit invoices.",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.error
+                )
+                Spacer(Modifier.padding(2.dp))
+            }
+
+            // --- Actions ---
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
                     onClick = { scope.launch { vm.saveCurrent() } },
+                    enabled = !readOnly,
                     modifier = Modifier.weight(1f)
                 ) { Text("Save") }
 
+                Button(
+                    onClick = {
+                        scope.launch {
+                            if (vm.needsWhatsAppInfo()) {
+                                showWhatsApp = true
+                            } else {
+                                val saved = vm.saveCurrent() ?: return@launch
+                                sendWhatsApp(context, vm.selectedCustomer?.phone ?: "", saved) {
+                                    scope.launch { snackbar.showSnackbar(it) }
+                                }
+                            }
+                        }
+                    },
+                    enabled = !readOnly,
+                    modifier = Modifier.weight(1f)
+                ) { Icon(Icons.Filled.Share, null); Text("WhatsApp") }
+            }
+
+            Spacer(Modifier.padding(2.dp))
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(
                     onClick = {
                         scope.launch {
                             val saved = vm.saveCurrent() ?: return@launch
-                            sharePdf(context, vm.shopName, saved)
+                            sharePdf(context, saved)
                         }
                     },
                     modifier = Modifier.weight(1f)
@@ -364,6 +428,22 @@ fun BillingScreen(
                 ) { Icon(Icons.Filled.Print, null); Text("Print") }
             }
         }
+    }
+
+    if (showWhatsApp) {
+        WhatsAppDialog(
+            defaultName = vm.selectedCustomer?.name?.takeIf { it != "Cash Customer" } ?: "",
+            onDismiss = { showWhatsApp = false },
+            onSend = { name, number ->
+                showWhatsApp = false
+                scope.launch {
+                    val saved = vm.prepareWhatsApp(name, number) ?: return@launch
+                    sendWhatsApp(context, vm.selectedCustomer?.phone ?: number, saved) {
+                        scope.launch { snackbar.showSnackbar(it) }
+                    }
+                }
+            }
+        )
     }
 
     if (showNewCustomer) {
@@ -400,15 +480,17 @@ private suspend fun doPrint(
     snackbar: SnackbarHostState
 ) {
     val saved = vm.saveCurrent() ?: return
+    val company = com.billing.pos.data.AppPrefs(context).company
     val result = withContext(Dispatchers.IO) {
-        runCatching { ThermalPrinter.printBill(context, vm.shopName, saved.bill, saved.lines) }
+        runCatching { ThermalPrinter.printBill(context, company, saved.bill, saved.lines) }
     }
     result.onSuccess { snackbar.showSnackbar("Sent to printer") }
         .onFailure { snackbar.showSnackbar(it.message ?: "Print failed") }
 }
 
-private fun sharePdf(context: android.content.Context, shopName: String, saved: BillWithItems) {
-    val uri = InvoicePdf.generate(context, shopName, saved.bill, saved.lines)
+private fun sharePdf(context: android.content.Context, saved: BillWithItems) {
+    val company = com.billing.pos.data.AppPrefs(context).company
+    val uri = InvoicePdf.generate(context, company, saved.bill, saved.lines)
     val intent = Intent(Intent.ACTION_SEND).apply {
         type = "application/pdf"
         putExtra(Intent.EXTRA_STREAM, uri)
@@ -417,6 +499,83 @@ private fun sharePdf(context: android.content.Context, shopName: String, saved: 
     context.startActivity(Intent.createChooser(intent, "Share invoice").apply {
         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     })
+}
+
+/** Opens WhatsApp for [phone] with the invoice PDF attached (user taps send). */
+private fun sendWhatsApp(
+    context: android.content.Context,
+    phone: String,
+    saved: BillWithItems,
+    onInfo: (String) -> Unit
+) {
+    val company = com.billing.pos.data.AppPrefs(context).company
+    val uri = InvoicePdf.generate(context, company, saved.bill, saved.lines)
+    val digits = phone.filter { it.isDigit() }
+
+    fun tryPackage(pkg: String?): Boolean {
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "application/pdf"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            if (digits.isNotEmpty()) putExtra("jid", "$digits@s.whatsapp.net")
+            if (pkg != null) setPackage(pkg)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        return runCatching { context.startActivity(intent) }.isSuccess
+    }
+
+    if (tryPackage("com.whatsapp")) return
+    if (tryPackage("com.whatsapp.w4b")) return
+    // WhatsApp not installed — fall back to a generic share chooser.
+    val chooser = Intent(Intent.ACTION_SEND).apply {
+        type = "application/pdf"
+        putExtra(Intent.EXTRA_STREAM, uri)
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+    runCatching {
+        context.startActivity(
+            Intent.createChooser(chooser, "Share invoice").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
+    }.onFailure { onInfo("Could not open WhatsApp") }
+    onInfo("WhatsApp not found — shared via chooser")
+}
+
+@Composable
+private fun WhatsAppDialog(
+    defaultName: String,
+    onDismiss: () -> Unit,
+    onSend: (name: String, number: String) -> Unit
+) {
+    var name by remember { mutableStateOf(defaultName) }
+    var number by remember { mutableStateOf("") }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Send on WhatsApp") },
+        text = {
+            Column {
+                Text(
+                    "Saved to customer list for next time.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.outline
+                )
+                OutlinedTextField(
+                    value = name, onValueChange = { name = it },
+                    label = { Text("Customer name (optional)") }, singleLine = true,
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                )
+                OutlinedTextField(
+                    value = number,
+                    onValueChange = { number = it.filter { c -> c.isDigit() || c == '+' } },
+                    label = { Text("WhatsApp number (with country code)") }, singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                )
+            }
+        },
+        confirmButton = {
+            Button(onClick = { onSend(name, number) }, enabled = number.isNotBlank()) { Text("Save & Send") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
 }
 
 @Composable

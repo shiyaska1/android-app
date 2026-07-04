@@ -202,6 +202,30 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
         return saved
     }
 
+    /** True when we must ask for a WhatsApp number (selected customer has none). */
+    fun needsWhatsAppInfo(): Boolean = selectedCustomer?.phone.isNullOrBlank()
+
+    /**
+     * Adds/updates the customer master with the given name+number, then saves the bill.
+     * Returns the saved bill, or null if invalid.
+     */
+    suspend fun prepareWhatsApp(nameOverride: String, numberOverride: String): BillWithItems? {
+        val number = numberOverride.trim().ifBlank { selectedCustomer?.phone ?: "" }
+        val name = nameOverride.trim()
+        if (number.isNotBlank()) {
+            val cur = selectedCustomer
+            if (cur == null || cur.isDefault) {
+                selectedCustomer = repo.addCustomerReturning(name.ifBlank { "Customer" }, number)
+            } else if (cur.phone.isBlank() || name.isNotEmpty()) {
+                val updated = cur.copy(name = name.ifBlank { cur.name }, phone = number)
+                repo.updateCustomer(updated)
+                selectedCustomer = updated
+            }
+            dirty = true
+        }
+        return saveCurrent()
+    }
+
     /** Loads an existing bill for editing. Called once from the UI. */
     fun startEditing(billId: Long) {
         if (editingBillId == billId) return
