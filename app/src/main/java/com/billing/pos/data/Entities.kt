@@ -100,7 +100,10 @@ data class Receipt(
     val source: String = ""
 )
 
-/** A payment / expense voucher: money paid out. */
+/**
+ * A payment / expense voucher: money paid out. May be a general expense or a
+ * payment against a (credit) purchase (purchaseId > 0, payTo = supplier).
+ */
 @Entity(tableName = "expenses")
 data class Expense(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -109,6 +112,9 @@ data class Expense(
     val description: String,
     val amount: Double,
     val paymentMode: String,
+    val purchaseId: Long = 0,
+    val purchaseNo: String = "",
+    val payTo: String = "",
     val source: String = ""
 )
 

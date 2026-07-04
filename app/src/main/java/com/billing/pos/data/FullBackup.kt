@@ -154,7 +154,8 @@ object FullBackup {
 
     private fun expenseJson(e: Expense) = JSONObject().put("id", e.id).put("voucherNo", e.voucherNo)
         .put("dateMillis", e.dateMillis).put("description", e.description).put("amount", e.amount)
-        .put("paymentMode", e.paymentMode).put("source", e.source)
+        .put("paymentMode", e.paymentMode).put("purchaseId", e.purchaseId).put("purchaseNo", e.purchaseNo)
+        .put("payTo", e.payTo).put("source", e.source)
 
     private fun userJson(u: User) = JSONObject().put("id", u.id).put("username", u.username)
         .put("passwordHash", u.passwordHash).put("role", u.role.name)
@@ -229,7 +230,8 @@ object FullBackup {
     private fun readExpense(o: JSONObject) = Expense(
         id = o.optLong("id"), voucherNo = o.optString("voucherNo"), dateMillis = o.optLong("dateMillis"),
         description = o.optString("description"), amount = o.optDouble("amount", 0.0),
-        paymentMode = o.optString("paymentMode"), source = o.optString("source")
+        paymentMode = o.optString("paymentMode"), purchaseId = o.optLong("purchaseId"),
+        purchaseNo = o.optString("purchaseNo"), payTo = o.optString("payTo"), source = o.optString("source")
     )
 
     private fun readUser(o: JSONObject) = User(

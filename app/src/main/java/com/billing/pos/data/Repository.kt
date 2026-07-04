@@ -210,11 +210,43 @@ class Repository(context: Context) {
         receiptDao.delete(receipt)
     }
 
+    /** Records a payment against a (credit) purchase and increases its paid amount. */
+    suspend fun addPaymentForPurchase(purchase: Purchase, amount: Double, mode: PayMode): Expense {
+        val expense = Expense(
+            voucherNo = nextVoucherNo(),
+            dateMillis = System.currentTimeMillis(),
+            description = "Payment to ${purchase.supplierName}",
+            amount = amount,
+            paymentMode = mode.label,
+            purchaseId = purchase.id,
+            purchaseNo = purchase.purchaseNo,
+            payTo = purchase.supplierName
+        )
+        expenseDao.insert(expense)
+        val newPaid = (purchase.paidAmount + amount).coerceAtMost(purchase.grandTotal)
+        purchaseDao.updateHeader(purchase.copy(paidAmount = newPaid))
+        return expense
+    }
+
     suspend fun updateExpense(expense: Expense, description: String, amount: Double, mode: PayMode) {
+        if (expense.purchaseId > 0) {
+            purchaseDao.byId(expense.purchaseId)?.let { pur ->
+                val adjusted = (pur.paidAmount - expense.amount + amount).coerceIn(0.0, pur.grandTotal)
+                purchaseDao.updateHeader(pur.copy(paidAmount = adjusted))
+            }
+        }
         expenseDao.update(expense.copy(description = description.trim(), amount = amount, paymentMode = mode.label))
     }
 
-    suspend fun deleteExpense(expense: Expense) = expenseDao.delete(expense)
+    suspend fun deleteExpense(expense: Expense) {
+        if (expense.purchaseId > 0) {
+            purchaseDao.byId(expense.purchaseId)?.let { pur ->
+                val adjusted = (pur.paidAmount - expense.amount).coerceAtLeast(0.0)
+                purchaseDao.updateHeader(pur.copy(paidAmount = adjusted))
+            }
+        }
+        expenseDao.delete(expense)
+    }
 
     // ---- suppliers ----
     suspend fun addSupplier(name: String, phone: String, address: String, gstin: String = ""): Supplier {

@@ -18,7 +18,10 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Divider
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -49,6 +52,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.billing.pos.auth.Session
 import com.billing.pos.data.Expense
 import com.billing.pos.data.PayMode
+import com.billing.pos.data.Purchase
 import com.billing.pos.data.Repository
 import com.billing.pos.ui.billing.collectAsStateSafe
 import com.billing.pos.util.Format
@@ -63,6 +67,8 @@ class ExpensesViewModel(app: Application) : AndroidViewModel(app) {
 
     val expenses: StateFlow<List<Expense>> =
         repo.allExpenses.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val purchases: StateFlow<List<com.billing.pos.data.Purchase>> =
+        repo.allPurchases.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val message = MutableStateFlow<String?>(null)
     fun consumeMessage() { message.value = null }
@@ -70,6 +76,11 @@ class ExpensesViewModel(app: Application) : AndroidViewModel(app) {
     fun add(description: String, amount: Double, mode: PayMode) {
         if (amount <= 0) { message.value = "Enter a valid amount"; return }
         viewModelScope.launch { repo.addExpense(description, amount, mode); message.value = "Payment added" }
+    }
+
+    fun addAgainstPurchase(purchase: com.billing.pos.data.Purchase, amount: Double, mode: PayMode) {
+        if (amount <= 0) { message.value = "Enter a valid amount"; return }
+        viewModelScope.launch { repo.addPaymentForPurchase(purchase, amount, mode); message.value = "Payment added" }
     }
 
     fun edit(e: Expense, description: String, amount: Double, mode: PayMode) {
@@ -135,9 +146,10 @@ fun ExpensesScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(Modifier.weight(1f)) {
-                            Text("${e.voucherNo}  •  ${e.description.ifBlank { "Expense" }}", fontWeight = FontWeight.Bold)
+                            Text("${e.voucherNo}  •  ${e.payTo.ifBlank { e.description.ifBlank { "Expense" } }}", fontWeight = FontWeight.Bold)
                             Text(
-                                "${e.paymentMode} • ${Format.date(e.dateMillis)}",
+                                (if (e.purchaseNo.isNotBlank()) "vs ${e.purchaseNo} • " else "") +
+                                    "${e.paymentMode} • ${Format.date(e.dateMillis)}",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.outline
                             )
@@ -156,11 +168,13 @@ fun ExpensesScreen(
     }
 
     if (showAdd) {
-        ExpenseEditDialog(
-            initial = null,
-            canSave = true,
+        val purchases by vm.purchases.collectAsStateSafe()
+        val outstanding = purchases.filter { it.balance > 0.001 }
+        AddPaymentDialog(
+            outstanding = outstanding,
             onDismiss = { showAdd = false },
-            onSave = { desc, amt, mode -> vm.add(desc, amt, mode); showAdd = false }
+            onGeneral = { desc, amt, mode -> vm.add(desc, amt, mode); showAdd = false },
+            onAgainstPurchase = { pur, amt, mode -> vm.addAgainstPurchase(pur, amt, mode); showAdd = false }
         )
     }
     editFor?.let { e ->
@@ -180,6 +194,77 @@ fun ExpensesScreen(
             dismissButton = { TextButton(onClick = { deleteFor = null }) { Text("Cancel") } }
         )
     }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AddPaymentDialog(
+    outstanding: List<Purchase>,
+    onDismiss: () -> Unit,
+    onGeneral: (String, Double, PayMode) -> Unit,
+    onAgainstPurchase: (Purchase, Double, PayMode) -> Unit
+) {
+    var againstPurchase by remember { mutableStateOf(false) }
+    var selected by remember { mutableStateOf(outstanding.firstOrNull()) }
+    var description by remember { mutableStateOf("") }
+    var amount by remember { mutableStateOf("") }
+    var mode by remember { mutableStateOf(PayMode.CASH) }
+    var expanded by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("New payment") },
+        text = {
+            Column {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(selected = !againstPurchase, onClick = { againstPurchase = false }, label = { Text("General expense") })
+                    FilterChip(selected = againstPurchase, onClick = { againstPurchase = true }, enabled = outstanding.isNotEmpty(), label = { Text("Against purchase") })
+                }
+                if (againstPurchase) {
+                    ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }, modifier = Modifier.padding(top = 8.dp)) {
+                        OutlinedTextField(
+                            readOnly = true,
+                            value = selected?.let { "${it.purchaseNo} • ${it.supplierName} • bal ${Format.money(it.balance)}" } ?: "",
+                            onValueChange = {}, label = { Text("Purchase") },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
+                            modifier = Modifier.menuAnchor().fillMaxWidth()
+                        )
+                        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                            outstanding.forEach { p ->
+                                DropdownMenuItem(
+                                    text = { Text("${p.purchaseNo} • ${p.supplierName} • bal ${Format.money(p.balance)}") },
+                                    onClick = { selected = p; amount = Format.money(p.balance); expanded = false }
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    OutlinedTextField(
+                        value = description, onValueChange = { description = it },
+                        label = { Text("Description") }, singleLine = true,
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                    )
+                }
+                OutlinedTextField(
+                    value = amount, onValueChange = { amount = it.filter { c -> c.isDigit() || c == '.' } },
+                    label = { Text("Amount") }, singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                )
+                Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    PayMode.values().forEach { m -> FilterChip(selected = mode == m, onClick = { mode = m }, label = { Text(m.label) }) }
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = {
+                val amt = amount.toDoubleOrNull() ?: 0.0
+                if (againstPurchase) selected?.let { onAgainstPurchase(it, amt.coerceAtMost(it.balance), mode) }
+                else onGeneral(description, amt, mode)
+            }) { Text("Add") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
 }
 
 @Composable

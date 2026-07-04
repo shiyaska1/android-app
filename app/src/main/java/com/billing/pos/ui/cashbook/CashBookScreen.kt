@@ -75,6 +75,8 @@ class CashBookViewModel(app: Application) : AndroidViewModel(app) {
         repo.allReceipts.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val expenses: StateFlow<List<Expense>> =
         repo.allExpenses.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val purchases: StateFlow<List<com.billing.pos.data.Purchase>> =
+        repo.allPurchases.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val message = MutableStateFlow<String?>(null)
     fun consumeMessage() { message.value = null }
@@ -92,14 +94,15 @@ class CashBookViewModel(app: Application) : AndroidViewModel(app) {
 
 private data class CashTxn(
     val date: Long,
-    val kind: String,           // SALE / RECEIPT / PAYMENT
+    val kind: String,           // SALE / RECEIPT / PAYMENT / PURCHASE
     val title: String,
     val mode: String,
     val amount: Double,
     val isIn: Boolean,
     val bill: Bill?,
     val receipt: Receipt?,
-    val expense: Expense?
+    val expense: Expense?,
+    val purchase: com.billing.pos.data.Purchase? = null
 )
 
 private fun startOfDay(m: Long): Long {
@@ -116,6 +119,7 @@ private fun endOfDay(m: Long): Long = startOfDay(m) + 24L * 60 * 60 * 1000 - 1
 fun CashBookScreen(
     onBack: () -> Unit,
     onEditInvoice: (Long) -> Unit,
+    onEditPurchase: (Long) -> Unit,
     vm: CashBookViewModel = viewModel()
 ) {
     val context = LocalContext.current
@@ -123,6 +127,7 @@ fun CashBookScreen(
     val bills by vm.bills.collectAsStateSafe()
     val receipts by vm.receipts.collectAsStateSafe()
     val expenses by vm.expenses.collectAsStateSafe()
+    val purchases by vm.purchases.collectAsStateSafe()
     val message by vm.message.collectAsStateSafe()
 
     LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); vm.consumeMessage() } }
@@ -135,7 +140,7 @@ fun CashBookScreen(
     var editPaymentFor by remember { mutableStateOf<Expense?>(null) }
 
     // Build all cash-affecting transactions.
-    val allTxns = remember(bills, receipts, expenses) {
+    val allTxns = remember(bills, receipts, expenses, purchases) {
         buildList {
             bills.filter { it.paymentMethod != "Credit" }.forEach {
                 add(CashTxn(it.dateMillis, "SALE", "${it.billNo} • ${it.customerName}", it.paymentMethod, it.grandTotal, true, it, null, null))
@@ -143,8 +148,11 @@ fun CashBookScreen(
             receipts.forEach {
                 add(CashTxn(it.dateMillis, "RECEIPT", "${it.receiptNo} • ${it.payFrom.ifBlank { it.customerName }}", it.paymentMode, it.amount, true, null, it, null))
             }
+            purchases.filter { it.paymentMethod != "Credit" }.forEach {
+                add(CashTxn(it.dateMillis, "PURCHASE", "${it.purchaseNo} • ${it.supplierName}", it.paymentMethod, it.grandTotal, false, null, null, null, it))
+            }
             expenses.forEach {
-                add(CashTxn(it.dateMillis, "PAYMENT", "${it.voucherNo} • ${it.description.ifBlank { "Expense" }}", it.paymentMode, it.amount, false, null, null, it))
+                add(CashTxn(it.dateMillis, "PAYMENT", "${it.voucherNo} • ${it.payTo.ifBlank { it.description.ifBlank { "Expense" } }}", it.paymentMode, it.amount, false, null, null, it))
             }
         }
     }
@@ -239,6 +247,7 @@ fun CashBookScreen(
                                         "SALE" -> t.bill?.let { onEditInvoice(it.id) }
                                         "RECEIPT" -> editReceiptFor = t.receipt
                                         "PAYMENT" -> editPaymentFor = t.expense
+                                        "PURCHASE" -> t.purchase?.let { onEditPurchase(it.id) }
                                     }
                                 }
                                 .padding(vertical = 8.dp),
