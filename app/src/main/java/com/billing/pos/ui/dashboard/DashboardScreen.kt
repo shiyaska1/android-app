@@ -15,6 +15,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.Assessment
 import androidx.compose.material.icons.filled.Backup
+import androidx.compose.material.icons.filled.Inventory2
+import androidx.compose.material.icons.filled.LocalShipping
 import androidx.compose.material.icons.filled.ManageAccounts
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.MoneyOff
@@ -24,6 +26,7 @@ import androidx.compose.material.icons.filled.PointOfSale
 import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -54,6 +57,9 @@ fun DashboardScreen(
     onCashbook: () -> Unit,
     onReports: () -> Unit,
     onCustomers: () -> Unit,
+    onNewPurchase: () -> Unit,
+    onPurchases: () -> Unit,
+    onSuppliers: () -> Unit,
     onDiary: () -> Unit,
     onUsers: () -> Unit,
     onSettings: () -> Unit,
@@ -68,6 +74,9 @@ fun DashboardScreen(
         if (Session.canViewCashbook) add(Tile("Cash Book", Icons.Filled.AccountBalanceWallet, onCashbook))
         if (Session.canViewInvoice) add(Tile("Sales Report", Icons.Filled.Assessment, onReports))
         add(Tile("Customers", Icons.Filled.People, onCustomers))
+        add(Tile("New Purchase", Icons.Filled.ShoppingCart, onNewPurchase))
+        if (Session.canViewInvoice) add(Tile("Purchases", Icons.Filled.Inventory2, onPurchases))
+        add(Tile("Suppliers", Icons.Filled.LocalShipping, onSuppliers))
         add(Tile("My Diary", Icons.Filled.MenuBook, onDiary))
         if (Session.canManageUsers) add(Tile("Users", Icons.Filled.ManageAccounts, onUsers))
         if (Session.canManageUsers) add(Tile("Settings", Icons.Filled.Settings, onSettings))

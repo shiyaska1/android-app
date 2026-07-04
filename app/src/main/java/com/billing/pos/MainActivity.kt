@@ -32,6 +32,9 @@ import com.billing.pos.ui.expenses.ExpensesScreen
 import com.billing.pos.ui.invoices.InvoiceListScreen
 import com.billing.pos.ui.license.LicenseScreen
 import com.billing.pos.ui.license.RegisterScreen
+import com.billing.pos.ui.purchase.PurchaseListScreen
+import com.billing.pos.ui.purchase.PurchaseScreen
+import com.billing.pos.ui.purchase.SuppliersScreen
 import com.billing.pos.ui.receipts.ReceiptsScreen
 import com.billing.pos.ui.reports.ReportsScreen
 import com.billing.pos.ui.settings.SettingsScreen
@@ -117,6 +120,9 @@ private fun AppNav() {
                 onCashbook = { nav.navigate("cashbook") },
                 onReports = { nav.navigate("reports") },
                 onCustomers = { nav.navigate("customers") },
+                onNewPurchase = { nav.navigate("purchase") },
+                onPurchases = { nav.navigate("purchases") },
+                onSuppliers = { nav.navigate("suppliers") },
                 onDiary = { nav.navigate("diary") },
                 onUsers = { nav.navigate("users") },
                 onSettings = { nav.navigate("settings") },
@@ -165,6 +171,24 @@ private fun AppNav() {
         }
         composable("customers") {
             CustomersScreen(onBack = { nav.popBackStack() })
+        }
+        composable("purchase") {
+            PurchaseScreen(editPurchaseId = null, onBack = { nav.popBackStack() })
+        }
+        composable(
+            route = "purchase/edit/{id}",
+            arguments = listOf(navArgument("id") { type = NavType.LongType })
+        ) { entry ->
+            PurchaseScreen(editPurchaseId = entry.arguments?.getLong("id"), onBack = { nav.popBackStack() })
+        }
+        composable("purchases") {
+            PurchaseListScreen(
+                onBack = { nav.popBackStack() },
+                onEdit = { id -> nav.navigate("purchase/edit/$id") }
+            )
+        }
+        composable("suppliers") {
+            SuppliersScreen(onBack = { nav.popBackStack() })
         }
         composable("cashbook") {
             CashBookScreen(

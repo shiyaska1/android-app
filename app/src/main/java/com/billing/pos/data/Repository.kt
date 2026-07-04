@@ -24,6 +24,8 @@ class Repository(context: Context) {
     private val userDao = db.userDao()
     private val receiptDao = db.receiptDao()
     private val expenseDao = db.expenseDao()
+    private val supplierDao = db.supplierDao()
+    private val purchaseDao = db.purchaseDao()
 
     val customers: Flow<List<Customer>> = customerDao.observeAll()
     val items: Flow<List<Item>> = itemDao.observeAll()
@@ -31,11 +33,16 @@ class Repository(context: Context) {
     val allBills: Flow<List<Bill>> = billDao.observeAll()
     val allReceipts: Flow<List<Receipt>> = receiptDao.observeAll()
     val allExpenses: Flow<List<Expense>> = expenseDao.observeAll()
+    val suppliers: Flow<List<Supplier>> = supplierDao.observeAll()
+    val allPurchases: Flow<List<Purchase>> = purchaseDao.observeAll()
 
     /** Seeds the default Cash customer and the initial super user. */
     suspend fun ensureDefaults() {
         if (customerDao.count() == 0) {
             customerDao.insert(Customer(name = "Cash Customer", isDefault = true))
+        }
+        if (supplierDao.count() == 0) {
+            supplierDao.insert(Supplier(name = "Cash Supplier", isDefault = true))
         }
         if (userDao.count() == 0) {
             userDao.insert(
@@ -202,6 +209,38 @@ class Repository(context: Context) {
     }
 
     suspend fun deleteExpense(expense: Expense) = expenseDao.delete(expense)
+
+    // ---- suppliers ----
+    suspend fun addSupplier(name: String, phone: String, address: String): Supplier {
+        val id = supplierDao.insert(Supplier(name = name.trim(), phone = phone.trim(), address = address.trim()))
+        return Supplier(id = id, name = name.trim(), phone = phone.trim(), address = address.trim())
+    }
+
+    suspend fun updateSupplier(supplier: Supplier) = supplierDao.update(supplier)
+
+    suspend fun deleteSupplier(supplier: Supplier): Result<Unit> {
+        if (supplier.isDefault) return Result.failure(IllegalStateException("Cannot delete the default supplier"))
+        if (purchaseDao.countForSupplier(supplier.id, supplier.name) > 0)
+            return Result.failure(IllegalStateException("Supplier has purchases"))
+        supplierDao.delete(supplier)
+        return Result.success(Unit)
+    }
+
+    // ---- purchases ----
+    suspend fun nextPurchaseNo(): String =
+        "PUR-" + (purchaseDao.localCount() + 1).toString().padStart(4, '0')
+
+    suspend fun savePurchase(purchase: Purchase, lines: List<PurchaseItem>): Long =
+        purchaseDao.savePurchase(purchase, lines)
+
+    suspend fun updatePurchase(purchase: Purchase, lines: List<PurchaseItem>) =
+        purchaseDao.updatePurchase(purchase, lines)
+
+    suspend fun deletePurchase(purchase: Purchase) = purchaseDao.deletePurchase(purchase)
+
+    suspend fun purchaseById(id: Long): Purchase? = purchaseDao.byId(id)
+
+    suspend fun purchaseLinesFor(id: Long): List<PurchaseItem> = purchaseDao.linesFor(id)
 
     // ---- data export / import (invoices, customers, items — NOT users) ----
 

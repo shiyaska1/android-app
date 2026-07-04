@@ -12,6 +12,8 @@ import androidx.core.content.ContextCompat
 import com.billing.pos.data.Bill
 import com.billing.pos.data.BillItem
 import com.billing.pos.data.CompanyInfo
+import com.billing.pos.data.Purchase
+import com.billing.pos.data.PurchaseItem
 import com.billing.pos.data.Receipt
 import com.billing.pos.util.Format
 import java.util.UUID
@@ -44,6 +46,12 @@ object ThermalPrinter {
     @SuppressLint("MissingPermission")
     fun printReceipt(context: Context, company: CompanyInfo, receipt: Receipt) {
         sendBytes(context, buildReceiptVoucher(company, receipt))
+    }
+
+    /** Prints a purchase voucher. */
+    @SuppressLint("MissingPermission")
+    fun printPurchase(context: Context, company: CompanyInfo, purchase: Purchase, lines: List<PurchaseItem>) {
+        sendBytes(context, buildPurchase(company, purchase, lines))
     }
 
     @SuppressLint("MissingPermission")
@@ -122,6 +130,40 @@ object ThermalPrinter {
         val text = sb.toString().toByteArray(Charsets.US_ASCII)
         val init = byteArrayOf(ESC.toByte(), '@'.code.toByte())          // initialize
         val cut = byteArrayOf(GS.toByte(), 'V'.code.toByte(), 66, 0)      // partial cut (ignored if unsupported)
+        return init + text + cut
+    }
+
+    private fun buildPurchase(company: CompanyInfo, pur: Purchase, lines: List<PurchaseItem>): ByteArray {
+        val sb = StringBuilder()
+        sb.append(center(company.name)).append('\n')
+        if (company.address.isNotBlank()) sb.append(center(company.address)).append('\n')
+        if (company.phone.isNotBlank()) sb.append(center("Ph: ${company.phone}")).append('\n')
+        sb.append(center("PURCHASE VOUCHER")).append('\n')
+        sb.append(line()).append('\n')
+        sb.append("No  : ${pur.purchaseNo}\n")
+        sb.append("Date: ${Format.dateTime(pur.dateMillis)}\n")
+        sb.append("Supp: ${pur.supplierName}\n")
+        sb.append("Pay : ${pur.paymentMethod}\n")
+        sb.append(line()).append('\n')
+        sb.append(row("Item", "Qty", "Amount")).append('\n')
+        sb.append(line()).append('\n')
+        for (l in lines) {
+            sb.append(clip(l.name, COLS)).append('\n')
+            sb.append(row("  @${Format.money(l.price)}", Format.qty(l.qty), Format.money(l.lineTotal))).append('\n')
+        }
+        sb.append(line()).append('\n')
+        sb.append(kv("Sub Total", Format.money(pur.subTotal))).append('\n')
+        sb.append(kv("Tax", Format.money(pur.taxTotal))).append('\n')
+        if (pur.additionalCharge != 0.0) sb.append(kv("Additional", Format.money(pur.additionalCharge))).append('\n')
+        if (pur.discount != 0.0) sb.append(kv("Discount", "-" + Format.money(pur.discount))).append('\n')
+        sb.append(line()).append('\n')
+        sb.append(kv("GRAND TOTAL", Format.money(pur.grandTotal))).append('\n')
+        sb.append(line()).append('\n')
+        sb.append("\n\n\n")
+
+        val text = sb.toString().toByteArray(Charsets.US_ASCII)
+        val init = byteArrayOf(ESC.toByte(), '@'.code.toByte())
+        val cut = byteArrayOf(GS.toByte(), 'V'.code.toByte(), 66, 0)
         return init + text + cut
     }
 
