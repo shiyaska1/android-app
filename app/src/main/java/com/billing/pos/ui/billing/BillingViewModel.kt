@@ -65,6 +65,7 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
     var editingBillId by mutableStateOf<Long?>(null); private set
     private var editingSource: String = ""
     private var editingPaidAmount: Double = 0.0
+    private var editingWasCredit: Boolean = false
 
     private var dirty = true
     private var lastSaved: BillWithItems? = null
@@ -179,7 +180,9 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
 
         val editId = editingBillId
         val paid = when {
-            payment == PaymentMethod.CREDIT && editId != null -> editingPaidAmount
+            // Keep collected receipts only if it was already credit; a cash bill switched
+            // to credit becomes fully outstanding.
+            payment == PaymentMethod.CREDIT && editId != null && editingWasCredit -> editingPaidAmount
             payment == PaymentMethod.CREDIT -> 0.0
             else -> grandTotal   // cash/upi/card = fully paid
         }
@@ -257,6 +260,7 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
             editingBillId = bill.id
             editingSource = bill.source
             editingPaidAmount = bill.paidAmount
+            editingWasCredit = bill.paymentMethod == PaymentMethod.CREDIT.label
             billNo = bill.billNo
             dateMillis = bill.dateMillis
             payment = PaymentMethod.values().firstOrNull { it.label == bill.paymentMethod } ?: PaymentMethod.CASH

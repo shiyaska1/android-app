@@ -43,6 +43,7 @@ class PurchaseViewModel(app: Application) : AndroidViewModel(app) {
     var editingId by mutableStateOf<Long?>(null); private set
     private var editingSource: String = ""
     private var editingPaidAmount: Double = 0.0
+    private var editingWasCredit: Boolean = false
     private var dirty = true
     private var lastSaved: PurchaseWithItems? = null
 
@@ -139,7 +140,7 @@ class PurchaseViewModel(app: Application) : AndroidViewModel(app) {
 
         val editId = editingId
         val paid = when {
-            payment == PaymentMethod.CREDIT && editId != null -> editingPaidAmount
+            payment == PaymentMethod.CREDIT && editId != null && editingWasCredit -> editingPaidAmount
             payment == PaymentMethod.CREDIT -> 0.0
             else -> grandTotal
         }
@@ -185,6 +186,7 @@ class PurchaseViewModel(app: Application) : AndroidViewModel(app) {
             editingId = purchase.id
             editingSource = purchase.source
             editingPaidAmount = purchase.paidAmount
+            editingWasCredit = purchase.paymentMethod == PaymentMethod.CREDIT.label
             purchaseNo = purchase.purchaseNo
             dateMillis = purchase.dateMillis
             payment = PaymentMethod.values().firstOrNull { it.label == purchase.paymentMethod } ?: PaymentMethod.CASH
