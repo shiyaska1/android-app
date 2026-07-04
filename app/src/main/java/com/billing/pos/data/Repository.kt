@@ -27,6 +27,7 @@ class Repository(context: Context) {
     private val supplierDao = db.supplierDao()
     private val purchaseDao = db.purchaseDao()
     private val accountDao = db.accountDao()
+    private val journalDao = db.journalDao()
 
     val customers: Flow<List<Customer>> = customerDao.observeAll()
     val items: Flow<List<Item>> = itemDao.observeAll()
@@ -38,6 +39,7 @@ class Repository(context: Context) {
     val allPurchases: Flow<List<Purchase>> = purchaseDao.observeAll()
     val accountGroups: Flow<List<AccountGroup>> = accountDao.observeGroups()
     val accountHeads: Flow<List<AccountHead>> = accountDao.observeHeads()
+    val journalEntries: Flow<List<JournalEntry>> = journalDao.observeAll()
     val purchaseLines: Flow<List<PurchaseLineInfo>> = purchaseDao.observePurchaseLines()
     val soldQty: Flow<List<NameQty>> = billDao.observeSoldQty()
 
@@ -122,6 +124,16 @@ class Repository(context: Context) {
         accountDao.deleteHead(head)
         return Result.success(Unit)
     }
+
+    // ---- journal ----
+    suspend fun nextJournalNo(): String =
+        "JV-" + (journalDao.localCount() + 1).toString().padStart(4, '0')
+
+    suspend fun saveJournal(entry: JournalEntry, lines: List<JournalLine>): Long = journalDao.saveJournal(entry, lines)
+    suspend fun updateJournal(entry: JournalEntry, lines: List<JournalLine>) = journalDao.updateJournal(entry, lines)
+    suspend fun deleteJournal(entry: JournalEntry) = journalDao.deleteJournal(entry)
+    suspend fun journalById(id: Long): JournalEntry? = journalDao.byId(id)
+    suspend fun journalLinesFor(id: Long): List<JournalLine> = journalDao.linesFor(id)
 
     // ---- auth / users ----
     suspend fun login(username: String, password: String): User? {

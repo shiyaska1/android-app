@@ -32,6 +32,8 @@ import com.billing.pos.ui.diary.DiaryListScreen
 import com.billing.pos.ui.expenses.ExpensesScreen
 import com.billing.pos.ui.invoices.InvoiceListScreen
 import com.billing.pos.ui.items.ItemsScreen
+import com.billing.pos.ui.journal.JournalEntryScreen
+import com.billing.pos.ui.journal.JournalListScreen
 import com.billing.pos.ui.license.LicenseScreen
 import com.billing.pos.ui.license.RegisterScreen
 import com.billing.pos.ui.outstanding.OutstandingScreen
@@ -131,6 +133,7 @@ private fun AppNav() {
                 onVatReport = { nav.navigate("vat") },
                 onOutstanding = { nav.navigate("outstanding") },
                 onAccounts = { nav.navigate("accounts") },
+                onJournal = { nav.navigate("journal") },
                 onDiary = { nav.navigate("diary") },
                 onUsers = { nav.navigate("users") },
                 onSettings = { nav.navigate("settings") },
@@ -209,6 +212,21 @@ private fun AppNav() {
         }
         composable("accounts") {
             ChartOfAccountsScreen(onBack = { nav.popBackStack() })
+        }
+        composable("journal") {
+            JournalListScreen(
+                onBack = { nav.popBackStack() },
+                onOpen = { id -> nav.navigate("journal/edit/$id") }
+            )
+        }
+        composable(
+            route = "journal/edit/{id}",
+            arguments = listOf(navArgument("id") { type = NavType.LongType })
+        ) { entry ->
+            JournalEntryScreen(
+                entryId = entry.arguments?.getLong("id") ?: 0L,
+                onBack = { nav.popBackStack() }
+            )
         }
         composable("cashbook") {
             CashBookScreen(

@@ -12,9 +12,10 @@ import androidx.room.TypeConverters
         User::class, Receipt::class, Expense::class,
         DiaryEntry::class, DiaryAttachment::class,
         Supplier::class, Purchase::class, PurchaseItem::class,
-        AccountGroup::class, AccountHead::class
+        AccountGroup::class, AccountHead::class,
+        JournalEntry::class, JournalLine::class
     ],
-    version = 11,
+    version = 12,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -29,6 +30,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun supplierDao(): SupplierDao
     abstract fun purchaseDao(): PurchaseDao
     abstract fun accountDao(): AccountDao
+    abstract fun journalDao(): JournalDao
 
     companion object {
         @Volatile private var INSTANCE: AppDatabase? = null

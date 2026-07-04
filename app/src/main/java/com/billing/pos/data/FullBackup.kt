@@ -52,6 +52,8 @@ object FullBackup {
         root.put("purchaseItems", JSONArray().apply { db.purchaseDao().allLines().forEach { put(pLineJson(it)) } })
         root.put("accountGroups", JSONArray().apply { db.accountDao().allGroups().forEach { put(groupJson(it)) } })
         root.put("accountHeads", JSONArray().apply { db.accountDao().allHeads().forEach { put(headJson(it)) } })
+        root.put("journalEntries", JSONArray().apply { db.journalDao().allEntries().forEach { put(jEntryJson(it)) } })
+        root.put("journalLines", JSONArray().apply { db.journalDao().allLines().forEach { put(jLineJson(it)) } })
 
         val dir = File(context.cacheDir, "shared").apply { mkdirs() }
         val zip = File(dir, "pos-full-backup.zip")
@@ -129,6 +131,12 @@ object FullBackup {
         }
         root.optJSONArray("accountGroups")?.let { for (i in 0 until it.length()) db.accountDao().insertGroup(readGroup(it.getJSONObject(i))) }
         root.optJSONArray("accountHeads")?.let { for (i in 0 until it.length()) db.accountDao().insertHead(readHead(it.getJSONObject(i))) }
+        root.optJSONArray("journalEntries")?.let { for (i in 0 until it.length()) db.journalDao().insertEntry(readJEntry(it.getJSONObject(i))) }
+        root.optJSONArray("journalLines")?.let {
+            val lines = ArrayList<JournalLine>()
+            for (i in 0 until it.length()) lines.add(readJLine(it.getJSONObject(i)))
+            if (lines.isNotEmpty()) db.journalDao().insertLines(lines)
+        }
 
         "Restore complete"
     }
@@ -197,6 +205,12 @@ object FullBackup {
     private fun headJson(h: AccountHead) = JSONObject().put("id", h.id).put("name", h.name)
         .put("groupId", h.groupId).put("openingBalance", h.openingBalance)
         .put("openingIsDebit", h.openingIsDebit).put("isSystem", h.isSystem)
+
+    private fun jEntryJson(e: JournalEntry) = JSONObject().put("id", e.id).put("voucherNo", e.voucherNo)
+        .put("dateMillis", e.dateMillis).put("narration", e.narration).put("source", e.source)
+
+    private fun jLineJson(l: JournalLine) = JSONObject().put("id", l.id).put("entryId", l.entryId)
+        .put("headId", l.headId).put("headName", l.headName).put("amount", l.amount).put("isDebit", l.isDebit)
 
     private fun attJson(a: DiaryAttachment) = JSONObject().put("id", a.id).put("entryId", a.entryId)
         .put("file", if (a.type == AttachmentType.LOCATION) "" else File(a.path).name)
@@ -297,6 +311,16 @@ object FullBackup {
         id = o.optLong("id"), name = o.optString("name"), groupId = o.optLong("groupId"),
         openingBalance = o.optDouble("openingBalance", 0.0), openingIsDebit = o.optBoolean("openingIsDebit", true),
         isSystem = o.optBoolean("isSystem", false)
+    )
+
+    private fun readJEntry(o: JSONObject) = JournalEntry(
+        id = o.optLong("id"), voucherNo = o.optString("voucherNo"), dateMillis = o.optLong("dateMillis"),
+        narration = o.optString("narration"), source = o.optString("source")
+    )
+
+    private fun readJLine(o: JSONObject) = JournalLine(
+        id = o.optLong("id"), entryId = o.optLong("entryId"), headId = o.optLong("headId"),
+        headName = o.optString("headName"), amount = o.optDouble("amount", 0.0), isDebit = o.optBoolean("isDebit", true)
     )
 
     private fun readAtt(context: Context, o: JSONObject): DiaryAttachment {
