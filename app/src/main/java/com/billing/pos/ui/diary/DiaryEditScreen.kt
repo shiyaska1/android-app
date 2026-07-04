@@ -266,12 +266,14 @@ private fun AttachmentRow(att: DiaryAttachment, onOpen: () -> Unit, onRemove: ()
 }
 
 private fun openAttachment(context: Context, att: DiaryAttachment, onError: (String) -> Unit) {
-    val uri = AttachmentStore.uriFor(context, att)
-    val intent = Intent(Intent.ACTION_VIEW).apply {
-        setDataAndType(uri, att.mime)
-        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
-    }
-    runCatching { context.startActivity(intent) }.onFailure { onError("No app can open this file") }
+    runCatching {
+        val uri = AttachmentStore.uriFor(context, att)
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, att.mime)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(intent)
+    }.onFailure { onError("Can't open this attachment") }
 }
 
 private fun pickDate(context: Context, current: Long, onPicked: (Long) -> Unit) {

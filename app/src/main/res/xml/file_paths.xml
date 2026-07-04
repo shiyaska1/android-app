@@ -2,4 +2,5 @@
 <paths>
     <cache-path name="shared" path="shared/" />
     <files-path name="docs" path="docs/" />
+    <files-path name="diary" path="diary/" />
 </paths>
