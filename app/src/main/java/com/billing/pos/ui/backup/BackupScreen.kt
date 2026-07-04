@@ -1,6 +1,6 @@
 package com.billing.pos.ui.backup
 
-import android.content.Intent
+import android.Manifest
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Column
@@ -9,8 +9,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Restore
-import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -35,8 +35,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.core.content.FileProvider
+import androidx.core.content.ContextCompat
 import com.billing.pos.auth.Session
+import com.billing.pos.data.DownloadSaver
 import com.billing.pos.data.FullBackup
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -53,6 +54,28 @@ fun BackupScreen(
     val snackbar = remember { SnackbarHostState() }
     var busy by remember { mutableStateOf(false) }
     var confirmRestore by remember { mutableStateOf(false) }
+
+    fun saveBackup() {
+        scope.launch {
+            busy = true
+            val zip = withContext(Dispatchers.IO) { FullBackup.create(context) }
+            val ok = withContext(Dispatchers.IO) {
+                DownloadSaver.save(context, zip, "pos-full-backup.zip", "application/zip")
+            }
+            busy = false
+            snackbar.showSnackbar(if (ok) "Backup saved to Downloads folder" else "Could not save backup")
+        }
+    }
+    val storagePermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted -> if (granted) saveBackup() else scope.launch { snackbar.showSnackbar("Storage permission denied") } }
+    fun startBackup() {
+        if (DownloadSaver.needsLegacyPermission() &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_EXTERNAL_STORAGE) !=
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) storagePermission.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+        else saveBackup()
+    }
 
     val restorePicker = rememberLauncherForActivityResult(
         ActivityResultContracts.GetContent()
@@ -103,26 +126,10 @@ fun BackupScreen(
 
             if (Session.canExport) {
                 Button(
-                    onClick = {
-                        scope.launch {
-                            busy = true
-                            val zip = withContext(Dispatchers.IO) { FullBackup.create(context) }
-                            busy = false
-                            val uri = FileProvider.getUriForFile(context, "${context.packageName}.provider", zip)
-                            val intent = Intent(Intent.ACTION_SEND).apply {
-                                type = "application/zip"
-                                putExtra(Intent.EXTRA_STREAM, uri)
-                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                            }
-                            context.startActivity(
-                                Intent.createChooser(intent, "Backup — save or share")
-                                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                            )
-                        }
-                    },
+                    onClick = { startBackup() },
                     enabled = !busy,
                     modifier = Modifier.fillMaxWidth().padding(top = 16.dp)
-                ) { Icon(Icons.Filled.Share, null); Text("  Create backup & share") }
+                ) { Icon(Icons.Filled.Download, null); Text("  Download backup to storage") }
             }
 
             if (Session.canImport) {

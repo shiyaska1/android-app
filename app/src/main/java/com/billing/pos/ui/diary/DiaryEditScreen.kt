@@ -1,10 +1,17 @@
 package com.billing.pos.ui.diary
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.location.Location
+import android.location.LocationListener
+import android.location.LocationManager
+import android.net.Uri
 import android.os.Build
+import android.os.Bundle
+import android.os.Looper
 import android.speech.RecognizerIntent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
@@ -22,10 +29,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.AlertDialog
@@ -57,14 +66,20 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.billing.pos.data.AttachmentType
 import com.billing.pos.data.DiaryAttachment
+import com.billing.pos.data.DiaryExport
+import com.billing.pos.data.DownloadSaver
 import com.billing.pos.diary.AttachmentStore
 import com.billing.pos.ui.billing.collectAsStateSafe
 import com.billing.pos.util.Format
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.Calendar
 
@@ -76,6 +91,7 @@ fun DiaryEditScreen(
     vm: DiaryEditViewModel = viewModel()
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
     val message by vm.message.collectAsStateSafe()
 
@@ -119,6 +135,39 @@ fun DiaryEditScreen(
     fun launchVideo() {
         runCatching { takeVideo.launch(captureUri("mp4")) }
             .onFailure { pendingCapture?.delete(); pendingCapture = null; vm.message.value = "No camera app found" }
+    }
+
+    // Location attach
+    val locationPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) fetchLocation(context, vm) else vm.message.value = "Location permission denied"
+    }
+    fun requestLocation() {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) fetchLocation(context, vm)
+        else locationPermission.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+    }
+
+    // Download this entry as a .zip into the Downloads folder
+    fun doDownloadEntry() {
+        scope.launch {
+            val zip = withContext(Dispatchers.IO) { DiaryExport.exportEntry(context, vm.loadedId) }
+            if (zip == null) { vm.message.value = "Nothing to export"; return@launch }
+            val ok = withContext(Dispatchers.IO) { DownloadSaver.save(context, zip, zip.name, "application/zip") }
+            vm.message.value = if (ok) "Saved to Downloads: ${zip.name}" else "Could not save"
+        }
+    }
+    val storagePermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted -> if (granted) doDownloadEntry() else vm.message.value = "Storage permission denied" }
+    fun downloadEntry() {
+        if (DownloadSaver.needsLegacyPermission() &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_EXTERNAL_STORAGE) !=
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) storagePermission.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+        else doDownloadEntry()
     }
 
     val micPermission = rememberLauncherForActivityResult(
@@ -197,6 +246,9 @@ fun DiaryEditScreen(
                 ),
                 actions = {
                     if (vm.loadedId != 0L) {
+                        IconButton(onClick = { downloadEntry() }) {
+                            Icon(Icons.Filled.Download, contentDescription = "Download entry (zip)")
+                        }
                         IconButton(onClick = { confirmDelete = true }) {
                             Icon(Icons.Filled.Delete, contentDescription = "Delete")
                         }
@@ -260,6 +312,9 @@ fun DiaryEditScreen(
                 OutlinedButton(onClick = { launchVideo() }, modifier = Modifier.weight(1f)) {
                     Icon(Icons.Filled.Videocam, null); Text("Record video")
                 }
+            }
+            OutlinedButton(onClick = { requestLocation() }, modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
+                Icon(Icons.Filled.Place, null); Text("Attach location")
             }
             if (vm.recording) {
                 Text("● Recording…", color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 4.dp))
@@ -336,6 +391,7 @@ private fun AttachmentRow(att: DiaryAttachment, onOpen: () -> Unit, onRemove: ()
             AttachmentType.VIDEO -> Icons.Filled.Videocam
             AttachmentType.AUDIO -> Icons.Filled.Mic
             AttachmentType.DOCUMENT -> Icons.Filled.Description
+            AttachmentType.LOCATION -> Icons.Filled.Place
         }
         Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
         Text(att.name, Modifier.weight(1f).padding(start = 8.dp), maxLines = 1)
@@ -348,6 +404,12 @@ private fun AttachmentRow(att: DiaryAttachment, onOpen: () -> Unit, onRemove: ()
 
 private fun openAttachment(context: Context, att: DiaryAttachment, onError: (String) -> Unit) {
     runCatching {
+        if (att.type == AttachmentType.LOCATION) {
+            context.startActivity(
+                Intent(Intent.ACTION_VIEW, Uri.parse(att.path)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+            return
+        }
         val uri = AttachmentStore.uriFor(context, att)
         val intent = Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(uri, att.mime)
@@ -355,6 +417,41 @@ private fun openAttachment(context: Context, att: DiaryAttachment, onError: (Str
         }
         context.startActivity(intent)
     }.onFailure { onError("Can't open this attachment") }
+}
+
+@SuppressLint("MissingPermission")
+private fun fetchLocation(context: Context, vm: DiaryEditViewModel) {
+    val lm = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
+    if (lm == null) { vm.message.value = "Location not available"; return }
+    val providers = listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
+
+    var best: Location? = null
+    for (pr in providers) {
+        if (lm.isProviderEnabled(pr)) {
+            val l = runCatching { lm.getLastKnownLocation(pr) }.getOrNull()
+            if (l != null && (best == null || l.time > best!!.time)) best = l
+        }
+    }
+    if (best != null) {
+        vm.addLocation(best!!.latitude, best!!.longitude)
+        vm.message.value = "Location attached"
+        return
+    }
+
+    val enabled = providers.firstOrNull { lm.isProviderEnabled(it) }
+    if (enabled == null) { vm.message.value = "Turn on GPS / location"; return }
+    vm.message.value = "Getting current location…"
+    runCatching {
+        lm.requestSingleUpdate(enabled, object : LocationListener {
+            override fun onLocationChanged(location: Location) {
+                vm.addLocation(location.latitude, location.longitude)
+                vm.message.value = "Location attached"
+            }
+            override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
+            override fun onProviderEnabled(provider: String) {}
+            override fun onProviderDisabled(provider: String) {}
+        }, Looper.getMainLooper())
+    }.onFailure { vm.message.value = "Could not get location" }
 }
 
 private fun pickDate(context: Context, current: Long, onPicked: (Long) -> Unit) {

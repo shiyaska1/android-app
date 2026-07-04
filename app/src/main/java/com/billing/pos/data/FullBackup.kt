@@ -162,7 +162,9 @@ object FullBackup {
         .put("reminderDaily", e.reminderDaily)
 
     private fun attJson(a: DiaryAttachment) = JSONObject().put("id", a.id).put("entryId", a.entryId)
-        .put("file", File(a.path).name).put("name", a.name).put("mime", a.mime).put("type", a.type.name)
+        .put("file", if (a.type == AttachmentType.LOCATION) "" else File(a.path).name)
+        .put("locUrl", if (a.type == AttachmentType.LOCATION) a.path else "")
+        .put("name", a.name).put("mime", a.mime).put("type", a.type.name)
 
     // ---- deserialisers ----
     private fun readCust(o: JSONObject) = Customer(
@@ -225,12 +227,12 @@ object FullBackup {
     )
 
     private fun readAtt(context: Context, o: JSONObject): DiaryAttachment {
-        val file = o.optString("file")
-        val path = File(AttachmentStore.dir(context), file).absolutePath
+        val type = runCatching { AttachmentType.valueOf(o.optString("type", "DOCUMENT")) }.getOrDefault(AttachmentType.DOCUMENT)
+        val path = if (type == AttachmentType.LOCATION) o.optString("locUrl")
+        else File(AttachmentStore.dir(context), o.optString("file")).absolutePath
         return DiaryAttachment(
             id = o.optLong("id"), entryId = o.optLong("entryId"), path = path,
-            name = o.optString("name"), mime = o.optString("mime"),
-            type = runCatching { AttachmentType.valueOf(o.optString("type", "DOCUMENT")) }.getOrDefault(AttachmentType.DOCUMENT)
+            name = o.optString("name"), mime = o.optString("mime"), type = type
         )
     }
 }

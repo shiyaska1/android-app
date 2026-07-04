@@ -3,7 +3,7 @@ package com.billing.pos.data
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 
-enum class AttachmentType { IMAGE, VIDEO, AUDIO, DOCUMENT }
+enum class AttachmentType { IMAGE, VIDEO, AUDIO, DOCUMENT, LOCATION }
 
 /** A personal diary entry with optional reminder. */
 @Entity(tableName = "diary_entries")

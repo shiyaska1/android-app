@@ -12,6 +12,7 @@ import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.runtime.mutableStateListOf
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.billing.pos.data.AttachmentType
 import com.billing.pos.data.DiaryAttachment
 import com.billing.pos.data.DiaryEntry
 import com.billing.pos.data.DiaryRepository
@@ -68,6 +69,15 @@ class DiaryEditViewModel(app: Application) : AndroidViewModel(app) {
             val added = withContext(Dispatchers.IO) { uris.mapNotNull { AttachmentStore.copyIn(context, it) } }
             attachments.addAll(added)
         }
+    }
+
+    /** Attaches a Google Maps location (stored as a maps URL, not a file). */
+    fun addLocation(lat: Double, lng: Double) {
+        val url = "https://maps.google.com/?q=$lat,$lng"
+        val label = "Location " + String.format("%.5f, %.5f", lat, lng)
+        attachments.add(
+            DiaryAttachment(entryId = 0, path = url, name = label, mime = "text/uri-list", type = AttachmentType.LOCATION)
+        )
     }
 
     /** Registers a photo/video captured by the camera into the attachment list. */
