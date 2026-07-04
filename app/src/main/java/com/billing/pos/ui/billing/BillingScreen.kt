@@ -83,6 +83,7 @@ fun BillingScreen(
     onOpenExpenses: () -> Unit,
     onOpenCustomers: () -> Unit,
     onOpenSettings: () -> Unit,
+    onOpenBackup: () -> Unit,
     onLogout: () -> Unit,
     vm: BillingViewModel = viewModel()
 ) {
@@ -177,6 +178,12 @@ fun BillingScreen(
                             DropdownMenuItem(
                                 text = { Text("Company Settings") },
                                 onClick = { menu = false; onOpenSettings() }
+                            )
+                        }
+                        if (Session.canExport || Session.canImport) {
+                            DropdownMenuItem(
+                                text = { Text("Backup & Restore") },
+                                onClick = { menu = false; onOpenBackup() }
                             )
                         }
                         if (!licensed) {

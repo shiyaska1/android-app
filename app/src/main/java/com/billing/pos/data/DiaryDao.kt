@@ -22,6 +22,12 @@ interface DiaryDao {
     @Query("SELECT * FROM diary_entries WHERE reminderEnabled = 1")
     suspend fun allWithReminder(): List<DiaryEntry>
 
+    @Query("SELECT * FROM diary_entries")
+    suspend fun allEntries(): List<DiaryEntry>
+
+    @Query("SELECT * FROM diary_attachments")
+    suspend fun allAttachments(): List<DiaryAttachment>
+
     @Insert
     suspend fun insert(entry: DiaryEntry): Long
 

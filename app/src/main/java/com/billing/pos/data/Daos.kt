@@ -106,6 +106,9 @@ interface BillDao {
     @Query("SELECT * FROM bill_items WHERE billId = :billId")
     suspend fun linesFor(billId: Long): List<BillItem>
 
+    @Query("SELECT * FROM bill_items")
+    suspend fun allLines(): List<BillItem>
+
     @Query("SELECT * FROM bills WHERE source = :source AND billNo = :billNo LIMIT 1")
     suspend fun findBySourceAndNo(source: String, billNo: String): Bill?
 }
@@ -171,6 +174,9 @@ interface UserDao {
 
     @Query("SELECT * FROM users WHERE id = :id AND active = 1 LIMIT 1")
     suspend fun byId(id: Long): User?
+
+    @Query("SELECT * FROM users")
+    suspend fun all(): List<User>
 
     @Query("SELECT COUNT(*) FROM users")
     suspend fun count(): Int
