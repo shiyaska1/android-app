@@ -33,6 +33,7 @@ import com.billing.pos.ui.invoices.InvoiceListScreen
 import com.billing.pos.ui.items.ItemsScreen
 import com.billing.pos.ui.license.LicenseScreen
 import com.billing.pos.ui.license.RegisterScreen
+import com.billing.pos.ui.outstanding.OutstandingScreen
 import com.billing.pos.ui.purchase.PurchaseListScreen
 import com.billing.pos.ui.purchase.PurchaseScreen
 import com.billing.pos.ui.purchase.SuppliersScreen
@@ -127,6 +128,7 @@ private fun AppNav() {
                 onPurchases = { nav.navigate("purchases") },
                 onSuppliers = { nav.navigate("suppliers") },
                 onVatReport = { nav.navigate("vat") },
+                onOutstanding = { nav.navigate("outstanding") },
                 onDiary = { nav.navigate("diary") },
                 onUsers = { nav.navigate("users") },
                 onSettings = { nav.navigate("settings") },
@@ -199,6 +201,9 @@ private fun AppNav() {
         }
         composable("vat") {
             VatReportScreen(onBack = { nav.popBackStack() })
+        }
+        composable("outstanding") {
+            OutstandingScreen(onBack = { nav.popBackStack() })
         }
         composable("cashbook") {
             CashBookScreen(
