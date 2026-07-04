@@ -37,8 +37,19 @@ data class Bill(
     val additionalCharge: Double,
     val discount: Double,
     val grandTotal: Double,
+    /** Amount already received. Credit invoices start at 0; others = grandTotal. */
+    val paidAmount: Double = 0.0,
     val source: String = ""
-)
+) {
+    val balance: Double get() = (grandTotal - paidAmount).coerceAtLeast(0.0)
+    val paymentStatus: String
+        get() = when {
+            paymentMethod != PaymentMethod.CREDIT.label -> "Paid"
+            balance <= 0.001 -> "Paid"
+            paidAmount > 0.001 -> "Partial"
+            else -> "Credit"
+        }
+}
 
 /** A single line on a saved bill. */
 @Entity(tableName = "bill_items")
@@ -61,6 +72,37 @@ data class BillWithItems(
 enum class PaymentMethod(val label: String) {
     CASH("Cash"), UPI("UPI"), CARD("Card"), CREDIT("Credit")
 }
+
+/** Payment mode for receipts and expenses (no "Credit"). */
+enum class PayMode(val label: String) {
+    CASH("Cash"), UPI("UPI"), CARD("Card")
+}
+
+/** A receipt voucher: money received against a (credit) invoice. */
+@Entity(tableName = "receipts")
+data class Receipt(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val receiptNo: String,
+    val billId: Long,
+    val billNo: String,
+    val customerName: String,
+    val dateMillis: Long,
+    val amount: Double,
+    val paymentMode: String,
+    val source: String = ""
+)
+
+/** A payment / expense voucher: money paid out. */
+@Entity(tableName = "expenses")
+data class Expense(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val voucherNo: String,
+    val dateMillis: Long,
+    val description: String,
+    val amount: Double,
+    val paymentMode: String,
+    val source: String = ""
+)
 
 enum class Role(val label: String) {
     SUPER_USER("Super User"), ADMIN("Owner / Admin"), SALESMAN("Salesman")

@@ -1,5 +1,7 @@
 package com.billing.pos
 
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -13,6 +15,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.billing.pos.auth.PendingImport
 import com.billing.pos.auth.Session
 import com.billing.pos.ui.auth.LoginScreen
 import com.billing.pos.ui.billing.BillingScreen
@@ -24,6 +27,7 @@ import com.billing.pos.ui.users.UsersScreen
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        captureIncoming(intent)
         enableEdgeToEdge()
         setContent {
             POSTheme {
@@ -32,6 +36,25 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        captureIncoming(intent)
+    }
+
+    /** Pulls a backup Uri out of a SEND/VIEW intent so it can be imported after login. */
+    private fun captureIncoming(intent: Intent?) {
+        intent ?: return
+        val uri: Uri? = when (intent.action) {
+            Intent.ACTION_SEND -> {
+                @Suppress("DEPRECATION")
+                intent.getParcelableExtra(Intent.EXTRA_STREAM)
+            }
+            Intent.ACTION_VIEW -> intent.data
+            else -> null
+        }
+        if (uri != null) PendingImport.uri = uri
     }
 }
 
@@ -42,7 +65,8 @@ private fun AppNav() {
     NavHost(navController = nav, startDestination = "login") {
         composable("login") {
             LoginScreen(onLoggedIn = {
-                nav.navigate("billing") { popUpTo("login") { inclusive = true } }
+                val dest = if (PendingImport.uri != null) "invoices" else "billing"
+                nav.navigate(dest) { popUpTo("login") { inclusive = true } }
             })
         }
         composable("billing") {

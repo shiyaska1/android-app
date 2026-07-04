@@ -93,6 +93,7 @@ fun BillingScreen(
     var showNewCustomer by remember { mutableStateOf(false) }
     var showNewItem by remember { mutableStateOf(false) }
     var showItemPicker by remember { mutableStateOf(false) }
+    var showCustomLine by remember { mutableStateOf(false) }
 
     // Show one-off messages.
     LaunchedEffect(message) {
@@ -231,6 +232,9 @@ fun BillingScreen(
                 Button(onClick = { showItemPicker = true }, modifier = Modifier.weight(1f)) {
                     Icon(Icons.Filled.Add, null); Text("Add item")
                 }
+                OutlinedButton(onClick = { showCustomLine = true }, modifier = Modifier.weight(1f)) {
+                    Icon(Icons.Filled.Add, null); Text("By price")
+                }
                 OutlinedButton(onClick = { showNewItem = true }, modifier = Modifier.weight(1f)) {
                     Icon(Icons.Filled.NoteAdd, null); Text("New item")
                 }
@@ -367,6 +371,12 @@ fun BillingScreen(
         NewItemDialog(
             onDismiss = { showNewItem = false },
             onSave = { n, price, tax, add -> vm.addItem(n, price, tax, add) { showNewItem = false } }
+        )
+    }
+    if (showCustomLine) {
+        CustomLineDialog(
+            onDismiss = { showCustomLine = false },
+            onAdd = { desc, price, tax -> vm.addCustomLine(desc, price, tax); showCustomLine = false }
         )
     }
     if (showItemPicker) {

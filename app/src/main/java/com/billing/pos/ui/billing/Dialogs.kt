@@ -126,6 +126,59 @@ fun NewItemDialog(
 }
 
 @Composable
+fun CustomLineDialog(
+    onDismiss: () -> Unit,
+    onAdd: (description: String, price: Double, taxPercent: Double) -> Unit
+) {
+    var description by remember { mutableStateOf("") }
+    var price by remember { mutableStateOf("") }
+    var taxable by remember { mutableStateOf(false) }
+    var taxPercent by remember { mutableStateOf("18") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Add item by price") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = description, onValueChange = { description = it },
+                    label = { Text("Description (optional)") }, singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = price, onValueChange = { price = it.filter { c -> c.isDigit() || c == '.' } },
+                    label = { Text("Price *") }, singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    FilterChip(selected = !taxable, onClick = { taxable = false }, label = { Text("Without tax") })
+                    androidx.compose.foundation.layout.Spacer(Modifier.padding(4.dp))
+                    FilterChip(selected = taxable, onClick = { taxable = true }, label = { Text("With tax") })
+                }
+                if (taxable) {
+                    OutlinedTextField(
+                        value = taxPercent,
+                        onValueChange = { taxPercent = it.filter { c -> c.isDigit() || c == '.' } },
+                        label = { Text("Tax %") }, singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                val p = price.toDoubleOrNull() ?: 0.0
+                val t = if (taxable) (taxPercent.toDoubleOrNull() ?: 0.0) else 0.0
+                if (p > 0) onAdd(description, p, t)
+            }) { Text("Add") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
+@Composable
 fun ItemPickerDialog(
     items: List<Item>,
     onDismiss: () -> Unit,

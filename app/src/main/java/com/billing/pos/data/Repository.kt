@@ -6,7 +6,13 @@ import kotlinx.coroutines.flow.Flow
 import org.json.JSONArray
 import org.json.JSONObject
 
-data class ImportResult(val billsAdded: Int, val billsSkipped: Int, val source: String)
+data class ImportResult(
+    val billsAdded: Int,
+    val billsSkipped: Int,
+    val receiptsAdded: Int,
+    val expensesAdded: Int,
+    val source: String
+)
 
 /** Single access point for all data operations. */
 class Repository(context: Context) {
@@ -16,11 +22,15 @@ class Repository(context: Context) {
     private val itemDao = db.itemDao()
     private val billDao = db.billDao()
     private val userDao = db.userDao()
+    private val receiptDao = db.receiptDao()
+    private val expenseDao = db.expenseDao()
 
     val customers: Flow<List<Customer>> = customerDao.observeAll()
     val items: Flow<List<Item>> = itemDao.observeAll()
     val users: Flow<List<User>> = userDao.observeAll()
     val allBills: Flow<List<Bill>> = billDao.observeAll()
+    val allReceipts: Flow<List<Receipt>> = receiptDao.observeAll()
+    val allExpenses: Flow<List<Expense>> = expenseDao.observeAll()
 
     /** Seeds the default Cash customer and the initial super user. */
     suspend fun ensureDefaults() {
@@ -78,6 +88,43 @@ class Repository(context: Context) {
     suspend fun billById(id: Long): Bill? = billDao.byId(id)
     fun billsBetween(from: Long, to: Long): Flow<List<Bill>> = billDao.observeBetween(from, to)
 
+    // ---- receipts (money received against credit invoices) ----
+    suspend fun nextReceiptNo(): String =
+        "RV-" + (receiptDao.localCount() + 1).toString().padStart(4, '0')
+
+    /** Records a receipt against [bill] and increases the invoice's paid amount. */
+    suspend fun addReceipt(bill: Bill, amount: Double, mode: PayMode): Receipt {
+        val receipt = Receipt(
+            receiptNo = nextReceiptNo(),
+            billId = bill.id,
+            billNo = bill.billNo,
+            customerName = bill.customerName,
+            dateMillis = System.currentTimeMillis(),
+            amount = amount,
+            paymentMode = mode.label
+        )
+        receiptDao.insert(receipt)
+        val newPaid = (bill.paidAmount + amount).coerceAtMost(bill.grandTotal)
+        billDao.updateBillHeader(bill.copy(paidAmount = newPaid))
+        return receipt
+    }
+
+    // ---- expenses / payment vouchers (money paid out) ----
+    suspend fun nextVoucherNo(): String =
+        "PV-" + (expenseDao.localCount() + 1).toString().padStart(4, '0')
+
+    suspend fun addExpense(description: String, amount: Double, mode: PayMode): Expense {
+        val expense = Expense(
+            voucherNo = nextVoucherNo(),
+            dateMillis = System.currentTimeMillis(),
+            description = description.trim(),
+            amount = amount,
+            paymentMode = mode.label
+        )
+        expenseDao.insert(expense)
+        return expense
+    }
+
     // ---- data export / import (invoices, customers, items — NOT users) ----
 
     /** Serialises this device's own data to a JSON string, stamped with [sourceLabel]. */
@@ -111,6 +158,7 @@ class Repository(context: Context) {
                 .put("additionalCharge", b.additionalCharge)
                 .put("discount", b.discount)
                 .put("grandTotal", b.grandTotal)
+                .put("paidAmount", b.paidAmount)
             val lineArr = JSONArray()
             billDao.linesFor(b.id).forEach { l ->
                 lineArr.put(
@@ -122,6 +170,27 @@ class Repository(context: Context) {
             billArr.put(bo)
         }
         root.put("bills", billArr)
+
+        val receiptArr = JSONArray()
+        receiptDao.all().filter { it.source.isEmpty() }.forEach { r ->
+            receiptArr.put(
+                JSONObject().put("receiptNo", r.receiptNo).put("billNo", r.billNo)
+                    .put("customerName", r.customerName).put("dateMillis", r.dateMillis)
+                    .put("amount", r.amount).put("paymentMode", r.paymentMode)
+            )
+        }
+        root.put("receipts", receiptArr)
+
+        val expenseArr = JSONArray()
+        expenseDao.all().filter { it.source.isEmpty() }.forEach { e ->
+            expenseArr.put(
+                JSONObject().put("voucherNo", e.voucherNo).put("dateMillis", e.dateMillis)
+                    .put("description", e.description).put("amount", e.amount)
+                    .put("paymentMode", e.paymentMode)
+            )
+        }
+        root.put("expenses", expenseArr)
+
         return root.toString()
     }
 
@@ -175,6 +244,11 @@ class Repository(context: Context) {
                     additionalCharge = o.optDouble("additionalCharge", 0.0),
                     discount = o.optDouble("discount", 0.0),
                     grandTotal = o.optDouble("grandTotal", 0.0),
+                    paidAmount = o.optDouble(
+                        "paidAmount",
+                        if (o.optString("paymentMethod") == PaymentMethod.CREDIT.label) 0.0
+                        else o.optDouble("grandTotal", 0.0)
+                    ),
                     source = source
                 )
                 val lines = mutableListOf<BillItem>()
@@ -197,6 +271,49 @@ class Repository(context: Context) {
                 added++
             }
         }
-        return ImportResult(added, skipped, source)
+
+        var receiptsAdded = 0
+        root.optJSONArray("receipts")?.let { arr ->
+            for (i in 0 until arr.length()) {
+                val o = arr.getJSONObject(i)
+                val no = o.optString("receiptNo")
+                if (no.isBlank() || receiptDao.findBySourceAndNo(source, no) != null) continue
+                receiptDao.insert(
+                    Receipt(
+                        receiptNo = no,
+                        billId = 0,
+                        billNo = o.optString("billNo"),
+                        customerName = o.optString("customerName"),
+                        dateMillis = o.optLong("dateMillis", System.currentTimeMillis()),
+                        amount = o.optDouble("amount", 0.0),
+                        paymentMode = o.optString("paymentMode", "Cash"),
+                        source = source
+                    )
+                )
+                receiptsAdded++
+            }
+        }
+
+        var expensesAdded = 0
+        root.optJSONArray("expenses")?.let { arr ->
+            for (i in 0 until arr.length()) {
+                val o = arr.getJSONObject(i)
+                val no = o.optString("voucherNo")
+                if (no.isBlank() || expenseDao.findBySourceAndNo(source, no) != null) continue
+                expenseDao.insert(
+                    Expense(
+                        voucherNo = no,
+                        dateMillis = o.optLong("dateMillis", System.currentTimeMillis()),
+                        description = o.optString("description"),
+                        amount = o.optDouble("amount", 0.0),
+                        paymentMode = o.optString("paymentMode", "Cash"),
+                        source = source
+                    )
+                )
+                expensesAdded++
+            }
+        }
+
+        return ImportResult(added, skipped, receiptsAdded, expensesAdded, source)
     }
 }

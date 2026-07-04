@@ -58,6 +58,7 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
     /** Non-null when editing an existing bill. */
     var editingBillId by mutableStateOf<Long?>(null); private set
     private var editingSource: String = ""
+    private var editingPaidAmount: Double = 0.0
 
     private var dirty = true
     private var lastSaved: BillWithItems? = null
@@ -101,6 +102,13 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
         } else {
             cart.add(CartLine(item.id, item.name, item.price, item.taxPercent, 1.0))
         }
+        dirty = true
+    }
+
+    /** Adds an ad-hoc line not from the item master. Description is optional. */
+    fun addCustomLine(description: String, price: Double, taxPercent: Double) {
+        val name = description.trim().ifBlank { "Item" }
+        cart.add(CartLine(itemId = 0, name = name, price = price, taxPercent = taxPercent, qty = 1.0))
         dirty = true
     }
 
@@ -149,6 +157,11 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
         if (!dirty && lastSaved != null) return lastSaved
 
         val editId = editingBillId
+        val paid = when {
+            payment == PaymentMethod.CREDIT && editId != null -> editingPaidAmount
+            payment == PaymentMethod.CREDIT -> 0.0
+            else -> grandTotal   // cash/upi/card = fully paid
+        }
         val bill = Bill(
             id = editId ?: 0,
             billNo = billNo,
@@ -161,6 +174,7 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
             additionalCharge = additionalCharge,
             discount = discount,
             grandTotal = grandTotal,
+            paidAmount = paid,
             source = editingSource
         )
         val lines = cart.map {
@@ -196,6 +210,7 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
             val lines = repo.linesFor(billId)
             editingBillId = bill.id
             editingSource = bill.source
+            editingPaidAmount = bill.paidAmount
             billNo = bill.billNo
             dateMillis = bill.dateMillis
             payment = PaymentMethod.values().firstOrNull { it.label == bill.paymentMethod } ?: PaymentMethod.CASH

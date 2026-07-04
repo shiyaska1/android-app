@@ -102,6 +102,42 @@ interface BillDao {
 }
 
 @Dao
+interface ReceiptDao {
+    @Query("SELECT * FROM receipts ORDER BY dateMillis DESC")
+    fun observeAll(): Flow<List<Receipt>>
+
+    @Query("SELECT * FROM receipts")
+    suspend fun all(): List<Receipt>
+
+    @Query("SELECT COUNT(*) FROM receipts WHERE source = ''")
+    suspend fun localCount(): Int
+
+    @Query("SELECT * FROM receipts WHERE source = :source AND receiptNo = :receiptNo LIMIT 1")
+    suspend fun findBySourceAndNo(source: String, receiptNo: String): Receipt?
+
+    @Insert
+    suspend fun insert(receipt: Receipt): Long
+}
+
+@Dao
+interface ExpenseDao {
+    @Query("SELECT * FROM expenses ORDER BY dateMillis DESC")
+    fun observeAll(): Flow<List<Expense>>
+
+    @Query("SELECT * FROM expenses")
+    suspend fun all(): List<Expense>
+
+    @Query("SELECT COUNT(*) FROM expenses WHERE source = ''")
+    suspend fun localCount(): Int
+
+    @Query("SELECT * FROM expenses WHERE source = :source AND voucherNo = :voucherNo LIMIT 1")
+    suspend fun findBySourceAndNo(source: String, voucherNo: String): Expense?
+
+    @Insert
+    suspend fun insert(expense: Expense): Long
+}
+
+@Dao
 interface UserDao {
     @Query("SELECT * FROM users ORDER BY role ASC, username COLLATE NOCASE ASC")
     fun observeAll(): Flow<List<User>>

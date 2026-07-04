@@ -49,7 +49,9 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.core.content.FileProvider
+import com.billing.pos.auth.PendingImport
 import com.billing.pos.auth.Session
+import com.billing.pos.data.Backup
 import com.billing.pos.data.Bill
 import com.billing.pos.data.Repository
 import com.billing.pos.ui.billing.collectAsStateSafe
@@ -79,32 +81,29 @@ class InvoiceListViewModel(app: Application) : AndroidViewModel(app) {
     fun exportAndShare(context: Context) {
         viewModelScope.launch {
             val json = withContext(Dispatchers.IO) { repo.exportJson(Session.sourceLabel) }
-            val dir = File(context.cacheDir, "shared").apply { mkdirs() }
             val safeName = Session.sourceLabel.ifBlank { "data" }.replace(Regex("[^A-Za-z0-9_-]"), "_")
-            val file = File(dir, "pos-data-$safeName.json")
-            withContext(Dispatchers.IO) { file.writeText(json) }
-            val uri = FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
+            val zip = withContext(Dispatchers.IO) { Backup.writeZip(context, "pos-backup-$safeName", json) }
+            val uri = FileProvider.getUriForFile(context, "${context.packageName}.provider", zip)
             val intent = Intent(Intent.ACTION_SEND).apply {
-                type = "application/json"
+                type = "application/zip"
                 putExtra(Intent.EXTRA_STREAM, uri)
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
             context.startActivity(
-                Intent.createChooser(intent, "Share data").apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
+                Intent.createChooser(intent, "Send backup").apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
             )
         }
     }
 
     fun importFrom(context: Context, uri: Uri) {
         viewModelScope.launch {
-            val text = withContext(Dispatchers.IO) {
-                runCatching { context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() } }
-                    .getOrNull()
-            }
-            if (text.isNullOrBlank()) { message.value = "Could not read file"; return@launch }
+            val text = withContext(Dispatchers.IO) { Backup.readBackup(context, uri) }
+            if (text.isNullOrBlank()) { message.value = "Could not read backup file"; return@launch }
             val result = runCatching { withContext(Dispatchers.IO) { repo.importJson(text) } }.getOrNull()
-            message.value = if (result == null) "Invalid data file"
-            else "Imported ${result.billsAdded} bills from ${result.source} (${result.billsSkipped} duplicates skipped)"
+            message.value = if (result == null) "Invalid backup file"
+            else "Imported from ${result.source}: ${result.billsAdded} bills, " +
+                "${result.receiptsAdded} receipts, ${result.expensesAdded} payments " +
+                "(${result.billsSkipped} duplicates skipped)"
         }
     }
 }
@@ -123,6 +122,14 @@ fun InvoiceListScreen(
     var pendingDelete by remember { mutableStateOf<Bill?>(null) }
 
     LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); vm.consumeMessage() } }
+
+    // Auto-import a backup that was shared into the app from another app.
+    LaunchedEffect(Unit) {
+        PendingImport.consume()?.let { uri ->
+            if (Session.canImport) vm.importFrom(context, uri)
+            else snackbar.showSnackbar("You don't have permission to import")
+        }
+    }
 
     val importPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.GetContent()
