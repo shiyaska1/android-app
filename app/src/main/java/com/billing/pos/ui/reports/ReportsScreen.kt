@@ -14,6 +14,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -94,6 +96,24 @@ class ReportsViewModel(app: Application) : AndroidViewModel(app) {
             repo.addExpense(description, amount, mode)
             message.value = "Payment voucher added"
         }
+    }
+
+    fun editReceipt(old: Receipt, amount: Double, mode: PayMode) {
+        if (amount <= 0) { message.value = "Enter a valid amount"; return }
+        viewModelScope.launch { repo.updateReceipt(old, amount, mode); message.value = "Receipt updated" }
+    }
+
+    fun deleteReceipt(receipt: Receipt) {
+        viewModelScope.launch { repo.deleteReceipt(receipt); message.value = "Receipt deleted" }
+    }
+
+    fun editPayment(expense: Expense, description: String, amount: Double, mode: PayMode) {
+        if (amount <= 0) { message.value = "Enter a valid amount"; return }
+        viewModelScope.launch { repo.updateExpense(expense, description, amount, mode); message.value = "Payment updated" }
+    }
+
+    fun deletePayment(expense: Expense) {
+        viewModelScope.launch { repo.deleteExpense(expense); message.value = "Payment deleted" }
     }
 }
 
@@ -176,6 +196,10 @@ fun ReportsScreen(
 
     var receiveFor by remember { mutableStateOf<Bill?>(null) }
     var showExpense by remember { mutableStateOf(false) }
+    var editReceiptFor by remember { mutableStateOf<Receipt?>(null) }
+    var deleteReceiptFor by remember { mutableStateOf<Receipt?>(null) }
+    var editPaymentFor by remember { mutableStateOf<Expense?>(null) }
+    var deletePaymentFor by remember { mutableStateOf<Expense?>(null) }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
@@ -194,7 +218,7 @@ fun ReportsScreen(
                     actionIconContentColor = MaterialTheme.colorScheme.onPrimary
                 ),
                 actions = {
-                    if (Session.canEdit) {
+                    if (Session.canCreatePayment) {
                         IconButton(onClick = { showExpense = true }) {
                             Icon(Icons.Filled.Payments, contentDescription = "Add expense")
                         }
@@ -259,29 +283,31 @@ fun ReportsScreen(
             // Summary
             Card(Modifier.fillMaxWidth().padding(top = 12.dp)) {
                 Column(Modifier.padding(16.dp)) {
-                    SummaryRow("Sales (invoiced)", Format.rupee(salesTotal))
-                    SummaryRow("Receipts received", "+ " + Format.rupee(receiptsTotal), Color(0xFF2E7D32))
-                    SummaryRow("Payments / expenses", "- " + Format.rupee(expensesTotal), MaterialTheme.colorScheme.error)
-                    SummaryRow("Outstanding (credit)", Format.rupee(outstanding), MaterialTheme.colorScheme.outline)
-                    Divider(Modifier.padding(vertical = 8.dp))
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("Net fund in period", fontWeight = FontWeight.Bold)
-                        Text(Format.rupee(netFund), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                    if (Session.canViewInvoice) SummaryRow("Sales (invoiced)", Format.rupee(salesTotal))
+                    if (Session.canViewReceipt) SummaryRow("Receipts received", "+ " + Format.rupee(receiptsTotal), Color(0xFF2E7D32))
+                    if (Session.canViewPayment) SummaryRow("Payments / expenses", "- " + Format.rupee(expensesTotal), MaterialTheme.colorScheme.error)
+                    if (Session.canViewInvoice) SummaryRow("Outstanding (credit)", Format.rupee(outstanding), MaterialTheme.colorScheme.outline)
+                    if (Session.canViewInvoice && Session.canViewReceipt && Session.canViewPayment) {
+                        Divider(Modifier.padding(vertical = 8.dp))
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("Net fund in period", fontWeight = FontWeight.Bold)
+                            Text(Format.rupee(netFund), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                        }
+                        Text(
+                            "Net = paid sales + receipts − payments",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.outline
+                        )
                     }
-                    Text(
-                        "Net = paid sales + receipts − payments",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.outline
-                    )
                 }
             }
 
             // Ledger
             val txns = remember(fBills, fReceipts, fExpenses) {
                 buildList {
-                    fBills.forEach { add(Txn(it.dateMillis, "SALE", it, null, null)) }
-                    fReceipts.forEach { add(Txn(it.dateMillis, "RECEIPT", null, it, null)) }
-                    fExpenses.forEach { add(Txn(it.dateMillis, "PAYMENT", null, null, it)) }
+                    if (Session.canViewInvoice) fBills.forEach { add(Txn(it.dateMillis, "SALE", it, null, null)) }
+                    if (Session.canViewReceipt) fReceipts.forEach { add(Txn(it.dateMillis, "RECEIPT", null, it, null)) }
+                    if (Session.canViewPayment) fExpenses.forEach { add(Txn(it.dateMillis, "PAYMENT", null, null, it)) }
                 }.sortedByDescending { it.date }
             }
 
@@ -295,9 +321,21 @@ fun ReportsScreen(
                 LazyColumn(Modifier.fillMaxWidth().weight(1f).padding(top = 8.dp)) {
                     items(txns) { t ->
                         when (t.kind) {
-                            "SALE" -> SaleRow(t.bill!!, canReceive = Session.canEdit) { receiveFor = t.bill }
-                            "RECEIPT" -> ReceiptRow(t.receipt!!)
-                            "PAYMENT" -> ExpenseRow(t.expense!!)
+                            "SALE" -> SaleRow(t.bill!!, canReceive = Session.canCreateReceipt) { receiveFor = t.bill }
+                            "RECEIPT" -> ReceiptRow(
+                                t.receipt!!,
+                                canEdit = Session.canEditReceipt,
+                                canDelete = Session.canDeleteReceipt,
+                                onEdit = { editReceiptFor = t.receipt },
+                                onDelete = { deleteReceiptFor = t.receipt }
+                            )
+                            "PAYMENT" -> ExpenseRow(
+                                t.expense!!,
+                                canEdit = Session.canEditPayment,
+                                canDelete = Session.canDeletePayment,
+                                onEdit = { editPaymentFor = t.expense },
+                                onDelete = { deletePaymentFor = t.expense }
+                            )
                         }
                         Divider()
                     }
@@ -319,6 +357,106 @@ fun ReportsScreen(
             onAdd = { desc, amount, mode -> vm.addExpense(desc, amount, mode); showExpense = false }
         )
     }
+    editReceiptFor?.let { r ->
+        EditReceiptDialog(r, onDismiss = { editReceiptFor = null }) { amt, mode ->
+            vm.editReceipt(r, amt, mode); editReceiptFor = null
+        }
+    }
+    deleteReceiptFor?.let { r ->
+        ConfirmDialog(
+            "Delete receipt ${r.receiptNo}?",
+            "This reduces the invoice's paid amount by ${Format.rupee(r.amount)}.",
+            onDismiss = { deleteReceiptFor = null }
+        ) { vm.deleteReceipt(r); deleteReceiptFor = null }
+    }
+    editPaymentFor?.let { e ->
+        EditPaymentDialog(e, onDismiss = { editPaymentFor = null }) { desc, amt, mode ->
+            vm.editPayment(e, desc, amt, mode); editPaymentFor = null
+        }
+    }
+    deletePaymentFor?.let { e ->
+        ConfirmDialog(
+            "Delete payment ${e.voucherNo}?",
+            "This removes ${Format.rupee(e.amount)} from expenses.",
+            onDismiss = { deletePaymentFor = null }
+        ) { vm.deletePayment(e); deletePaymentFor = null }
+    }
+}
+
+private fun payModeFromLabel(label: String): PayMode =
+    PayMode.values().firstOrNull { it.label == label } ?: PayMode.CASH
+
+@Composable
+private fun EditReceiptDialog(r: Receipt, onDismiss: () -> Unit, onSave: (Double, PayMode) -> Unit) {
+    var amount by remember { mutableStateOf(Format.money(r.amount)) }
+    var mode by remember { mutableStateOf(payModeFromLabel(r.paymentMode)) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Edit receipt ${r.receiptNo}") },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = amount,
+                    onValueChange = { amount = it.filter { c -> c.isDigit() || c == '.' } },
+                    label = { Text("Amount") }, singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    PayMode.values().forEach { m ->
+                        FilterChip(selected = mode == m, onClick = { mode = m }, label = { Text(m.label) })
+                    }
+                }
+            }
+        },
+        confirmButton = { Button(onClick = { onSave(amount.toDoubleOrNull() ?: 0.0, mode) }) { Text("Save") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
+@Composable
+private fun EditPaymentDialog(e: Expense, onDismiss: () -> Unit, onSave: (String, Double, PayMode) -> Unit) {
+    var description by remember { mutableStateOf(e.description) }
+    var amount by remember { mutableStateOf(Format.money(e.amount)) }
+    var mode by remember { mutableStateOf(payModeFromLabel(e.paymentMode)) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Edit payment ${e.voucherNo}") },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = description, onValueChange = { description = it },
+                    label = { Text("Description") }, singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = amount,
+                    onValueChange = { amount = it.filter { c -> c.isDigit() || c == '.' } },
+                    label = { Text("Amount") }, singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal),
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                )
+                Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    PayMode.values().forEach { m ->
+                        FilterChip(selected = mode == m, onClick = { mode = m }, label = { Text(m.label) })
+                    }
+                }
+            }
+        },
+        confirmButton = { Button(onClick = { onSave(description, amount.toDoubleOrNull() ?: 0.0, mode) }) { Text("Save") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
+@Composable
+private fun ConfirmDialog(title: String, body: String, onDismiss: () -> Unit, onConfirm: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = { Text(body) },
+        confirmButton = { TextButton(onClick = onConfirm) { Text("Delete") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
 }
 
 private data class Txn(
@@ -357,8 +495,14 @@ private fun SaleRow(bill: Bill, canReceive: Boolean, onReceive: () -> Unit) {
 }
 
 @Composable
-private fun ReceiptRow(r: Receipt) {
-    Row(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+private fun ReceiptRow(
+    r: Receipt,
+    canEdit: Boolean,
+    canDelete: Boolean,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit
+) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text("${r.receiptNo}  •  ${r.customerName}", fontWeight = FontWeight.SemiBold, color = Color(0xFF2E7D32))
             Text(
@@ -368,12 +512,22 @@ private fun ReceiptRow(r: Receipt) {
             )
         }
         Text("+ " + Format.rupee(r.amount), fontWeight = FontWeight.Bold, color = Color(0xFF2E7D32))
+        if (canEdit) IconButton(onClick = onEdit) { Icon(Icons.Filled.Edit, "Edit") }
+        if (canDelete) IconButton(onClick = onDelete) {
+            Icon(Icons.Filled.Delete, "Delete", tint = MaterialTheme.colorScheme.error)
+        }
     }
 }
 
 @Composable
-private fun ExpenseRow(e: Expense) {
-    Row(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+private fun ExpenseRow(
+    e: Expense,
+    canEdit: Boolean,
+    canDelete: Boolean,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit
+) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text("${e.voucherNo}  •  ${e.description.ifBlank { "Expense" }}", fontWeight = FontWeight.SemiBold)
             Text(
@@ -383,6 +537,10 @@ private fun ExpenseRow(e: Expense) {
             )
         }
         Text("- " + Format.rupee(e.amount), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error)
+        if (canEdit) IconButton(onClick = onEdit) { Icon(Icons.Filled.Edit, "Edit") }
+        if (canDelete) IconButton(onClick = onDelete) {
+            Icon(Icons.Filled.Delete, "Delete", tint = MaterialTheme.colorScheme.error)
+        }
     }
 }
 

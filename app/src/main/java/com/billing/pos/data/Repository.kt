@@ -43,12 +43,10 @@ class Repository(context: Context) {
                     username = "superadmin",
                     passwordHash = PasswordHasher.hash("admin123"),
                     role = Role.SUPER_USER,
-                    canCreateInvoice = true,
-                    canEditInvoice = true,
-                    canDeleteInvoice = true,
-                    canExport = true,
-                    canImport = true,
-                    canManageUsers = true
+                    canCreateInvoice = true, canEditInvoice = true, canDeleteInvoice = true, canViewInvoice = true,
+                    canCreateReceipt = true, canEditReceipt = true, canDeleteReceipt = true, canViewReceipt = true,
+                    canCreatePayment = true, canEditPayment = true, canDeletePayment = true, canViewPayment = true,
+                    canExport = true, canImport = true, canManageUsers = true
                 )
             )
         }
@@ -62,6 +60,14 @@ class Repository(context: Context) {
 
     suspend fun createUser(user: User, password: String): Result<Unit> = runCatching {
         userDao.insert(user.copy(passwordHash = PasswordHasher.hash(password)))
+        Unit
+    }
+
+    /** Updates a user. If [newPassword] is non-blank the password is reset. */
+    suspend fun updateUser(user: User, newPassword: String?): Result<Unit> = runCatching {
+        val hash = if (newPassword.isNullOrBlank()) user.passwordHash
+        else PasswordHasher.hash(newPassword)
+        userDao.update(user.copy(passwordHash = hash))
         Unit
     }
 
@@ -124,6 +130,35 @@ class Repository(context: Context) {
         expenseDao.insert(expense)
         return expense
     }
+
+    /** Edits a receipt and re-applies the difference to the linked invoice's paid amount. */
+    suspend fun updateReceipt(old: Receipt, newAmount: Double, mode: PayMode) {
+        if (old.billId > 0) {
+            billDao.byId(old.billId)?.let { bill ->
+                val adjusted = (bill.paidAmount - old.amount + newAmount)
+                    .coerceIn(0.0, bill.grandTotal)
+                billDao.updateBillHeader(bill.copy(paidAmount = adjusted))
+            }
+        }
+        receiptDao.update(old.copy(amount = newAmount, paymentMode = mode.label))
+    }
+
+    /** Deletes a receipt and reduces the linked invoice's paid amount. */
+    suspend fun deleteReceipt(receipt: Receipt) {
+        if (receipt.billId > 0) {
+            billDao.byId(receipt.billId)?.let { bill ->
+                val adjusted = (bill.paidAmount - receipt.amount).coerceAtLeast(0.0)
+                billDao.updateBillHeader(bill.copy(paidAmount = adjusted))
+            }
+        }
+        receiptDao.delete(receipt)
+    }
+
+    suspend fun updateExpense(expense: Expense, description: String, amount: Double, mode: PayMode) {
+        expenseDao.update(expense.copy(description = description.trim(), amount = amount, paymentMode = mode.label))
+    }
+
+    suspend fun deleteExpense(expense: Expense) = expenseDao.delete(expense)
 
     // ---- data export / import (invoices, customers, items — NOT users) ----
 

@@ -118,9 +118,22 @@ data class User(
     val username: String,
     val passwordHash: String,
     val role: Role,
+    // Invoice
     val canCreateInvoice: Boolean = true,
     val canEditInvoice: Boolean = false,
     val canDeleteInvoice: Boolean = false,
+    val canViewInvoice: Boolean = true,
+    // Receipt
+    val canCreateReceipt: Boolean = false,
+    val canEditReceipt: Boolean = false,
+    val canDeleteReceipt: Boolean = false,
+    val canViewReceipt: Boolean = false,
+    // Payment / expense
+    val canCreatePayment: Boolean = false,
+    val canEditPayment: Boolean = false,
+    val canDeletePayment: Boolean = false,
+    val canViewPayment: Boolean = false,
+    // Data & admin
     val canExport: Boolean = true,
     val canImport: Boolean = false,
     val canManageUsers: Boolean = false,

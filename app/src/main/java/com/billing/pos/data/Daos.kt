@@ -117,6 +117,12 @@ interface ReceiptDao {
 
     @Insert
     suspend fun insert(receipt: Receipt): Long
+
+    @Update
+    suspend fun update(receipt: Receipt)
+
+    @Delete
+    suspend fun delete(receipt: Receipt)
 }
 
 @Dao
@@ -135,6 +141,12 @@ interface ExpenseDao {
 
     @Insert
     suspend fun insert(expense: Expense): Long
+
+    @Update
+    suspend fun update(expense: Expense)
+
+    @Delete
+    suspend fun delete(expense: Expense)
 }
 
 @Dao

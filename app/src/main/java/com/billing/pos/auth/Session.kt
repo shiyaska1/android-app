@@ -19,6 +19,18 @@ object Session {
     val canCreate: Boolean get() = current?.canCreateInvoice == true
     val canEdit: Boolean get() = current?.canEditInvoice == true
     val canDelete: Boolean get() = current?.canDeleteInvoice == true
+    val canViewInvoice: Boolean get() = current?.canViewInvoice == true
+
+    val canCreateReceipt: Boolean get() = current?.canCreateReceipt == true
+    val canEditReceipt: Boolean get() = current?.canEditReceipt == true
+    val canDeleteReceipt: Boolean get() = current?.canDeleteReceipt == true
+    val canViewReceipt: Boolean get() = current?.canViewReceipt == true
+
+    val canCreatePayment: Boolean get() = current?.canCreatePayment == true
+    val canEditPayment: Boolean get() = current?.canEditPayment == true
+    val canDeletePayment: Boolean get() = current?.canDeletePayment == true
+    val canViewPayment: Boolean get() = current?.canViewPayment == true
+
     val canExport: Boolean get() = current?.canExport == true
     val canImport: Boolean get() = current?.canImport == true
     val canManageUsers: Boolean get() = current?.canManageUsers == true

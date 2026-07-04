@@ -166,7 +166,13 @@ fun InvoiceListScreen(
             )
         }
     ) { pad ->
-        if (bills.isEmpty()) {
+        if (!Session.canViewInvoice) {
+            Column(
+                Modifier.fillMaxSize().padding(pad),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) { Text("You don't have permission to view invoices", color = MaterialTheme.colorScheme.outline) }
+        } else if (bills.isEmpty()) {
             Column(
                 Modifier.fillMaxSize().padding(pad),
                 verticalArrangement = Arrangement.Center,
