@@ -19,6 +19,8 @@ import com.billing.pos.auth.PendingImport
 import com.billing.pos.auth.Session
 import com.billing.pos.ui.auth.LoginScreen
 import com.billing.pos.ui.billing.BillingScreen
+import com.billing.pos.ui.diary.DiaryEditScreen
+import com.billing.pos.ui.diary.DiaryListScreen
 import com.billing.pos.ui.invoices.InvoiceListScreen
 import com.billing.pos.ui.reports.ReportsScreen
 import com.billing.pos.ui.theme.POSTheme
@@ -75,6 +77,7 @@ private fun AppNav() {
                 onOpenReports = { nav.navigate("reports") },
                 onOpenInvoices = { nav.navigate("invoices") },
                 onOpenUsers = { nav.navigate("users") },
+                onOpenDiary = { nav.navigate("diary") },
                 onLogout = {
                     Session.logout()
                     nav.navigate("login") { popUpTo(0) { inclusive = true } }
@@ -90,6 +93,7 @@ private fun AppNav() {
                 onOpenReports = { nav.navigate("reports") },
                 onOpenInvoices = { nav.navigate("invoices") },
                 onOpenUsers = { nav.navigate("users") },
+                onOpenDiary = { nav.navigate("diary") },
                 onLogout = {
                     Session.logout()
                     nav.navigate("login") { popUpTo(0) { inclusive = true } }
@@ -107,6 +111,21 @@ private fun AppNav() {
         }
         composable("users") {
             UsersScreen(onBack = { nav.popBackStack() })
+        }
+        composable("diary") {
+            DiaryListScreen(
+                onBack = { nav.popBackStack() },
+                onOpen = { id -> nav.navigate("diary/edit/$id") }
+            )
+        }
+        composable(
+            route = "diary/edit/{id}",
+            arguments = listOf(navArgument("id") { type = NavType.LongType })
+        ) { entry ->
+            DiaryEditScreen(
+                entryId = entry.arguments?.getLong("id") ?: 0L,
+                onBack = { nav.popBackStack() }
+            )
         }
     }
 }

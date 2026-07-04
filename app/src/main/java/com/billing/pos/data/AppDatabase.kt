@@ -9,9 +9,10 @@ import androidx.room.TypeConverters
 @Database(
     entities = [
         Customer::class, Item::class, Bill::class, BillItem::class,
-        User::class, Receipt::class, Expense::class
+        User::class, Receipt::class, Expense::class,
+        DiaryEntry::class, DiaryAttachment::class
     ],
-    version = 3,
+    version = 4,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -22,6 +23,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun userDao(): UserDao
     abstract fun receiptDao(): ReceiptDao
     abstract fun expenseDao(): ExpenseDao
+    abstract fun diaryDao(): DiaryDao
 
     companion object {
         @Volatile private var INSTANCE: AppDatabase? = null

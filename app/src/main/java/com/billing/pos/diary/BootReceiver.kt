@@ -1,0 +1,27 @@
+package com.billing.pos.diary
+
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import com.billing.pos.data.AppDatabase
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+
+/** Re-schedules diary reminders after a device reboot. */
+class BootReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
+        val pending = goAsync()
+        val appContext = context.applicationContext
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                AppDatabase.get(appContext).diaryDao().allWithReminder().forEach {
+                    ReminderScheduler.schedule(appContext, it)
+                }
+            } finally {
+                pending.finish()
+            }
+        }
+    }
+}

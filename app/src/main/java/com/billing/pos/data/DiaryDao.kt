@@ -1,0 +1,48 @@
+package com.billing.pos.data
+
+import androidx.room.Dao
+import androidx.room.Delete
+import androidx.room.Insert
+import androidx.room.Query
+import androidx.room.Update
+import kotlinx.coroutines.flow.Flow
+
+@Dao
+interface DiaryDao {
+    @Query(
+        "SELECT * FROM diary_entries " +
+            "WHERE title LIKE '%' || :q || '%' OR remarks LIKE '%' || :q || '%' " +
+            "ORDER BY updatedAt DESC"
+    )
+    fun search(q: String): Flow<List<DiaryEntry>>
+
+    @Query("SELECT * FROM diary_entries WHERE id = :id LIMIT 1")
+    suspend fun byId(id: Long): DiaryEntry?
+
+    @Query("SELECT * FROM diary_entries WHERE reminderEnabled = 1")
+    suspend fun allWithReminder(): List<DiaryEntry>
+
+    @Insert
+    suspend fun insert(entry: DiaryEntry): Long
+
+    @Update
+    suspend fun update(entry: DiaryEntry)
+
+    @Delete
+    suspend fun delete(entry: DiaryEntry)
+
+    @Query("SELECT * FROM diary_attachments ORDER BY id ASC")
+    fun observeAllAttachments(): Flow<List<DiaryAttachment>>
+
+    @Query("SELECT * FROM diary_attachments WHERE entryId = :entryId")
+    suspend fun attachmentsFor(entryId: Long): List<DiaryAttachment>
+
+    @Insert
+    suspend fun insertAttachment(attachment: DiaryAttachment): Long
+
+    @Delete
+    suspend fun deleteAttachment(attachment: DiaryAttachment)
+
+    @Query("DELETE FROM diary_attachments WHERE entryId = :entryId")
+    suspend fun deleteAttachmentsFor(entryId: Long)
+}

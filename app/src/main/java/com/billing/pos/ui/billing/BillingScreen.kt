@@ -77,6 +77,7 @@ fun BillingScreen(
     onOpenReports: () -> Unit,
     onOpenInvoices: () -> Unit,
     onOpenUsers: () -> Unit,
+    onOpenDiary: () -> Unit,
     onLogout: () -> Unit,
     vm: BillingViewModel = viewModel()
 ) {
@@ -134,6 +135,10 @@ fun BillingScreen(
                         DropdownMenuItem(
                             text = { Text("Sales Report") },
                             onClick = { menu = false; onOpenReports() }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("My Diary") },
+                            onClick = { menu = false; onOpenDiary() }
                         )
                         if (Session.canManageUsers) {
                             DropdownMenuItem(
