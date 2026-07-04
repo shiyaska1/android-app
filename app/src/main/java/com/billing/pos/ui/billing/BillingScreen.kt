@@ -57,7 +57,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -248,6 +250,13 @@ fun BillingScreen(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 var expanded by remember { mutableStateOf(false) }
                 var custQuery by remember { mutableStateOf("") }
+                val focusManager = LocalFocusManager.current
+
+                // Keep the field showing the selected customer when the selection changes.
+                LaunchedEffect(vm.selectedCustomer?.id) {
+                    custQuery = vm.selectedCustomer?.name ?: ""
+                }
+
                 val filteredCustomers = remember(custQuery, customers) {
                     if (custQuery.isBlank()) customers
                     else customers.filter {
@@ -256,12 +265,11 @@ fun BillingScreen(
                 }
                 ExposedDropdownMenuBox(
                     expanded = expanded,
-                    // Opening the dropdown clears the box so you can search fresh.
-                    onExpandedChange = { open -> expanded = open; if (open) custQuery = "" },
+                    onExpandedChange = { expanded = it },
                     modifier = Modifier.weight(1f)
                 ) {
                     OutlinedTextField(
-                        value = if (expanded) custQuery else (vm.selectedCustomer?.name ?: ""),
+                        value = custQuery,
                         onValueChange = { custQuery = it; expanded = true },
                         label = { Text("Customer") },
                         placeholder = { Text("Search name or number") },
@@ -270,12 +278,22 @@ fun BillingScreen(
                         modifier = Modifier
                             .menuAnchor()
                             .fillMaxWidth()
+                            .onFocusChanged { fs ->
+                                // Focusing clears the box for a fresh search; leaving restores the selection.
+                                if (fs.isFocused) { custQuery = ""; expanded = true }
+                                else custQuery = vm.selectedCustomer?.name ?: ""
+                            }
                     )
                     ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                         filteredCustomers.forEach { c ->
                             DropdownMenuItem(
                                 text = { Text(c.name + if (c.isDefault) "  (default)" else "") },
-                                onClick = { vm.selectCustomer(c); custQuery = ""; expanded = false }
+                                onClick = {
+                                    vm.selectCustomer(c)
+                                    custQuery = c.name
+                                    expanded = false
+                                    focusManager.clearFocus()
+                                }
                             )
                         }
                         if (filteredCustomers.isEmpty()) {
