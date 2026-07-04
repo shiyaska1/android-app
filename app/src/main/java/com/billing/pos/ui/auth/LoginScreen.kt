@@ -21,7 +21,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -116,13 +115,5 @@ fun LoginScreen(
             if (vm.loading) CircularProgressIndicator(modifier = Modifier.padding(end = 8.dp))
             Text("Login")
         }
-
-        Text(
-            "First run? Default super user — username: superadmin, password: admin123",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.outline,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(top = 24.dp)
-        )
     }
 }

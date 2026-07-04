@@ -1,9 +1,11 @@
 package com.billing.pos.ui.diary
 
 import android.Manifest
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import android.speech.RecognizerIntent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -95,6 +97,35 @@ fun DiaryEditScreen(
         ActivityResultContracts.RequestPermission()
     ) { vm.save(context) { onBack() } }
 
+    // Speech-to-text: which field the recognised text goes into.
+    var speechTarget by remember { mutableStateOf("") }
+    val speechLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            val spoken = result.data
+                ?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+                ?.firstOrNull()
+                .orEmpty()
+            if (spoken.isNotBlank()) {
+                when (speechTarget) {
+                    "title" -> vm.title = appendText(vm.title, spoken)
+                    "remarks" -> vm.remarks = appendText(vm.remarks, spoken)
+                }
+            }
+        }
+    }
+
+    fun startSpeech(target: String) {
+        speechTarget = target
+        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(RecognizerIntent.EXTRA_PROMPT, "Speak now")
+        }
+        runCatching { speechLauncher.launch(intent) }
+            .onFailure { vm.message.value = "Speech input not available on this device" }
+    }
+
     fun doSave() {
         if (vm.reminderEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
@@ -152,12 +183,22 @@ fun DiaryEditScreen(
             OutlinedTextField(
                 value = vm.title, onValueChange = { vm.title = it },
                 label = { Text("Title") }, singleLine = true,
+                trailingIcon = {
+                    IconButton(onClick = { startSpeech("title") }) {
+                        Icon(Icons.Filled.Mic, contentDescription = "Speak title")
+                    }
+                },
                 modifier = Modifier.fillMaxWidth()
             )
             OutlinedTextField(
                 value = vm.remarks, onValueChange = { vm.remarks = it },
                 label = { Text("Remarks / notes") },
                 minLines = 4,
+                trailingIcon = {
+                    IconButton(onClick = { startSpeech("remarks") }) {
+                        Icon(Icons.Filled.Mic, contentDescription = "Speak remarks")
+                    }
+                },
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
             )
 
@@ -298,3 +339,7 @@ private fun timeLabel(millis: Long): String {
     val c = Calendar.getInstance().apply { timeInMillis = millis }
     return String.format("%02d:%02d", c.get(Calendar.HOUR_OF_DAY), c.get(Calendar.MINUTE))
 }
+
+/** Appends spoken text to existing field content with a separating space. */
+private fun appendText(existing: String, spoken: String): String =
+    if (existing.isBlank()) spoken else "$existing $spoken"
