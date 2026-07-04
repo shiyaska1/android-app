@@ -118,6 +118,9 @@ interface BillDao {
     @Query("SELECT * FROM bill_items")
     suspend fun allLines(): List<BillItem>
 
+    @Query("SELECT name AS name, SUM(qty) AS qty FROM bill_items GROUP BY name COLLATE NOCASE")
+    fun observeSoldQty(): Flow<List<NameQty>>
+
     @Query("SELECT * FROM bills WHERE source = :source AND billNo = :billNo LIMIT 1")
     suspend fun findBySourceAndNo(source: String, billNo: String): Bill?
 }

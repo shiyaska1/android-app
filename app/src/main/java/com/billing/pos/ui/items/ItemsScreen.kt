@@ -67,14 +67,31 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+/** An item with its computed stock and last purchase rate. */
+data class ItemStockRow(val item: Item, val stock: Double, val purchaseRate: Double)
+
 class ItemsViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = Repository(app)
-    val items: StateFlow<List<Item>> =
-        repo.items.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val rows: StateFlow<List<ItemStockRow>> =
+        combine(repo.items, repo.purchaseLines, repo.soldQty) { items, pLines, sold ->
+            val purchasedByName = pLines.groupBy { it.name.lowercase() }
+            val soldByName = sold.associate { it.name.lowercase() to it.qty }
+            items.map { item ->
+                val key = item.name.lowercase()
+                val lines = purchasedByName[key].orEmpty()
+                val purchasedQty = lines.sumOf { it.qty }
+                val lastRate = lines.maxByOrNull { it.dateMillis }?.price ?: 0.0
+                val soldQty = soldByName[key] ?: 0.0
+                ItemStockRow(item, purchasedQty - soldQty, lastRate)
+            }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     val message = MutableStateFlow<String?>(null)
     fun consumeMessage() { message.value = null }
 
@@ -101,7 +118,7 @@ fun ItemsScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
-    val items by vm.items.collectAsStateSafe()
+    val rows by vm.rows.collectAsStateSafe()
     val message by vm.message.collectAsStateSafe()
 
     LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); vm.consumeMessage() } }
@@ -153,24 +170,31 @@ fun ItemsScreen(
         }
     ) { pad ->
         LazyColumn(Modifier.fillMaxSize().padding(pad).padding(horizontal = 12.dp)) {
-            items(items, key = { it.id }) { it0 ->
+            items(rows, key = { it.item.id }) { row ->
+                val item = row.item
                 Row(
-                    Modifier.fillMaxWidth().clickable { editing = it0; showDialog = true }.padding(vertical = 8.dp),
+                    Modifier.fillMaxWidth().clickable { editing = item; showDialog = true }.padding(vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(Modifier.weight(1f)) {
-                        Text(it0.name, fontWeight = FontWeight.Bold)
+                        Text(item.name, fontWeight = FontWeight.Bold)
                         Text(
-                            Format.rupee(it0.price) +
-                                (if (it0.taxPercent > 0) "  •  ${Format.money(it0.taxPercent)}% tax" else "") +
-                                (if (it0.barcode.isNotBlank()) "  •  ${it0.barcode}" else ""),
+                            "Stock: ${Format.qty(row.stock)}   •   Buy: ${Format.rupee(row.purchaseRate)}   •   Sell: ${Format.rupee(item.price)}",
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline
                         )
+                        if (item.barcode.isNotBlank() || item.taxPercent > 0) {
+                            Text(
+                                (if (item.taxPercent > 0) "Tax ${Format.money(item.taxPercent)}%" else "") +
+                                    (if (item.taxPercent > 0 && item.barcode.isNotBlank()) "  •  " else "") +
+                                    (if (item.barcode.isNotBlank()) item.barcode else ""),
+                                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline
+                            )
+                        }
                     }
-                    if (it0.barcode.isNotBlank()) {
-                        IconButton(onClick = { printFor = it0 }) { Icon(Icons.Filled.QrCode, "Print barcode") }
+                    if (item.barcode.isNotBlank()) {
+                        IconButton(onClick = { printFor = item }) { Icon(Icons.Filled.QrCode, "Print barcode") }
                     }
-                    IconButton(onClick = { deleteFor = it0 }) { Icon(Icons.Filled.Delete, "Delete", tint = MaterialTheme.colorScheme.error) }
+                    IconButton(onClick = { deleteFor = item }) { Icon(Icons.Filled.Delete, "Delete", tint = MaterialTheme.colorScheme.error) }
                 }
                 Divider()
             }

@@ -9,6 +9,12 @@ import androidx.room.Transaction
 import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
 
+/** A purchase line joined with its purchase date, for stock/last-rate calc. */
+data class PurchaseLineInfo(val name: String, val price: Double, val qty: Double, val dateMillis: Long)
+
+/** Aggregated quantity by item name. */
+data class NameQty(val name: String, val qty: Double)
+
 @Dao
 interface SupplierDao {
     @Query("SELECT * FROM suppliers ORDER BY isDefault DESC, name COLLATE NOCASE ASC")
@@ -84,4 +90,10 @@ interface PurchaseDao {
 
     @Query("SELECT * FROM purchase_items WHERE purchaseId = :purchaseId")
     suspend fun linesFor(purchaseId: Long): List<PurchaseItem>
+
+    @Query(
+        "SELECT pi.name AS name, pi.price AS price, pi.qty AS qty, p.dateMillis AS dateMillis " +
+            "FROM purchase_items pi JOIN purchases p ON pi.purchaseId = p.id"
+    )
+    fun observePurchaseLines(): Flow<List<PurchaseLineInfo>>
 }

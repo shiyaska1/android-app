@@ -35,6 +35,8 @@ class Repository(context: Context) {
     val allExpenses: Flow<List<Expense>> = expenseDao.observeAll()
     val suppliers: Flow<List<Supplier>> = supplierDao.observeAll()
     val allPurchases: Flow<List<Purchase>> = purchaseDao.observeAll()
+    val purchaseLines: Flow<List<PurchaseLineInfo>> = purchaseDao.observePurchaseLines()
+    val soldQty: Flow<List<NameQty>> = billDao.observeSoldQty()
 
     /** Seeds the default Cash customer and the initial super user. */
     suspend fun ensureDefaults() {
