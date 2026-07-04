@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.NoteAdd
 import androidx.compose.material.icons.filled.Print
+import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
@@ -73,6 +74,8 @@ import com.billing.pos.ui.billing.ItemPickerDialog
 import com.billing.pos.ui.billing.NewItemDialog
 import com.billing.pos.ui.billing.collectAsStateSafe
 import com.billing.pos.util.Format
+import com.journeyapps.barcodescanner.ScanContract
+import com.journeyapps.barcodescanner.ScanOptions
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -106,6 +109,10 @@ fun PurchaseScreen(
     val printPermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted -> if (granted) scope.launch { doPrint(context, vm, snackbar) } }
+
+    val scanLauncher = rememberLauncherForActivityResult(ScanContract()) { result ->
+        result.contents?.let { vm.onBarcodeScanned(it) }
+    }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
@@ -195,7 +202,7 @@ fun PurchaseScreen(
             Text("Payment method", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 PaymentMethod.values().forEach { m ->
-                    FilterChip(selected = vm.payment == m, onClick = { vm.setPayment(m) }, label = { Text(m.label) })
+                    FilterChip(selected = vm.payment == m, onClick = { vm.selectPayment(m) }, label = { Text(m.label) })
                 }
             }
 
@@ -206,6 +213,10 @@ fun PurchaseScreen(
                 OutlinedButton(onClick = { showCustomLine = true }, modifier = Modifier.weight(1f)) { Icon(Icons.Filled.Add, null); Text("By price") }
                 OutlinedButton(onClick = { showNewItem = true }, modifier = Modifier.weight(1f)) { Icon(Icons.Filled.NoteAdd, null); Text("New item") }
             }
+            OutlinedButton(
+                onClick = { scanLauncher.launch(ScanOptions().setPrompt("Scan item barcode").setBeepEnabled(true).setOrientationLocked(false)) },
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+            ) { Icon(Icons.Filled.QrCodeScanner, null); Text("Scan barcode") }
 
             Spacer(Modifier.padding(4.dp))
 
@@ -303,7 +314,7 @@ fun PurchaseScreen(
         )
     }
     if (showNewItem) {
-        NewItemDialog(onDismiss = { showNewItem = false }, onSave = { n, price, tax, add -> vm.addItem(n, price, tax, add) { showNewItem = false } })
+        NewItemDialog(onDismiss = { showNewItem = false }, onSave = { n, price, tax, barcode, add -> vm.addItem(n, price, tax, barcode, add) { showNewItem = false } })
     }
     if (showCustomLine) {
         CustomLineDialog(onDismiss = { showCustomLine = false }, onAdd = { desc, price, tax -> vm.addCustomLine(desc, price, tax) })

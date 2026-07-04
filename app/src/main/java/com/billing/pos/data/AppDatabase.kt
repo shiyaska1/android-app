@@ -13,7 +13,7 @@ import androidx.room.TypeConverters
         DiaryEntry::class, DiaryAttachment::class,
         Supplier::class, Purchase::class, PurchaseItem::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = false
 )
 @TypeConverters(Converters::class)

@@ -30,6 +30,7 @@ import com.billing.pos.ui.diary.DiaryEditScreen
 import com.billing.pos.ui.diary.DiaryListScreen
 import com.billing.pos.ui.expenses.ExpensesScreen
 import com.billing.pos.ui.invoices.InvoiceListScreen
+import com.billing.pos.ui.items.ItemsScreen
 import com.billing.pos.ui.license.LicenseScreen
 import com.billing.pos.ui.license.RegisterScreen
 import com.billing.pos.ui.purchase.PurchaseListScreen
@@ -120,6 +121,7 @@ private fun AppNav() {
                 onCashbook = { nav.navigate("cashbook") },
                 onReports = { nav.navigate("reports") },
                 onCustomers = { nav.navigate("customers") },
+                onItems = { nav.navigate("items") },
                 onNewPurchase = { nav.navigate("purchase") },
                 onPurchases = { nav.navigate("purchases") },
                 onSuppliers = { nav.navigate("suppliers") },
@@ -189,6 +191,9 @@ private fun AppNav() {
         }
         composable("suppliers") {
             SuppliersScreen(onBack = { nav.popBackStack() })
+        }
+        composable("items") {
+            ItemsScreen(onBack = { nav.popBackStack() })
         }
         composable("cashbook") {
             CashBookScreen(

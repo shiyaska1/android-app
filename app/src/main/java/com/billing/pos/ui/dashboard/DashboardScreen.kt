@@ -15,6 +15,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.Assessment
 import androidx.compose.material.icons.filled.Backup
+import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.LocalShipping
 import androidx.compose.material.icons.filled.ManageAccounts
@@ -57,6 +58,7 @@ fun DashboardScreen(
     onCashbook: () -> Unit,
     onReports: () -> Unit,
     onCustomers: () -> Unit,
+    onItems: () -> Unit,
     onNewPurchase: () -> Unit,
     onPurchases: () -> Unit,
     onSuppliers: () -> Unit,
@@ -74,6 +76,7 @@ fun DashboardScreen(
         if (Session.canViewCashbook) add(Tile("Cash Book", Icons.Filled.AccountBalanceWallet, onCashbook))
         if (Session.canViewInvoice) add(Tile("Sales Report", Icons.Filled.Assessment, onReports))
         add(Tile("Customers", Icons.Filled.People, onCustomers))
+        add(Tile("Items", Icons.Filled.Category, onItems))
         add(Tile("New Purchase", Icons.Filled.ShoppingCart, onNewPurchase))
         if (Session.canViewInvoice) add(Tile("Purchases", Icons.Filled.Inventory2, onPurchases))
         add(Tile("Suppliers", Icons.Filled.LocalShipping, onSuppliers))

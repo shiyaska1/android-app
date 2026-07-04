@@ -20,7 +20,8 @@ data class Item(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val name: String,
     val price: Double,
-    val taxPercent: Double = 0.0
+    val taxPercent: Double = 0.0,
+    val barcode: String = ""
 )
 
 /** A saved bill (invoice header). `source` marks where it came from ("" = this device). */

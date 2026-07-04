@@ -75,12 +75,13 @@ fun NewCustomerDialog(
 @Composable
 fun NewItemDialog(
     onDismiss: () -> Unit,
-    onSave: (name: String, price: Double, taxPercent: Double, addToCart: Boolean) -> Unit
+    onSave: (name: String, price: Double, taxPercent: Double, barcode: String, addToCart: Boolean) -> Unit
 ) {
     var name by remember { mutableStateOf("") }
     var price by remember { mutableStateOf("") }
     var taxable by remember { mutableStateOf(false) }
     var taxPercent by remember { mutableStateOf("18") }
+    var barcode by remember { mutableStateOf("") }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -120,13 +121,18 @@ fun NewItemDialog(
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
+                OutlinedTextField(
+                    value = barcode, onValueChange = { barcode = it },
+                    label = { Text("Barcode (optional)") }, singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
         },
         confirmButton = {
             TextButton(onClick = {
                 val p = price.toDoubleOrNull() ?: 0.0
                 val t = if (taxable) (taxPercent.toDoubleOrNull() ?: 0.0) else 0.0
-                onSave(name, p, t, true)
+                onSave(name, p, t, barcode, true)
             }) { Text("Save & add") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }

@@ -137,6 +137,21 @@ fun DiaryEditScreen(
             .onFailure { pendingCapture?.delete(); pendingCapture = null; vm.message.value = "No camera app found" }
     }
 
+    // The app now declares CAMERA (barcode scanner), so capture needs it granted.
+    var pendingCameraAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+    val cameraPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        val action = pendingCameraAction; pendingCameraAction = null
+        if (granted) action?.invoke() else vm.message.value = "Camera permission denied"
+    }
+    fun withCamera(action: () -> Unit) {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) action()
+        else { pendingCameraAction = action; cameraPermission.launch(Manifest.permission.CAMERA) }
+    }
+
     // Location attach
     val locationPermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -306,10 +321,10 @@ fun DiaryEditScreen(
                 }
             }
             Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { launchPhoto() }, modifier = Modifier.weight(1f)) {
+                OutlinedButton(onClick = { withCamera { launchPhoto() } }, modifier = Modifier.weight(1f)) {
                     Icon(Icons.Filled.PhotoCamera, null); Text("Take photo")
                 }
-                OutlinedButton(onClick = { launchVideo() }, modifier = Modifier.weight(1f)) {
+                OutlinedButton(onClick = { withCamera { launchVideo() } }, modifier = Modifier.weight(1f)) {
                     Icon(Icons.Filled.Videocam, null); Text("Record video")
                 }
             }

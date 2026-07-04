@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.NoteAdd
 import androidx.compose.material.icons.filled.Print
+import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Button
@@ -69,6 +70,8 @@ import com.billing.pos.data.BillWithItems
 import com.billing.pos.data.PaymentMethod
 import com.billing.pos.pdf.InvoicePdf
 import com.billing.pos.print.ThermalPrinter
+import com.journeyapps.barcodescanner.ScanContract
+import com.journeyapps.barcodescanner.ScanOptions
 import com.billing.pos.util.Format
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -126,6 +129,11 @@ fun BillingScreen(
     ) { granted ->
         if (granted) scope.launch { doPrint(context, vm, snackbar) }
         else scope.launch { snackbar.showSnackbar("Bluetooth permission denied") }
+    }
+
+    // Barcode scan → add matching item to the cart.
+    val scanLauncher = rememberLauncherForActivityResult(ScanContract()) { result ->
+        result.contents?.let { vm.onBarcodeScanned(it) }
     }
 
     Scaffold(
@@ -335,6 +343,10 @@ fun BillingScreen(
                     Icon(Icons.Filled.NoteAdd, null); Text("New item")
                 }
             }
+            OutlinedButton(
+                onClick = { scanLauncher.launch(ScanOptions().setPrompt("Scan item barcode").setBeepEnabled(true).setOrientationLocked(false)) },
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+            ) { Icon(Icons.Filled.QrCodeScanner, null); Text("Scan barcode") }
 
             Spacer(Modifier.padding(4.dp))
 
@@ -520,7 +532,7 @@ fun BillingScreen(
     if (showNewItem) {
         NewItemDialog(
             onDismiss = { showNewItem = false },
-            onSave = { n, price, tax, add -> vm.addItem(n, price, tax, add) { showNewItem = false } }
+            onSave = { n, price, tax, barcode, add -> vm.addItem(n, price, tax, barcode, add) { showNewItem = false } }
         )
     }
     if (showCustomLine) {

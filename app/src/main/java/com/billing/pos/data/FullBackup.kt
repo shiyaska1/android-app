@@ -123,7 +123,7 @@ object FullBackup {
         .put("phone", c.phone).put("address", c.address).put("isDefault", c.isDefault)
 
     private fun itemJson(i: Item) = JSONObject().put("id", i.id).put("name", i.name)
-        .put("price", i.price).put("taxPercent", i.taxPercent)
+        .put("price", i.price).put("taxPercent", i.taxPercent).put("barcode", i.barcode)
 
     private fun billJson(b: Bill) = JSONObject().put("id", b.id).put("billNo", b.billNo)
         .put("dateMillis", b.dateMillis).put("customerId", b.customerId).put("customerName", b.customerName)
@@ -174,7 +174,8 @@ object FullBackup {
 
     private fun readItem(o: JSONObject) = Item(
         id = o.optLong("id"), name = o.optString("name"),
-        price = o.optDouble("price", 0.0), taxPercent = o.optDouble("taxPercent", 0.0)
+        price = o.optDouble("price", 0.0), taxPercent = o.optDouble("taxPercent", 0.0),
+        barcode = o.optString("barcode")
     )
 
     private fun readBill(o: JSONObject) = Bill(

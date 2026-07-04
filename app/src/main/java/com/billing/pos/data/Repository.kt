@@ -107,8 +107,12 @@ class Repository(context: Context) {
 
     val allCustomers: Flow<List<Customer>> get() = customers
 
-    suspend fun addItem(name: String, price: Double, taxPercent: Double): Long =
-        itemDao.insert(Item(name = name.trim(), price = price, taxPercent = taxPercent))
+    suspend fun addItem(name: String, price: Double, taxPercent: Double, barcode: String = ""): Long =
+        itemDao.insert(Item(name = name.trim(), price = price, taxPercent = taxPercent, barcode = barcode.trim()))
+
+    suspend fun updateItem(item: Item) = itemDao.update(item)
+    suspend fun deleteItem(item: Item) = itemDao.delete(item)
+    suspend fun itemByBarcode(barcode: String): Item? = itemDao.byBarcode(barcode.trim())
 
     /** Bill number for the next locally-created bill, e.g. INV-0001. */
     suspend fun nextBillNo(): String {

@@ -71,7 +71,7 @@ class PurchaseViewModel(app: Application) : AndroidViewModel(app) {
     val grandTotal: Double get() = subTotal + taxTotal + additionalCharge - discount
 
     fun selectSupplier(s: Supplier) { selectedSupplier = s; dirty = true }
-    fun setPayment(m: PaymentMethod) { payment = m; dirty = true }
+    fun selectPayment(m: PaymentMethod) { payment = m; dirty = true }
     fun setAdditionalCharge(v: String) { additionalChargeText = v; dirty = true }
     fun setDiscount(v: String) { discountText = v; dirty = true }
 
@@ -107,13 +107,21 @@ class PurchaseViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun addItem(name: String, price: Double, taxPercent: Double, addToCart: Boolean, onCreated: () -> Unit) {
+    fun addItem(name: String, price: Double, taxPercent: Double, barcode: String, addToCart: Boolean, onCreated: () -> Unit) {
         if (name.isBlank()) { _message.value = "Enter item name"; return }
         viewModelScope.launch {
-            val id = repo.addItem(name, price, taxPercent)
-            if (addToCart) addItemToCart(Item(id, name.trim(), price, taxPercent))
+            val id = repo.addItem(name, price, taxPercent, barcode)
+            if (addToCart) addItemToCart(Item(id, name.trim(), price, taxPercent, barcode.trim()))
             _message.value = "Item added"
             onCreated()
+        }
+    }
+
+    fun onBarcodeScanned(barcode: String) {
+        viewModelScope.launch {
+            val item = repo.itemByBarcode(barcode)
+            if (item != null) { addItemToCart(item); _message.value = "Added ${item.name}" }
+            else _message.value = "No item for barcode $barcode"
         }
     }
 

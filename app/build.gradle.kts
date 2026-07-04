@@ -79,5 +79,9 @@ dependencies {
     implementation("androidx.room:room-ktx:2.6.1")
     ksp("androidx.room:room-compiler:2.6.1")
 
+    // Barcode scanning (camera) + generation
+    implementation("com.journeyapps:zxing-android-embedded:4.3.0")
+    implementation("com.google.zxing:core:3.5.3")
+
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

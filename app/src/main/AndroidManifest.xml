@@ -10,6 +10,10 @@
 
     <uses-feature android:name="android.hardware.bluetooth" android:required="false" />
 
+    <!-- Barcode scanning -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+
     <!-- Diary: voice notes, reminders/notifications -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />

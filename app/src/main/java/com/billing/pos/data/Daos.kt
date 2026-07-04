@@ -44,8 +44,17 @@ interface ItemDao {
     @Query("SELECT * FROM items WHERE name = :name COLLATE NOCASE LIMIT 1")
     suspend fun byName(name: String): Item?
 
+    @Query("SELECT * FROM items WHERE barcode = :barcode AND barcode != '' LIMIT 1")
+    suspend fun byBarcode(barcode: String): Item?
+
     @Insert
     suspend fun insert(item: Item): Long
+
+    @Update
+    suspend fun update(item: Item)
+
+    @Delete
+    suspend fun delete(item: Item)
 }
 
 @Dao
