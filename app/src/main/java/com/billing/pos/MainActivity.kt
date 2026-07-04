@@ -22,6 +22,7 @@ import com.billing.pos.data.AppPrefs
 import com.billing.pos.ui.auth.BootScreen
 import com.billing.pos.ui.auth.LoginScreen
 import com.billing.pos.ui.billing.BillingScreen
+import com.billing.pos.ui.customers.CustomersScreen
 import com.billing.pos.ui.diary.DiaryEditScreen
 import com.billing.pos.ui.diary.DiaryListScreen
 import com.billing.pos.ui.expenses.ExpensesScreen
@@ -88,6 +89,7 @@ private fun AppNav() {
             onOpenDiary = { nav.navigate("diary") },
             onOpenReceipts = { nav.navigate("receipts") },
             onOpenExpenses = { nav.navigate("expenses") },
+            onOpenCustomers = { nav.navigate("customers") },
             onOpenSettings = { nav.navigate("settings") },
             onLogout = logout
         )
@@ -138,6 +140,9 @@ private fun AppNav() {
         }
         composable("settings") {
             SettingsScreen(onBack = { nav.popBackStack() })
+        }
+        composable("customers") {
+            CustomersScreen(onBack = { nav.popBackStack() })
         }
         composable("users") {
             UsersScreen(onBack = { nav.popBackStack() })

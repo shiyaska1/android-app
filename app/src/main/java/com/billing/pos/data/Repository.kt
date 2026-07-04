@@ -86,6 +86,19 @@ class Repository(context: Context) {
 
     suspend fun updateCustomer(customer: Customer) = customerDao.update(customer)
 
+    suspend fun customerHasTransactions(customer: Customer): Boolean =
+        billDao.countForCustomer(customer.id, customer.name) > 0
+
+    /** Deletes a customer only if it has no invoices and is not the default. */
+    suspend fun deleteCustomer(customer: Customer): Result<Unit> {
+        if (customer.isDefault) return Result.failure(IllegalStateException("Cannot delete the default customer"))
+        if (customerHasTransactions(customer)) return Result.failure(IllegalStateException("Customer has invoices"))
+        customerDao.delete(customer)
+        return Result.success(Unit)
+    }
+
+    val allCustomers: Flow<List<Customer>> get() = customers
+
     suspend fun addItem(name: String, price: Double, taxPercent: Double): Long =
         itemDao.insert(Item(name = name.trim(), price = price, taxPercent = taxPercent))
 
@@ -116,13 +129,33 @@ class Repository(context: Context) {
             customerName = bill.customerName,
             dateMillis = System.currentTimeMillis(),
             amount = amount,
-            paymentMode = mode.label
+            paymentMode = mode.label,
+            payFrom = bill.customerName
         )
         receiptDao.insert(receipt)
         val newPaid = (bill.paidAmount + amount).coerceAtMost(bill.grandTotal)
         billDao.updateBillHeader(bill.copy(paidAmount = newPaid))
         return receipt
     }
+
+    /** Records a receipt from any source (no invoice reference). */
+    suspend fun addStandaloneReceipt(payFrom: String, amount: Double, mode: PayMode): Receipt {
+        val receipt = Receipt(
+            receiptNo = nextReceiptNo(),
+            billId = 0,
+            billNo = "",
+            customerName = payFrom.trim(),
+            dateMillis = System.currentTimeMillis(),
+            amount = amount,
+            paymentMode = mode.label,
+            payFrom = payFrom.trim()
+        )
+        receiptDao.insert(receipt)
+        return receipt
+    }
+
+    /** Distinct "pay from" names previously used, for the dropdown. */
+    suspend fun payFromNames(): List<String> = receiptDao.payFromNames()
 
     // ---- expenses / payment vouchers (money paid out) ----
     suspend fun nextVoucherNo(): String =

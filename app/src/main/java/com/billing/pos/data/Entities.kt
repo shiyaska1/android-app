@@ -75,10 +75,13 @@ enum class PaymentMethod(val label: String) {
 
 /** Payment mode for receipts and expenses (no "Credit"). */
 enum class PayMode(val label: String) {
-    CASH("Cash"), UPI("UPI"), CARD("Card")
+    CASH("Cash"), UPI("UPI"), CARD("Card"), CHEQUE("Cheque")
 }
 
-/** A receipt voucher: money received against a (credit) invoice. */
+/**
+ * A receipt voucher: money received. May be against an invoice (billId > 0,
+ * payFrom = customer) or from any other source (billId = 0, payFrom = entered name).
+ */
 @Entity(tableName = "receipts")
 data class Receipt(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -89,6 +92,7 @@ data class Receipt(
     val dateMillis: Long,
     val amount: Double,
     val paymentMode: String,
+    val payFrom: String = "",
     val source: String = ""
 )
 

@@ -81,6 +81,7 @@ fun BillingScreen(
     onOpenDiary: () -> Unit,
     onOpenReceipts: () -> Unit,
     onOpenExpenses: () -> Unit,
+    onOpenCustomers: () -> Unit,
     onOpenSettings: () -> Unit,
     onLogout: () -> Unit,
     vm: BillingViewModel = viewModel()
@@ -161,6 +162,10 @@ fun BillingScreen(
                             )
                         }
                         DropdownMenuItem(
+                            text = { Text("Customers") },
+                            onClick = { menu = false; onOpenCustomers() }
+                        )
+                        DropdownMenuItem(
                             text = { Text("My Diary") },
                             onClick = { menu = false; onOpenDiary() }
                         )
@@ -223,18 +228,21 @@ fun BillingScreen(
                 var custQuery by remember { mutableStateOf("") }
                 val filteredCustomers = remember(custQuery, customers) {
                     if (custQuery.isBlank()) customers
-                    else customers.filter { it.name.contains(custQuery, ignoreCase = true) }
+                    else customers.filter {
+                        it.name.contains(custQuery, ignoreCase = true) || it.phone.contains(custQuery)
+                    }
                 }
                 ExposedDropdownMenuBox(
                     expanded = expanded,
-                    onExpandedChange = { expanded = it },
+                    // Opening the dropdown clears the box so you can search fresh.
+                    onExpandedChange = { open -> expanded = open; if (open) custQuery = "" },
                     modifier = Modifier.weight(1f)
                 ) {
                     OutlinedTextField(
                         value = if (expanded) custQuery else (vm.selectedCustomer?.name ?: ""),
                         onValueChange = { custQuery = it; expanded = true },
                         label = { Text("Customer") },
-                        placeholder = { Text("Search customer") },
+                        placeholder = { Text("Search name or number") },
                         singleLine = true,
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
                         modifier = Modifier

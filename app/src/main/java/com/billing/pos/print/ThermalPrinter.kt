@@ -12,6 +12,7 @@ import androidx.core.content.ContextCompat
 import com.billing.pos.data.Bill
 import com.billing.pos.data.BillItem
 import com.billing.pos.data.CompanyInfo
+import com.billing.pos.data.Receipt
 import com.billing.pos.util.Format
 import java.util.UUID
 
@@ -36,6 +37,17 @@ object ThermalPrinter {
 
     @SuppressLint("MissingPermission")
     fun printBill(context: Context, company: CompanyInfo, bill: Bill, lines: List<BillItem>) {
+        sendBytes(context, buildReceipt(company, bill, lines))
+    }
+
+    /** Prints a receipt voucher (money received) to give to the customer. */
+    @SuppressLint("MissingPermission")
+    fun printReceipt(context: Context, company: CompanyInfo, receipt: Receipt) {
+        sendBytes(context, buildReceiptVoucher(company, receipt))
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun sendBytes(context: Context, bytes: ByteArray) {
         if (!hasConnectPermission(context)) throw PrinterException("Bluetooth permission not granted")
 
         val adapter = BluetoothAdapter.getDefaultAdapter()
@@ -51,7 +63,7 @@ object ThermalPrinter {
             adapter.cancelDiscovery()
             socket.connect()
             val out = socket.outputStream
-            out.write(buildReceipt(company, bill, lines))
+            out.write(bytes)
             out.flush()
             Thread.sleep(400) // let the buffer flush before closing
         } catch (e: Exception) {
@@ -110,6 +122,30 @@ object ThermalPrinter {
         val text = sb.toString().toByteArray(Charsets.US_ASCII)
         val init = byteArrayOf(ESC.toByte(), '@'.code.toByte())          // initialize
         val cut = byteArrayOf(GS.toByte(), 'V'.code.toByte(), 66, 0)      // partial cut (ignored if unsupported)
+        return init + text + cut
+    }
+
+    private fun buildReceiptVoucher(company: CompanyInfo, r: Receipt): ByteArray {
+        val sb = StringBuilder()
+        sb.append(center(company.name)).append('\n')
+        if (company.address.isNotBlank()) sb.append(center(company.address)).append('\n')
+        if (company.phone.isNotBlank()) sb.append(center("Ph: ${company.phone}")).append('\n')
+        sb.append(center("RECEIPT VOUCHER")).append('\n')
+        sb.append(line()).append('\n')
+        sb.append("No  : ${r.receiptNo}\n")
+        sb.append("Date: ${Format.dateTime(r.dateMillis)}\n")
+        sb.append("From: ${r.payFrom.ifBlank { r.customerName }}\n")
+        if (r.billNo.isNotBlank()) sb.append("Ref : ${r.billNo}\n")
+        sb.append("Mode: ${r.paymentMode}\n")
+        sb.append(line()).append('\n')
+        sb.append(kv("RECEIVED", Format.money(r.amount))).append('\n')
+        sb.append(line()).append('\n')
+        sb.append(center("Thank you")).append('\n')
+        sb.append("\n\n\n")
+
+        val text = sb.toString().toByteArray(Charsets.US_ASCII)
+        val init = byteArrayOf(ESC.toByte(), '@'.code.toByte())
+        val cut = byteArrayOf(GS.toByte(), 'V'.code.toByte(), 66, 0)
         return init + text + cut
     }
 

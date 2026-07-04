@@ -28,6 +28,9 @@ interface CustomerDao {
 
     @Update
     suspend fun update(customer: Customer)
+
+    @Delete
+    suspend fun delete(customer: Customer)
 }
 
 @Dao
@@ -97,6 +100,9 @@ interface BillDao {
     @Query("SELECT * FROM bills WHERE id = :id LIMIT 1")
     suspend fun byId(id: Long): Bill?
 
+    @Query("SELECT COUNT(*) FROM bills WHERE customerId = :customerId OR customerName = :name")
+    suspend fun countForCustomer(customerId: Long, name: String): Int
+
     @Query("SELECT * FROM bill_items WHERE billId = :billId")
     suspend fun linesFor(billId: Long): List<BillItem>
 
@@ -117,6 +123,9 @@ interface ReceiptDao {
 
     @Query("SELECT * FROM receipts WHERE source = :source AND receiptNo = :receiptNo LIMIT 1")
     suspend fun findBySourceAndNo(source: String, receiptNo: String): Receipt?
+
+    @Query("SELECT DISTINCT payFrom FROM receipts WHERE payFrom != '' ORDER BY payFrom COLLATE NOCASE ASC")
+    suspend fun payFromNames(): List<String>
 
     @Insert
     suspend fun insert(receipt: Receipt): Long
