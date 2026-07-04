@@ -103,8 +103,8 @@ class VatReportViewModel(app: Application) : AndroidViewModel(app) {
     val message = MutableStateFlow<String?>(null)
     fun consumeMessage() { message.value = null }
 
-    fun setFrom(m: Long) { from = m; load() }
-    fun setTo(m: Long) { to = m; load() }
+    fun updateFrom(m: Long) { from = m; load() }
+    fun updateTo(m: Long) { to = m; load() }
 
     init { load() }
 
@@ -274,10 +274,10 @@ fun VatReportScreen(
         val s = vm.summary
         Column(Modifier.fillMaxSize().padding(pad).padding(16.dp).verticalScroll(rememberScrollState())) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { pickDate(context, vm.from) { vm.setFrom(it) } }, modifier = Modifier.weight(1f)) {
+                OutlinedButton(onClick = { pickDate(context, vm.from) { vm.updateFrom(it) } }, modifier = Modifier.weight(1f)) {
                     Text("From: ${Format.date(vm.from)}")
                 }
-                OutlinedButton(onClick = { pickDate(context, vm.to) { vm.setTo(it) } }, modifier = Modifier.weight(1f)) {
+                OutlinedButton(onClick = { pickDate(context, vm.to) { vm.updateTo(it) } }, modifier = Modifier.weight(1f)) {
                     Text("To: ${Format.date(vm.to)}")
                 }
             }
