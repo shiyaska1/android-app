@@ -21,17 +21,23 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
-/** One editable line in the current (unsaved) bill. */
+/** One editable line in the current (unsaved) bill. uid is a stable client id. */
 data class CartLine(
     val itemId: Long,
     val name: String,
     val price: Double,
     val taxPercent: Double,
-    val qty: Double
+    val qty: Double,
+    val uid: Long = nextUid()
 ) {
     val base: Double get() = price * qty
     val tax: Double get() = base * taxPercent / 100.0
     val total: Double get() = base + tax
+
+    companion object {
+        private var counter = 0L
+        fun nextUid(): Long = ++counter
+    }
 }
 
 class BillingViewModel(app: Application) : AndroidViewModel(app) {
@@ -126,6 +132,12 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun removeLine(index: Int) { cart.removeAt(index); dirty = true }
+
+    fun setLinePrice(index: Int, price: Double) {
+        val line = cart.getOrNull(index) ?: return
+        cart[index] = line.copy(price = price)
+        dirty = true
+    }
 
     fun addCustomer(name: String, phone: String, address: String, onCreated: () -> Unit) {
         if (name.isBlank()) { _message.value = "Enter customer name"; return }

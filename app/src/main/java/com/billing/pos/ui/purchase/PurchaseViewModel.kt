@@ -97,6 +97,12 @@ class PurchaseViewModel(app: Application) : AndroidViewModel(app) {
 
     fun removeLine(index: Int) { cart.removeAt(index); dirty = true }
 
+    fun setLinePrice(index: Int, price: Double) {
+        val line = cart.getOrNull(index) ?: return
+        cart[index] = line.copy(price = price)
+        dirty = true
+    }
+
     fun addSupplier(name: String, phone: String, address: String, onCreated: () -> Unit) {
         if (name.isBlank()) { _message.value = "Enter supplier name"; return }
         viewModelScope.launch {

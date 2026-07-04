@@ -22,6 +22,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Assessment
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Dialpad
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.NoteAdd
 import androidx.compose.material.icons.filled.Print
@@ -317,113 +318,97 @@ fun BillingScreen(
 
             Spacer(Modifier.padding(4.dp))
 
-            // --- Payment method ---
-            Label("Payment method")
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                PaymentMethod.values().forEach { m ->
-                    FilterChip(
-                        selected = vm.payment == m,
-                        onClick = { vm.selectPayment(m) },
-                        label = { Text(m.label) }
+            // --- Payment method (dropdown) ---
+            run {
+                var payExpanded by remember { mutableStateOf(false) }
+                ExposedDropdownMenuBox(expanded = payExpanded, onExpandedChange = { payExpanded = it }, modifier = Modifier.fillMaxWidth()) {
+                    OutlinedTextField(
+                        readOnly = true, value = vm.payment.label, onValueChange = {},
+                        label = { Text("Payment method") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(payExpanded) },
+                        modifier = Modifier.menuAnchor().fillMaxWidth()
                     )
+                    ExposedDropdownMenu(expanded = payExpanded, onDismissRequest = { payExpanded = false }) {
+                        PaymentMethod.values().forEach { m ->
+                            DropdownMenuItem(text = { Text(m.label) }, onClick = { vm.selectPayment(m); payExpanded = false })
+                        }
+                    }
                 }
             }
 
-            Spacer(Modifier.padding(4.dp))
-
-            // --- Add item buttons ---
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = { showItemPicker = true }, modifier = Modifier.weight(1f)) {
-                    Icon(Icons.Filled.Add, null); Text("Add item")
-                }
-                OutlinedButton(onClick = { showCustomLine = true }, modifier = Modifier.weight(1f)) {
-                    Icon(Icons.Filled.Add, null); Text("By price")
-                }
-                OutlinedButton(onClick = { showNewItem = true }, modifier = Modifier.weight(1f)) {
-                    Icon(Icons.Filled.NoteAdd, null); Text("New item")
+            // --- Item actions (one line) ---
+            Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
+                ToolAction(Icons.Filled.Add, "Item") { showItemPicker = true }
+                ToolAction(Icons.Filled.Dialpad, "Price") { showCustomLine = true }
+                ToolAction(Icons.Filled.NoteAdd, "New") { showNewItem = true }
+                ToolAction(Icons.Filled.QrCodeScanner, "Scan") {
+                    scanLauncher.launch(ScanOptions().setPrompt("Scan item barcode").setBeepEnabled(true).setOrientationLocked(false))
                 }
             }
-            OutlinedButton(
-                onClick = { scanLauncher.launch(ScanOptions().setPrompt("Scan item barcode").setBeepEnabled(true).setOrientationLocked(false)) },
-                modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
-            ) { Icon(Icons.Filled.QrCodeScanner, null); Text("Scan barcode") }
 
-            Spacer(Modifier.padding(4.dp))
+            Spacer(Modifier.padding(2.dp))
 
-            // --- Cart grid ---
+            // --- Cart grid (scrollable, editable rate) ---
             Card(Modifier.weight(1f).fillMaxWidth()) {
                 if (vm.cart.isEmpty()) {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Text("No items added", color = MaterialTheme.colorScheme.outline)
                     }
                 } else {
-                    LazyColumn(Modifier.padding(8.dp)) {
-                        itemsIndexed(vm.cart) { index, line ->
-                            Row(
-                                Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 6.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(Modifier.weight(1f)) {
-                                    Text(line.name, fontWeight = FontWeight.SemiBold)
-                                    Text(
-                                        Format.rupee(line.price) +
-                                            if (line.taxPercent > 0) "  +${Format.money(line.taxPercent)}%" else "",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.outline
+                    LazyColumn(Modifier.padding(horizontal = 8.dp)) {
+                        itemsIndexed(vm.cart, key = { _, line -> line.uid }) { index, line ->
+                            var priceText by remember(line.uid) { mutableStateOf(Format.money(line.price)) }
+                            Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(line.name, Modifier.weight(1f), fontWeight = FontWeight.SemiBold, maxLines = 1)
+                                    if (line.taxPercent > 0) Text("+${Format.money(line.taxPercent)}%", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                                    IconButton(onClick = { vm.removeLine(index) }) { Icon(Icons.Filled.Delete, "Remove", tint = MaterialTheme.colorScheme.error) }
+                                }
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    OutlinedTextField(
+                                        value = priceText,
+                                        onValueChange = { v -> val f = v.filter { it.isDigit() || it == '.' }; priceText = f; vm.setLinePrice(index, f.toDoubleOrNull() ?: 0.0) },
+                                        label = { Text("Rate") }, singleLine = true,
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                        modifier = Modifier.width(116.dp)
                                     )
+                                    Spacer(Modifier.width(6.dp))
+                                    IconButton(onClick = { vm.changeQty(index, -1.0) }) { Icon(Icons.Filled.Remove, "Decrease") }
+                                    Text(Format.qty(line.qty), fontWeight = FontWeight.Bold)
+                                    IconButton(onClick = { vm.changeQty(index, 1.0) }) { Icon(Icons.Filled.Add, "Increase") }
+                                    Spacer(Modifier.weight(1f))
+                                    Text(Format.rupee(line.total), fontWeight = FontWeight.Bold)
                                 }
-                                IconButton(onClick = { vm.changeQty(index, -1.0) }) {
-                                    Icon(Icons.Filled.Remove, "Decrease")
-                                }
-                                Text(Format.qty(line.qty), fontWeight = FontWeight.Bold)
-                                IconButton(onClick = { vm.changeQty(index, 1.0) }) {
-                                    Icon(Icons.Filled.Add, "Increase")
-                                }
-                                Text(
-                                    Format.rupee(line.total),
-                                    modifier = Modifier.width(84.dp),
-                                    fontWeight = FontWeight.Bold,
-                                    textAlign = androidx.compose.ui.text.style.TextAlign.End
-                                )
-                                IconButton(onClick = { vm.removeLine(index) }) {
-                                    Icon(Icons.Filled.Delete, "Remove", tint = MaterialTheme.colorScheme.error)
-                                }
+                                Divider()
                             }
-                            Divider()
                         }
                     }
                 }
             }
 
-            Spacer(Modifier.padding(4.dp))
+            Spacer(Modifier.padding(2.dp))
 
-            // --- Totals + charges ---
+            // --- Totals (one line) + grand total ---
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(12.dp)) {
-                    TotalRow("Sub Total", Format.rupee(vm.subTotal))
-                    TotalRow("Tax", Format.rupee(vm.taxTotal))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Additional charge", Modifier.weight(1f))
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Sub Total", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                            Text(Format.rupee(vm.subTotal + vm.taxTotal), fontWeight = FontWeight.SemiBold)
+                        }
                         OutlinedTextField(
                             value = vm.additionalChargeText,
                             onValueChange = { vm.setAdditionalCharge(it.filter { c -> c.isDigit() || c == '.' }) },
-                            singleLine = true,
-                            placeholder = { Text("0") },
+                            singleLine = true, label = { Text("Add.") },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                            modifier = Modifier.width(120.dp)
+                            modifier = Modifier.width(96.dp)
                         )
-                    }
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Discount", Modifier.weight(1f))
                         OutlinedTextField(
                             value = vm.discountText,
                             onValueChange = { vm.setDiscount(it.filter { c -> c.isDigit() || c == '.' }) },
-                            singleLine = true,
-                            placeholder = { Text("0") },
+                            singleLine = true, label = { Text("Disc.") },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                            modifier = Modifier.width(120.dp)
+                            modifier = Modifier.width(96.dp)
                         )
                     }
                     Divider(Modifier.padding(vertical = 6.dp))
@@ -700,6 +685,18 @@ private fun WhatsAppDialog(
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
+}
+
+@Composable
+private fun ToolAction(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    onClick: () -> Unit
+) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        IconButton(onClick = onClick) { Icon(icon, contentDescription = label) }
+        Text(label, style = MaterialTheme.typography.labelSmall)
+    }
 }
 
 @Composable
