@@ -8,4 +8,7 @@ class Converters {
 
     @TypeConverter fun attTypeToString(type: AttachmentType): String = type.name
     @TypeConverter fun stringToAttType(value: String): AttachmentType = AttachmentType.valueOf(value)
+
+    @TypeConverter fun natureToString(n: AccountNature): String = n.name
+    @TypeConverter fun stringToNature(v: String): AccountNature = AccountNature.valueOf(v)
 }

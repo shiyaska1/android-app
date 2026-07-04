@@ -22,6 +22,7 @@ import com.billing.pos.data.AppPrefs
 import com.billing.pos.ui.auth.BootScreen
 import com.billing.pos.ui.auth.LoginScreen
 import com.billing.pos.ui.backup.BackupScreen
+import com.billing.pos.ui.accounts.ChartOfAccountsScreen
 import com.billing.pos.ui.billing.BillingScreen
 import com.billing.pos.ui.cashbook.CashBookScreen
 import com.billing.pos.ui.customers.CustomersScreen
@@ -129,6 +130,7 @@ private fun AppNav() {
                 onSuppliers = { nav.navigate("suppliers") },
                 onVatReport = { nav.navigate("vat") },
                 onOutstanding = { nav.navigate("outstanding") },
+                onAccounts = { nav.navigate("accounts") },
                 onDiary = { nav.navigate("diary") },
                 onUsers = { nav.navigate("users") },
                 onSettings = { nav.navigate("settings") },
@@ -204,6 +206,9 @@ private fun AppNav() {
         }
         composable("outstanding") {
             OutstandingScreen(onBack = { nav.popBackStack() })
+        }
+        composable("accounts") {
+            ChartOfAccountsScreen(onBack = { nav.popBackStack() })
         }
         composable("cashbook") {
             CashBookScreen(

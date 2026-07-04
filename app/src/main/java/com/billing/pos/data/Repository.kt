@@ -26,6 +26,7 @@ class Repository(context: Context) {
     private val expenseDao = db.expenseDao()
     private val supplierDao = db.supplierDao()
     private val purchaseDao = db.purchaseDao()
+    private val accountDao = db.accountDao()
 
     val customers: Flow<List<Customer>> = customerDao.observeAll()
     val items: Flow<List<Item>> = itemDao.observeAll()
@@ -35,6 +36,8 @@ class Repository(context: Context) {
     val allExpenses: Flow<List<Expense>> = expenseDao.observeAll()
     val suppliers: Flow<List<Supplier>> = supplierDao.observeAll()
     val allPurchases: Flow<List<Purchase>> = purchaseDao.observeAll()
+    val accountGroups: Flow<List<AccountGroup>> = accountDao.observeGroups()
+    val accountHeads: Flow<List<AccountHead>> = accountDao.observeHeads()
     val purchaseLines: Flow<List<PurchaseLineInfo>> = purchaseDao.observePurchaseLines()
     val soldQty: Flow<List<NameQty>> = billDao.observeSoldQty()
 
@@ -46,6 +49,7 @@ class Repository(context: Context) {
         if (supplierDao.count() == 0) {
             supplierDao.insert(Supplier(name = "Cash Supplier", isDefault = true))
         }
+        if (accountDao.groupCount() == 0) seedChartOfAccounts()
         if (userDao.count() == 0) {
             userDao.insert(
                 User(
@@ -60,6 +64,63 @@ class Repository(context: Context) {
                 )
             )
         }
+    }
+
+    private suspend fun seedChartOfAccounts() {
+        suspend fun g(name: String, nature: AccountNature) =
+            accountDao.insertGroup(AccountGroup(name = name, nature = nature, isSystem = true))
+        val cash = g("Cash-in-hand", AccountNature.ASSET)
+        val bank = g("Bank Accounts", AccountNature.ASSET)
+        val debtors = g("Sundry Debtors", AccountNature.ASSET)
+        g("Current Assets", AccountNature.ASSET)
+        g("Fixed Assets", AccountNature.ASSET)
+        val creditors = g("Sundry Creditors", AccountNature.LIABILITY)
+        val taxes = g("Duties & Taxes", AccountNature.LIABILITY)
+        g("Current Liabilities", AccountNature.LIABILITY)
+        val capital = g("Capital Account", AccountNature.LIABILITY)
+        val salesGrp = g("Sales Account", AccountNature.INCOME)
+        g("Direct Income", AccountNature.INCOME)
+        val indirectInc = g("Indirect Income", AccountNature.INCOME)
+        val purchaseGrp = g("Purchase Account", AccountNature.EXPENSE)
+        g("Direct Expenses", AccountNature.EXPENSE)
+        val indirectExp = g("Indirect Expenses", AccountNature.EXPENSE)
+
+        suspend fun h(name: String, groupId: Long) =
+            accountDao.insertHead(AccountHead(name = name, groupId = groupId, isSystem = true))
+        h("Cash", cash)
+        h("Bank", bank)
+        h("Sundry Debtors", debtors)
+        h("Sundry Creditors", creditors)
+        h("Sales", salesGrp)
+        h("Purchase", purchaseGrp)
+        h("Output Tax (GST/VAT)", taxes)
+        h("Input Tax (GST/VAT)", taxes)
+        h("Discount Allowed", indirectExp)
+        h("Discount Received", indirectInc)
+        h("Opening Capital", capital)
+    }
+
+    suspend fun addAccountGroup(name: String, nature: AccountNature): Long =
+        accountDao.insertGroup(AccountGroup(name = name.trim(), nature = nature))
+
+    suspend fun updateAccountGroup(group: AccountGroup) = accountDao.updateGroup(group)
+
+    suspend fun deleteAccountGroup(group: AccountGroup): Result<Unit> {
+        if (group.isSystem) return Result.failure(IllegalStateException("System group cannot be deleted"))
+        if (accountDao.headCountInGroup(group.id) > 0) return Result.failure(IllegalStateException("Group has account heads"))
+        accountDao.deleteGroup(group)
+        return Result.success(Unit)
+    }
+
+    suspend fun addAccountHead(name: String, groupId: Long, openingBalance: Double, openingIsDebit: Boolean): Long =
+        accountDao.insertHead(AccountHead(name = name.trim(), groupId = groupId, openingBalance = openingBalance, openingIsDebit = openingIsDebit))
+
+    suspend fun updateAccountHead(head: AccountHead) = accountDao.updateHead(head)
+
+    suspend fun deleteAccountHead(head: AccountHead): Result<Unit> {
+        if (head.isSystem) return Result.failure(IllegalStateException("System head cannot be deleted"))
+        accountDao.deleteHead(head)
+        return Result.success(Unit)
     }
 
     // ---- auth / users ----

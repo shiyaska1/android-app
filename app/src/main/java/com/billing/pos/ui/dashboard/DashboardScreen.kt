@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.AccountBalanceWallet
+import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material.icons.filled.Assessment
 import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.Category
@@ -66,6 +67,7 @@ fun DashboardScreen(
     onSuppliers: () -> Unit,
     onVatReport: () -> Unit,
     onOutstanding: () -> Unit,
+    onAccounts: () -> Unit,
     onDiary: () -> Unit,
     onUsers: () -> Unit,
     onSettings: () -> Unit,
@@ -86,6 +88,7 @@ fun DashboardScreen(
         add(Tile("Suppliers", Icons.Filled.LocalShipping, onSuppliers))
         if (Session.canViewInvoice) add(Tile("VAT Report", Icons.Filled.Description, onVatReport))
         if (Session.canViewInvoice) add(Tile("Outstanding", Icons.Filled.AccountBalance, onOutstanding))
+        if (Session.canManageUsers) add(Tile("Accounts", Icons.Filled.AccountTree, onAccounts))
         add(Tile("My Diary", Icons.Filled.MenuBook, onDiary))
         if (Session.canManageUsers) add(Tile("Users", Icons.Filled.ManageAccounts, onUsers))
         if (Session.canManageUsers) add(Tile("Settings", Icons.Filled.Settings, onSettings))

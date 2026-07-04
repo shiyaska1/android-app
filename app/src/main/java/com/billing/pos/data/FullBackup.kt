@@ -50,6 +50,8 @@ object FullBackup {
         root.put("suppliers", JSONArray().apply { db.supplierDao().all().forEach { put(supplierJson(it)) } })
         root.put("purchases", JSONArray().apply { db.purchaseDao().all().forEach { put(purchaseJson(it)) } })
         root.put("purchaseItems", JSONArray().apply { db.purchaseDao().allLines().forEach { put(pLineJson(it)) } })
+        root.put("accountGroups", JSONArray().apply { db.accountDao().allGroups().forEach { put(groupJson(it)) } })
+        root.put("accountHeads", JSONArray().apply { db.accountDao().allHeads().forEach { put(headJson(it)) } })
 
         val dir = File(context.cacheDir, "shared").apply { mkdirs() }
         val zip = File(dir, "pos-full-backup.zip")
@@ -125,6 +127,8 @@ object FullBackup {
             for (i in 0 until it.length()) lines.add(readPLine(it.getJSONObject(i)))
             if (lines.isNotEmpty()) db.purchaseDao().insertLines(lines)
         }
+        root.optJSONArray("accountGroups")?.let { for (i in 0 until it.length()) db.accountDao().insertGroup(readGroup(it.getJSONObject(i))) }
+        root.optJSONArray("accountHeads")?.let { for (i in 0 until it.length()) db.accountDao().insertHead(readHead(it.getJSONObject(i))) }
 
         "Restore complete"
     }
@@ -186,6 +190,13 @@ object FullBackup {
     private fun pLineJson(l: PurchaseItem) = JSONObject().put("id", l.id).put("purchaseId", l.purchaseId)
         .put("name", l.name).put("qty", l.qty).put("price", l.price)
         .put("taxPercent", l.taxPercent).put("lineTotal", l.lineTotal)
+
+    private fun groupJson(g: AccountGroup) = JSONObject().put("id", g.id).put("name", g.name)
+        .put("nature", g.nature.name).put("isSystem", g.isSystem)
+
+    private fun headJson(h: AccountHead) = JSONObject().put("id", h.id).put("name", h.name)
+        .put("groupId", h.groupId).put("openingBalance", h.openingBalance)
+        .put("openingIsDebit", h.openingIsDebit).put("isSystem", h.isSystem)
 
     private fun attJson(a: DiaryAttachment) = JSONObject().put("id", a.id).put("entryId", a.entryId)
         .put("file", if (a.type == AttachmentType.LOCATION) "" else File(a.path).name)
@@ -274,6 +285,18 @@ object FullBackup {
         id = o.optLong("id"), purchaseId = o.optLong("purchaseId"), name = o.optString("name"),
         qty = o.optDouble("qty", 0.0), price = o.optDouble("price", 0.0),
         taxPercent = o.optDouble("taxPercent", 0.0), lineTotal = o.optDouble("lineTotal", 0.0)
+    )
+
+    private fun readGroup(o: JSONObject) = AccountGroup(
+        id = o.optLong("id"), name = o.optString("name"),
+        nature = runCatching { AccountNature.valueOf(o.optString("nature", "ASSET")) }.getOrDefault(AccountNature.ASSET),
+        isSystem = o.optBoolean("isSystem", false)
+    )
+
+    private fun readHead(o: JSONObject) = AccountHead(
+        id = o.optLong("id"), name = o.optString("name"), groupId = o.optLong("groupId"),
+        openingBalance = o.optDouble("openingBalance", 0.0), openingIsDebit = o.optBoolean("openingIsDebit", true),
+        isSystem = o.optBoolean("isSystem", false)
     )
 
     private fun readAtt(context: Context, o: JSONObject): DiaryAttachment {
