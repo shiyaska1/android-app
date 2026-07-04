@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Dialpad
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.NoteAdd
+import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Remove
@@ -255,76 +256,41 @@ fun BillingScreen(
 
             Spacer(Modifier.padding(6.dp))
 
-            // --- Customer selector (searchable) + New ---
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            // --- Customer (searchable) + New + Payment, all one line ---
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 var expanded by remember { mutableStateOf(false) }
                 var custQuery by remember { mutableStateOf("") }
                 val focusManager = LocalFocusManager.current
-
-                // Keep the field showing the selected customer when the selection changes.
-                LaunchedEffect(vm.selectedCustomer?.id) {
-                    custQuery = vm.selectedCustomer?.name ?: ""
-                }
-
+                LaunchedEffect(vm.selectedCustomer?.id) { custQuery = vm.selectedCustomer?.name ?: "" }
                 val filteredCustomers = remember(custQuery, customers) {
                     if (custQuery.isBlank()) customers
-                    else customers.filter {
-                        it.name.contains(custQuery, ignoreCase = true) || it.phone.contains(custQuery)
-                    }
+                    else customers.filter { it.name.contains(custQuery, ignoreCase = true) || it.phone.contains(custQuery) }
                 }
-                ExposedDropdownMenuBox(
-                    expanded = expanded,
-                    onExpandedChange = { expanded = it },
-                    modifier = Modifier.weight(1f)
-                ) {
+                ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }, modifier = Modifier.weight(1.5f)) {
                     OutlinedTextField(
-                        value = custQuery,
-                        onValueChange = { custQuery = it; expanded = true },
-                        label = { Text("Customer") },
-                        placeholder = { Text("Search name or number") },
-                        singleLine = true,
+                        value = custQuery, onValueChange = { custQuery = it; expanded = true },
+                        label = { Text("Customer") }, placeholder = { Text("Search") }, singleLine = true,
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
-                        modifier = Modifier
-                            .menuAnchor()
-                            .fillMaxWidth()
-                            .onFocusChanged { fs ->
-                                // Focusing clears the box for a fresh search; leaving restores the selection.
-                                if (fs.isFocused) { custQuery = ""; expanded = true }
-                                else custQuery = vm.selectedCustomer?.name ?: ""
-                            }
+                        modifier = Modifier.menuAnchor().fillMaxWidth().onFocusChanged { fs ->
+                            if (fs.isFocused) { custQuery = ""; expanded = true } else custQuery = vm.selectedCustomer?.name ?: ""
+                        }
                     )
                     ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
                         filteredCustomers.forEach { c ->
                             DropdownMenuItem(
                                 text = { Text(c.name + if (c.isDefault) "  (default)" else "") },
-                                onClick = {
-                                    vm.selectCustomer(c)
-                                    custQuery = c.name
-                                    expanded = false
-                                    focusManager.clearFocus()
-                                }
+                                onClick = { vm.selectCustomer(c); custQuery = c.name; expanded = false; focusManager.clearFocus() }
                             )
                         }
-                        if (filteredCustomers.isEmpty()) {
-                            DropdownMenuItem(text = { Text("No match") }, onClick = { expanded = false })
-                        }
+                        if (filteredCustomers.isEmpty()) DropdownMenuItem(text = { Text("No match") }, onClick = { expanded = false })
                     }
                 }
-                Spacer(Modifier.width(8.dp))
-                OutlinedButton(onClick = { showNewCustomer = true }) {
-                    Icon(Icons.Filled.Add, null); Text("New")
-                }
-            }
-
-            Spacer(Modifier.padding(4.dp))
-
-            // --- Payment method (dropdown) ---
-            run {
+                IconButton(onClick = { showNewCustomer = true }) { Icon(Icons.Filled.PersonAdd, "New customer") }
                 var payExpanded by remember { mutableStateOf(false) }
-                ExposedDropdownMenuBox(expanded = payExpanded, onExpandedChange = { payExpanded = it }, modifier = Modifier.fillMaxWidth()) {
+                ExposedDropdownMenuBox(expanded = payExpanded, onExpandedChange = { payExpanded = it }, modifier = Modifier.weight(1f)) {
                     OutlinedTextField(
                         readOnly = true, value = vm.payment.label, onValueChange = {},
-                        label = { Text("Payment method") },
+                        label = { Text("Pay") },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(payExpanded) },
                         modifier = Modifier.menuAnchor().fillMaxWidth()
                     )

@@ -23,6 +23,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Dialpad
 import androidx.compose.material.icons.filled.NoteAdd
+import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Remove
@@ -157,8 +158,8 @@ fun PurchaseScreen(
 
             Spacer(Modifier.padding(6.dp))
 
-            // Supplier searchable dropdown + New
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            // Supplier (searchable) + New + Payment, all one line
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 var expanded by remember { mutableStateOf(false) }
                 var query by remember { mutableStateOf("") }
                 val focusManager = LocalFocusManager.current
@@ -167,21 +168,13 @@ fun PurchaseScreen(
                     if (query.isBlank()) suppliers
                     else suppliers.filter { it.name.contains(query, true) || it.phone.contains(query) }
                 }
-                ExposedDropdownMenuBox(
-                    expanded = expanded,
-                    onExpandedChange = { expanded = it },
-                    modifier = Modifier.weight(1f)
-                ) {
+                ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }, modifier = Modifier.weight(1.5f)) {
                     OutlinedTextField(
-                        value = query,
-                        onValueChange = { query = it; expanded = true },
-                        label = { Text("Supplier") },
-                        placeholder = { Text("Search name or number") },
-                        singleLine = true,
+                        value = query, onValueChange = { query = it; expanded = true },
+                        label = { Text("Supplier") }, placeholder = { Text("Search") }, singleLine = true,
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
                         modifier = Modifier.menuAnchor().fillMaxWidth().onFocusChanged { fs ->
-                            if (fs.isFocused) { query = ""; expanded = true }
-                            else query = vm.selectedSupplier?.name ?: ""
+                            if (fs.isFocused) { query = ""; expanded = true } else query = vm.selectedSupplier?.name ?: ""
                         }
                     )
                     ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
@@ -194,18 +187,12 @@ fun PurchaseScreen(
                         if (filtered.isEmpty()) DropdownMenuItem(text = { Text("No match") }, onClick = { expanded = false })
                     }
                 }
-                Spacer(Modifier.width(8.dp))
-                OutlinedButton(onClick = { showNewSupplier = true }) { Icon(Icons.Filled.Add, null); Text("New") }
-            }
-
-            Spacer(Modifier.padding(4.dp))
-
-            run {
+                IconButton(onClick = { showNewSupplier = true }) { Icon(Icons.Filled.PersonAdd, "New supplier") }
                 var payExpanded by remember { mutableStateOf(false) }
-                ExposedDropdownMenuBox(expanded = payExpanded, onExpandedChange = { payExpanded = it }, modifier = Modifier.fillMaxWidth()) {
+                ExposedDropdownMenuBox(expanded = payExpanded, onExpandedChange = { payExpanded = it }, modifier = Modifier.weight(1f)) {
                     OutlinedTextField(
                         readOnly = true, value = vm.payment.label, onValueChange = {},
-                        label = { Text("Payment method") },
+                        label = { Text("Pay") },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(payExpanded) },
                         modifier = Modifier.menuAnchor().fillMaxWidth()
                     )
