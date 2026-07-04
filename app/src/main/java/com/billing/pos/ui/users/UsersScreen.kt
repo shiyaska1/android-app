@@ -95,21 +95,21 @@ private fun defaultPerms(role: Role): User = when (role) {
         canCreateInvoice = true, canEditInvoice = true, canDeleteInvoice = true, canViewInvoice = true,
         canCreateReceipt = true, canEditReceipt = true, canDeleteReceipt = true, canViewReceipt = true,
         canCreatePayment = true, canEditPayment = true, canDeletePayment = true, canViewPayment = true,
-        canExport = true, canImport = true, canManageUsers = true
+        canViewCashbook = true, canExport = true, canImport = true, canManageUsers = true
     )
     Role.ADMIN -> User(
         username = "", passwordHash = "", role = role,
         canCreateInvoice = true, canEditInvoice = true, canDeleteInvoice = true, canViewInvoice = true,
         canCreateReceipt = true, canEditReceipt = true, canDeleteReceipt = true, canViewReceipt = true,
         canCreatePayment = true, canEditPayment = true, canDeletePayment = true, canViewPayment = true,
-        canExport = true, canImport = true, canManageUsers = false
+        canViewCashbook = true, canExport = true, canImport = true, canManageUsers = false
     )
     Role.SALESMAN -> User(
         username = "", passwordHash = "", role = role,
         canCreateInvoice = true, canEditInvoice = false, canDeleteInvoice = false, canViewInvoice = true,
         canCreateReceipt = false, canEditReceipt = false, canDeleteReceipt = false, canViewReceipt = false,
         canCreatePayment = false, canEditPayment = false, canDeletePayment = false, canViewPayment = false,
-        canExport = true, canImport = false, canManageUsers = false
+        canViewCashbook = false, canExport = true, canImport = false, canManageUsers = false
     )
 }
 
@@ -201,6 +201,7 @@ private fun permSummary(u: User): String = buildList {
     if (u.canCreatePayment) add("pay:new")
     if (u.canEditPayment) add("pay:edit")
     if (u.canDeletePayment) add("pay:del")
+    if (u.canViewCashbook) add("cashbook")
     if (u.canExport) add("export")
     if (u.canImport) add("import")
     if (u.canManageUsers) add("users")
@@ -278,8 +279,11 @@ private fun UserDialog(
                 PermRow("Edit payment", perms.canEditPayment) { perms = perms.copy(canEditPayment = it) }
                 PermRow("Delete payment", perms.canDeletePayment) { perms = perms.copy(canDeletePayment = it) }
 
+                Section("Reports")
+                PermRow("View cash book", perms.canViewCashbook) { perms = perms.copy(canViewCashbook = it) }
+
                 Section("Data & admin")
-                PermRow("Export / share", perms.canExport) { perms = perms.copy(canExport = it) }
+                PermRow("Export / backup", perms.canExport) { perms = perms.copy(canExport = it) }
                 PermRow("Import data", perms.canImport) { perms = perms.copy(canImport = it) }
                 PermRow("Manage users", perms.canManageUsers) { perms = perms.copy(canManageUsers = it) }
             }

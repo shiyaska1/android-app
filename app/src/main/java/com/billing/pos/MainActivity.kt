@@ -23,6 +23,7 @@ import com.billing.pos.ui.auth.BootScreen
 import com.billing.pos.ui.auth.LoginScreen
 import com.billing.pos.ui.backup.BackupScreen
 import com.billing.pos.ui.billing.BillingScreen
+import com.billing.pos.ui.cashbook.CashBookScreen
 import com.billing.pos.ui.customers.CustomersScreen
 import com.billing.pos.ui.diary.DiaryEditScreen
 import com.billing.pos.ui.diary.DiaryListScreen
@@ -90,6 +91,7 @@ private fun AppNav() {
             onOpenDiary = { nav.navigate("diary") },
             onOpenReceipts = { nav.navigate("receipts") },
             onOpenExpenses = { nav.navigate("expenses") },
+            onOpenCashbook = { nav.navigate("cashbook") },
             onOpenCustomers = { nav.navigate("customers") },
             onOpenSettings = { nav.navigate("settings") },
             onOpenBackup = { nav.navigate("backup") },
@@ -145,6 +147,12 @@ private fun AppNav() {
         }
         composable("customers") {
             CustomersScreen(onBack = { nav.popBackStack() })
+        }
+        composable("cashbook") {
+            CashBookScreen(
+                onBack = { nav.popBackStack() },
+                onEditInvoice = { id -> nav.navigate("billing/edit/$id") }
+            )
         }
         composable("backup") {
             BackupScreen(

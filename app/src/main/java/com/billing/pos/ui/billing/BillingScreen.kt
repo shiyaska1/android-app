@@ -81,6 +81,7 @@ fun BillingScreen(
     onOpenDiary: () -> Unit,
     onOpenReceipts: () -> Unit,
     onOpenExpenses: () -> Unit,
+    onOpenCashbook: () -> Unit,
     onOpenCustomers: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenBackup: () -> Unit,
@@ -160,6 +161,12 @@ fun BillingScreen(
                             DropdownMenuItem(
                                 text = { Text("Payments / Expenses") },
                                 onClick = { menu = false; onOpenExpenses() }
+                            )
+                        }
+                        if (Session.canViewCashbook) {
+                            DropdownMenuItem(
+                                text = { Text("Cash Book") },
+                                onClick = { menu = false; onOpenCashbook() }
                             )
                         }
                         DropdownMenuItem(

@@ -31,6 +31,7 @@ object Session {
     val canDeletePayment: Boolean get() = current?.canDeletePayment == true
     val canViewPayment: Boolean get() = current?.canViewPayment == true
 
+    val canViewCashbook: Boolean get() = current?.canViewCashbook == true
     val canExport: Boolean get() = current?.canExport == true
     val canImport: Boolean get() = current?.canImport == true
     val canManageUsers: Boolean get() = current?.canManageUsers == true

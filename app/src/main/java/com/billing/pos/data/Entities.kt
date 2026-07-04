@@ -137,7 +137,8 @@ data class User(
     val canEditPayment: Boolean = false,
     val canDeletePayment: Boolean = false,
     val canViewPayment: Boolean = false,
-    // Data & admin
+    // Reports & data & admin
+    val canViewCashbook: Boolean = false,
     val canExport: Boolean = true,
     val canImport: Boolean = false,
     val canManageUsers: Boolean = false,

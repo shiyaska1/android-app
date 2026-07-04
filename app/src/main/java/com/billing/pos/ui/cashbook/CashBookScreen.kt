@@ -1,0 +1,357 @@
+package com.billing.pos.ui.cashbook
+
+import android.app.Application
+import android.content.Context
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.Divider
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.billing.pos.auth.Session
+import com.billing.pos.data.Bill
+import com.billing.pos.data.Expense
+import com.billing.pos.data.PayMode
+import com.billing.pos.data.Receipt
+import com.billing.pos.data.Repository
+import com.billing.pos.ui.billing.collectAsStateSafe
+import com.billing.pos.util.Format
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+import java.util.Calendar
+
+class CashBookViewModel(app: Application) : AndroidViewModel(app) {
+    private val repo = Repository(app)
+
+    val bills: StateFlow<List<Bill>> =
+        repo.allBills.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val receipts: StateFlow<List<Receipt>> =
+        repo.allReceipts.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val expenses: StateFlow<List<Expense>> =
+        repo.allExpenses.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val message = MutableStateFlow<String?>(null)
+    fun consumeMessage() { message.value = null }
+
+    fun editReceipt(old: Receipt, amount: Double, mode: PayMode) {
+        if (amount <= 0) { message.value = "Enter a valid amount"; return }
+        viewModelScope.launch { repo.updateReceipt(old, amount, mode); message.value = "Receipt updated" }
+    }
+
+    fun editPayment(e: Expense, description: String, amount: Double, mode: PayMode) {
+        if (amount <= 0) { message.value = "Enter a valid amount"; return }
+        viewModelScope.launch { repo.updateExpense(e, description, amount, mode); message.value = "Payment updated" }
+    }
+}
+
+private data class CashTxn(
+    val date: Long,
+    val kind: String,           // SALE / RECEIPT / PAYMENT
+    val title: String,
+    val mode: String,
+    val amount: Double,
+    val isIn: Boolean,
+    val bill: Bill?,
+    val receipt: Receipt?,
+    val expense: Expense?
+)
+
+private fun startOfDay(m: Long): Long {
+    val c = Calendar.getInstance().apply {
+        timeInMillis = m
+        set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+    }
+    return c.timeInMillis
+}
+private fun endOfDay(m: Long): Long = startOfDay(m) + 24L * 60 * 60 * 1000 - 1
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun CashBookScreen(
+    onBack: () -> Unit,
+    onEditInvoice: (Long) -> Unit,
+    vm: CashBookViewModel = viewModel()
+) {
+    val context = LocalContext.current
+    val snackbar = remember { SnackbarHostState() }
+    val bills by vm.bills.collectAsStateSafe()
+    val receipts by vm.receipts.collectAsStateSafe()
+    val expenses by vm.expenses.collectAsStateSafe()
+    val message by vm.message.collectAsStateSafe()
+
+    LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); vm.consumeMessage() } }
+
+    var fromMillis by remember { mutableStateOf<Long?>(null) }
+    var toMillis by remember { mutableStateOf<Long?>(null) }
+    var modeFilter by remember { mutableStateOf("All") }   // All/Cash/UPI/Card/Cheque
+
+    var editReceiptFor by remember { mutableStateOf<Receipt?>(null) }
+    var editPaymentFor by remember { mutableStateOf<Expense?>(null) }
+
+    // Build all cash-affecting transactions.
+    val allTxns = remember(bills, receipts, expenses) {
+        buildList {
+            bills.filter { it.paymentMethod != "Credit" }.forEach {
+                add(CashTxn(it.dateMillis, "SALE", "${it.billNo} • ${it.customerName}", it.paymentMethod, it.grandTotal, true, it, null, null))
+            }
+            receipts.forEach {
+                add(CashTxn(it.dateMillis, "RECEIPT", "${it.receiptNo} • ${it.payFrom.ifBlank { it.customerName }}", it.paymentMode, it.amount, true, null, it, null))
+            }
+            expenses.forEach {
+                add(CashTxn(it.dateMillis, "PAYMENT", "${it.voucherNo} • ${it.description.ifBlank { "Expense" }}", it.paymentMode, it.amount, false, null, null, it))
+            }
+        }
+    }
+
+    val byMode = if (modeFilter == "All") allTxns else allTxns.filter { it.mode == modeFilter }
+    val lo = fromMillis?.let { startOfDay(it) }
+    val hi = toMillis?.let { endOfDay(it) }
+
+    fun signed(t: CashTxn) = if (t.isIn) t.amount else -t.amount
+
+    val opening = if (lo == null) 0.0 else byMode.filter { it.date < lo }.sumOf { signed(it) }
+    val ranged = byMode.filter { (lo == null || it.date >= lo) && (hi == null || it.date <= hi) }
+        .sortedBy { it.date }
+
+    // running balance per row
+    var running = opening
+    val rows = ranged.map { t -> running += signed(t); t to running }
+    val closing = running
+    val totalIn = ranged.filter { it.isIn }.sumOf { it.amount }
+    val totalOut = ranged.filter { !it.isIn }.sumOf { it.amount }
+
+    Scaffold(
+        snackbarHost = { SnackbarHost(snackbar) },
+        topBar = {
+            TopAppBar(
+                title = { Text("Cash Book") },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    titleContentColor = MaterialTheme.colorScheme.onPrimary,
+                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary
+                )
+            )
+        }
+    ) { pad ->
+        if (!Session.canViewCashbook) {
+            Column(Modifier.fillMaxSize().padding(pad), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("You don't have permission to view the cash book", color = MaterialTheme.colorScheme.outline)
+            }
+            return@Scaffold
+        }
+
+        Column(Modifier.fillMaxSize().padding(pad).padding(12.dp)) {
+            // Date range (optional)
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = { pickDate(context, fromMillis) { fromMillis = it } }, modifier = Modifier.weight(1f)) {
+                    Text("From: " + (fromMillis?.let { Format.date(it) } ?: "any"))
+                }
+                OutlinedButton(onClick = { pickDate(context, toMillis) { toMillis = it } }, modifier = Modifier.weight(1f)) {
+                    Text("To: " + (toMillis?.let { Format.date(it) } ?: "any"))
+                }
+                if (fromMillis != null || toMillis != null) {
+                    TextButton(onClick = { fromMillis = null; toMillis = null }) { Text("Clear") }
+                }
+            }
+
+            // Payment mode filter
+            Row(Modifier.horizontalScroll(rememberScrollState()).padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf("All", "Cash", "UPI", "Card", "Cheque").forEach { m ->
+                    FilterChip(selected = modeFilter == m, onClick = { modeFilter = m }, label = { Text(m) })
+                }
+            }
+
+            // Balances
+            Card(Modifier.fillMaxWidth().padding(top = 12.dp)) {
+                Column(Modifier.padding(16.dp)) {
+                    BalRow("Opening balance", opening)
+                    BalRow("Total in", totalIn, Color(0xFF2E7D32))
+                    BalRow("Total out", -totalOut, MaterialTheme.colorScheme.error)
+                    Divider(Modifier.padding(vertical = 8.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Closing balance", fontWeight = FontWeight.Bold)
+                        Text(Format.rupee(closing), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                    }
+                }
+            }
+
+            if (rows.isEmpty()) {
+                Text("No cash transactions in this period.", color = MaterialTheme.colorScheme.outline, modifier = Modifier.padding(top = 16.dp))
+            } else {
+                LazyColumn(Modifier.fillMaxWidth().weight(1f).padding(top = 8.dp)) {
+                    items(rows) { (t, balance) ->
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    when (t.kind) {
+                                        "SALE" -> t.bill?.let { onEditInvoice(it.id) }
+                                        "RECEIPT" -> editReceiptFor = t.receipt
+                                        "PAYMENT" -> editPaymentFor = t.expense
+                                    }
+                                }
+                                .padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(t.title, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                                Text(
+                                    "${t.kind.lowercase().replaceFirstChar { it.uppercase() }} • ${t.mode} • ${Format.date(t.date)}",
+                                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline
+                                )
+                            }
+                            Text(
+                                (if (t.isIn) "+ " else "- ") + Format.money(t.amount),
+                                color = if (t.isIn) Color(0xFF2E7D32) else MaterialTheme.colorScheme.error,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                Format.money(balance),
+                                modifier = Modifier.padding(start = 12.dp).width(78.dp),
+                                textAlign = androidx.compose.ui.text.style.TextAlign.End,
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                        Divider()
+                    }
+                }
+            }
+        }
+    }
+
+    editReceiptFor?.let { r ->
+        ReceiptEditDialog(r, canSave = Session.canEditReceipt, onDismiss = { editReceiptFor = null }) { amt, mode ->
+            vm.editReceipt(r, amt, mode); editReceiptFor = null
+        }
+    }
+    editPaymentFor?.let { e ->
+        PaymentEditDialog(e, canSave = Session.canEditPayment, onDismiss = { editPaymentFor = null }) { desc, amt, mode ->
+            vm.editPayment(e, desc, amt, mode); editPaymentFor = null
+        }
+    }
+}
+
+@Composable
+private fun BalRow(label: String, value: Double, color: Color = Color.Unspecified) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(label)
+        Text(Format.rupee(value), color = color, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+private fun pickDate(context: Context, current: Long?, onPicked: (Long) -> Unit) {
+    val c = Calendar.getInstance().apply { if (current != null) timeInMillis = current }
+    android.app.DatePickerDialog(
+        context,
+        { _, y, m, d -> c.set(Calendar.YEAR, y); c.set(Calendar.MONTH, m); c.set(Calendar.DAY_OF_MONTH, d); onPicked(c.timeInMillis) },
+        c.get(Calendar.YEAR), c.get(Calendar.MONTH), c.get(Calendar.DAY_OF_MONTH)
+    ).show()
+}
+
+@Composable
+private fun ReceiptEditDialog(r: Receipt, canSave: Boolean, onDismiss: () -> Unit, onSave: (Double, PayMode) -> Unit) {
+    var amount by remember { mutableStateOf(Format.money(r.amount)) }
+    var mode by remember { mutableStateOf(PayMode.values().firstOrNull { it.label == r.paymentMode } ?: PayMode.CASH) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (canSave) "Edit receipt ${r.receiptNo}" else "Receipt ${r.receiptNo}") },
+        text = {
+            Column {
+                Text("From: ${r.payFrom.ifBlank { r.customerName }}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                OutlinedTextField(
+                    value = amount, onValueChange = { amount = it.filter { c -> c.isDigit() || c == '.' } },
+                    label = { Text("Amount") }, singleLine = true, enabled = canSave,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                )
+                Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    PayMode.values().forEach { m -> FilterChip(selected = mode == m, onClick = { if (canSave) mode = m }, label = { Text(m.label) }) }
+                }
+            }
+        },
+        confirmButton = { Button(onClick = { onSave(amount.toDoubleOrNull() ?: 0.0, mode) }, enabled = canSave) { Text("Save") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Close") } }
+    )
+}
+
+@Composable
+private fun PaymentEditDialog(e: Expense, canSave: Boolean, onDismiss: () -> Unit, onSave: (String, Double, PayMode) -> Unit) {
+    var description by remember { mutableStateOf(e.description) }
+    var amount by remember { mutableStateOf(Format.money(e.amount)) }
+    var mode by remember { mutableStateOf(PayMode.values().firstOrNull { it.label == e.paymentMode } ?: PayMode.CASH) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (canSave) "Edit payment ${e.voucherNo}" else "Payment ${e.voucherNo}") },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = description, onValueChange = { description = it },
+                    label = { Text("Description") }, singleLine = true, enabled = canSave,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = amount, onValueChange = { amount = it.filter { c -> c.isDigit() || c == '.' } },
+                    label = { Text("Amount") }, singleLine = true, enabled = canSave,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                )
+                Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    PayMode.values().forEach { m -> FilterChip(selected = mode == m, onClick = { if (canSave) mode = m }, label = { Text(m.label) }) }
+                }
+            }
+        },
+        confirmButton = { Button(onClick = { onSave(description, amount.toDoubleOrNull() ?: 0.0, mode) }, enabled = canSave) { Text("Save") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Close") } }
+    )
+}

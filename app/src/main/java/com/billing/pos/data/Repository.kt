@@ -46,6 +46,7 @@ class Repository(context: Context) {
                     canCreateInvoice = true, canEditInvoice = true, canDeleteInvoice = true, canViewInvoice = true,
                     canCreateReceipt = true, canEditReceipt = true, canDeleteReceipt = true, canViewReceipt = true,
                     canCreatePayment = true, canEditPayment = true, canDeletePayment = true, canViewPayment = true,
+                    canViewCashbook = true,
                     canExport = true, canImport = true, canManageUsers = true
                 )
             )

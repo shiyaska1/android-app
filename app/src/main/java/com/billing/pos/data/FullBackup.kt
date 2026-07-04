@@ -152,6 +152,7 @@ object FullBackup {
         .put("canDeleteReceipt", u.canDeleteReceipt).put("canViewReceipt", u.canViewReceipt)
         .put("canCreatePayment", u.canCreatePayment).put("canEditPayment", u.canEditPayment)
         .put("canDeletePayment", u.canDeletePayment).put("canViewPayment", u.canViewPayment)
+        .put("canViewCashbook", u.canViewCashbook)
         .put("canExport", u.canExport).put("canImport", u.canImport)
         .put("canManageUsers", u.canManageUsers).put("active", u.active)
 
@@ -211,6 +212,7 @@ object FullBackup {
         canDeleteReceipt = o.optBoolean("canDeleteReceipt", false), canViewReceipt = o.optBoolean("canViewReceipt", false),
         canCreatePayment = o.optBoolean("canCreatePayment", false), canEditPayment = o.optBoolean("canEditPayment", false),
         canDeletePayment = o.optBoolean("canDeletePayment", false), canViewPayment = o.optBoolean("canViewPayment", false),
+        canViewCashbook = o.optBoolean("canViewCashbook", false),
         canExport = o.optBoolean("canExport", true), canImport = o.optBoolean("canImport", false),
         canManageUsers = o.optBoolean("canManageUsers", false), active = o.optBoolean("active", true)
     )
