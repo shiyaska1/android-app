@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Videocam
@@ -57,12 +58,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.billing.pos.data.AttachmentType
 import com.billing.pos.data.DiaryAttachment
 import com.billing.pos.diary.AttachmentStore
 import com.billing.pos.ui.billing.collectAsStateSafe
 import com.billing.pos.util.Format
+import java.io.File
 import java.util.Calendar
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -88,6 +91,35 @@ fun DiaryEditScreen(
     val docPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments()
     ) { uris -> vm.addUris(context, uris) }
+
+    // Camera capture — file the camera writes into, then attaches.
+    var pendingCapture by remember { mutableStateOf<File?>(null) }
+    val takePhoto = rememberLauncherForActivityResult(
+        ActivityResultContracts.TakePicture()
+    ) { ok ->
+        val f = pendingCapture; pendingCapture = null
+        if (ok && f != null) vm.addCapturedFile(f, "Photo_${f.name}", "image/jpeg") else f?.delete()
+    }
+    val takeVideo = rememberLauncherForActivityResult(
+        ActivityResultContracts.CaptureVideo()
+    ) { ok ->
+        val f = pendingCapture; pendingCapture = null
+        if (ok && f != null) vm.addCapturedFile(f, "Video_${f.name}", "video/mp4") else f?.delete()
+    }
+
+    fun captureUri(ext: String): android.net.Uri {
+        val file = File(AttachmentStore.dir(context), "cam_${System.nanoTime()}.$ext")
+        pendingCapture = file
+        return FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
+    }
+    fun launchPhoto() {
+        runCatching { takePhoto.launch(captureUri("jpg")) }
+            .onFailure { pendingCapture?.delete(); pendingCapture = null; vm.message.value = "No camera app found" }
+    }
+    fun launchVideo() {
+        runCatching { takeVideo.launch(captureUri("mp4")) }
+            .onFailure { pendingCapture?.delete(); pendingCapture = null; vm.message.value = "No camera app found" }
+    }
 
     val micPermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -219,6 +251,14 @@ fun DiaryEditScreen(
                 OutlinedButton(onClick = { toggleRecord() }, modifier = Modifier.weight(1f)) {
                     if (vm.recording) { Icon(Icons.Filled.Stop, null); Text("Stop") }
                     else { Icon(Icons.Filled.Mic, null); Text("Voice") }
+                }
+            }
+            Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = { launchPhoto() }, modifier = Modifier.weight(1f)) {
+                    Icon(Icons.Filled.PhotoCamera, null); Text("Take photo")
+                }
+                OutlinedButton(onClick = { launchVideo() }, modifier = Modifier.weight(1f)) {
+                    Icon(Icons.Filled.Videocam, null); Text("Record video")
                 }
             }
             if (vm.recording) {

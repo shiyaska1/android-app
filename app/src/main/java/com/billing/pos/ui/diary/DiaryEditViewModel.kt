@@ -70,6 +70,15 @@ class DiaryEditViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Registers a photo/video captured by the camera into the attachment list. */
+    fun addCapturedFile(file: File, name: String, mime: String) {
+        if (file.exists() && file.length() > 0) {
+            attachments.add(AttachmentStore.fromFile(file, name, mime))
+        } else {
+            file.delete()
+        }
+    }
+
     fun removeAttachment(attachment: DiaryAttachment) {
         attachments.remove(attachment)
         viewModelScope.launch {
