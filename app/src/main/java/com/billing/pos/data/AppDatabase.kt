@@ -15,7 +15,7 @@ import androidx.room.TypeConverters
         AccountGroup::class, AccountHead::class,
         JournalEntry::class, JournalLine::class
     ],
-    version = 12,
+    version = 13,
     exportSchema = false
 )
 @TypeConverters(Converters::class)

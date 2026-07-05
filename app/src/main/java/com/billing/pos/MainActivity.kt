@@ -37,6 +37,7 @@ import com.billing.pos.ui.journal.JournalListScreen
 import com.billing.pos.ui.license.LicenseScreen
 import com.billing.pos.ui.license.RegisterScreen
 import com.billing.pos.ui.outstanding.OutstandingScreen
+import com.billing.pos.ui.pricesearch.PriceSearchScreen
 import com.billing.pos.ui.purchase.PurchaseListScreen
 import com.billing.pos.ui.purchase.PurchaseScreen
 import com.billing.pos.ui.purchase.SuppliersScreen
@@ -120,6 +121,7 @@ private fun AppNav() {
         composable("dashboard") {
             DashboardScreen(
                 onNewBill = { nav.navigate("billing") },
+                onPriceSearch = { nav.navigate("pricesearch") },
                 onInvoices = { nav.navigate("invoices") },
                 onReceipts = { nav.navigate("receipts") },
                 onExpenses = { nav.navigate("expenses") },
@@ -203,6 +205,9 @@ private fun AppNav() {
         }
         composable("items") {
             ItemsScreen(onBack = { nav.popBackStack() })
+        }
+        composable("pricesearch") {
+            PriceSearchScreen(onBack = { nav.popBackStack() })
         }
         composable("vat") {
             VatReportScreen(onBack = { nav.popBackStack() })

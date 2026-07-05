@@ -6,6 +6,8 @@ import android.content.Context
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -23,7 +25,10 @@ import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Divider
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -68,6 +73,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -88,18 +94,30 @@ class ItemsViewModel(app: Application) : AndroidViewModel(app) {
                 val purchasedQty = lines.sumOf { it.qty }
                 val lastRate = lines.maxByOrNull { it.dateMillis }?.price ?: 0.0
                 val soldQty = soldByName[key] ?: 0.0
-                ItemStockRow(item, purchasedQty - soldQty, lastRate)
+                ItemStockRow(item, item.openingStock + purchasedQty - soldQty, lastRate)
             }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** Distinct categories already in use, for the category dropdown. */
+    val categories: StateFlow<List<String>> =
+        repo.items.map { list ->
+            list.map { it.category.trim() }.filter { it.isNotBlank() }.distinct().sortedBy { it.lowercase() }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val message = MutableStateFlow<String?>(null)
     fun consumeMessage() { message.value = null }
 
-    fun save(existing: Item?, name: String, price: Double, tax: Double, barcode: String, hsn: String, onDone: () -> Unit) {
+    fun save(
+        existing: Item?, name: String, price: Double, tax: Double, barcode: String, hsn: String,
+        category: String, openingStock: Double, onDone: () -> Unit
+    ) {
         if (name.isBlank()) { message.value = "Enter a name"; return }
         viewModelScope.launch {
-            if (existing == null) repo.addItem(name, price, tax, barcode, hsn)
-            else repo.updateItem(existing.copy(name = name.trim(), price = price, taxPercent = tax, barcode = barcode.trim(), hsn = hsn.trim()))
+            if (existing == null) repo.addItem(name, price, tax, barcode, hsn, category, openingStock)
+            else repo.updateItem(existing.copy(
+                name = name.trim(), price = price, taxPercent = tax, barcode = barcode.trim(),
+                hsn = hsn.trim(), category = category.trim(), openingStock = openingStock
+            ))
             message.value = "Saved"; onDone()
         }
     }
@@ -119,6 +137,7 @@ fun ItemsScreen(
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
     val rows by vm.rows.collectAsStateSafe()
+    val categories by vm.categories.collectAsStateSafe()
     val message by vm.message.collectAsStateSafe()
 
     LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); vm.consumeMessage() } }
@@ -177,7 +196,10 @@ fun ItemsScreen(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(Modifier.weight(1f)) {
-                        Text(item.name, fontWeight = FontWeight.Bold)
+                        Text(
+                            item.name + (if (item.category.isNotBlank()) "  ·  ${item.category}" else ""),
+                            fontWeight = FontWeight.Bold
+                        )
                         Text(
                             "Stock: ${Format.qty(row.stock)}   •   Buy: ${Format.rupee(row.purchaseRate)}   •   Sell: ${Format.rupee(item.price)}",
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline
@@ -202,7 +224,12 @@ fun ItemsScreen(
     }
 
     if (showDialog) {
-        ItemDialog(existing = editing, onDismiss = { showDialog = false }, onSave = { n, p, t, b, h -> vm.save(editing, n, p, t, b, h) { showDialog = false } })
+        ItemDialog(
+            existing = editing,
+            categories = categories,
+            onDismiss = { showDialog = false },
+            onSave = { n, p, t, b, h, cat, os -> vm.save(editing, n, p, t, b, h, cat, os) { showDialog = false } }
+        )
     }
     deleteFor?.let { item ->
         AlertDialog(
@@ -218,14 +245,23 @@ fun ItemsScreen(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ItemDialog(existing: Item?, onDismiss: () -> Unit, onSave: (String, Double, Double, String, String) -> Unit) {
+private fun ItemDialog(
+    existing: Item?,
+    categories: List<String>,
+    onDismiss: () -> Unit,
+    onSave: (String, Double, Double, String, String, String, Double) -> Unit
+) {
     var name by remember { mutableStateOf(existing?.name ?: "") }
     var price by remember { mutableStateOf(existing?.price?.let { Format.money(it) } ?: "") }
     var taxable by remember { mutableStateOf((existing?.taxPercent ?: 0.0) > 0.0) }
     var taxPercent by remember { mutableStateOf(if ((existing?.taxPercent ?: 0.0) > 0.0) Format.money(existing!!.taxPercent) else "18") }
     var barcode by remember { mutableStateOf(existing?.barcode ?: "") }
     var hsn by remember { mutableStateOf(existing?.hsn ?: "") }
+    var category by remember { mutableStateOf(existing?.category ?: "") }
+    var catMenu by remember { mutableStateOf(false) }
+    var openingStock by remember { mutableStateOf(if ((existing?.openingStock ?: 0.0) != 0.0) Format.qty(existing!!.openingStock) else "") }
     val scanLauncher = rememberLauncherForActivityResult(ScanContract()) { result ->
         result.contents?.let { barcode = it }
     }
@@ -234,13 +270,51 @@ private fun ItemDialog(existing: Item?, onDismiss: () -> Unit, onSave: (String, 
         onDismissRequest = onDismiss,
         title = { Text(if (existing == null) "New item" else "Edit item") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.verticalScroll(rememberScrollState())
+            ) {
                 OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Name *") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(
                     value = price, onValueChange = { price = it.filter { c -> c.isDigit() || c == '.' } },
                     label = { Text("Price *") }, singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth()
                 )
+
+                // Category: pick an existing one from the dropdown, or type/tap + for a new one.
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    ExposedDropdownMenuBox(
+                        expanded = catMenu,
+                        onExpandedChange = { catMenu = !catMenu },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        OutlinedTextField(
+                            value = category,
+                            onValueChange = { category = it },
+                            label = { Text("Category") },
+                            singleLine = true,
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = catMenu) },
+                            modifier = Modifier.menuAnchor().fillMaxWidth()
+                        )
+                        if (categories.isNotEmpty()) {
+                            ExposedDropdownMenu(expanded = catMenu, onDismissRequest = { catMenu = false }) {
+                                categories.forEach { c ->
+                                    DropdownMenuItem(text = { Text(c) }, onClick = { category = c; catMenu = false })
+                                }
+                            }
+                        }
+                    }
+                    IconButton(onClick = { category = ""; catMenu = false }) {
+                        Icon(Icons.Filled.Add, contentDescription = "New category")
+                    }
+                }
+
+                OutlinedTextField(
+                    value = openingStock, onValueChange = { openingStock = it.filter { c -> c.isDigit() || c == '.' } },
+                    label = { Text("Opening stock") }, singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth()
+                )
+
                 Row {
                     FilterChip(selected = !taxable, onClick = { taxable = false }, label = { Text("Without tax") })
                     androidx.compose.foundation.layout.Spacer(Modifier.padding(4.dp))
@@ -274,7 +348,8 @@ private fun ItemDialog(existing: Item?, onDismiss: () -> Unit, onSave: (String, 
             TextButton(onClick = {
                 val p = price.toDoubleOrNull() ?: 0.0
                 val t = if (taxable) (taxPercent.toDoubleOrNull() ?: 0.0) else 0.0
-                onSave(name, p, t, barcode, hsn)
+                val os = openingStock.toDoubleOrNull() ?: 0.0
+                onSave(name, p, t, barcode, hsn, category, os)
             }) { Text("Save") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }

@@ -45,8 +45,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -75,6 +77,7 @@ import com.billing.pos.print.ThermalPrinter
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
 import com.billing.pos.util.Format
+import com.billing.pos.util.Permissions
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -130,7 +133,14 @@ fun BillingScreen(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
         if (granted) scope.launch { doPrint(context, vm, snackbar) }
-        else scope.launch { snackbar.showSnackbar("Bluetooth permission denied") }
+        else scope.launch {
+            val res = snackbar.showSnackbar(
+                "Allow 'Nearby devices' permission to print",
+                actionLabel = "Settings",
+                duration = SnackbarDuration.Long
+            )
+            if (res == SnackbarResult.ActionPerformed) Permissions.openAppSettings(context)
+        }
     }
 
     // Barcode scan → add matching item to the cart.

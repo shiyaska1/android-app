@@ -43,8 +43,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -76,6 +78,7 @@ import com.billing.pos.ui.billing.ItemPickerDialog
 import com.billing.pos.ui.billing.NewItemDialog
 import com.billing.pos.ui.billing.collectAsStateSafe
 import com.billing.pos.util.Format
+import com.billing.pos.util.Permissions
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
 import kotlinx.coroutines.Dispatchers
@@ -110,7 +113,17 @@ fun PurchaseScreen(
 
     val printPermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { granted -> if (granted) scope.launch { doPrint(context, vm, snackbar) } }
+    ) { granted ->
+        if (granted) scope.launch { doPrint(context, vm, snackbar) }
+        else scope.launch {
+            val res = snackbar.showSnackbar(
+                "Allow 'Nearby devices' permission to print",
+                actionLabel = "Settings",
+                duration = SnackbarDuration.Long
+            )
+            if (res == SnackbarResult.ActionPerformed) Permissions.openAppSettings(context)
+        }
+    }
 
     val scanLauncher = rememberLauncherForActivityResult(ScanContract()) { result ->
         result.contents?.let { vm.onBarcodeScanned(it) }

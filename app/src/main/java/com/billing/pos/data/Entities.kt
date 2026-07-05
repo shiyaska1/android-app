@@ -23,7 +23,10 @@ data class Item(
     val price: Double,
     val taxPercent: Double = 0.0,
     val barcode: String = "",
-    val hsn: String = ""
+    val hsn: String = "",
+    val category: String = "",
+    /** Stock on hand before any purchase/sale was recorded in this app. */
+    val openingStock: Double = 0.0
 )
 
 /** A saved bill (invoice header). `source` marks where it came from ("" = this device). */

@@ -182,8 +182,15 @@ class Repository(context: Context) {
 
     val allCustomers: Flow<List<Customer>> get() = customers
 
-    suspend fun addItem(name: String, price: Double, taxPercent: Double, barcode: String = "", hsn: String = ""): Long =
-        itemDao.insert(Item(name = name.trim(), price = price, taxPercent = taxPercent, barcode = barcode.trim(), hsn = hsn.trim()))
+    suspend fun addItem(
+        name: String, price: Double, taxPercent: Double, barcode: String = "", hsn: String = "",
+        category: String = "", openingStock: Double = 0.0
+    ): Long =
+        itemDao.insert(Item(
+            name = name.trim(), price = price, taxPercent = taxPercent,
+            barcode = barcode.trim(), hsn = hsn.trim(),
+            category = category.trim(), openingStock = openingStock
+        ))
 
     suspend fun updateItem(item: Item) = itemDao.update(item)
     suspend fun deleteItem(item: Item) = itemDao.delete(item)
