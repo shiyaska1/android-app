@@ -12,21 +12,50 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.billing.pos.MainActivity
 import com.billing.pos.data.DiaryEntry
+import com.billing.pos.data.DiaryRepository
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+
+const val EXTRA_OPEN_DIARY_ID = "open_diary_id"
 
 class ReminderReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        Notifications.ensureChannel(context)
-
         val id = intent.getLongExtra(ReminderScheduler.EXTRA_ID, 0L)
-        val title = intent.getStringExtra(ReminderScheduler.EXTRA_TITLE)?.ifBlank { "Diary reminder" }
-            ?: "Diary reminder"
-        val text = intent.getStringExtra(ReminderScheduler.EXTRA_TEXT).orEmpty()
-        val daily = intent.getBooleanExtra(ReminderScheduler.EXTRA_DAILY, false)
-        val at = intent.getLongExtra(ReminderScheduler.EXTRA_AT, 0L)
+        if (id <= 0L) return
+        val app = context.applicationContext
+        val pending = goAsync()
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val entry = runCatching { DiaryRepository(app).byId(id) }.getOrNull()
+                // Entry gone or reminder switched off → stop nagging for good.
+                if (entry == null || !entry.reminderEnabled) {
+                    ReminderScheduler.cancel(app, id)
+                    return@launch
+                }
+                showNotification(app, entry)
+                // Nag again in 5 minutes until the user turns it off or deletes the entry.
+                ReminderScheduler.scheduleRepeat(app, entry)
+            } catch (e: Exception) {
+                // never crash on a reminder
+            } finally {
+                pending.finish()
+            }
+        }
+    }
 
+    private fun showNotification(context: Context, entry: DiaryEntry) {
+        Notifications.ensureChannel(context)
+        val title = entry.title.ifBlank { "Diary reminder" }
+        val text = entry.remarks
+
+        // Tapping opens the app straight into this diary entry in edit mode.
         val open = PendingIntent.getActivity(
-            context, id.toInt(),
-            Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            context, entry.id.toInt(),
+            Intent(context, MainActivity::class.java).apply {
+                putExtra(EXTRA_OPEN_DIARY_ID, entry.id)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
@@ -43,19 +72,7 @@ class ReminderReceiver : BroadcastReceiver() {
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
             PackageManager.PERMISSION_GRANTED
         if (allowed) {
-            runCatching { NotificationManagerCompat.from(context).notify(id.toInt(), notification) }
-        }
-
-        // Reschedule tomorrow for daily reminders.
-        if (daily) {
-            ReminderScheduler.schedule(
-                context,
-                DiaryEntry(
-                    id = id, title = title, remarks = text,
-                    createdAt = 0, updatedAt = 0,
-                    reminderEnabled = true, reminderAt = at, reminderDaily = true
-                )
-            )
+            runCatching { NotificationManagerCompat.from(context).notify(entry.id.toInt(), notification) }
         }
     }
 }

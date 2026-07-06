@@ -16,8 +16,10 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.navArgument
+import com.billing.pos.auth.PendingDiaryOpen
 import com.billing.pos.auth.PendingImport
 import com.billing.pos.auth.Session
+import com.billing.pos.diary.EXTRA_OPEN_DIARY_ID
 import com.billing.pos.data.AppPrefs
 import com.billing.pos.ui.auth.BootScreen
 import com.billing.pos.ui.auth.LoginScreen
@@ -67,7 +69,7 @@ class MainActivity : ComponentActivity() {
         captureIncoming(intent)
     }
 
-    /** Pulls a backup Uri out of a SEND/VIEW intent so it can be imported after login. */
+    /** Pulls a backup Uri (import) or a diary id (reminder tap) out of the launch intent. */
     private fun captureIncoming(intent: Intent?) {
         intent ?: return
         val uri: Uri? = when (intent.action) {
@@ -79,6 +81,9 @@ class MainActivity : ComponentActivity() {
             else -> null
         }
         if (uri != null) PendingImport.uri = uri
+
+        val diaryId = intent.getLongExtra(EXTRA_OPEN_DIARY_ID, 0L)
+        if (diaryId > 0L) PendingDiaryOpen.id = diaryId
     }
 }
 
@@ -86,6 +91,17 @@ class MainActivity : ComponentActivity() {
 private fun AppNav() {
     val nav = rememberNavController()
     val context = LocalContext.current
+
+    // Reminder tap → once logged in, open that diary entry in edit mode.
+    val pendingDiaryId = PendingDiaryOpen.id
+    androidx.compose.runtime.LaunchedEffect(pendingDiaryId, Session.current) {
+        val did = PendingDiaryOpen.id
+        if (did != null && Session.isLoggedIn) {
+            PendingDiaryOpen.consume()
+            nav.navigate("diary/edit/$did") { launchSingleTop = true }
+        }
+    }
+
     val logout: () -> Unit = {
         AppPrefs(context).clearSession()
         Session.logout()

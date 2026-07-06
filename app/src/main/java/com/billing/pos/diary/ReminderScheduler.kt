@@ -48,6 +48,27 @@ object ReminderScheduler {
         }
     }
 
+    /** Re-arms the reminder to nag again after [REPEAT_INTERVAL_MS]. Never throws. */
+    fun scheduleRepeat(context: Context, entry: DiaryEntry) {
+        val am = context.getSystemService(AlarmManager::class.java) ?: return
+        val triggerAt = System.currentTimeMillis() + REPEAT_INTERVAL_MS
+        val pi = pendingFor(context, entry)
+        try {
+            val show = PendingIntent.getActivity(
+                context, entry.id.toInt(),
+                Intent(context, MainActivity::class.java),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            am.setAlarmClock(AlarmManager.AlarmClockInfo(triggerAt, show), pi)
+        } catch (e: Exception) {
+            try {
+                am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pi)
+            } catch (e2: Exception) {
+                runCatching { am.set(AlarmManager.RTC_WAKEUP, triggerAt, pi) }
+            }
+        }
+    }
+
     fun cancel(context: Context, entryId: Long) {
         val am = context.getSystemService(AlarmManager::class.java) ?: return
         am.cancel(pendingFor(context, entryId))
@@ -89,6 +110,9 @@ object ReminderScheduler {
         }
         return next.timeInMillis
     }
+
+    /** How often a set reminder re-notifies until it is turned off or the entry is deleted. */
+    const val REPEAT_INTERVAL_MS = 5 * 60 * 1000L
 
     const val EXTRA_ID = "id"
     const val EXTRA_TITLE = "title"
