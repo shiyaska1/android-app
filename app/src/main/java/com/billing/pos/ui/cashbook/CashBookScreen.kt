@@ -190,6 +190,10 @@ fun CashBookScreen(
         (typeFilter == "All" || t.kind.equals(typeFilter, ignoreCase = true)) &&
             (q.isBlank() || t.title.contains(q, true) || t.mode.contains(q, true))
     }
+    // Totals of only the entries currently shown (change with the type/search filter).
+    val visIn = visibleRows.filter { it.first.isIn }.sumOf { it.first.amount }
+    val visOut = visibleRows.filter { !it.first.isIn }.sumOf { it.first.amount }
+    val visNet = visIn - visOut
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
@@ -311,6 +315,20 @@ fun CashBookScreen(
                     }
                 }
             }
+
+            // Bottom total — reflects only the entries currently displayed.
+            Card(Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                Row(
+                    Modifier.fillMaxWidth().padding(12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    FooterCell("Shown", "${visibleRows.size}")
+                    FooterCell("In", "+ " + Format.money(visIn), Color(0xFF2E7D32))
+                    FooterCell("Out", "- " + Format.money(visOut), MaterialTheme.colorScheme.error)
+                    FooterCell("Net", Format.rupee(visNet), fontWeight = FontWeight.Bold)
+                }
+            }
         }
     }
 
@@ -331,6 +349,14 @@ private fun BalRow(label: String, value: Double, color: Color = Color.Unspecifie
     Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), horizontalArrangement = Arrangement.SpaceBetween) {
         Text(label)
         Text(Format.rupee(value), color = color, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+@Composable
+private fun FooterCell(label: String, value: String, color: Color = Color.Unspecified, fontWeight: FontWeight? = null) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+        Text(value, color = color, fontWeight = fontWeight, style = MaterialTheme.typography.bodyMedium)
     }
 }
 
