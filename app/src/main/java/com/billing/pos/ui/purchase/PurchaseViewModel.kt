@@ -83,10 +83,22 @@ class PurchaseViewModel(app: Application) : AndroidViewModel(app) {
         dirty = true
     }
 
-    fun addCustomLine(description: String, price: Double, taxPercent: Double) {
+    fun addCustomLine(
+        description: String, price: Double, taxPercent: Double,
+        saveToMaster: Boolean = false, sellingPrice: Double = 0.0
+    ) {
         val name = description.trim().ifBlank { "Item" }
         cart.add(CartLine(0, name, price, taxPercent, 1.0))
         dirty = true
+        if (saveToMaster && description.isNotBlank()) {
+            val masterPrice = sellingPrice.takeIf { it > 0.0 } ?: price
+            viewModelScope.launch {
+                if (repo.itemByName(name) == null) {
+                    repo.addItem(name, masterPrice, taxPercent)
+                    _message.value = "Saved \"$name\" to items"
+                }
+            }
+        }
     }
 
     fun changeQty(index: Int, delta: Double) {

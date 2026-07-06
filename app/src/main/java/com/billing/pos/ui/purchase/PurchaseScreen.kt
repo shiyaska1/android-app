@@ -332,7 +332,7 @@ fun PurchaseScreen(
         NewItemDialog(onDismiss = { showNewItem = false }, onSave = { n, price, tax, barcode, add -> vm.addItem(n, price, tax, barcode, add) { showNewItem = false } })
     }
     if (showCustomLine) {
-        CustomLineDialog(onDismiss = { showCustomLine = false }, onAdd = { desc, price, tax -> vm.addCustomLine(desc, price, tax) })
+        CustomLineDialog(onDismiss = { showCustomLine = false }, onAdd = { desc, price, tax, saveToMaster, sellingPrice -> vm.addCustomLine(desc, price, tax, saveToMaster, sellingPrice) })
     }
     if (showItemPicker) {
         ItemPickerDialog(
