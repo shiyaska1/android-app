@@ -16,9 +16,11 @@ import android.speech.RecognizerIntent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -71,6 +73,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -531,8 +534,10 @@ private fun appendText(existing: String, spoken: String): String =
 
 /**
  * Read-only, searchable view of the notes. Type a word to highlight (yellow) every match,
- * jump between matches with up/down, and copy the focused line.
+ * jump between matches with up/down, copy the focused line, and long-press to select
+ * multiple lines and copy them together.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun RemarksSearchView(text: String) {
     val clipboard = LocalClipboardManager.current
@@ -550,6 +555,15 @@ private fun RemarksSearchView(text: String) {
         currentLine?.let { runCatching { listState.animateScrollToItem(it) } }
     }
 
+    // Multi-select: long-press a line to start selecting, tap to toggle.
+    val selected = remember(text) { mutableStateListOf<Int>() }
+    val selectionMode = selected.isNotEmpty()
+    fun toggle(i: Int) { if (selected.contains(i)) selected.remove(i) else selected.add(i) }
+    fun copySelected() {
+        val joined = selected.sorted().joinToString("\n") { lines[it] }
+        if (joined.isNotEmpty()) clipboard.setText(AnnotatedString(joined))
+    }
+
     Column(Modifier.fillMaxWidth()) {
         OutlinedTextField(
             value = query, onValueChange = { query = it; pos = 0 },
@@ -557,28 +571,43 @@ private fun RemarksSearchView(text: String) {
             leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
             modifier = Modifier.fillMaxWidth()
         )
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                when {
-                    query.isBlank() -> "Type to search"
-                    matches.isEmpty() -> "No match"
-                    else -> "${pos + 1} / ${matches.size}"
-                },
-                modifier = Modifier.weight(1f),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.outline
-            )
-            IconButton(onClick = { if (matches.isNotEmpty()) pos = (pos - 1 + matches.size) % matches.size }, enabled = matches.isNotEmpty()) {
-                Icon(Icons.Filled.KeyboardArrowUp, contentDescription = "Previous match")
+        if (selectionMode) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "${selected.size} selected",
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary
+                )
+                TextButton(onClick = { copySelected() }) {
+                    Icon(Icons.Filled.ContentCopy, contentDescription = null, modifier = Modifier.padding(end = 4.dp))
+                    Text("Copy")
+                }
+                TextButton(onClick = { selected.clear() }) { Text("Clear") }
             }
-            IconButton(onClick = { if (matches.isNotEmpty()) pos = (pos + 1) % matches.size }, enabled = matches.isNotEmpty()) {
-                Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "Next match")
-            }
-            IconButton(
-                onClick = { currentLine?.let { clipboard.setText(AnnotatedString(lines[it])) } },
-                enabled = currentLine != null
-            ) {
-                Icon(Icons.Filled.ContentCopy, contentDescription = "Copy line", tint = MaterialTheme.colorScheme.primary)
+        } else {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    when {
+                        query.isBlank() -> "Type to search  ·  long-press a line to select"
+                        matches.isEmpty() -> "No match"
+                        else -> "${pos + 1} / ${matches.size}"
+                    },
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.outline
+                )
+                IconButton(onClick = { if (matches.isNotEmpty()) pos = (pos - 1 + matches.size) % matches.size }, enabled = matches.isNotEmpty()) {
+                    Icon(Icons.Filled.KeyboardArrowUp, contentDescription = "Previous match")
+                }
+                IconButton(onClick = { if (matches.isNotEmpty()) pos = (pos + 1) % matches.size }, enabled = matches.isNotEmpty()) {
+                    Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "Next match")
+                }
+                IconButton(
+                    onClick = { currentLine?.let { clipboard.setText(AnnotatedString(lines[it])) } },
+                    enabled = currentLine != null
+                ) {
+                    Icon(Icons.Filled.ContentCopy, contentDescription = "Copy line", tint = MaterialTheme.colorScheme.primary)
+                }
             }
         }
         Box(
@@ -587,12 +616,22 @@ private fun RemarksSearchView(text: String) {
         ) {
             LazyColumn(state = listState, modifier = Modifier.fillMaxSize().padding(8.dp)) {
                 itemsIndexed(lines) { i, line ->
+                    val isSelected = selected.contains(i)
                     val isCurrent = i == currentLine
+                    val bg = when {
+                        isSelected -> MaterialTheme.colorScheme.secondaryContainer
+                        isCurrent -> MaterialTheme.colorScheme.primaryContainer
+                        else -> Color.Transparent
+                    }
                     Text(
                         highlightMatches(line, query),
                         style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.fillMaxWidth()
-                            .background(if (isCurrent) MaterialTheme.colorScheme.primaryContainer else Color.Transparent)
+                            .background(bg)
+                            .combinedClickable(
+                                onClick = { if (selectionMode) toggle(i) },
+                                onLongClick = { toggle(i) }
+                            )
                             .padding(vertical = 3.dp, horizontal = 2.dp)
                     )
                 }
