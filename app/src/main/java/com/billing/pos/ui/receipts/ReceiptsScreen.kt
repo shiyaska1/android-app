@@ -100,10 +100,9 @@ class ReceiptsViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun addStandalone(payFrom: String, amount: Double, mode: PayMode) {
-        if (payFrom.isBlank()) { message.value = "Enter who paid"; return }
         if (amount <= 0) { message.value = "Enter a valid amount"; return }
         viewModelScope.launch {
-            repo.addStandaloneReceipt(payFrom, amount, mode)
+            repo.addStandaloneReceipt(payFrom.trim().ifBlank { "Cash receipt" }, amount, mode)
             payFromOptions.value = repo.payFromNames()
             message.value = "Receipt added"
         }
@@ -336,7 +335,7 @@ private fun AddReceiptDialog(
                         OutlinedTextField(
                             value = payFrom,
                             onValueChange = { payFrom = it; payFromExpanded = true },
-                            label = { Text("Pay from (source)") },
+                            label = { Text("Pay from (optional)") },
                             placeholder = { Text("Type or pick a name") },
                             singleLine = true,
                             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(payFromExpanded) },

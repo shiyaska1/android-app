@@ -2,6 +2,7 @@ package com.billing.pos.ui.cashbook
 
 import android.app.Application
 import android.content.Context
+import android.content.Intent
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -17,6 +18,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.PictureAsPdf
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -40,6 +43,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -48,22 +52,29 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.core.content.FileProvider
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.billing.pos.auth.Session
+import com.billing.pos.data.AppPrefs
 import com.billing.pos.data.Bill
 import com.billing.pos.data.Expense
 import com.billing.pos.data.PayMode
 import com.billing.pos.data.Receipt
 import com.billing.pos.data.Repository
+import com.billing.pos.pdf.TablePdf
 import com.billing.pos.ui.billing.collectAsStateSafe
+import com.billing.pos.ui.common.rememberPdfDownloader
 import com.billing.pos.util.Format
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
 import java.util.Calendar
 
 class CashBookViewModel(app: Application) : AndroidViewModel(app) {
@@ -127,6 +138,7 @@ fun CashBookScreen(
     vm: CashBookViewModel = viewModel()
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
     val bills by vm.bills.collectAsStateSafe()
     val receipts by vm.receipts.collectAsStateSafe()
@@ -195,6 +207,49 @@ fun CashBookScreen(
     val visOut = visibleRows.filter { !it.first.isIn }.sumOf { it.first.amount }
     val visNet = visIn - visOut
 
+    // Build a PDF of exactly what's shown, with the filter criteria as the heading.
+    fun buildCashBookPdf(): File {
+        val crit = buildString {
+            append("From: ").append(fromMillis?.let { Format.date(it) } ?: "any")
+            append("   To: ").append(toMillis?.let { Format.date(it) } ?: "any")
+            if (modeFilter != "All") append("   Mode: $modeFilter")
+            if (typeFilter != "All") append("   Type: $typeFilter")
+            if (q.isNotBlank()) append("   Search: \"$q\"")
+        }
+        val cols = listOf(
+            TablePdf.Col("Date", 1.2f), TablePdf.Col("Type", 1f), TablePdf.Col("Details", 2.8f),
+            TablePdf.Col("Mode", 0.9f), TablePdf.Col("Amount", 1.2f, right = true),
+            TablePdf.Col("Balance", 1.2f, right = true)
+        )
+        val data = visibleRows.map { (t, bal) ->
+            listOf(
+                Format.date(t.date), t.kind.lowercase().replaceFirstChar { it.uppercase() }, t.title, t.mode,
+                (if (t.isIn) "+ " else "- ") + Format.money(t.amount), Format.money(bal)
+            )
+        }
+        val footer = listOf(
+            "Total In" to Format.money(visIn),
+            "Total Out" to Format.money(visOut),
+            "Net" to Format.money(visNet)
+        )
+        return TablePdf.generate(context, AppPrefs(context).company, "Cash Book", crit, cols, data, footer)
+    }
+    val downloadPdf = rememberPdfDownloader { msg -> scope.launch { snackbar.showSnackbar(msg) } }
+    fun shareCashBook() {
+        scope.launch {
+            val file = withContext(Dispatchers.IO) { buildCashBookPdf() }
+            val uri = FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
+            val intent = Intent(Intent.ACTION_SEND).apply {
+                type = "application/pdf"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            runCatching {
+                context.startActivity(Intent.createChooser(intent, "Share cash book").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            }.onFailure { snackbar.showSnackbar("Could not share") }
+        }
+    }
+
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
@@ -208,8 +263,19 @@ fun CashBookScreen(
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                     titleContentColor = MaterialTheme.colorScheme.onPrimary,
-                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary
-                )
+                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary,
+                    actionIconContentColor = MaterialTheme.colorScheme.onPrimary
+                ),
+                actions = {
+                    if (Session.canViewCashbook) {
+                        IconButton(onClick = { downloadPdf { buildCashBookPdf() } }) {
+                            Icon(Icons.Filled.PictureAsPdf, contentDescription = "Download PDF")
+                        }
+                        IconButton(onClick = { shareCashBook() }) {
+                            Icon(Icons.Filled.Share, contentDescription = "Share")
+                        }
+                    }
+                }
             )
         }
     ) { pad ->
