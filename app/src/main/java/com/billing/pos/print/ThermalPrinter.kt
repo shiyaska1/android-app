@@ -65,21 +65,63 @@ object ThermalPrinter {
         val device = pickPrinter(adapter)
             ?: throw PrinterException("No paired printer found. Pair it in Settings first.")
 
+        // cancelDiscovery() needs BLUETOOTH_SCAN on API 31+; it's only an optimisation
+        // for a bonded device, so never let a missing SCAN permission block printing.
+        runCatching { adapter.cancelDiscovery() }
+
         var socket: BluetoothSocket? = null
         try {
-            socket = device.createRfcommSocketToServiceRecord(SPP_UUID)
-            // cancelDiscovery() needs BLUETOOTH_SCAN on API 31+; it's only an optimisation
-            // for a bonded device, so never let a missing SCAN permission block printing.
-            runCatching { adapter.cancelDiscovery() }
-            socket.connect()
+            socket = connect(device)
             val out = socket.outputStream
             out.write(bytes)
             out.flush()
             Thread.sleep(400) // let the buffer flush before closing
         } catch (e: Exception) {
-            throw PrinterException(e.message ?: "Failed to print")
+            throw PrinterException(friendlyError(e))
         } finally {
             runCatching { socket?.close() }
+        }
+    }
+
+    /**
+     * Connects to [device] over RFCOMM, trying several strategies because cheap thermal
+     * printers often fail the standard SDP connect with "read failed, socket might closed".
+     */
+    @SuppressLint("MissingPermission")
+    private fun connect(device: BluetoothDevice): BluetoothSocket {
+        val strategies: List<() -> BluetoothSocket> = listOf(
+            { device.createRfcommSocketToServiceRecord(SPP_UUID) },
+            { device.createInsecureRfcommSocketToServiceRecord(SPP_UUID) },
+            { device.javaClass.getMethod("createRfcommSocket", Int::class.javaPrimitiveType)
+                .invoke(device, 1) as BluetoothSocket }
+        )
+        var last: Exception? = null
+        for (make in strategies) {
+            var s: BluetoothSocket? = null
+            try {
+                s = make()
+                s.connect()
+                return s
+            } catch (e: Exception) {
+                last = e
+                runCatching { s?.close() }
+                runCatching { Thread.sleep(150) }
+            }
+        }
+        throw last ?: PrinterException("Could not connect to the printer")
+    }
+
+    private fun friendlyError(e: Exception): String {
+        val m = e.message ?: ""
+        return when {
+            m.contains("read failed", true) || m.contains("socket", true) ||
+                m.contains("timeout", true) || m.contains("closed", true) ->
+                "Couldn't connect to the printer. Switch it off and on, keep it close, " +
+                    "make sure it's charged and not already connected to another phone/app, then try again."
+            m.contains("Service discovery failed", true) ->
+                "Printer not responding. Re-pair it in Bluetooth settings, then try again."
+            m.isBlank() -> "Failed to print. Try again."
+            else -> m
         }
     }
 
