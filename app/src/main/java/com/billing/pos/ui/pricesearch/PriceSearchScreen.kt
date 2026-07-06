@@ -1,9 +1,11 @@
 package com.billing.pos.ui.pricesearch
 
+import android.Manifest
 import android.app.Activity
 import android.app.Application
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.speech.RecognizerIntent
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -22,9 +24,13 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Place
@@ -32,6 +38,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -48,8 +55,10 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -58,11 +67,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.billing.pos.data.AppPrefs
+import com.billing.pos.data.DownloadSaver
 import com.billing.pos.data.Item
 import com.billing.pos.data.ItemAttachment
 import com.billing.pos.data.Repository
@@ -71,10 +83,14 @@ import com.billing.pos.pdf.ProductPdf
 import com.billing.pos.ui.billing.collectAsStateSafe
 import com.billing.pos.ui.common.rememberThumbnail
 import com.billing.pos.util.Format
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
 
 /** An item with its computed stock/rate and its attachments, for the search result card. */
 data class PriceRow(
@@ -113,12 +129,32 @@ fun PriceSearchScreen(
     vm: PriceSearchViewModel = viewModel()
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
     val rows by vm.rows.collectAsStateSafe()
     val message by vm.message.collectAsStateSafe()
     var query by remember { mutableStateOf("") }
 
     LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); vm.consumeMessage() } }
+
+    // Download an attachment (photo / PDF) to the public Downloads folder.
+    fun doDownload(att: ItemAttachment) {
+        scope.launch {
+            val ok = withContext(Dispatchers.IO) { DownloadSaver.save(context, File(att.path), att.name, att.mime) }
+            snackbar.showSnackbar(if (ok) "Saved to Downloads: ${att.name}" else "Could not save")
+        }
+    }
+    var pendingDownload by remember { mutableStateOf<ItemAttachment?>(null) }
+    val storagePermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        val a = pendingDownload; pendingDownload = null
+        if (granted && a != null) doDownload(a) else scope.launch { snackbar.showSnackbar("Storage permission denied") }
+    }
+    fun requestDownload(att: ItemAttachment) {
+        if (DownloadSaver.needsLegacyPermission() &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED
+        ) { pendingDownload = att; storagePermission.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE) }
+        else doDownload(att)
+    }
 
     val speechLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -205,19 +241,89 @@ fun PriceSearchScreen(
     }
 
     shareFor?.let { row ->
-        AlertDialog(
-            onDismissRequest = { shareFor = null },
-            title = { Text("Share to WhatsApp") },
-            text = { Text("Send \"${row.item.name}\" (name, selling price, photo & catalogue). Choose a format.") },
-            confirmButton = { TextButton(onClick = { shareProductPdf(context, row); shareFor = null }) { Text("As PDF") } },
-            dismissButton = { TextButton(onClick = { shareProductText(context, row); shareFor = null }) { Text("Text + Photo") } }
+        ShareDialog(
+            row = row,
+            onDismiss = { shareFor = null },
+            onDownload = { requestDownload(it) },
+            onShareText = { price, selected -> shareProductText(context, row.item, price, selected); shareFor = null },
+            onSharePdf = { price, selected -> shareProductPdf(context, row.item, price, selected); shareFor = null }
         )
     }
 }
 
-private fun captionFor(item: Item): String = buildString {
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ShareDialog(
+    row: PriceRow,
+    onDismiss: () -> Unit,
+    onDownload: (ItemAttachment) -> Unit,
+    onShareText: (Double, List<ItemAttachment>) -> Unit,
+    onSharePdf: (Double, List<ItemAttachment>) -> Unit
+) {
+    var priceText by remember { mutableStateOf(Format.money(row.item.price)) }
+    val selectedIds = remember { mutableStateListOf<Long>().apply { addAll(row.attachments.map { it.id }) } }
+    val price = priceText.toDoubleOrNull() ?: row.item.price
+    fun selectedAtts() = row.attachments.filter { selectedIds.contains(it.id) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Share ${row.item.name}") },
+        text = {
+            Column(
+                Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                OutlinedTextField(
+                    value = priceText,
+                    onValueChange = { priceText = it.filter { c -> c.isDigit() || c == '.' } },
+                    label = { Text("Selling price to send") }, singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                if (row.attachments.isEmpty()) {
+                    Text("No photos or catalogue. Sends name + price as text.",
+                        style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                } else {
+                    Text("Include / download attachments",
+                        style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.outline)
+                    row.attachments.forEach { att ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(
+                                checked = selectedIds.contains(att.id),
+                                onCheckedChange = { on -> if (on) { if (!selectedIds.contains(att.id)) selectedIds.add(att.id) } else selectedIds.remove(att.id) }
+                            )
+                            Icon(
+                                if (att.mime.startsWith("image/")) Icons.Filled.Image else Icons.Filled.PictureAsPdf,
+                                contentDescription = null, modifier = Modifier.size(20.dp)
+                            )
+                            Text(attLabel(att), Modifier.weight(1f).padding(start = 6.dp), maxLines = 1)
+                            IconButton(onClick = { onDownload(att) }) {
+                                Icon(Icons.Filled.Download, contentDescription = "Download", tint = MaterialTheme.colorScheme.primary)
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = { onShareText(price, selectedAtts()) }) { Text("Text + Photo") }
+                TextButton(onClick = { onSharePdf(price, selectedAtts()) }) { Text("PDF") }
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
+private fun attLabel(att: ItemAttachment): String = when {
+    att.kind == "LOCATION" -> "Location photo"
+    att.mime.startsWith("image/") -> att.name.ifBlank { "Photo" }
+    else -> att.name.ifBlank { "Catalogue (PDF)" }
+}
+
+private fun captionFor(item: Item, price: Double): String = buildString {
     append(item.name)
-    append("\nSelling Price: ").append(Format.rupee(item.price))
+    append("\nSelling Price: ").append(Format.rupee(price))
     if (item.storeLocation.isNotBlank()) append("\nLocation: ").append(item.storeLocation)
 }
 
@@ -229,10 +335,10 @@ private fun launchShare(context: Context, base: Intent, title: String) {
     runCatching { context.startActivity(Intent.createChooser(base, title).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
 }
 
-/** Shares the item photos with the name + selling price as the caption. */
-private fun shareProductText(context: Context, row: PriceRow) {
-    val caption = captionFor(row.item)
-    val images = row.attachments.filter { it.mime.startsWith("image/") }
+/** Shares the chosen item photos with the name + (edited) selling price as the caption. */
+private fun shareProductText(context: Context, item: Item, price: Double, selected: List<ItemAttachment>) {
+    val caption = captionFor(item, price)
+    val images = selected.filter { it.mime.startsWith("image/") }
     val base = when {
         images.isEmpty() -> Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, caption) }
         images.size == 1 -> Intent(Intent.ACTION_SEND).apply {
@@ -249,12 +355,12 @@ private fun shareProductText(context: Context, row: PriceRow) {
     launchShare(context, base, "Share item")
 }
 
-/** Shares a generated product PDF (name, price, photo) plus any catalogue PDF, with a text caption. */
-private fun shareProductPdf(context: Context, row: PriceRow) {
-    val caption = captionFor(row.item)
-    val firstImage = row.attachments.firstOrNull { it.mime.startsWith("image/") }?.path
-    val productUri = ProductPdf.generate(context, AppPrefs(context).company, row.item, firstImage)
-    val catalogues = row.attachments.filter { it.mime == "application/pdf" }.map { ItemAttachmentStore.uriFor(context, it) }
+/** Shares a generated product PDF (name, edited price, photo) plus chosen catalogue PDFs. */
+private fun shareProductPdf(context: Context, item: Item, price: Double, selected: List<ItemAttachment>) {
+    val caption = captionFor(item, price)
+    val firstImage = selected.firstOrNull { it.mime.startsWith("image/") }?.path
+    val productUri = ProductPdf.generate(context, AppPrefs(context).company, item.copy(price = price), firstImage)
+    val catalogues = selected.filter { it.mime == "application/pdf" }.map { ItemAttachmentStore.uriFor(context, it) }
     val base = if (catalogues.isEmpty()) {
         Intent(Intent.ACTION_SEND).apply {
             type = "application/pdf"
