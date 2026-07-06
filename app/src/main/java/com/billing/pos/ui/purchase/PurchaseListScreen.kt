@@ -43,6 +43,9 @@ import com.billing.pos.auth.Session
 import com.billing.pos.data.Purchase
 import com.billing.pos.data.Repository
 import com.billing.pos.ui.billing.collectAsStateSafe
+import com.billing.pos.ui.common.ListFilters
+import com.billing.pos.ui.common.endOfDay
+import com.billing.pos.ui.common.startOfDay
 import com.billing.pos.util.Format
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -72,6 +75,16 @@ fun PurchaseListScreen(
     val purchases by vm.purchases.collectAsStateSafe()
     val message by vm.message.collectAsStateSafe()
     var pendingDelete by remember { mutableStateOf<Purchase?>(null) }
+    var voucherQ by remember { mutableStateOf("") }
+    var nameQ by remember { mutableStateOf("") }
+    var fromMillis by remember { mutableStateOf<Long?>(null) }
+    var toMillis by remember { mutableStateOf<Long?>(null) }
+    val filtered = purchases.filter {
+        (voucherQ.isBlank() || it.purchaseNo.contains(voucherQ, true)) &&
+            (nameQ.isBlank() || it.supplierName.contains(nameQ, true)) &&
+            (fromMillis == null || it.dateMillis >= startOfDay(fromMillis!!)) &&
+            (toMillis == null || it.dateMillis <= endOfDay(toMillis!!))
+    }
 
     LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); vm.consumeMessage() } }
 
@@ -95,13 +108,21 @@ fun PurchaseListScreen(
             Column(Modifier.fillMaxSize().padding(pad), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
                 Text("You don't have permission to view purchases", color = MaterialTheme.colorScheme.outline)
             }
-        } else if (purchases.isEmpty()) {
-            Column(Modifier.fillMaxSize().padding(pad), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("No purchases yet", color = MaterialTheme.colorScheme.outline)
-            }
         } else {
-            LazyColumn(Modifier.fillMaxSize().padding(pad).padding(horizontal = 12.dp)) {
-                items(purchases, key = { it.id }) { p ->
+            Column(Modifier.fillMaxSize().padding(pad)) {
+                ListFilters(
+                    voucher = voucherQ, onVoucher = { voucherQ = it },
+                    name = nameQ, onName = { nameQ = it }, nameLabel = "Supplier",
+                    from = fromMillis, onFrom = { fromMillis = it },
+                    to = toMillis, onTo = { toMillis = it }
+                )
+                if (filtered.isEmpty()) {
+                    Text(
+                        if (purchases.isEmpty()) "No purchases yet" else "No purchases match the filter",
+                        color = MaterialTheme.colorScheme.outline, modifier = Modifier.padding(16.dp)
+                    )
+                } else LazyColumn(Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
+                    items(filtered, key = { it.id }) { p ->
                     Row(
                         Modifier.fillMaxWidth().clickable { onEdit(p.id) }.padding(vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically
@@ -121,6 +142,7 @@ fun PurchaseListScreen(
                         }
                     }
                     Divider()
+                    }
                 }
             }
         }

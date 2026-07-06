@@ -56,6 +56,9 @@ import com.billing.pos.data.Backup
 import com.billing.pos.data.Bill
 import com.billing.pos.data.Repository
 import com.billing.pos.ui.billing.collectAsStateSafe
+import com.billing.pos.ui.common.ListFilters
+import com.billing.pos.ui.common.endOfDay
+import com.billing.pos.ui.common.startOfDay
 import com.billing.pos.util.Format
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -121,6 +124,16 @@ fun InvoiceListScreen(
     val bills by vm.bills.collectAsStateSafe()
     val message by vm.message.collectAsStateSafe()
     var pendingDelete by remember { mutableStateOf<Bill?>(null) }
+    var voucherQ by remember { mutableStateOf("") }
+    var nameQ by remember { mutableStateOf("") }
+    var fromMillis by remember { mutableStateOf<Long?>(null) }
+    var toMillis by remember { mutableStateOf<Long?>(null) }
+    val filtered = bills.filter {
+        (voucherQ.isBlank() || it.billNo.contains(voucherQ, true)) &&
+            (nameQ.isBlank() || it.customerName.contains(nameQ, true)) &&
+            (fromMillis == null || it.dateMillis >= startOfDay(fromMillis!!)) &&
+            (toMillis == null || it.dateMillis <= endOfDay(toMillis!!))
+    }
 
     LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); vm.consumeMessage() } }
 
@@ -173,20 +186,21 @@ fun InvoiceListScreen(
                 verticalArrangement = Arrangement.Center,
                 horizontalAlignment = Alignment.CenterHorizontally
             ) { Text("You don't have permission to view invoices", color = MaterialTheme.colorScheme.outline) }
-        } else if (bills.isEmpty()) {
-            Column(
-                Modifier.fillMaxSize().padding(pad),
-                verticalArrangement = Arrangement.Center,
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) { Text("No invoices yet", color = MaterialTheme.colorScheme.outline) }
         } else {
-            LazyColumn(
-                Modifier
-                    .fillMaxSize()
-                    .padding(pad)
-                    .padding(horizontal = 12.dp)
-            ) {
-                items(bills, key = { it.id }) { bill ->
+            Column(Modifier.fillMaxSize().padding(pad)) {
+                ListFilters(
+                    voucher = voucherQ, onVoucher = { voucherQ = it },
+                    name = nameQ, onName = { nameQ = it }, nameLabel = "Customer",
+                    from = fromMillis, onFrom = { fromMillis = it },
+                    to = toMillis, onTo = { toMillis = it }
+                )
+                if (filtered.isEmpty()) {
+                    Text(
+                        if (bills.isEmpty()) "No invoices yet" else "No invoices match the filter",
+                        color = MaterialTheme.colorScheme.outline, modifier = Modifier.padding(16.dp)
+                    )
+                } else LazyColumn(Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
+                    items(filtered, key = { it.id }) { bill ->
                     Row(
                         Modifier.fillMaxWidth().clickable { onEdit(bill.id) }.padding(vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically
@@ -221,6 +235,7 @@ fun InvoiceListScreen(
                         }
                     }
                     Divider()
+                    }
                 }
             }
         }
