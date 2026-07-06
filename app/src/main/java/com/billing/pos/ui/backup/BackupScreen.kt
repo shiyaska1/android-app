@@ -1,6 +1,7 @@
 package com.billing.pos.ui.backup
 
 import android.Manifest
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Column
@@ -9,6 +10,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.CloudDownload
+import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material3.AlertDialog
@@ -53,7 +56,8 @@ fun BackupScreen(
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
     var busy by remember { mutableStateOf(false) }
-    var confirmRestore by remember { mutableStateOf(false) }
+    // Holds the picker to launch after the user confirms a data-replacing restore.
+    var restoreAction by remember { mutableStateOf<(() -> Unit)?>(null) }
 
     fun saveBackup() {
         scope.launch {
@@ -77,23 +81,47 @@ fun BackupScreen(
         else saveBackup()
     }
 
-    val restorePicker = rememberLauncherForActivityResult(
-        ActivityResultContracts.GetContent()
-    ) { uri ->
-        if (uri != null) {
-            scope.launch {
-                busy = true
-                val result = withContext(Dispatchers.IO) { FullBackup.restore(context, uri) }
-                busy = false
-                if (result.isSuccess) {
-                    snackbar.showSnackbar("Restore complete — please sign in")
-                    onRestored()
-                } else {
-                    snackbar.showSnackbar(result.exceptionOrNull()?.message ?: "Restore failed")
-                }
+    fun runRestore(uri: Uri) {
+        scope.launch {
+            busy = true
+            val result = withContext(Dispatchers.IO) { FullBackup.restore(context, uri) }
+            busy = false
+            if (result.isSuccess) {
+                snackbar.showSnackbar("Restore complete — please sign in")
+                onRestored()
+            } else {
+                snackbar.showSnackbar(result.exceptionOrNull()?.message ?: "Restore failed")
             }
         }
     }
+
+    val restorePicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri -> if (uri != null) runRestore(uri) }
+
+    // --- Google Drive (via the system Storage Access Framework picker) ---
+    // Upload: writes the backup .zip to the location the user picks (Google Drive, etc.).
+    val driveUpload = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/zip")
+    ) { uri ->
+        if (uri != null) scope.launch {
+            busy = true
+            val ok = withContext(Dispatchers.IO) {
+                runCatching {
+                    val zip = FullBackup.create(context)
+                    context.contentResolver.openOutputStream(uri)?.use { out ->
+                        zip.inputStream().use { it.copyTo(out) }
+                    } != null
+                }.getOrDefault(false)
+            }
+            busy = false
+            snackbar.showSnackbar(if (ok) "Backup uploaded to Google Drive" else "Upload failed")
+        }
+    }
+    // Restore: reads the .zip the user picks from Google Drive (or anywhere).
+    val driveRestore = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri -> if (uri != null) runRestore(uri) }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
@@ -119,7 +147,9 @@ fun BackupScreen(
             Text(
                 "A full backup contains everything — invoices, customers, items, receipts, " +
                     "payments, users, diary (with photos/voice), and company settings — in one .zip. " +
-                    "Restore it on a new phone or after reinstalling to get everything back.",
+                    "Restore it on a new phone or after reinstalling to get everything back.\n\n" +
+                    "For Google Drive, the system picker opens — choose your Google Drive account/folder " +
+                    "to save or pick the backup .zip.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.outline
             )
@@ -130,14 +160,24 @@ fun BackupScreen(
                     enabled = !busy,
                     modifier = Modifier.fillMaxWidth().padding(top = 16.dp)
                 ) { Icon(Icons.Filled.Download, null); Text("  Download backup to storage") }
+                Button(
+                    onClick = { driveUpload.launch("pos-full-backup.zip") },
+                    enabled = !busy,
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                ) { Icon(Icons.Filled.CloudUpload, null); Text("  Upload to Google Drive") }
             }
 
             if (Session.canImport) {
                 OutlinedButton(
-                    onClick = { confirmRestore = true },
+                    onClick = { restoreAction = { restorePicker.launch("*/*") } },
                     enabled = !busy,
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-                ) { Icon(Icons.Filled.Restore, null); Text("  Restore from backup") }
+                ) { Icon(Icons.Filled.Restore, null); Text("  Restore from file") }
+                OutlinedButton(
+                    onClick = { restoreAction = { driveRestore.launch(arrayOf("application/zip", "application/octet-stream", "*/*")) } },
+                    enabled = !busy,
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                ) { Icon(Icons.Filled.CloudDownload, null); Text("  Restore from Google Drive") }
             }
 
             if (busy) {
@@ -155,15 +195,15 @@ fun BackupScreen(
         }
     }
 
-    if (confirmRestore) {
+    restoreAction?.let { action ->
         AlertDialog(
-            onDismissRequest = { confirmRestore = false },
+            onDismissRequest = { restoreAction = null },
             title = { Text("Restore backup?") },
             text = { Text("This REPLACES all current data (including users) with the backup. This cannot be undone.") },
             confirmButton = {
-                TextButton(onClick = { confirmRestore = false; restorePicker.launch("*/*") }) { Text("Choose file") }
+                TextButton(onClick = { restoreAction = null; action() }) { Text("Choose file") }
             },
-            dismissButton = { TextButton(onClick = { confirmRestore = false }) { Text("Cancel") } }
+            dismissButton = { TextButton(onClick = { restoreAction = null }) { Text("Cancel") } }
         )
     }
 }
