@@ -54,6 +54,8 @@ object FullBackup {
         root.put("accountHeads", JSONArray().apply { db.accountDao().allHeads().forEach { put(headJson(it)) } })
         root.put("journalEntries", JSONArray().apply { db.journalDao().allEntries().forEach { put(jEntryJson(it)) } })
         root.put("journalLines", JSONArray().apply { db.journalDao().allLines().forEach { put(jLineJson(it)) } })
+        val itemAtts = db.itemAttachmentDao().all()
+        root.put("itemAttachments", JSONArray().apply { itemAtts.forEach { put(itemAttJson(it)) } })
 
         val dir = File(context.cacheDir, "shared").apply { mkdirs() }
         val zip = File(dir, "pos-full-backup.zip")
@@ -69,6 +71,14 @@ object FullBackup {
                     zos.closeEntry()
                 }
             }
+            itemAtts.forEach { att ->
+                val f = File(att.path)
+                if (f.exists()) {
+                    zos.putNextEntry(ZipEntry("itemfiles/" + f.name))
+                    f.inputStream().use { it.copyTo(zos) }
+                    zos.closeEntry()
+                }
+            }
         }
         return zip
     }
@@ -78,6 +88,7 @@ object FullBackup {
             ?: error("Cannot read the file")
 
         val filesDir = AttachmentStore.dir(context)
+        val itemFilesDir = com.billing.pos.items.ItemAttachmentStore.dir(context)
         var json: String? = null
         ZipInputStream(ByteArrayInputStream(bytes)).use { zis ->
             var e = zis.nextEntry
@@ -85,6 +96,10 @@ object FullBackup {
                 if (!e.isDirectory) {
                     when {
                         e.name.endsWith(".json") -> json = zis.readBytes().toString(Charsets.UTF_8)
+                        e.name.startsWith("itemfiles/") -> {
+                            val out = File(itemFilesDir, e.name.removePrefix("itemfiles/"))
+                            out.outputStream().use { zis.copyTo(it) }
+                        }
                         e.name.startsWith("files/") -> {
                             val out = File(filesDir, e.name.removePrefix("files/"))
                             out.outputStream().use { zis.copyTo(it) }
@@ -137,6 +152,9 @@ object FullBackup {
             for (i in 0 until it.length()) lines.add(readJLine(it.getJSONObject(i)))
             if (lines.isNotEmpty()) db.journalDao().insertLines(lines)
         }
+        root.optJSONArray("itemAttachments")?.let {
+            for (i in 0 until it.length()) db.itemAttachmentDao().insert(readItemAtt(context, it.getJSONObject(i)))
+        }
 
         "Restore complete"
     }
@@ -148,6 +166,7 @@ object FullBackup {
     private fun itemJson(i: Item) = JSONObject().put("id", i.id).put("name", i.name)
         .put("price", i.price).put("taxPercent", i.taxPercent).put("barcode", i.barcode).put("hsn", i.hsn)
         .put("category", i.category).put("openingStock", i.openingStock).put("unit", i.unit)
+        .put("storeLocation", i.storeLocation)
 
     private fun billJson(b: Bill) = JSONObject().put("id", b.id).put("billNo", b.billNo)
         .put("dateMillis", b.dateMillis).put("customerId", b.customerId).put("customerName", b.customerName)
@@ -215,6 +234,9 @@ object FullBackup {
     private fun jLineJson(l: JournalLine) = JSONObject().put("id", l.id).put("entryId", l.entryId)
         .put("headId", l.headId).put("headName", l.headName).put("amount", l.amount).put("isDebit", l.isDebit)
 
+    private fun itemAttJson(a: ItemAttachment) = JSONObject().put("id", a.id).put("itemId", a.itemId)
+        .put("file", File(a.path).name).put("name", a.name).put("mime", a.mime).put("kind", a.kind)
+
     private fun attJson(a: DiaryAttachment) = JSONObject().put("id", a.id).put("entryId", a.entryId)
         .put("file", if (a.type == AttachmentType.LOCATION) "" else File(a.path).name)
         .put("locUrl", if (a.type == AttachmentType.LOCATION) a.path else "")
@@ -231,7 +253,7 @@ object FullBackup {
         price = o.optDouble("price", 0.0), taxPercent = o.optDouble("taxPercent", 0.0),
         barcode = o.optString("barcode"), hsn = o.optString("hsn"),
         category = o.optString("category"), openingStock = o.optDouble("openingStock", 0.0),
-        unit = o.optString("unit", "PCS")
+        unit = o.optString("unit", "PCS"), storeLocation = o.optString("storeLocation")
     )
 
     private fun readBill(o: JSONObject) = Bill(
@@ -324,6 +346,12 @@ object FullBackup {
         cashMode = o.optString("cashMode"), cashIsIn = o.optBoolean("cashIsIn", true),
         cashAmount = o.optDouble("cashAmount", 0.0),
         source = o.optString("source")
+    )
+
+    private fun readItemAtt(context: Context, o: JSONObject) = ItemAttachment(
+        id = o.optLong("id"), itemId = o.optLong("itemId"),
+        path = File(com.billing.pos.items.ItemAttachmentStore.dir(context), o.optString("file")).absolutePath,
+        name = o.optString("name"), mime = o.optString("mime"), kind = o.optString("kind", "PHOTO")
     )
 
     private fun readJLine(o: JSONObject) = JournalLine(

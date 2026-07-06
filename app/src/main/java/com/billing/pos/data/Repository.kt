@@ -20,6 +20,7 @@ class Repository(context: Context) {
     private val db = AppDatabase.get(context)
     private val customerDao = db.customerDao()
     private val itemDao = db.itemDao()
+    private val itemAttachmentDao = db.itemAttachmentDao()
     private val billDao = db.billDao()
     private val userDao = db.userDao()
     private val receiptDao = db.receiptDao()
@@ -31,6 +32,7 @@ class Repository(context: Context) {
 
     val customers: Flow<List<Customer>> = customerDao.observeAll()
     val items: Flow<List<Item>> = itemDao.observeAll()
+    val itemAttachments: Flow<List<ItemAttachment>> = itemAttachmentDao.observeAll()
     val users: Flow<List<User>> = userDao.observeAll()
     val allBills: Flow<List<Bill>> = billDao.observeAll()
     val allReceipts: Flow<List<Receipt>> = receiptDao.observeAll()
@@ -184,17 +186,30 @@ class Repository(context: Context) {
 
     suspend fun addItem(
         name: String, price: Double, taxPercent: Double, barcode: String = "", hsn: String = "",
-        category: String = "", openingStock: Double = 0.0, unit: String = "PCS"
+        category: String = "", openingStock: Double = 0.0, unit: String = "PCS", storeLocation: String = ""
     ): Long =
         itemDao.insert(Item(
             name = name.trim(), price = price, taxPercent = taxPercent,
             barcode = barcode.trim(), hsn = hsn.trim(),
-            category = category.trim(), openingStock = openingStock, unit = unit.trim().ifBlank { "PCS" }
+            category = category.trim(), openingStock = openingStock, unit = unit.trim().ifBlank { "PCS" },
+            storeLocation = storeLocation.trim()
         ))
 
     suspend fun updateItem(item: Item) = itemDao.update(item)
-    suspend fun deleteItem(item: Item) = itemDao.delete(item)
+    suspend fun deleteItem(item: Item) {
+        itemAttachmentDao.forItem(item.id).forEach { com.billing.pos.items.ItemAttachmentStore.delete(it) }
+        itemAttachmentDao.deleteForItem(item.id)
+        itemDao.delete(item)
+    }
     suspend fun itemByBarcode(barcode: String): Item? = itemDao.byBarcode(barcode.trim())
+
+    // ---- item attachments (photos / location photo / PDF catalogue) ----
+    suspend fun itemAttachmentsFor(itemId: Long): List<ItemAttachment> = itemAttachmentDao.forItem(itemId)
+    suspend fun addItemAttachment(attachment: ItemAttachment): Long = itemAttachmentDao.insert(attachment)
+    suspend fun deleteItemAttachment(attachment: ItemAttachment) {
+        itemAttachmentDao.delete(attachment)
+        com.billing.pos.items.ItemAttachmentStore.delete(attachment)
+    }
 
     /** Bill number for the next locally-created bill, e.g. INV-0001. */
     suspend fun nextBillNo(): String {

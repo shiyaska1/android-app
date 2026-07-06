@@ -13,15 +13,17 @@ import androidx.room.TypeConverters
         DiaryEntry::class, DiaryAttachment::class,
         Supplier::class, Purchase::class, PurchaseItem::class,
         AccountGroup::class, AccountHead::class,
-        JournalEntry::class, JournalLine::class
+        JournalEntry::class, JournalLine::class,
+        ItemAttachment::class
     ],
-    version = 14,
+    version = 15,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun customerDao(): CustomerDao
     abstract fun itemDao(): ItemDao
+    abstract fun itemAttachmentDao(): ItemAttachmentDao
     abstract fun billDao(): BillDao
     abstract fun userDao(): UserDao
     abstract fun receiptDao(): ReceiptDao

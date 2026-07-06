@@ -28,7 +28,23 @@ data class Item(
     /** Stock on hand before any purchase/sale was recorded in this app. */
     val openingStock: Double = 0.0,
     /** Unit of measure, e.g. PCS, KG, LTR. */
-    val unit: String = "PCS"
+    val unit: String = "PCS",
+    /** Where the item sits in the store (rack/shelf), as free text. */
+    val storeLocation: String = ""
+)
+
+/**
+ * A file attached to an item. [kind] is "PHOTO" (product picture),
+ * "LOCATION" (photo of where it sits in the store) or "CATALOGUE" (a PDF).
+ */
+@Entity(tableName = "item_attachments")
+data class ItemAttachment(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val itemId: Long,
+    val path: String,
+    val name: String,
+    val mime: String,
+    val kind: String = "PHOTO"
 )
 
 /** A saved bill (invoice header). `source` marks where it came from ("" = this device). */
