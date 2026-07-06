@@ -13,6 +13,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Divider
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -31,20 +32,25 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.billing.pos.auth.Session
+import com.billing.pos.data.AppPrefs
 import com.billing.pos.data.Purchase
 import com.billing.pos.data.Repository
+import com.billing.pos.pdf.TablePdf
 import com.billing.pos.ui.billing.collectAsStateSafe
 import com.billing.pos.ui.common.ListFilters
 import com.billing.pos.ui.common.endOfDay
+import com.billing.pos.ui.common.rememberPdfDownloader
 import com.billing.pos.ui.common.startOfDay
 import com.billing.pos.util.Format
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -71,6 +77,8 @@ fun PurchaseListScreen(
     onEdit: (Long) -> Unit,
     vm: PurchaseListViewModel = viewModel()
 ) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
     val purchases by vm.purchases.collectAsStateSafe()
     val message by vm.message.collectAsStateSafe()
@@ -84,6 +92,18 @@ fun PurchaseListScreen(
             (nameQ.isBlank() || it.supplierName.contains(nameQ, true)) &&
             (fromMillis == null || it.dateMillis >= startOfDay(fromMillis!!)) &&
             (toMillis == null || it.dateMillis <= endOfDay(toMillis!!))
+    }
+    val downloadPdf = rememberPdfDownloader { msg -> scope.launch { snackbar.showSnackbar(msg) } }
+    fun buildPurchasesPdf(): java.io.File {
+        val cols = listOf(
+            TablePdf.Col("No", 1.4f), TablePdf.Col("Date", 1.3f), TablePdf.Col("Supplier", 2.4f),
+            TablePdf.Col("Pay", 1f), TablePdf.Col("Status", 1f), TablePdf.Col("Total", 1.3f, right = true)
+        )
+        val data = filtered.sortedByDescending { it.dateMillis }.map {
+            listOf(it.purchaseNo, Format.date(it.dateMillis), it.supplierName, it.paymentMethod, it.paymentStatus, Format.money(it.grandTotal))
+        }
+        val footer = listOf("TOTAL" to Format.money(filtered.sumOf { it.grandTotal }))
+        return TablePdf.generate(context, AppPrefs(context).company, "Purchases", "Count: ${filtered.size}", cols, data, footer)
     }
 
     LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); vm.consumeMessage() } }
@@ -99,8 +119,14 @@ fun PurchaseListScreen(
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                     titleContentColor = MaterialTheme.colorScheme.onPrimary,
-                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary
-                )
+                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary,
+                    actionIconContentColor = MaterialTheme.colorScheme.onPrimary
+                ),
+                actions = {
+                    IconButton(onClick = { downloadPdf { buildPurchasesPdf() } }) {
+                        Icon(Icons.Filled.PictureAsPdf, contentDescription = "Download list PDF")
+                    }
+                }
             )
         }
     ) { pad ->

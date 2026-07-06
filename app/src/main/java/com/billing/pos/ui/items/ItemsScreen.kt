@@ -32,6 +32,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PhotoLibrary
@@ -89,7 +90,9 @@ import com.billing.pos.data.ItemAttachment
 import com.billing.pos.data.Repository
 import com.billing.pos.items.ItemAttachmentStore
 import com.billing.pos.pdf.BarcodePdf
+import com.billing.pos.pdf.TablePdf
 import com.billing.pos.ui.billing.collectAsStateSafe
+import com.billing.pos.ui.common.rememberPdfDownloader
 import com.billing.pos.ui.common.rememberThumbnail
 import com.billing.pos.util.Format
 import com.journeyapps.barcodescanner.ScanContract
@@ -104,8 +107,8 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** An item with its computed stock and last purchase rate. */
-data class ItemStockRow(val item: Item, val stock: Double, val purchaseRate: Double)
+/** An item with its computed stock, last purchase rate and last supplier. */
+data class ItemStockRow(val item: Item, val stock: Double, val purchaseRate: Double, val lastSupplier: String = "")
 
 /** Common units of measure offered in the item entry dropdown. */
 val ITEM_UNITS = listOf(
@@ -119,16 +122,18 @@ class ItemsViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = Repository(app)
 
     val rows: StateFlow<List<ItemStockRow>> =
-        combine(repo.items, repo.purchaseLines, repo.soldQty) { items, pLines, sold ->
+        combine(repo.items, repo.purchaseLines, repo.soldQty, repo.purchaseLineParties) { items, pLines, sold, parties ->
             val purchasedByName = pLines.groupBy { it.name.lowercase() }
             val soldByName = sold.associate { it.name.lowercase() to it.qty }
+            val lastSupplierByName = parties.groupBy { it.name.lowercase() }
+                .mapValues { (_, l) -> l.maxByOrNull { it.dateMillis }?.supplierName ?: "" }
             items.map { item ->
                 val key = item.name.lowercase()
                 val lines = purchasedByName[key].orEmpty()
                 val purchasedQty = lines.sumOf { it.qty }
                 val lastRate = lines.maxByOrNull { it.dateMillis }?.price ?: 0.0
                 val soldQty = soldByName[key] ?: 0.0
-                ItemStockRow(item, item.openingStock + purchasedQty - soldQty, lastRate)
+                ItemStockRow(item, item.openingStock + purchasedQty - soldQty, lastRate, lastSupplierByName[key] ?: "")
             }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -221,6 +226,37 @@ fun ItemsScreen(
 
     LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); vm.consumeMessage() } }
 
+    // Filters: name contains, category, stock below a number.
+    var filterName by remember { mutableStateOf("") }
+    var filterCategory by remember { mutableStateOf("") }
+    var stockBelow by remember { mutableStateOf("") }
+    val stockBelowVal = stockBelow.toDoubleOrNull()
+    val filteredRows = rows.filter {
+        (filterName.isBlank() || it.item.name.contains(filterName, true)) &&
+            (filterCategory.isBlank() || it.item.category.equals(filterCategory, true)) &&
+            (stockBelowVal == null || it.stock < stockBelowVal)
+    }
+    val downloadPdf = rememberPdfDownloader { msg -> scope.launch { snackbar.showSnackbar(msg) } }
+    fun buildItemsPdf(): java.io.File {
+        val company = com.billing.pos.data.AppPrefs(context).company
+        val subtitle = buildString {
+            append("Items: ${filteredRows.size}")
+            if (filterCategory.isNotBlank()) append("  |  Category: $filterCategory")
+            if (filterName.isNotBlank()) append("  |  Name~ $filterName")
+            if (stockBelowVal != null) append("  |  Stock < ${Format.qty(stockBelowVal)}")
+        }
+        val cols = listOf(
+            TablePdf.Col("Item", 3f), TablePdf.Col("Category", 1.6f), TablePdf.Col("Unit", 0.9f),
+            TablePdf.Col("Stock", 1f, right = true), TablePdf.Col("Buy", 1.1f, right = true),
+            TablePdf.Col("Sell", 1.1f, right = true), TablePdf.Col("Last Supplier", 2f)
+        )
+        val data = filteredRows.map { r ->
+            listOf(r.item.name, r.item.category, r.item.unit, Format.qty(r.stock),
+                Format.money(r.purchaseRate), Format.money(r.item.price), r.lastSupplier)
+        }
+        return TablePdf.generate(context, company, "Item List", subtitle, cols, data)
+    }
+
     var showDialog by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<Item?>(null) }
     var deleteFor by remember { mutableStateOf<Item?>(null) }
@@ -294,8 +330,14 @@ fun ItemsScreen(
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                     titleContentColor = MaterialTheme.colorScheme.onPrimary,
-                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary
-                )
+                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary,
+                    actionIconContentColor = MaterialTheme.colorScheme.onPrimary
+                ),
+                actions = {
+                    IconButton(onClick = { downloadPdf { buildItemsPdf() } }) {
+                        Icon(Icons.Filled.Download, contentDescription = "Download list PDF")
+                    }
+                }
             )
         },
         floatingActionButton = {
@@ -304,8 +346,39 @@ fun ItemsScreen(
             }
         }
     ) { pad ->
-        LazyColumn(Modifier.fillMaxSize().padding(pad).padding(horizontal = 12.dp)) {
-            items(rows, key = { it.item.id }) { row ->
+        Column(Modifier.fillMaxSize().padding(pad)) {
+            // Filter bar: name, category, stock-below.
+            Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = filterName, onValueChange = { filterName = it },
+                        label = { Text("Item name") }, singleLine = true, modifier = Modifier.weight(1.4f)
+                    )
+                    OutlinedTextField(
+                        value = stockBelow, onValueChange = { stockBelow = it.filter { c -> c.isDigit() || c == '.' } },
+                        label = { Text("Stock <") }, singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(1f)
+                    )
+                }
+                var catMenu by remember { mutableStateOf(false) }
+                ExposedDropdownMenuBox(expanded = catMenu, onExpandedChange = { catMenu = !catMenu }) {
+                    OutlinedTextField(
+                        readOnly = true, value = filterCategory.ifBlank { "All categories" }, onValueChange = {},
+                        label = { Text("Category") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(catMenu) },
+                        modifier = Modifier.menuAnchor().fillMaxWidth()
+                    )
+                    ExposedDropdownMenu(expanded = catMenu, onDismissRequest = { catMenu = false }) {
+                        DropdownMenuItem(text = { Text("All categories") }, onClick = { filterCategory = ""; catMenu = false })
+                        categories.forEach { cat ->
+                            DropdownMenuItem(text = { Text(cat) }, onClick = { filterCategory = cat; catMenu = false })
+                        }
+                    }
+                }
+            }
+            Divider()
+            LazyColumn(Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
+                items(filteredRows, key = { it.item.id }) { row ->
                 val item = row.item
                 Row(
                     Modifier.fillMaxWidth().clickable { editing = item; vm.beginEdit(item); showDialog = true }.padding(vertical = 8.dp),
@@ -320,6 +393,12 @@ fun ItemsScreen(
                             "Stock: ${Format.qty(row.stock)} ${item.unit}   •   Buy: ${Format.rupee(row.purchaseRate)}   •   Sell: ${Format.rupee(item.price)}",
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline
                         )
+                        if (row.lastSupplier.isNotBlank()) {
+                            Text(
+                                "Last supplier: ${row.lastSupplier}",
+                                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline
+                            )
+                        }
                         if (item.barcode.isNotBlank() || item.taxPercent > 0) {
                             Text(
                                 (if (item.taxPercent > 0) "Tax ${Format.money(item.taxPercent)}%" else "") +
@@ -335,6 +414,7 @@ fun ItemsScreen(
                     IconButton(onClick = { deleteFor = item }) { Icon(Icons.Filled.Delete, "Delete", tint = MaterialTheme.colorScheme.error) }
                 }
                 Divider()
+                }
             }
         }
     }

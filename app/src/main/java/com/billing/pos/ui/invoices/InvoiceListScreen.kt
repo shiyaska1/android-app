@@ -20,6 +20,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Divider
@@ -54,10 +55,13 @@ import com.billing.pos.auth.PendingImport
 import com.billing.pos.auth.Session
 import com.billing.pos.data.Backup
 import com.billing.pos.data.Bill
+import com.billing.pos.data.AppPrefs
 import com.billing.pos.data.Repository
+import com.billing.pos.pdf.TablePdf
 import com.billing.pos.ui.billing.collectAsStateSafe
 import com.billing.pos.ui.common.ListFilters
 import com.billing.pos.ui.common.endOfDay
+import com.billing.pos.ui.common.rememberPdfDownloader
 import com.billing.pos.ui.common.startOfDay
 import com.billing.pos.util.Format
 import kotlinx.coroutines.Dispatchers
@@ -120,6 +124,7 @@ fun InvoiceListScreen(
     vm: InvoiceListViewModel = viewModel()
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
     val bills by vm.bills.collectAsStateSafe()
     val message by vm.message.collectAsStateSafe()
@@ -133,6 +138,18 @@ fun InvoiceListScreen(
             (nameQ.isBlank() || it.customerName.contains(nameQ, true)) &&
             (fromMillis == null || it.dateMillis >= startOfDay(fromMillis!!)) &&
             (toMillis == null || it.dateMillis <= endOfDay(toMillis!!))
+    }
+    val downloadPdf = rememberPdfDownloader { msg -> scope.launch { snackbar.showSnackbar(msg) } }
+    fun buildInvoicesPdf(): java.io.File {
+        val cols = listOf(
+            TablePdf.Col("Bill No", 1.4f), TablePdf.Col("Date", 1.3f), TablePdf.Col("Customer", 2.4f),
+            TablePdf.Col("Pay", 1f), TablePdf.Col("Status", 1f), TablePdf.Col("Total", 1.3f, right = true)
+        )
+        val data = filtered.sortedByDescending { it.dateMillis }.map {
+            listOf(it.billNo, Format.date(it.dateMillis), it.customerName, it.paymentMethod, it.paymentStatus, Format.money(it.grandTotal))
+        }
+        val footer = listOf("TOTAL" to Format.money(filtered.sumOf { it.grandTotal }))
+        return TablePdf.generate(context, AppPrefs(context).company, "Invoices", "Count: ${filtered.size}", cols, data, footer)
     }
 
     LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); vm.consumeMessage() } }
@@ -166,6 +183,9 @@ fun InvoiceListScreen(
                     actionIconContentColor = MaterialTheme.colorScheme.onPrimary
                 ),
                 actions = {
+                    IconButton(onClick = { downloadPdf { buildInvoicesPdf() } }) {
+                        Icon(Icons.Filled.PictureAsPdf, contentDescription = "Download list PDF")
+                    }
                     if (Session.canExport) {
                         IconButton(onClick = { vm.exportAndShare(context) }) {
                             Icon(Icons.Filled.Share, contentDescription = "Export & share")

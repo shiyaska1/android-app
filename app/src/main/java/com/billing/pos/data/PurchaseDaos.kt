@@ -12,6 +12,9 @@ import kotlinx.coroutines.flow.Flow
 /** A purchase line joined with its purchase date, for stock/last-rate calc. */
 data class PurchaseLineInfo(val name: String, val price: Double, val qty: Double, val dateMillis: Long)
 
+/** A purchase line joined with its supplier + date, for "last supplier" per item. */
+data class PurchaseLineParty(val name: String, val dateMillis: Long, val supplierName: String)
+
 /** Aggregated quantity by item name. */
 data class NameQty(val name: String, val qty: Double)
 
@@ -112,4 +115,10 @@ interface PurchaseDao {
             "FROM purchase_items pi JOIN purchases p ON pi.purchaseId = p.id"
     )
     fun observePurchaseLines(): Flow<List<PurchaseLineInfo>>
+
+    @Query(
+        "SELECT pi.name AS name, p.dateMillis AS dateMillis, p.supplierName AS supplierName " +
+            "FROM purchase_items pi JOIN purchases p ON pi.purchaseId = p.id"
+    )
+    fun observePurchaseLineParties(): Flow<List<PurchaseLineParty>>
 }

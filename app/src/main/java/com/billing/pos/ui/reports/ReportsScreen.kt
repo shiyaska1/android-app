@@ -17,6 +17,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Payments
+import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -44,21 +45,26 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.billing.pos.auth.Session
+import com.billing.pos.data.AppPrefs
 import com.billing.pos.data.Bill
 import com.billing.pos.data.Expense
 import com.billing.pos.data.PayMode
 import com.billing.pos.data.Receipt
 import com.billing.pos.data.Repository
+import com.billing.pos.pdf.TablePdf
 import com.billing.pos.ui.billing.collectAsStateSafe
+import com.billing.pos.ui.common.rememberPdfDownloader
 import com.billing.pos.util.Format
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -146,6 +152,8 @@ fun ReportsScreen(
     onBack: () -> Unit,
     vm: ReportsViewModel = viewModel()
 ) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
     val bills by vm.bills.collectAsStateSafe()
     val receipts by vm.receipts.collectAsStateSafe()
@@ -194,6 +202,29 @@ fun ReportsScreen(
 
     val customerNames = remember(bills) { bills.map { it.customerName }.distinct().sorted() }
 
+    val downloadPdf = rememberPdfDownloader { msg -> scope.launch { snackbar.showSnackbar(msg) } }
+    fun buildReportPdf(): java.io.File {
+        data class R(val date: Long, val type: String, val ref: String, val party: String, val amt: String)
+        val list = buildList {
+            if (Session.canViewInvoice) fBills.forEach { add(R(it.dateMillis, "Sale", it.billNo, it.customerName, Format.money(it.grandTotal))) }
+            if (Session.canViewReceipt) fReceipts.forEach { add(R(it.dateMillis, "Receipt", it.receiptNo, it.customerName, "+ " + Format.money(it.amount))) }
+            if (Session.canViewPayment) fExpenses.forEach { add(R(it.dateMillis, "Payment", it.voucherNo, it.description.ifBlank { "Expense" }, "- " + Format.money(it.amount))) }
+        }.sortedByDescending { it.date }
+        val cols = listOf(
+            TablePdf.Col("Date", 1.3f), TablePdf.Col("Type", 1f), TablePdf.Col("Voucher", 1.4f),
+            TablePdf.Col("Party / Desc", 2.4f), TablePdf.Col("Amount", 1.3f, right = true)
+        )
+        val data = list.map { listOf(Format.date(it.date), it.type, it.ref, it.party, it.amt) }
+        val subtitle = "Period: " + (if (quick == Quick.ALL) "All time" else "${Format.date(lo)} to ${Format.date(hi)}")
+        val footer = listOf(
+            "Sales (invoiced)" to Format.money(salesTotal),
+            "Receipts received" to Format.money(receiptsTotal),
+            "Payments / expenses" to Format.money(expensesTotal),
+            "Net fund" to Format.money(netFund)
+        )
+        return TablePdf.generate(context, AppPrefs(context).company, "Sales Report", subtitle, cols, data, footer)
+    }
+
     var receiveFor by remember { mutableStateOf<Bill?>(null) }
     var showExpense by remember { mutableStateOf(false) }
     var editReceiptFor by remember { mutableStateOf<Receipt?>(null) }
@@ -218,6 +249,9 @@ fun ReportsScreen(
                     actionIconContentColor = MaterialTheme.colorScheme.onPrimary
                 ),
                 actions = {
+                    IconButton(onClick = { downloadPdf { buildReportPdf() } }) {
+                        Icon(Icons.Filled.PictureAsPdf, contentDescription = "Download report PDF")
+                    }
                     if (Session.canCreatePayment) {
                         IconButton(onClick = { showExpense = true }) {
                             Icon(Icons.Filled.Payments, contentDescription = "Add expense")

@@ -21,6 +21,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Card
 import androidx.compose.material3.Divider
@@ -60,7 +61,9 @@ import com.billing.pos.data.DownloadSaver
 import com.billing.pos.data.Purchase
 import com.billing.pos.data.Repository
 import com.billing.pos.pdf.StatementPdf
+import com.billing.pos.pdf.TablePdf
 import com.billing.pos.ui.billing.collectAsStateSafe
+import com.billing.pos.ui.common.rememberPdfDownloader
 import com.billing.pos.util.Format
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.SharingStarted
@@ -150,6 +153,18 @@ fun OutstandingScreen(
         else doDownload(party)
     }
 
+    val downloadPdf = rememberPdfDownloader { msg -> scope.launch { snackbar.showSnackbar(msg) } }
+    fun buildListPdf(): File {
+        val title = if (payable) "Payable (Suppliers)" else "Outstanding (Customers)"
+        val cols = listOf(
+            TablePdf.Col("Party", 3f), TablePdf.Col("Documents", 1.5f, right = true),
+            TablePdf.Col("Total Due", 1.8f, right = true)
+        )
+        val data = list.map { listOf(it.name.ifBlank { "(no name)" }, it.docs.size.toString(), Format.money(it.total)) }
+        val footer = listOf("TOTAL" to Format.money(grandTotal))
+        return TablePdf.generate(context, AppPrefs(context).company, title, "Parties: ${list.size}", cols, data, footer)
+    }
+
     fun sendWhatsApp(party: PartyDue) {
         scope.launch {
             val file = withContext(Dispatchers.IO) { buildStatement(party) }
@@ -185,8 +200,14 @@ fun OutstandingScreen(
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                     titleContentColor = MaterialTheme.colorScheme.onPrimary,
-                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary
-                )
+                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary,
+                    actionIconContentColor = MaterialTheme.colorScheme.onPrimary
+                ),
+                actions = {
+                    IconButton(onClick = { downloadPdf { buildListPdf() } }) {
+                        Icon(Icons.Filled.PictureAsPdf, contentDescription = "Download list PDF")
+                    }
+                }
             )
         }
     ) { pad ->

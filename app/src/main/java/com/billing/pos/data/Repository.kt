@@ -43,6 +43,7 @@ class Repository(context: Context) {
     val accountHeads: Flow<List<AccountHead>> = accountDao.observeHeads()
     val journalEntries: Flow<List<JournalEntry>> = journalDao.observeAll()
     val purchaseLines: Flow<List<PurchaseLineInfo>> = purchaseDao.observePurchaseLines()
+    val purchaseLineParties: Flow<List<PurchaseLineParty>> = purchaseDao.observePurchaseLineParties()
     val soldQty: Flow<List<NameQty>> = billDao.observeSoldQty()
 
     /** Seeds the default Cash customer and the initial super user. */
