@@ -140,6 +140,8 @@ fun CashBookScreen(
     var fromMillis by remember { mutableStateOf<Long?>(null) }
     var toMillis by remember { mutableStateOf<Long?>(null) }
     var modeFilter by remember { mutableStateOf("All") }   // All/Cash/UPI/Card/Cheque
+    var typeFilter by remember { mutableStateOf("All") }   // All/Sale/Receipt/Payment/Purchase/Journal
+    var searchQuery by remember { mutableStateOf("") }
 
     var editReceiptFor by remember { mutableStateOf<Receipt?>(null) }
     var editPaymentFor by remember { mutableStateOf<Expense?>(null) }
@@ -181,6 +183,13 @@ fun CashBookScreen(
     val closing = running
     val totalIn = ranged.filter { it.isIn }.sumOf { it.amount }
     val totalOut = ranged.filter { !it.isIn }.sumOf { it.amount }
+
+    // Display filters (do not affect the running balance / totals above).
+    val q = searchQuery.trim()
+    val visibleRows = rows.filter { (t, _) ->
+        (typeFilter == "All" || t.kind.equals(typeFilter, ignoreCase = true)) &&
+            (q.isBlank() || t.title.contains(q, true) || t.mode.contains(q, true))
+    }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
@@ -228,6 +237,20 @@ fun CashBookScreen(
                 }
             }
 
+            // Voucher type filter
+            Row(Modifier.horizontalScroll(rememberScrollState()).padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf("All", "Sale", "Receipt", "Payment", "Purchase", "Journal").forEach { t ->
+                    FilterChip(selected = typeFilter == t, onClick = { typeFilter = t }, label = { Text(t) })
+                }
+            }
+
+            // Search
+            OutlinedTextField(
+                value = searchQuery, onValueChange = { searchQuery = it },
+                label = { Text("Search entries") }, singleLine = true,
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+            )
+
             // Balances
             Card(Modifier.fillMaxWidth().padding(top = 12.dp)) {
                 Column(Modifier.padding(16.dp)) {
@@ -242,11 +265,14 @@ fun CashBookScreen(
                 }
             }
 
-            if (rows.isEmpty()) {
-                Text("No cash transactions in this period.", color = MaterialTheme.colorScheme.outline, modifier = Modifier.padding(top = 16.dp))
+            if (visibleRows.isEmpty()) {
+                Text(
+                    if (rows.isEmpty()) "No cash transactions in this period." else "No entries match the filter.",
+                    color = MaterialTheme.colorScheme.outline, modifier = Modifier.padding(top = 16.dp)
+                )
             } else {
                 LazyColumn(Modifier.fillMaxWidth().weight(1f).padding(top = 8.dp)) {
-                    items(rows) { (t, balance) ->
+                    items(visibleRows) { (t, balance) ->
                         Row(
                             Modifier
                                 .fillMaxWidth()
