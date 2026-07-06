@@ -334,6 +334,7 @@ fun BillingScreen(
                     LazyColumn(Modifier.padding(horizontal = 8.dp)) {
                         itemsIndexed(vm.cart, key = { _, line -> line.uid }) { index, line ->
                             var priceText by remember(line.uid) { mutableStateOf(Format.money(line.price)) }
+                            var qtyText by remember(line.uid, line.qty) { mutableStateOf(Format.qty(line.qty)) }
                             Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(line.name, Modifier.weight(1f), fontWeight = FontWeight.SemiBold, maxLines = 1)
@@ -350,7 +351,17 @@ fun BillingScreen(
                                     )
                                     Spacer(Modifier.width(6.dp))
                                     IconButton(onClick = { vm.changeQty(index, -1.0) }) { Icon(Icons.Filled.Remove, "Decrease") }
-                                    Text(Format.qty(line.qty), fontWeight = FontWeight.Bold)
+                                    OutlinedTextField(
+                                        value = qtyText,
+                                        onValueChange = { v ->
+                                            val f = v.filter { it.isDigit() || it == '.' }
+                                            qtyText = f
+                                            f.toDoubleOrNull()?.let { if (it > 0) vm.setQty(index, it) }
+                                        },
+                                        singleLine = true,
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                        modifier = Modifier.width(64.dp)
+                                    )
                                     IconButton(onClick = { vm.changeQty(index, 1.0) }) { Icon(Icons.Filled.Add, "Increase") }
                                     Spacer(Modifier.weight(1f))
                                     Text(Format.rupee(line.total), fontWeight = FontWeight.Bold)

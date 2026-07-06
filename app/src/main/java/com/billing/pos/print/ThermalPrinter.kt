@@ -68,7 +68,9 @@ object ThermalPrinter {
         var socket: BluetoothSocket? = null
         try {
             socket = device.createRfcommSocketToServiceRecord(SPP_UUID)
-            adapter.cancelDiscovery()
+            // cancelDiscovery() needs BLUETOOTH_SCAN on API 31+; it's only an optimisation
+            // for a bonded device, so never let a missing SCAN permission block printing.
+            runCatching { adapter.cancelDiscovery() }
             socket.connect()
             val out = socket.outputStream
             out.write(bytes)

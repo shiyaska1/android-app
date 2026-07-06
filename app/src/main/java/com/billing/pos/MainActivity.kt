@@ -237,7 +237,8 @@ private fun AppNav() {
             CashBookScreen(
                 onBack = { nav.popBackStack() },
                 onEditInvoice = { id -> nav.navigate("billing/edit/$id") },
-                onEditPurchase = { id -> nav.navigate("purchase/edit/$id") }
+                onEditPurchase = { id -> nav.navigate("purchase/edit/$id") },
+                onEditJournal = { id -> nav.navigate("journal/edit/$id") }
             )
         }
         composable("backup") {

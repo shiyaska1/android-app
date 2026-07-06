@@ -147,7 +147,7 @@ object FullBackup {
 
     private fun itemJson(i: Item) = JSONObject().put("id", i.id).put("name", i.name)
         .put("price", i.price).put("taxPercent", i.taxPercent).put("barcode", i.barcode).put("hsn", i.hsn)
-        .put("category", i.category).put("openingStock", i.openingStock)
+        .put("category", i.category).put("openingStock", i.openingStock).put("unit", i.unit)
 
     private fun billJson(b: Bill) = JSONObject().put("id", b.id).put("billNo", b.billNo)
         .put("dateMillis", b.dateMillis).put("customerId", b.customerId).put("customerName", b.customerName)
@@ -208,7 +208,9 @@ object FullBackup {
         .put("openingIsDebit", h.openingIsDebit).put("isSystem", h.isSystem)
 
     private fun jEntryJson(e: JournalEntry) = JSONObject().put("id", e.id).put("voucherNo", e.voucherNo)
-        .put("dateMillis", e.dateMillis).put("narration", e.narration).put("source", e.source)
+        .put("dateMillis", e.dateMillis).put("narration", e.narration)
+        .put("cashMode", e.cashMode).put("cashIsIn", e.cashIsIn).put("cashAmount", e.cashAmount)
+        .put("source", e.source)
 
     private fun jLineJson(l: JournalLine) = JSONObject().put("id", l.id).put("entryId", l.entryId)
         .put("headId", l.headId).put("headName", l.headName).put("amount", l.amount).put("isDebit", l.isDebit)
@@ -228,7 +230,8 @@ object FullBackup {
         id = o.optLong("id"), name = o.optString("name"),
         price = o.optDouble("price", 0.0), taxPercent = o.optDouble("taxPercent", 0.0),
         barcode = o.optString("barcode"), hsn = o.optString("hsn"),
-        category = o.optString("category"), openingStock = o.optDouble("openingStock", 0.0)
+        category = o.optString("category"), openingStock = o.optDouble("openingStock", 0.0),
+        unit = o.optString("unit", "PCS")
     )
 
     private fun readBill(o: JSONObject) = Bill(
@@ -317,7 +320,10 @@ object FullBackup {
 
     private fun readJEntry(o: JSONObject) = JournalEntry(
         id = o.optLong("id"), voucherNo = o.optString("voucherNo"), dateMillis = o.optLong("dateMillis"),
-        narration = o.optString("narration"), source = o.optString("source")
+        narration = o.optString("narration"),
+        cashMode = o.optString("cashMode"), cashIsIn = o.optBoolean("cashIsIn", true),
+        cashAmount = o.optDouble("cashAmount", 0.0),
+        source = o.optString("source")
     )
 
     private fun readJLine(o: JSONObject) = JournalLine(

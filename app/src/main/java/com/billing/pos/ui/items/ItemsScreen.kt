@@ -21,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -81,6 +82,14 @@ import kotlinx.coroutines.withContext
 /** An item with its computed stock and last purchase rate. */
 data class ItemStockRow(val item: Item, val stock: Double, val purchaseRate: Double)
 
+/** Common units of measure offered in the item entry dropdown. */
+val ITEM_UNITS = listOf(
+    "PCS", "NOS", "BOX", "PACK", "SET", "PAIR", "DOZEN",
+    "KG", "GRAM", "QUINTAL", "TON",
+    "LTR", "ML",
+    "METER", "CM", "FEET", "INCH", "SQFT", "ROLL", "BAG", "BOTTLE", "UNIT"
+)
+
 class ItemsViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = Repository(app)
 
@@ -109,14 +118,15 @@ class ItemsViewModel(app: Application) : AndroidViewModel(app) {
 
     fun save(
         existing: Item?, name: String, price: Double, tax: Double, barcode: String, hsn: String,
-        category: String, openingStock: Double, onDone: () -> Unit
+        category: String, openingStock: Double, unit: String, onDone: () -> Unit
     ) {
         if (name.isBlank()) { message.value = "Enter a name"; return }
         viewModelScope.launch {
-            if (existing == null) repo.addItem(name, price, tax, barcode, hsn, category, openingStock)
+            if (existing == null) repo.addItem(name, price, tax, barcode, hsn, category, openingStock, unit)
             else repo.updateItem(existing.copy(
                 name = name.trim(), price = price, taxPercent = tax, barcode = barcode.trim(),
-                hsn = hsn.trim(), category = category.trim(), openingStock = openingStock
+                hsn = hsn.trim(), category = category.trim(), openingStock = openingStock,
+                unit = unit.trim().ifBlank { "PCS" }
             ))
             message.value = "Saved"; onDone()
         }
@@ -201,7 +211,7 @@ fun ItemsScreen(
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            "Stock: ${Format.qty(row.stock)}   •   Buy: ${Format.rupee(row.purchaseRate)}   •   Sell: ${Format.rupee(item.price)}",
+                            "Stock: ${Format.qty(row.stock)} ${item.unit}   •   Buy: ${Format.rupee(row.purchaseRate)}   •   Sell: ${Format.rupee(item.price)}",
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline
                         )
                         if (item.barcode.isNotBlank() || item.taxPercent > 0) {
@@ -228,7 +238,7 @@ fun ItemsScreen(
             existing = editing,
             categories = categories,
             onDismiss = { showDialog = false },
-            onSave = { n, p, t, b, h, cat, os -> vm.save(editing, n, p, t, b, h, cat, os) { showDialog = false } }
+            onSave = { n, p, t, b, h, cat, os, u -> vm.save(editing, n, p, t, b, h, cat, os, u) { showDialog = false } }
         )
     }
     deleteFor?.let { item ->
@@ -251,10 +261,11 @@ private fun ItemDialog(
     existing: Item?,
     categories: List<String>,
     onDismiss: () -> Unit,
-    onSave: (String, Double, Double, String, String, String, Double) -> Unit
+    onSave: (String, Double, Double, String, String, String, Double, String) -> Unit
 ) {
     var name by remember { mutableStateOf(existing?.name ?: "") }
     var price by remember { mutableStateOf(existing?.price?.let { Format.money(it) } ?: "") }
+    var priceForQty by remember { mutableStateOf("1") }
     var taxable by remember { mutableStateOf((existing?.taxPercent ?: 0.0) > 0.0) }
     var taxPercent by remember { mutableStateOf(if ((existing?.taxPercent ?: 0.0) > 0.0) Format.money(existing!!.taxPercent) else "18") }
     var barcode by remember { mutableStateOf(existing?.barcode ?: "") }
@@ -262,8 +273,25 @@ private fun ItemDialog(
     var category by remember { mutableStateOf(existing?.category ?: "") }
     var catMenu by remember { mutableStateOf(false) }
     var openingStock by remember { mutableStateOf(if ((existing?.openingStock ?: 0.0) != 0.0) Format.qty(existing!!.openingStock) else "") }
+    var unit by remember { mutableStateOf(existing?.unit?.ifBlank { "PCS" } ?: "PCS") }
+    var unitMenu by remember { mutableStateOf(false) }
     val scanLauncher = rememberLauncherForActivityResult(ScanContract()) { result ->
         result.contents?.let { barcode = it }
+    }
+    val speechLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == android.app.Activity.RESULT_OK) {
+            result.data?.getStringArrayListExtra(android.speech.RecognizerIntent.EXTRA_RESULTS)
+                ?.firstOrNull()?.let { if (it.isNotBlank()) name = it }
+        }
+    }
+    fun speakName() {
+        val intent = android.content.Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            putExtra(android.speech.RecognizerIntent.EXTRA_PROMPT, "Say the item name")
+        }
+        runCatching { speechLauncher.launch(intent) }
     }
 
     AlertDialog(
@@ -274,12 +302,53 @@ private fun ItemDialog(
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.verticalScroll(rememberScrollState())
             ) {
-                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Name *") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(
-                    value = price, onValueChange = { price = it.filter { c -> c.isDigit() || c == '.' } },
-                    label = { Text("Price *") }, singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth()
+                    value = name, onValueChange = { name = it }, label = { Text("Name *") }, singleLine = true,
+                    trailingIcon = {
+                        IconButton(onClick = { speakName() }) {
+                            Icon(Icons.Filled.Mic, contentDescription = "Speak item name", tint = MaterialTheme.colorScheme.primary)
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
                 )
+
+                // Price for a quantity of units (e.g. 120 for 12 => 10 per unit).
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = price, onValueChange = { price = it.filter { c -> c.isDigit() || c == '.' } },
+                        label = { Text("Price *") }, singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(1.4f)
+                    )
+                    OutlinedTextField(
+                        value = priceForQty, onValueChange = { priceForQty = it.filter { c -> c.isDigit() || c == '.' } },
+                        label = { Text("for units") }, singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(1f)
+                    )
+                }
+                run {
+                    val pv = price.toDoubleOrNull() ?: 0.0
+                    val qv = priceForQty.toDoubleOrNull() ?: 1.0
+                    if (qv > 1.0 && pv > 0.0) {
+                        Text(
+                            "= ${Format.rupee(pv / qv)} per unit",
+                            style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline
+                        )
+                    }
+                }
+
+                // Unit of measure (dropdown with common units).
+                ExposedDropdownMenuBox(expanded = unitMenu, onExpandedChange = { unitMenu = !unitMenu }) {
+                    OutlinedTextField(
+                        value = unit, onValueChange = { unit = it }, label = { Text("Unit") }, singleLine = true,
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = unitMenu) },
+                        modifier = Modifier.menuAnchor().fillMaxWidth()
+                    )
+                    ExposedDropdownMenu(expanded = unitMenu, onDismissRequest = { unitMenu = false }) {
+                        ITEM_UNITS.forEach { u ->
+                            DropdownMenuItem(text = { Text(u) }, onClick = { unit = u; unitMenu = false })
+                        }
+                    }
+                }
 
                 // Category: pick an existing one from the dropdown, or type/tap + for a new one.
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -346,10 +415,12 @@ private fun ItemDialog(
         },
         confirmButton = {
             TextButton(onClick = {
-                val p = price.toDoubleOrNull() ?: 0.0
+                val entered = price.toDoubleOrNull() ?: 0.0
+                val forQty = (priceForQty.toDoubleOrNull() ?: 1.0).takeIf { it > 0.0 } ?: 1.0
+                val p = entered / forQty            // store the per-unit price
                 val t = if (taxable) (taxPercent.toDoubleOrNull() ?: 0.0) else 0.0
                 val os = openingStock.toDoubleOrNull() ?: 0.0
-                onSave(name, p, t, barcode, hsn, category, os)
+                onSave(name, p, t, barcode, hsn, category, os, unit)
             }) { Text("Save") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }

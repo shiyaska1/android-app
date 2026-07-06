@@ -26,7 +26,9 @@ data class Item(
     val hsn: String = "",
     val category: String = "",
     /** Stock on hand before any purchase/sale was recorded in this app. */
-    val openingStock: Double = 0.0
+    val openingStock: Double = 0.0,
+    /** Unit of measure, e.g. PCS, KG, LTR. */
+    val unit: String = "PCS"
 )
 
 /** A saved bill (invoice header). `source` marks where it came from ("" = this device). */

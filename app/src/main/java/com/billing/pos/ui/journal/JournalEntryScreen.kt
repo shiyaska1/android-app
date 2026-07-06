@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -23,6 +24,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -83,6 +85,9 @@ class JournalEntryViewModel(app: Application) : AndroidViewModel(app) {
     var voucherNo by mutableStateOf("JV-0001"); private set
     var dateMillis by mutableStateOf(System.currentTimeMillis())
     var narration by mutableStateOf("")
+    /** "" = don't show in cash book; else Cash/UPI/Card/Cheque. */
+    var cashMode by mutableStateOf("")
+    var cashIsIn by mutableStateOf(true)
     var editingId by mutableStateOf<Long?>(null); private set
     val lines: SnapshotStateList<JLine> = mutableStateListOf()
 
@@ -125,6 +130,8 @@ class JournalEntryViewModel(app: Application) : AndroidViewModel(app) {
             voucherNo = entry.voucherNo
             dateMillis = entry.dateMillis
             narration = entry.narration
+            cashMode = entry.cashMode
+            cashIsIn = entry.cashIsIn
             lines.clear()
             jlines.forEach { lines.add(JLine(JLine.next(), it.headId, it.headName, it.amount, it.isDebit)) }
         }
@@ -135,7 +142,11 @@ class JournalEntryViewModel(app: Application) : AndroidViewModel(app) {
         if (valid.size < 2) { message.value = "Add at least two lines"; return }
         if (!balanced) { message.value = "Debit and credit must be equal"; return }
         viewModelScope.launch {
-            val entry = JournalEntry(id = editingId ?: 0, voucherNo = voucherNo, dateMillis = dateMillis, narration = narration.trim())
+            val entry = JournalEntry(
+                id = editingId ?: 0, voucherNo = voucherNo, dateMillis = dateMillis, narration = narration.trim(),
+                cashMode = cashMode, cashIsIn = cashIsIn,
+                cashAmount = if (cashMode.isNotBlank()) totalDr else 0.0
+            )
             val jlines = valid.map { JournalLine(0, 0, it.headId, it.headName, it.amount, it.isDebit) }
             if (editingId != null) repo.updateJournal(entry, jlines) else repo.saveJournal(entry, jlines)
             message.value = "Journal saved"
@@ -235,6 +246,30 @@ fun JournalEntryScreen(
                         Text("Difference", fontWeight = FontWeight.Bold)
                         Text(Format.rupee(vm.totalDr - vm.totalCr), fontWeight = FontWeight.Bold,
                             color = if (vm.balanced) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
+                    }
+                }
+            }
+
+            // Cash Book link: mark this voucher as a cash/bank movement so it appears in the Cash Book.
+            Card(Modifier.fillMaxWidth().padding(top = 12.dp)) {
+                Column(Modifier.padding(12.dp)) {
+                    Text("Show in Cash Book", fontWeight = FontWeight.SemiBold)
+                    Row(Modifier.horizontalScroll(rememberScrollState()).padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        val modes = listOf("None" to "", "Cash" to "Cash", "UPI" to "UPI", "Card" to "Card", "Cheque" to "Cheque")
+                        modes.forEach { (label, value) ->
+                            FilterChip(selected = vm.cashMode == value, onClick = { vm.cashMode = value }, label = { Text(label) })
+                        }
+                    }
+                    if (vm.cashMode.isNotBlank()) {
+                        Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            FilterChip(selected = vm.cashIsIn, onClick = { vm.cashIsIn = true }, label = { Text("Received (in)") })
+                            FilterChip(selected = !vm.cashIsIn, onClick = { vm.cashIsIn = false }, label = { Text("Paid (out)") })
+                        }
+                        Text(
+                            "Cash Book amount: ${Format.rupee(vm.totalDr)}",
+                            style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline,
+                            modifier = Modifier.padding(top = 4.dp)
+                        )
                     }
                 }
             }

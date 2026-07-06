@@ -184,12 +184,12 @@ class Repository(context: Context) {
 
     suspend fun addItem(
         name: String, price: Double, taxPercent: Double, barcode: String = "", hsn: String = "",
-        category: String = "", openingStock: Double = 0.0
+        category: String = "", openingStock: Double = 0.0, unit: String = "PCS"
     ): Long =
         itemDao.insert(Item(
             name = name.trim(), price = price, taxPercent = taxPercent,
             barcode = barcode.trim(), hsn = hsn.trim(),
-            category = category.trim(), openingStock = openingStock
+            category = category.trim(), openingStock = openingStock, unit = unit.trim().ifBlank { "PCS" }
         ))
 
     suspend fun updateItem(item: Item) = itemDao.update(item)

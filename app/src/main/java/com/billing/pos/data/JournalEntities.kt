@@ -10,6 +10,12 @@ data class JournalEntry(
     val voucherNo: String,
     val dateMillis: Long,
     val narration: String = "",
+    /** If set (Cash/UPI/Card/Cheque) this voucher also shows in the Cash Book. Blank = not shown. */
+    val cashMode: String = "",
+    /** For the Cash Book: true = money received (in), false = paid (out). */
+    val cashIsIn: Boolean = true,
+    /** Amount to reflect in the Cash Book (set to the voucher total when cashMode is used). */
+    val cashAmount: Double = 0.0,
     val source: String = ""
 )
 
