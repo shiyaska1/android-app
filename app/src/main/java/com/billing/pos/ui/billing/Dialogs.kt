@@ -13,15 +13,20 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Divider
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import com.billing.pos.ui.common.rememberVoiceInput
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -161,14 +166,17 @@ fun NewItemDialog(
 @Composable
 fun CustomLineDialog(
     onDismiss: () -> Unit,
-    onAdd: (description: String, price: Double, taxPercent: Double) -> Unit
+    onAdd: (description: String, price: Double, taxPercent: Double, saveToMaster: Boolean, sellingPrice: Double) -> Unit
 ) {
     var price by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
     var taxable by remember { mutableStateOf(false) }
     var taxPercent by remember { mutableStateOf("18") }
+    var saveToMaster by remember { mutableStateOf(false) }
+    var sellingPrice by remember { mutableStateOf("") }
     var count by remember { mutableStateOf(0) }
     val priceFocus = remember { FocusRequester() }
+    val startDescVoice = rememberVoiceInput { description = it }
 
     LaunchedEffect(Unit) { priceFocus.requestFocus() }
 
@@ -176,10 +184,12 @@ fun CustomLineDialog(
         val p = price.toDoubleOrNull() ?: 0.0
         if (p <= 0) return
         val t = if (taxable) (taxPercent.toDoubleOrNull() ?: 0.0) else 0.0
-        onAdd(description, p, t)
+        val sp = sellingPrice.toDoubleOrNull() ?: 0.0
+        onAdd(description, p, t, saveToMaster, sp)
         count++
         price = ""
         description = ""
+        sellingPrice = ""
         priceFocus.requestFocus()
     }
 
@@ -198,6 +208,11 @@ fun CustomLineDialog(
                 OutlinedTextField(
                     value = description, onValueChange = { description = it },
                     label = { Text("Description (optional)") }, singleLine = true,
+                    trailingIcon = {
+                        IconButton(onClick = startDescVoice) {
+                            Icon(Icons.Filled.Mic, contentDescription = "Speak description", tint = MaterialTheme.colorScheme.primary)
+                        }
+                    },
                     modifier = Modifier.fillMaxWidth()
                 )
                 Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
@@ -212,6 +227,27 @@ fun CustomLineDialog(
                         label = { Text("Tax %") }, singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                // Optionally save this description as a new item in the item master.
+                FilterChip(
+                    selected = saveToMaster,
+                    onClick = { saveToMaster = !saveToMaster },
+                    label = { Text(if (saveToMaster) "✓ Save to item master" else "Save to item master") }
+                )
+                if (saveToMaster) {
+                    OutlinedTextField(
+                        value = sellingPrice,
+                        onValueChange = { sellingPrice = it.filter { c -> c.isDigit() || c == '.' } },
+                        label = { Text("Selling price for item (optional)") }, singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Text(
+                        "Uses the line price above if left blank. Needs a description.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.outline
                     )
                 }
                 Button(
@@ -240,6 +276,7 @@ fun ItemPickerDialog(
     val filtered = remember(query, items) {
         if (query.isBlank()) items else items.filter { it.name.contains(query, ignoreCase = true) }
     }
+    val startVoice = rememberVoiceInput { query = it }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -249,6 +286,11 @@ fun ItemPickerDialog(
                 OutlinedTextField(
                     value = query, onValueChange = { query = it },
                     label = { Text("Search") }, singleLine = true,
+                    trailingIcon = {
+                        IconButton(onClick = startVoice) {
+                            Icon(Icons.Filled.Mic, contentDescription = "Voice search", tint = MaterialTheme.colorScheme.primary)
+                        }
+                    },
                     modifier = Modifier.fillMaxWidth()
                 )
                 if (items.isEmpty()) {

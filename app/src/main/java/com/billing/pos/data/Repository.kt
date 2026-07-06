@@ -202,6 +202,7 @@ class Repository(context: Context) {
         itemDao.delete(item)
     }
     suspend fun itemByBarcode(barcode: String): Item? = itemDao.byBarcode(barcode.trim())
+    suspend fun itemByName(name: String): Item? = itemDao.byName(name.trim())
 
     // ---- item attachments (photos / location photo / PDF catalogue) ----
     suspend fun itemAttachmentsFor(itemId: Long): List<ItemAttachment> = itemAttachmentDao.forItem(itemId)

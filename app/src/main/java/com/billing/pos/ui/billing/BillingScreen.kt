@@ -510,7 +510,7 @@ fun BillingScreen(
     if (showCustomLine) {
         CustomLineDialog(
             onDismiss = { showCustomLine = false },
-            onAdd = { desc, price, tax -> vm.addCustomLine(desc, price, tax) }
+            onAdd = { desc, price, tax, saveToMaster, sellingPrice -> vm.addCustomLine(desc, price, tax, saveToMaster, sellingPrice) }
         )
     }
     if (showItemPicker) {
