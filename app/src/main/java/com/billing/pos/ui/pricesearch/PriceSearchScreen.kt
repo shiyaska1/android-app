@@ -2,7 +2,9 @@ package com.billing.pos.ui.pricesearch
 
 import android.app.Activity
 import android.app.Application
+import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.speech.RecognizerIntent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -27,6 +29,8 @@ import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -38,6 +42,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -57,9 +62,12 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.billing.pos.data.AppPrefs
+import com.billing.pos.data.Item
 import com.billing.pos.data.ItemAttachment
 import com.billing.pos.data.Repository
 import com.billing.pos.items.ItemAttachmentStore
+import com.billing.pos.pdf.ProductPdf
 import com.billing.pos.ui.billing.collectAsStateSafe
 import com.billing.pos.ui.common.rememberThumbnail
 import com.billing.pos.util.Format
@@ -104,6 +112,7 @@ fun PriceSearchScreen(
     onBack: () -> Unit,
     vm: PriceSearchViewModel = viewModel()
 ) {
+    val context = LocalContext.current
     val snackbar = remember { SnackbarHostState() }
     val rows by vm.rows.collectAsStateSafe()
     val message by vm.message.collectAsStateSafe()
@@ -137,6 +146,8 @@ fun PriceSearchScreen(
             it.item.category.lowercase().contains(q) ||
             it.item.barcode.lowercase().contains(q)
     }
+
+    var shareFor by remember { mutableStateOf<PriceRow?>(null) }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
@@ -186,16 +197,82 @@ fun PriceSearchScreen(
             } else {
                 LazyColumn(Modifier.fillMaxSize().padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(results, key = { it.item.id }) { row ->
-                        PriceCard(row)
+                        PriceCard(row, onShare = { shareFor = row })
                     }
                 }
             }
         }
     }
+
+    shareFor?.let { row ->
+        AlertDialog(
+            onDismissRequest = { shareFor = null },
+            title = { Text("Share to WhatsApp") },
+            text = { Text("Send \"${row.item.name}\" (name, selling price, photo & catalogue). Choose a format.") },
+            confirmButton = { TextButton(onClick = { shareProductPdf(context, row); shareFor = null }) { Text("As PDF") } },
+            dismissButton = { TextButton(onClick = { shareProductText(context, row); shareFor = null }) { Text("Text + Photo") } }
+        )
+    }
+}
+
+private fun captionFor(item: Item): String = buildString {
+    append(item.name)
+    append("\nSelling Price: ").append(Format.rupee(item.price))
+    if (item.storeLocation.isNotBlank()) append("\nLocation: ").append(item.storeLocation)
+}
+
+/** Tries WhatsApp (personal, then business), else falls back to a generic chooser. */
+private fun launchShare(context: Context, base: Intent, title: String) {
+    base.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+    if (runCatching { context.startActivity(Intent(base).setPackage("com.whatsapp")) }.isSuccess) return
+    if (runCatching { context.startActivity(Intent(base).setPackage("com.whatsapp.w4b")) }.isSuccess) return
+    runCatching { context.startActivity(Intent.createChooser(base, title).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+}
+
+/** Shares the item photos with the name + selling price as the caption. */
+private fun shareProductText(context: Context, row: PriceRow) {
+    val caption = captionFor(row.item)
+    val images = row.attachments.filter { it.mime.startsWith("image/") }
+    val base = when {
+        images.isEmpty() -> Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, caption) }
+        images.size == 1 -> Intent(Intent.ACTION_SEND).apply {
+            type = "image/*"
+            putExtra(Intent.EXTRA_STREAM, ItemAttachmentStore.uriFor(context, images[0]))
+            putExtra(Intent.EXTRA_TEXT, caption)
+        }
+        else -> Intent(Intent.ACTION_SEND_MULTIPLE).apply {
+            type = "image/*"
+            putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(images.map { ItemAttachmentStore.uriFor(context, it) }))
+            putExtra(Intent.EXTRA_TEXT, caption)
+        }
+    }
+    launchShare(context, base, "Share item")
+}
+
+/** Shares a generated product PDF (name, price, photo) plus any catalogue PDF, with a text caption. */
+private fun shareProductPdf(context: Context, row: PriceRow) {
+    val caption = captionFor(row.item)
+    val firstImage = row.attachments.firstOrNull { it.mime.startsWith("image/") }?.path
+    val productUri = ProductPdf.generate(context, AppPrefs(context).company, row.item, firstImage)
+    val catalogues = row.attachments.filter { it.mime == "application/pdf" }.map { ItemAttachmentStore.uriFor(context, it) }
+    val base = if (catalogues.isEmpty()) {
+        Intent(Intent.ACTION_SEND).apply {
+            type = "application/pdf"
+            putExtra(Intent.EXTRA_STREAM, productUri)
+            putExtra(Intent.EXTRA_TEXT, caption)
+        }
+    } else {
+        Intent(Intent.ACTION_SEND_MULTIPLE).apply {
+            type = "application/pdf"
+            putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList<Uri>().apply { add(productUri); addAll(catalogues) })
+            putExtra(Intent.EXTRA_TEXT, caption)
+        }
+    }
+    launchShare(context, base, "Share item")
 }
 
 @Composable
-private fun PriceCard(row: PriceRow) {
+private fun PriceCard(row: PriceRow, onShare: () -> Unit) {
     val context = LocalContext.current
     val images = row.attachments.filter { it.mime.startsWith("image/") }
     val pdfs = row.attachments.filter { it.mime == "application/pdf" }
@@ -213,13 +290,20 @@ private fun PriceCard(row: PriceRow) {
 
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.fillMaxWidth().padding(12.dp)) {
-            Text(
-                row.item.name + (if (row.item.category.isNotBlank()) "  ·  ${row.item.category}" else ""),
-                fontWeight = FontWeight.Bold,
-                style = MaterialTheme.typography.titleMedium
-            )
-            if (row.item.barcode.isNotBlank()) {
-                Text(row.item.barcode, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        row.item.name + (if (row.item.category.isNotBlank()) "  ·  ${row.item.category}" else ""),
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    if (row.item.barcode.isNotBlank()) {
+                        Text(row.item.barcode, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                    }
+                }
+                IconButton(onClick = onShare) {
+                    Icon(Icons.Filled.Share, contentDescription = "Share", tint = MaterialTheme.colorScheme.primary)
+                }
             }
 
             // Item + location photos.
