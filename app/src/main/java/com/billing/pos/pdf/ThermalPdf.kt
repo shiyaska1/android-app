@@ -24,62 +24,59 @@ object ThermalPdf {
     private const val PAGE_W = 165f   // ~58mm in points
     private const val MARGIN = 6f
 
+    private data class Line(val text: String, val bold: Boolean = false)
+
     fun invoice(context: Context, company: CompanyInfo, bill: Bill, lines: List<BillItem>): Uri {
-        val sb = ArrayList<Line>()
-        sb.header(company)
-        sb.center("TAX INVOICE", bold = true)
-        sb.rule()
-        sb += "Bill: ${bill.billNo}"
-        sb += "Date: ${Format.dateTime(bill.dateMillis)}"
-        sb += "Cust: ${clip(bill.customerName)}"
-        sb += "Pay : ${bill.paymentMethod}"
-        sb.rule()
-        sb += row("Item", "Qty", "Amount")
-        sb.rule()
+        val out = ArrayList<Line>()
+        fun add(text: String, bold: Boolean = false) { out.add(Line(text, bold)) }
+        addHeader(out, company)
+        add(center("TAX INVOICE"), true)
+        add(rule())
+        add("Bill: ${bill.billNo}")
+        add("Date: ${Format.dateTime(bill.dateMillis)}")
+        add("Cust: " + clip(bill.customerName, 26))
+        add("Pay : ${bill.paymentMethod}")
+        add(rule())
+        add(row("Item", "Qty", "Amount"))
+        add(rule())
         for (l in lines) {
-            sb += clip(l.name, COLS)
-            sb += row("  @${Format.money(l.price)}", Format.qty(l.qty), Format.money(l.lineTotal))
+            add(clip(l.name, COLS))
+            add(row("  @${Format.money(l.price)}", Format.qty(l.qty), Format.money(l.lineTotal)))
         }
-        sb.rule()
-        sb += kv("Sub Total", Format.money(bill.subTotal))
-        sb += kv("Tax", Format.money(bill.taxTotal))
-        if (bill.additionalCharge != 0.0) sb += kv("Additional", Format.money(bill.additionalCharge))
-        if (bill.discount != 0.0) sb += kv("Discount", "-" + Format.money(bill.discount))
-        sb.rule()
-        sb.add(Line(kv("GRAND TOTAL", Format.money(bill.grandTotal)), bold = true))
-        sb.rule()
-        sb.center("Thank you! Visit again.")
-        return write(context, "invoice_${bill.billNo}", sb)
+        add(rule())
+        add(kv("Sub Total", Format.money(bill.subTotal)))
+        add(kv("Tax", Format.money(bill.taxTotal)))
+        if (bill.additionalCharge != 0.0) add(kv("Additional", Format.money(bill.additionalCharge)))
+        if (bill.discount != 0.0) add(kv("Discount", "-" + Format.money(bill.discount)))
+        add(rule())
+        add(kv("GRAND TOTAL", Format.money(bill.grandTotal)), true)
+        add(rule())
+        add(center("Thank you! Visit again."))
+        return write(context, "invoice_${bill.billNo}", out)
     }
 
     fun receipt(context: Context, company: CompanyInfo, r: Receipt): Uri {
-        val sb = ArrayList<Line>()
-        sb.header(company)
-        sb.center("RECEIPT VOUCHER", bold = true)
-        sb.rule()
-        sb += "No  : ${r.receiptNo}"
-        sb += "Date: ${Format.dateTime(r.dateMillis)}"
-        sb += "From: ${clip(r.payFrom.ifBlank { r.customerName })}"
-        if (r.billNo.isNotBlank()) sb += "Ref : ${r.billNo}"
-        sb += "Mode: ${r.paymentMode}"
-        sb.rule()
-        sb.add(Line(kv("RECEIVED", Format.money(r.amount)), bold = true))
-        sb.rule()
-        sb.center("Thank you")
-        return write(context, "receipt_${r.receiptNo}", sb)
+        val out = ArrayList<Line>()
+        fun add(text: String, bold: Boolean = false) { out.add(Line(text, bold)) }
+        addHeader(out, company)
+        add(center("RECEIPT VOUCHER"), true)
+        add(rule())
+        add("No  : ${r.receiptNo}")
+        add("Date: ${Format.dateTime(r.dateMillis)}")
+        add("From: " + clip(r.payFrom.ifBlank { r.customerName }, 26))
+        if (r.billNo.isNotBlank()) add("Ref : ${r.billNo}")
+        add("Mode: ${r.paymentMode}")
+        add(rule())
+        add(kv("RECEIVED", Format.money(r.amount)), true)
+        add(rule())
+        add(center("Thank you"))
+        return write(context, "receipt_${r.receiptNo}", out)
     }
 
-    // ---- rendering -------------------------------------------------------------
-
-    private data class Line(val text: String, val bold: Boolean = false)
-
-    private operator fun ArrayList<Line>.plusAssign(text: String) { add(Line(text)) }
-    private fun ArrayList<Line>.center(text: String, bold: Boolean = false) = add(Line(center(text), bold))
-    private fun ArrayList<Line>.rule() = add(Line("-".repeat(COLS)))
-    private fun ArrayList<Line>.header(company: CompanyInfo) {
-        add(Line(center(company.name), bold = true))
-        if (company.address.isNotBlank()) add(Line(center(clip(company.address))))
-        if (company.phone.isNotBlank()) add(Line(center("Ph: ${company.phone}")))
+    private fun addHeader(out: ArrayList<Line>, company: CompanyInfo) {
+        out.add(Line(center(clip(company.name)), bold = true))
+        if (company.address.isNotBlank()) out.add(Line(center(clip(company.address))))
+        if (company.phone.isNotBlank()) out.add(Line(center(clip("Ph: ${company.phone}"))))
     }
 
     private fun write(context: Context, name: String, lines: List<Line>): Uri {
@@ -110,6 +107,8 @@ object ThermalPdf {
     }
 
     // ---- 32-column text helpers (match the thermal printer) --------------------
+
+    private fun rule() = "-".repeat(COLS)
 
     private fun clip(s: String, max: Int = COLS) = if (s.length <= max) s else s.take(max)
 
