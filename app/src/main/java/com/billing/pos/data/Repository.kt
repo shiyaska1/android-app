@@ -42,6 +42,7 @@ class Repository(context: Context) {
     val accountGroups: Flow<List<AccountGroup>> = accountDao.observeGroups()
     val accountHeads: Flow<List<AccountHead>> = accountDao.observeHeads()
     val journalEntries: Flow<List<JournalEntry>> = journalDao.observeAll()
+    val journalLines: Flow<List<JournalLine>> = journalDao.observeAllLines()
     val purchaseLines: Flow<List<PurchaseLineInfo>> = purchaseDao.observePurchaseLines()
     val purchaseLineParties: Flow<List<PurchaseLineParty>> = purchaseDao.observePurchaseLineParties()
     val soldQty: Flow<List<NameQty>> = billDao.observeSoldQty()

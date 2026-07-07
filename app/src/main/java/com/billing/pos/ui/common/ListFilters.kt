@@ -56,6 +56,37 @@ fun ListFilters(
     }
 }
 
+/** Filter bar: a free-text search box plus a From/To date range. */
+@Composable
+fun DateSearchFilter(
+    query: String, onQuery: (String) -> Unit,
+    from: Long?, onFrom: (Long?) -> Unit,
+    to: Long?, onTo: (Long?) -> Unit,
+    searchLabel: String = "Search"
+) {
+    val context = LocalContext.current
+    Column(
+        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        OutlinedTextField(
+            value = query, onValueChange = onQuery,
+            label = { Text(searchLabel) }, singleLine = true, modifier = Modifier.fillMaxWidth()
+        )
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = { pickDate(context, from) { onFrom(it) } }, modifier = Modifier.weight(1f)) {
+                Text("From: " + (from?.let { Format.date(it) } ?: "any"))
+            }
+            OutlinedButton(onClick = { pickDate(context, to) { onTo(it) } }, modifier = Modifier.weight(1f)) {
+                Text("To: " + (to?.let { Format.date(it) } ?: "any"))
+            }
+            if (from != null || to != null) {
+                TextButton(onClick = { onFrom(null); onTo(null) }) { Text("Clear") }
+            }
+        }
+    }
+}
+
 private fun pickDate(context: Context, current: Long?, onPicked: (Long) -> Unit) {
     val c = Calendar.getInstance().apply { if (current != null) timeInMillis = current }
     DatePickerDialog(

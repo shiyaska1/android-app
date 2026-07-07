@@ -15,8 +15,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
 import androidx.compose.material3.Divider
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -41,6 +43,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -55,8 +58,14 @@ import com.billing.pos.auth.Session
 import com.billing.pos.data.Expense
 import com.billing.pos.data.PayMode
 import com.billing.pos.data.Purchase
+import com.billing.pos.data.AppPrefs
 import com.billing.pos.data.Repository
+import com.billing.pos.pdf.TablePdf
 import com.billing.pos.ui.billing.collectAsStateSafe
+import com.billing.pos.ui.common.DateSearchFilter
+import com.billing.pos.ui.common.endOfDay
+import com.billing.pos.ui.common.rememberPdfDownloader
+import com.billing.pos.ui.common.startOfDay
 import com.billing.pos.util.Format
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -101,6 +110,8 @@ fun ExpensesScreen(
     onBack: () -> Unit,
     vm: ExpensesViewModel = viewModel()
 ) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
     val expenses by vm.expenses.collectAsStateSafe()
     val message by vm.message.collectAsStateSafe()
@@ -110,6 +121,30 @@ fun ExpensesScreen(
     var showAdd by remember { mutableStateOf(false) }
     var editFor by remember { mutableStateOf<Expense?>(null) }
     var deleteFor by remember { mutableStateOf<Expense?>(null) }
+
+    var query by remember { mutableStateOf("") }
+    var fromMillis by remember { mutableStateOf<Long?>(null) }
+    var toMillis by remember { mutableStateOf<Long?>(null) }
+    val filtered = expenses.filter {
+        (fromMillis == null || it.dateMillis >= startOfDay(fromMillis!!)) &&
+            (toMillis == null || it.dateMillis <= endOfDay(toMillis!!)) &&
+            (query.isBlank() || it.voucherNo.contains(query, true) || it.payTo.contains(query, true) ||
+                it.description.contains(query, true) || it.purchaseNo.contains(query, true))
+    }
+    val total = filtered.sumOf { it.amount }
+    val downloadPdf = rememberPdfDownloader { msg -> scope.launch { snackbar.showSnackbar(msg) } }
+    fun buildPaymentsPdf(): java.io.File {
+        val cols = listOf(
+            TablePdf.Col("No", 1.3f), TablePdf.Col("Date", 1.3f), TablePdf.Col("To / Desc", 2.6f),
+            TablePdf.Col("Mode", 1f), TablePdf.Col("Amount", 1.3f, right = true)
+        )
+        val data = filtered.sortedByDescending { it.dateMillis }.map {
+            listOf(it.voucherNo, Format.date(it.dateMillis), it.payTo.ifBlank { it.description.ifBlank { "Expense" } }, it.paymentMode, Format.money(it.amount))
+        }
+        val sub = "Count: ${filtered.size}" + (fromMillis?.let { "  From: ${Format.date(it)}" } ?: "") +
+            (toMillis?.let { "  To: ${Format.date(it)}" } ?: "") + (if (query.isNotBlank()) "  Search: $query" else "")
+        return TablePdf.generate(context, AppPrefs(context).company, "Payments", sub, cols, data, listOf("TOTAL" to Format.money(total)))
+    }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
@@ -124,8 +159,16 @@ fun ExpensesScreen(
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                     titleContentColor = MaterialTheme.colorScheme.onPrimary,
-                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary
-                )
+                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary,
+                    actionIconContentColor = MaterialTheme.colorScheme.onPrimary
+                ),
+                actions = {
+                    if (Session.canViewPayment) {
+                        IconButton(onClick = { downloadPdf { buildPaymentsPdf() } }) {
+                            Icon(Icons.Filled.Download, contentDescription = "Download PDF")
+                        }
+                    }
+                }
             )
         },
         floatingActionButton = {
@@ -141,8 +184,16 @@ fun ExpensesScreen(
                 Text("You don't have permission to view payments", color = MaterialTheme.colorScheme.outline)
             }
         } else {
-            LazyColumn(Modifier.fillMaxSize().padding(pad).padding(horizontal = 12.dp)) {
-                items(expenses, key = { it.id }) { e ->
+            Column(Modifier.fillMaxSize().padding(pad)) {
+                DateSearchFilter(
+                    query = query, onQuery = { query = it },
+                    from = fromMillis, onFrom = { fromMillis = it },
+                    to = toMillis, onTo = { toMillis = it },
+                    searchLabel = "Search voucher / payee"
+                )
+                Divider()
+                LazyColumn(Modifier.fillMaxWidth().weight(1f).padding(horizontal = 12.dp)) {
+                    items(filtered, key = { it.id }) { e ->
                     Row(
                         Modifier.fillMaxWidth().clickable { editFor = e }.padding(vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically
@@ -164,6 +215,13 @@ fun ExpensesScreen(
                         }
                     }
                     Divider()
+                    }
+                }
+                Card(Modifier.fillMaxWidth().padding(12.dp)) {
+                    Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Total  (${filtered.size})", fontWeight = FontWeight.Bold)
+                        Text(Format.rupee(total), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error)
+                    }
                 }
             }
         }

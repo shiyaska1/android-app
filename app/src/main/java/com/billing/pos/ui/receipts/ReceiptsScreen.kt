@@ -21,10 +21,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Print
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
 import androidx.compose.material3.Divider
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -64,6 +66,11 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.billing.pos.auth.Session
 import com.billing.pos.data.AppPrefs
+import com.billing.pos.pdf.TablePdf
+import com.billing.pos.ui.common.DateSearchFilter
+import com.billing.pos.ui.common.endOfDay
+import com.billing.pos.ui.common.rememberPdfDownloader
+import com.billing.pos.ui.common.startOfDay
 import com.billing.pos.data.Bill
 import com.billing.pos.data.PayMode
 import com.billing.pos.data.Receipt
@@ -164,6 +171,30 @@ fun ReceiptsScreen(
 
     val outstanding = bills.filter { it.balance > 0.001 }
 
+    var query by remember { mutableStateOf("") }
+    var fromMillis by remember { mutableStateOf<Long?>(null) }
+    var toMillis by remember { mutableStateOf<Long?>(null) }
+    val filtered = receipts.filter {
+        (fromMillis == null || it.dateMillis >= startOfDay(fromMillis!!)) &&
+            (toMillis == null || it.dateMillis <= endOfDay(toMillis!!)) &&
+            (query.isBlank() || it.receiptNo.contains(query, true) || it.payFrom.contains(query, true) ||
+                it.customerName.contains(query, true) || it.billNo.contains(query, true))
+    }
+    val total = filtered.sumOf { it.amount }
+    val downloadPdf = rememberPdfDownloader { msg -> scope.launch { snackbar.showSnackbar(msg) } }
+    fun buildReceiptsPdf(): java.io.File {
+        val cols = listOf(
+            TablePdf.Col("No", 1.3f), TablePdf.Col("Date", 1.3f), TablePdf.Col("From", 2.6f),
+            TablePdf.Col("Mode", 1f), TablePdf.Col("Amount", 1.3f, right = true)
+        )
+        val data = filtered.sortedByDescending { it.dateMillis }.map {
+            listOf(it.receiptNo, Format.date(it.dateMillis), it.payFrom.ifBlank { it.customerName }, it.paymentMode, Format.money(it.amount))
+        }
+        val sub = "Count: ${filtered.size}" + (fromMillis?.let { "  From: ${Format.date(it)}" } ?: "") +
+            (toMillis?.let { "  To: ${Format.date(it)}" } ?: "") + (if (query.isNotBlank()) "  Search: $query" else "")
+        return TablePdf.generate(context, AppPrefs(context).company, "Receipts", sub, cols, data, listOf("TOTAL" to Format.money(total)))
+    }
+
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
@@ -177,8 +208,16 @@ fun ReceiptsScreen(
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                     titleContentColor = MaterialTheme.colorScheme.onPrimary,
-                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary
-                )
+                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary,
+                    actionIconContentColor = MaterialTheme.colorScheme.onPrimary
+                ),
+                actions = {
+                    if (Session.canViewReceipt) {
+                        IconButton(onClick = { downloadPdf { buildReceiptsPdf() } }) {
+                            Icon(Icons.Filled.Download, contentDescription = "Download PDF")
+                        }
+                    }
+                }
             )
         },
         floatingActionButton = {
@@ -194,8 +233,16 @@ fun ReceiptsScreen(
                 Text("You don't have permission to view receipts", color = MaterialTheme.colorScheme.outline)
             }
         } else {
-            LazyColumn(Modifier.fillMaxSize().padding(pad).padding(horizontal = 12.dp)) {
-                items(receipts, key = { it.id }) { r ->
+            Column(Modifier.fillMaxSize().padding(pad)) {
+                DateSearchFilter(
+                    query = query, onQuery = { query = it },
+                    from = fromMillis, onFrom = { fromMillis = it },
+                    to = toMillis, onTo = { toMillis = it },
+                    searchLabel = "Search receipt no / name"
+                )
+                Divider()
+                LazyColumn(Modifier.fillMaxWidth().weight(1f).padding(horizontal = 12.dp)) {
+                    items(filtered, key = { it.id }) { r ->
                     Row(
                         Modifier.fillMaxWidth().clickable { editFor = r }.padding(vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically
@@ -223,6 +270,13 @@ fun ReceiptsScreen(
                         }
                     }
                     Divider()
+                    }
+                }
+                Card(Modifier.fillMaxWidth().padding(12.dp)) {
+                    Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Total  (${filtered.size})", fontWeight = FontWeight.Bold)
+                        Text(Format.rupee(total), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                    }
                 }
             }
         }

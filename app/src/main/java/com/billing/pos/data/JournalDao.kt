@@ -29,6 +29,9 @@ interface JournalDao {
     @Query("SELECT * FROM journal_lines")
     suspend fun allLines(): List<JournalLine>
 
+    @Query("SELECT * FROM journal_lines")
+    fun observeAllLines(): Flow<List<JournalLine>>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertEntry(entry: JournalEntry): Long
 
