@@ -18,6 +18,7 @@ import com.billing.pos.data.Repository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -51,6 +52,13 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
         repo.customers.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val items: StateFlow<List<Item>> =
         repo.items.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    /** itemId -> first product photo path, for the quick-bill grid. */
+    val itemPhotos: StateFlow<Map<Long, String>> =
+        repo.itemAttachments.map { atts ->
+            atts.filter { it.mime.startsWith("image/") }
+                .groupBy { it.itemId }
+                .mapValues { (_, l) -> (l.firstOrNull { it.kind == "PHOTO" } ?: l.first()).path }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
     // ---- editable bill state ----
     var selectedCustomer by mutableStateOf<Customer?>(null); private set

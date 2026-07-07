@@ -42,6 +42,7 @@ import com.billing.pos.ui.license.RegisterScreen
 import com.billing.pos.ui.outstanding.OutstandingScreen
 import com.billing.pos.ui.pricesearch.PriceSearchScreen
 import com.billing.pos.ui.printer.PrinterSetupScreen
+import com.billing.pos.ui.quickbill.QuickBillScreen
 import com.billing.pos.ui.purchase.PurchaseListScreen
 import com.billing.pos.ui.purchase.PurchaseScreen
 import com.billing.pos.ui.purchase.SuppliersScreen
@@ -142,6 +143,7 @@ private fun AppNav() {
         composable("dashboard") {
             DashboardScreen(
                 onNewBill = { nav.navigate("billing") },
+                onQuickBill = { nav.navigate("quickbill") },
                 onPriceSearch = { nav.navigate("pricesearch") },
                 onInvoices = { nav.navigate("invoices") },
                 onReceipts = { nav.navigate("receipts") },
@@ -205,6 +207,9 @@ private fun AppNav() {
         }
         composable("printer") {
             PrinterSetupScreen(onBack = { nav.popBackStack() })
+        }
+        composable("quickbill") {
+            QuickBillScreen(onBack = { nav.popBackStack() })
         }
         composable("customers") {
             CustomersScreen(onBack = { nav.popBackStack() })

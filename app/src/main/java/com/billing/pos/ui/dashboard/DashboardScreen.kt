@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.PointOfSale
 import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.PriceCheck
+import androidx.compose.material.icons.filled.Restaurant
 import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.ShoppingCart
@@ -57,6 +58,7 @@ private data class Tile(val label: String, val icon: ImageVector, val onClick: (
 @Composable
 fun DashboardScreen(
     onNewBill: () -> Unit,
+    onQuickBill: () -> Unit,
     onPriceSearch: () -> Unit,
     onInvoices: () -> Unit,
     onReceipts: () -> Unit,
@@ -80,6 +82,7 @@ fun DashboardScreen(
 ) {
     val tiles = buildList {
         add(Tile("New Bill", Icons.Filled.PointOfSale, onNewBill))
+        add(Tile("Quick Bill", Icons.Filled.Restaurant, onQuickBill))
         add(Tile("Price Search", Icons.Filled.PriceCheck, onPriceSearch))
         if (Session.canViewInvoice) add(Tile("Invoices", Icons.Filled.ReceiptLong, onInvoices))
         if (Session.canViewReceipt) add(Tile("Receipts", Icons.Filled.Payments, onReceipts))
