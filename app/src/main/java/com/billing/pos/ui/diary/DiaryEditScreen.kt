@@ -29,6 +29,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -57,6 +60,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Divider
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -84,10 +88,13 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
@@ -122,6 +129,9 @@ fun DiaryEditScreen(
 
     var confirmDelete by remember { mutableStateOf(false) }
     var searchMode by remember { mutableStateOf(false) }
+    var showFormat by remember { mutableStateOf(false) }
+    val titleStyle = diaryStyle(vm.titleSize, vm.titleColor, vm.titleBold, vm.titleItalic)
+    val bodyStyle = diaryStyle(vm.bodySize, vm.bodyColor, vm.bodyBold, vm.bodyItalic)
 
     val photoPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.PickMultipleVisualMedia()
@@ -305,6 +315,7 @@ fun DiaryEditScreen(
             OutlinedTextField(
                 value = vm.title, onValueChange = { vm.title = it },
                 label = { Text("Title") }, singleLine = true,
+                textStyle = titleStyle,
                 trailingIcon = {
                     IconButton(onClick = { startSpeech("title") }) {
                         Icon(Icons.Filled.Mic, contentDescription = "Speak title")
@@ -312,6 +323,24 @@ fun DiaryEditScreen(
                 },
                 modifier = Modifier.fillMaxWidth()
             )
+            TextButton(onClick = { showFormat = !showFormat }, modifier = Modifier.padding(top = 2.dp)) {
+                Text(if (showFormat) "Hide text format" else "Aa  Text format")
+            }
+            if (showFormat) {
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(10.dp)) {
+                        FormatRow(
+                            "Title", vm.titleSize, { vm.titleSize = it }, vm.titleColor, { vm.titleColor = it },
+                            vm.titleBold, { vm.titleBold = it }, vm.titleItalic, { vm.titleItalic = it }
+                        )
+                        Divider(Modifier.padding(vertical = 8.dp))
+                        FormatRow(
+                            "Body", vm.bodySize, { vm.bodySize = it }, vm.bodyColor, { vm.bodyColor = it },
+                            vm.bodyBold, { vm.bodyBold = it }, vm.bodyItalic, { vm.bodyItalic = it }
+                        )
+                    }
+                }
+            }
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
                 Text("Remarks / notes", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
                 IconButton(onClick = { searchMode = !searchMode }) {
@@ -322,12 +351,13 @@ fun DiaryEditScreen(
                 }
             }
             if (searchMode) {
-                RemarksSearchView(text = vm.remarks)
+                RemarksSearchView(text = vm.remarks, lineStyle = bodyStyle)
             } else {
                 OutlinedTextField(
                     value = vm.remarks, onValueChange = { vm.remarks = it },
                     label = { Text("Remarks / notes") },
                     minLines = 4,
+                    textStyle = bodyStyle,
                     trailingIcon = {
                         IconButton(onClick = { startSpeech("remarks") }) {
                             Icon(Icons.Filled.Mic, contentDescription = "Speak remarks")
@@ -539,7 +569,7 @@ private fun appendText(existing: String, spoken: String): String =
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun RemarksSearchView(text: String) {
+private fun RemarksSearchView(text: String, lineStyle: TextStyle = TextStyle.Default) {
     val clipboard = LocalClipboardManager.current
     val lines = remember(text) { if (text.isEmpty()) listOf("") else text.split("\n") }
     var query by remember { mutableStateOf("") }
@@ -625,7 +655,7 @@ private fun RemarksSearchView(text: String) {
                     }
                     Text(
                         highlightMatches(line, query),
-                        style = MaterialTheme.typography.bodyMedium,
+                        style = lineStyle,
                         modifier = Modifier.fillMaxWidth()
                             .background(bg)
                             .combinedClickable(
@@ -654,5 +684,64 @@ private fun highlightMatches(line: String, query: String): AnnotatedString = bui
             append(line.substring(idx, idx + q.length))
         }
         start = idx + q.length
+    }
+}
+
+/** Predefined text colours; 0 = use the theme default. */
+private val DIARY_COLORS = listOf(
+    0, 0xFF000000.toInt(), 0xFFD32F2F.toInt(), 0xFF1976D2.toInt(),
+    0xFF388E3C.toInt(), 0xFFF57C00.toInt(), 0xFF7B1FA2.toInt(), 0xFFFFFFFF.toInt()
+)
+
+/** Builds a TextStyle from stored size/color/bold/italic. Color 0 → inherit default. */
+private fun diaryStyle(size: Int, colorArgb: Int, bold: Boolean, italic: Boolean): TextStyle =
+    TextStyle(
+        fontSize = size.sp,
+        color = if (colorArgb == 0) Color.Unspecified else Color(colorArgb),
+        fontWeight = if (bold) FontWeight.Bold else FontWeight.Normal,
+        fontStyle = if (italic) FontStyle.Italic else FontStyle.Normal
+    )
+
+@Composable
+private fun FormatRow(
+    label: String,
+    size: Int, onSize: (Int) -> Unit,
+    color: Int, onColor: (Int) -> Unit,
+    bold: Boolean, onBold: (Boolean) -> Unit,
+    italic: Boolean, onItalic: (Boolean) -> Unit
+) {
+    Column {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(label, style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
+            OutlinedButton(
+                onClick = { onSize((size - 1).coerceIn(8, 48)) },
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp)
+            ) { Text("A-") }
+            Text("$size", modifier = Modifier.padding(horizontal = 4.dp))
+            OutlinedButton(
+                onClick = { onSize((size + 1).coerceIn(8, 48)) },
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 10.dp)
+            ) { Text("A+") }
+            FilterChip(selected = bold, onClick = { onBold(!bold) }, label = { Text("B", fontWeight = FontWeight.Bold) })
+            FilterChip(selected = italic, onClick = { onItalic(!italic) }, label = { Text("I", fontStyle = FontStyle.Italic) })
+        }
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            DIARY_COLORS.forEach { c ->
+                Box(
+                    Modifier.size(28.dp).clip(CircleShape)
+                        .background(if (c == 0) MaterialTheme.colorScheme.surfaceVariant else Color(c))
+                        .border(
+                            if (c == color) 2.dp else 1.dp,
+                            if (c == color) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+                            CircleShape
+                        )
+                        .clickable { onColor(c) },
+                    contentAlignment = Alignment.Center
+                ) { if (c == 0) Text("A", style = MaterialTheme.typography.labelSmall) }
+            }
+        }
     }
 }

@@ -356,6 +356,10 @@ object FullBackup {
         .put("remarks", e.remarks).put("createdAt", e.createdAt).put("updatedAt", e.updatedAt)
         .put("reminderEnabled", e.reminderEnabled).put("reminderAt", e.reminderAt)
         .put("reminderDaily", e.reminderDaily)
+        .put("titleSize", e.titleSize).put("titleColor", e.titleColor)
+        .put("titleBold", e.titleBold).put("titleItalic", e.titleItalic)
+        .put("bodySize", e.bodySize).put("bodyColor", e.bodyColor)
+        .put("bodyBold", e.bodyBold).put("bodyItalic", e.bodyItalic)
 
     private fun supplierJson(s: Supplier) = JSONObject().put("id", s.id).put("name", s.name)
         .put("phone", s.phone).put("address", s.address).put("gstin", s.gstin).put("isDefault", s.isDefault)
@@ -455,7 +459,11 @@ object FullBackup {
         id = o.optLong("id"), title = o.optString("title"), remarks = o.optString("remarks"),
         createdAt = o.optLong("createdAt"), updatedAt = o.optLong("updatedAt"),
         reminderEnabled = o.optBoolean("reminderEnabled", false), reminderAt = o.optLong("reminderAt"),
-        reminderDaily = o.optBoolean("reminderDaily", false)
+        reminderDaily = o.optBoolean("reminderDaily", false),
+        titleSize = o.optInt("titleSize", 20), titleColor = o.optInt("titleColor", 0),
+        titleBold = o.optBoolean("titleBold", true), titleItalic = o.optBoolean("titleItalic", false),
+        bodySize = o.optInt("bodySize", 15), bodyColor = o.optInt("bodyColor", 0),
+        bodyBold = o.optBoolean("bodyBold", false), bodyItalic = o.optBoolean("bodyItalic", false)
     )
 
     private fun readSupplier(o: JSONObject) = Supplier(

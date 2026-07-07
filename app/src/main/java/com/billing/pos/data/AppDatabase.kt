@@ -16,7 +16,7 @@ import androidx.room.TypeConverters
         JournalEntry::class, JournalLine::class,
         ItemAttachment::class
     ],
-    version = 15,
+    version = 16,
     exportSchema = false
 )
 @TypeConverters(Converters::class)

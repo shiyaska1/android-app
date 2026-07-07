@@ -34,6 +34,16 @@ class DiaryEditViewModel(app: Application) : AndroidViewModel(app) {
     var reminderDaily by mutableStateOf(false)
     var reminderAt by mutableStateOf(System.currentTimeMillis())
 
+    // Text formatting (color 0 = default).
+    var titleSize by mutableStateOf(20)
+    var titleColor by mutableStateOf(0)
+    var titleBold by mutableStateOf(true)
+    var titleItalic by mutableStateOf(false)
+    var bodySize by mutableStateOf(15)
+    var bodyColor by mutableStateOf(0)
+    var bodyBold by mutableStateOf(false)
+    var bodyItalic by mutableStateOf(false)
+
     val attachments: SnapshotStateList<DiaryAttachment> = mutableStateListOf()
 
     var recording by mutableStateOf(false); private set
@@ -57,6 +67,10 @@ class DiaryEditViewModel(app: Application) : AndroidViewModel(app) {
             reminderEnabled = entry.reminderEnabled
             reminderDaily = entry.reminderDaily
             reminderAt = if (entry.reminderAt > 0) entry.reminderAt else System.currentTimeMillis()
+            titleSize = entry.titleSize; titleColor = entry.titleColor
+            titleBold = entry.titleBold; titleItalic = entry.titleItalic
+            bodySize = entry.bodySize; bodyColor = entry.bodyColor
+            bodyBold = entry.bodyBold; bodyItalic = entry.bodyItalic
             createdAt = entry.createdAt
             attachments.clear()
             attachments.addAll(repo.attachmentsFor(entry.id))
@@ -150,7 +164,9 @@ class DiaryEditViewModel(app: Application) : AndroidViewModel(app) {
                 updatedAt = now,
                 reminderEnabled = reminderEnabled,
                 reminderAt = if (reminderEnabled) reminderAt else 0L,
-                reminderDaily = reminderDaily
+                reminderDaily = reminderDaily,
+                titleSize = titleSize, titleColor = titleColor, titleBold = titleBold, titleItalic = titleItalic,
+                bodySize = bodySize, bodyColor = bodyColor, bodyBold = bodyBold, bodyItalic = bodyItalic
             )
             val id = repo.upsert(entry)
             loadedId = id

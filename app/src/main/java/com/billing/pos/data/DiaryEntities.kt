@@ -16,7 +16,16 @@ data class DiaryEntry(
     val reminderEnabled: Boolean = false,
     /** For one-time reminders: exact date+time. For daily: the time-of-day used. */
     val reminderAt: Long = 0,
-    val reminderDaily: Boolean = false
+    val reminderDaily: Boolean = false,
+    // --- Text formatting. Color 0 = use the app's default text color. ---
+    val titleSize: Int = 20,
+    val titleColor: Int = 0,
+    val titleBold: Boolean = true,
+    val titleItalic: Boolean = false,
+    val bodySize: Int = 15,
+    val bodyColor: Int = 0,
+    val bodyBold: Boolean = false,
+    val bodyItalic: Boolean = false
 )
 
 /** A file attached to a diary entry (copied into app storage). */

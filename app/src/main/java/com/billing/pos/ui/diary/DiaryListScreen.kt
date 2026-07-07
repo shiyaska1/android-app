@@ -32,7 +32,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -144,7 +147,10 @@ private fun DiaryRow(entry: DiaryEntry, attachmentCount: Int, onClick: () -> Uni
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 entry.title.ifBlank { "(untitled)" },
-                fontWeight = FontWeight.Bold,
+                fontSize = entry.titleSize.sp,
+                color = if (entry.titleColor == 0) Color.Unspecified else Color(entry.titleColor),
+                fontWeight = if (entry.titleBold) FontWeight.Bold else FontWeight.Normal,
+                fontStyle = if (entry.titleItalic) FontStyle.Italic else FontStyle.Normal,
                 modifier = Modifier.weight(1f)
             )
             if (entry.reminderEnabled) {
