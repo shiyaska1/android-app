@@ -218,9 +218,14 @@ fun ExpensesScreen(
                     }
                 }
                 Card(Modifier.fillMaxWidth().padding(12.dp)) {
-                    Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("Total  (${filtered.size})", fontWeight = FontWeight.Bold)
-                        Text(Format.rupee(total), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error)
+                    Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Total (${filtered.size}):  ", fontWeight = FontWeight.Bold)
+                        Text(
+                            Format.rupee(total),
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.titleLarge,
+                            color = MaterialTheme.colorScheme.error
+                        )
                     }
                 }
             }

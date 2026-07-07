@@ -75,7 +75,7 @@ import com.billing.pos.data.Bill
 import com.billing.pos.data.PayMode
 import com.billing.pos.data.Receipt
 import com.billing.pos.data.Repository
-import com.billing.pos.pdf.ReceiptPdf
+import com.billing.pos.pdf.ThermalPdf
 import com.billing.pos.print.ThermalPrinter
 import com.billing.pos.ui.billing.collectAsStateSafe
 import com.billing.pos.util.Format
@@ -273,9 +273,14 @@ fun ReceiptsScreen(
                     }
                 }
                 Card(Modifier.fillMaxWidth().padding(12.dp)) {
-                    Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("Total  (${filtered.size})", fontWeight = FontWeight.Bold)
-                        Text(Format.rupee(total), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                    Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Total (${filtered.size}):  ", fontWeight = FontWeight.Bold)
+                        Text(
+                            Format.rupee(total),
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.titleLarge,
+                            color = MaterialTheme.colorScheme.primary
+                        )
                     }
                 }
             }
@@ -324,7 +329,7 @@ private fun pickReceiptDate(context: Context, current: Long, onPicked: (Long) ->
 
 private fun sharePdf(context: Context, r: Receipt) {
     val company = AppPrefs(context).company
-    val uri = ReceiptPdf.generate(context, company, r)
+    val uri = ThermalPdf.receipt(context, company, r)
     val intent = Intent(Intent.ACTION_SEND).apply {
         type = "application/pdf"
         putExtra(Intent.EXTRA_STREAM, uri)
