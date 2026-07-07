@@ -56,8 +56,9 @@ fun BackupScreen(
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
     var busy by remember { mutableStateOf(false) }
-    // Holds the picker to launch after the user confirms a data-replacing restore.
+    // Holds the picker to launch after the user confirms a restore.
     var restoreAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+    var restoreMerge by remember { mutableStateOf(false) }
 
     fun saveBackup() {
         scope.launch {
@@ -82,13 +83,18 @@ fun BackupScreen(
     }
 
     fun runRestore(uri: Uri) {
+        val merge = restoreMerge
         scope.launch {
             busy = true
-            val result = withContext(Dispatchers.IO) { FullBackup.restore(context, uri) }
+            val result = withContext(Dispatchers.IO) { FullBackup.restore(context, uri, merge) }
             busy = false
             if (result.isSuccess) {
-                snackbar.showSnackbar("Restore complete — please sign in")
-                onRestored()
+                if (merge) {
+                    snackbar.showSnackbar(result.getOrNull() ?: "Merge complete")
+                } else {
+                    snackbar.showSnackbar("Restore complete — please sign in")
+                    onRestored()
+                }
             } else {
                 snackbar.showSnackbar(result.exceptionOrNull()?.message ?: "Restore failed")
             }
@@ -198,12 +204,21 @@ fun BackupScreen(
     restoreAction?.let { action ->
         AlertDialog(
             onDismissRequest = { restoreAction = null },
-            title = { Text("Restore backup?") },
-            text = { Text("This REPLACES all current data (including users) with the backup. This cannot be undone.") },
-            confirmButton = {
-                TextButton(onClick = { restoreAction = null; action() }) { Text("Choose file") }
+            title = { Text("Restore backup") },
+            text = {
+                Text(
+                    "Replace all: wipes current data (including users) and restores the backup.\n\n" +
+                        "Merge (append): keeps current data and adds the backup's invoices, payments, " +
+                        "items, etc. — for combining data from another phone. Nothing is lost."
+                )
             },
-            dismissButton = { TextButton(onClick = { restoreAction = null }) { Text("Cancel") } }
+            confirmButton = {
+                Column {
+                    TextButton(onClick = { restoreMerge = false; restoreAction = null; action() }) { Text("Replace all data") }
+                    TextButton(onClick = { restoreMerge = true; restoreAction = null; action() }) { Text("Merge (append)") }
+                    TextButton(onClick = { restoreAction = null }) { Text("Cancel") }
+                }
+            }
         )
     }
 }

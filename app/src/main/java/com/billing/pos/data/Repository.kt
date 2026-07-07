@@ -232,13 +232,13 @@ class Repository(context: Context) {
         "RV-" + (receiptDao.localCount() + 1).toString().padStart(4, '0')
 
     /** Records a receipt against [bill] and increases the invoice's paid amount. */
-    suspend fun addReceipt(bill: Bill, amount: Double, mode: PayMode): Receipt {
+    suspend fun addReceipt(bill: Bill, amount: Double, mode: PayMode, dateMillis: Long = System.currentTimeMillis()): Receipt {
         val receipt = Receipt(
             receiptNo = nextReceiptNo(),
             billId = bill.id,
             billNo = bill.billNo,
             customerName = bill.customerName,
-            dateMillis = System.currentTimeMillis(),
+            dateMillis = dateMillis,
             amount = amount,
             paymentMode = mode.label,
             payFrom = bill.customerName
@@ -250,13 +250,13 @@ class Repository(context: Context) {
     }
 
     /** Records a receipt from any source (no invoice reference). */
-    suspend fun addStandaloneReceipt(payFrom: String, amount: Double, mode: PayMode): Receipt {
+    suspend fun addStandaloneReceipt(payFrom: String, amount: Double, mode: PayMode, dateMillis: Long = System.currentTimeMillis()): Receipt {
         val receipt = Receipt(
             receiptNo = nextReceiptNo(),
             billId = 0,
             billNo = "",
             customerName = payFrom.trim(),
-            dateMillis = System.currentTimeMillis(),
+            dateMillis = dateMillis,
             amount = amount,
             paymentMode = mode.label,
             payFrom = payFrom.trim()
@@ -272,10 +272,10 @@ class Repository(context: Context) {
     suspend fun nextVoucherNo(): String =
         "PV-" + (expenseDao.localCount() + 1).toString().padStart(4, '0')
 
-    suspend fun addExpense(description: String, amount: Double, mode: PayMode): Expense {
+    suspend fun addExpense(description: String, amount: Double, mode: PayMode, dateMillis: Long = System.currentTimeMillis()): Expense {
         val expense = Expense(
             voucherNo = nextVoucherNo(),
-            dateMillis = System.currentTimeMillis(),
+            dateMillis = dateMillis,
             description = description.trim(),
             amount = amount,
             paymentMode = mode.label

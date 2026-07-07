@@ -27,6 +27,7 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -43,6 +44,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -73,9 +75,9 @@ class ExpensesViewModel(app: Application) : AndroidViewModel(app) {
     val message = MutableStateFlow<String?>(null)
     fun consumeMessage() { message.value = null }
 
-    fun add(description: String, amount: Double, mode: PayMode) {
+    fun add(description: String, amount: Double, mode: PayMode, dateMillis: Long) {
         if (amount <= 0) { message.value = "Enter a valid amount"; return }
-        viewModelScope.launch { repo.addExpense(description, amount, mode); message.value = "Payment added" }
+        viewModelScope.launch { repo.addExpense(description, amount, mode, dateMillis); message.value = "Payment added" }
     }
 
     fun addAgainstPurchase(purchase: com.billing.pos.data.Purchase, amount: Double, mode: PayMode) {
@@ -173,7 +175,7 @@ fun ExpensesScreen(
         AddPaymentDialog(
             outstanding = outstanding,
             onDismiss = { showAdd = false },
-            onGeneral = { desc, amt, mode -> vm.add(desc, amt, mode); showAdd = false },
+            onGeneral = { desc, amt, mode, date -> vm.add(desc, amt, mode, date); showAdd = false },
             onAgainstPurchase = { pur, amt, mode -> vm.addAgainstPurchase(pur, amt, mode); showAdd = false }
         )
     }
@@ -201,14 +203,16 @@ fun ExpensesScreen(
 private fun AddPaymentDialog(
     outstanding: List<Purchase>,
     onDismiss: () -> Unit,
-    onGeneral: (String, Double, PayMode) -> Unit,
+    onGeneral: (String, Double, PayMode, Long) -> Unit,
     onAgainstPurchase: (Purchase, Double, PayMode) -> Unit
 ) {
+    val context = LocalContext.current
     var againstPurchase by remember { mutableStateOf(false) }
     var selected by remember { mutableStateOf(outstanding.firstOrNull()) }
     var description by remember { mutableStateOf("") }
     var amount by remember { mutableStateOf("") }
     var mode by remember { mutableStateOf(PayMode.CASH) }
+    var dateMillis by remember { mutableStateOf(System.currentTimeMillis()) }
     var expanded by remember { mutableStateOf(false) }
 
     AlertDialog(
@@ -254,13 +258,17 @@ private fun AddPaymentDialog(
                 Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     PayMode.values().forEach { m -> FilterChip(selected = mode == m, onClick = { mode = m }, label = { Text(m.label) }) }
                 }
+                OutlinedButton(
+                    onClick = { pickPaymentDate(context, dateMillis) { dateMillis = it } },
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                ) { Text("Date: ${Format.date(dateMillis)}") }
             }
         },
         confirmButton = {
             Button(onClick = {
                 val amt = amount.toDoubleOrNull() ?: 0.0
                 if (againstPurchase) selected?.let { onAgainstPurchase(it, amt.coerceAtMost(it.balance), mode) }
-                else onGeneral(description, amt, mode)
+                else onGeneral(description, amt, mode, dateMillis)
             }) { Text("Add") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
@@ -305,4 +313,16 @@ private fun ExpenseEditDialog(
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Close") } }
     )
+}
+
+private fun pickPaymentDate(context: android.content.Context, current: Long, onPicked: (Long) -> Unit) {
+    val c = java.util.Calendar.getInstance().apply { timeInMillis = current }
+    android.app.DatePickerDialog(
+        context,
+        { _, y, m, d ->
+            c.set(java.util.Calendar.YEAR, y); c.set(java.util.Calendar.MONTH, m); c.set(java.util.Calendar.DAY_OF_MONTH, d)
+            onPicked(c.timeInMillis)
+        },
+        c.get(java.util.Calendar.YEAR), c.get(java.util.Calendar.MONTH), c.get(java.util.Calendar.DAY_OF_MONTH)
+    ).show()
 }

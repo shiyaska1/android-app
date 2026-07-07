@@ -3,6 +3,7 @@ package com.billing.pos
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -53,6 +54,9 @@ import com.billing.pos.ui.users.UsersScreen
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Keep the screen awake while the app is in the foreground; normal lock resumes
+        // once the app is closed/backgrounded (the flag only applies to this window).
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         captureIncoming(intent)
         enableEdgeToEdge()
         setContent {

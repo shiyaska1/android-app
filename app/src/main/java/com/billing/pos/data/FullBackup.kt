@@ -83,7 +83,7 @@ object FullBackup {
         return zip
     }
 
-    suspend fun restore(context: Context, uri: Uri): Result<String> = runCatching {
+    suspend fun restore(context: Context, uri: Uri, merge: Boolean = false): Result<String> = runCatching {
         val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
             ?: error("Cannot read the file")
 
@@ -113,6 +113,12 @@ object FullBackup {
         val root = JSONObject(data)
 
         val db = AppDatabase.get(context)
+
+        if (merge) {
+            mergeInto(context, db, root)
+            return@runCatching "Merge complete — backup data appended"
+        }
+
         withContext(Dispatchers.IO) { db.clearAllTables() }
 
         root.optJSONObject("settings")?.let { s ->
@@ -157,6 +163,151 @@ object FullBackup {
         }
 
         "Restore complete"
+    }
+
+    /**
+     * Appends a backup into the existing data (no wipe). Masters (customers, suppliers,
+     * items, account groups/heads) are reused when a same-named row already exists;
+     * documents are always inserted as new rows with their parent ids remapped.
+     * Users are intentionally NOT merged so local logins are preserved.
+     */
+    private suspend fun mergeInto(context: Context, db: AppDatabase, root: JSONObject) {
+        // Customers
+        val custByName = HashMap<String, Long>()
+        db.customerDao().all().forEach { custByName[it.name.lowercase()] = it.id }
+        val custMap = HashMap<Long, Long>()
+        root.optJSONArray("customers")?.let {
+            for (i in 0 until it.length()) {
+                val c = readCust(it.getJSONObject(i)); val key = c.name.lowercase()
+                custMap[c.id] = custByName[key] ?: db.customerDao().insert(c.copy(id = 0)).also { nid -> custByName[key] = nid }
+            }
+        }
+        // Suppliers
+        val suppByName = HashMap<String, Long>()
+        db.supplierDao().all().forEach { suppByName[it.name.lowercase()] = it.id }
+        val suppMap = HashMap<Long, Long>()
+        root.optJSONArray("suppliers")?.let {
+            for (i in 0 until it.length()) {
+                val s = readSupplier(it.getJSONObject(i)); val key = s.name.lowercase()
+                suppMap[s.id] = suppByName[key] ?: db.supplierDao().insert(s.copy(id = 0)).also { nid -> suppByName[key] = nid }
+            }
+        }
+        // Items
+        val itemByName = HashMap<String, Long>()
+        db.itemDao().all().forEach { itemByName[it.name.lowercase()] = it.id }
+        val itemMap = HashMap<Long, Long>()
+        root.optJSONArray("items")?.let {
+            for (i in 0 until it.length()) {
+                val it2 = readItem(it.getJSONObject(i)); val key = it2.name.lowercase()
+                itemMap[it2.id] = itemByName[key] ?: db.itemDao().insert(it2.copy(id = 0)).also { nid -> itemByName[key] = nid }
+            }
+        }
+        // Account groups
+        val groupByName = HashMap<String, Long>()
+        db.accountDao().allGroups().forEach { groupByName[it.name.lowercase()] = it.id }
+        val groupMap = HashMap<Long, Long>()
+        root.optJSONArray("accountGroups")?.let {
+            for (i in 0 until it.length()) {
+                val g = readGroup(it.getJSONObject(i)); val key = g.name.lowercase()
+                groupMap[g.id] = groupByName[key] ?: db.accountDao().insertGroup(g.copy(id = 0)).also { nid -> groupByName[key] = nid }
+            }
+        }
+        // Account heads
+        val headByName = HashMap<String, Long>()
+        db.accountDao().allHeads().forEach { headByName[it.name.lowercase()] = it.id }
+        val headMap = HashMap<Long, Long>()
+        root.optJSONArray("accountHeads")?.let {
+            for (i in 0 until it.length()) {
+                val h = readHead(it.getJSONObject(i)); val key = h.name.lowercase()
+                headMap[h.id] = headByName[key]
+                    ?: db.accountDao().insertHead(h.copy(id = 0, groupId = groupMap[h.groupId] ?: h.groupId)).also { nid -> headByName[key] = nid }
+            }
+        }
+
+        // Bills + items
+        val billMap = HashMap<Long, Long>()
+        root.optJSONArray("bills")?.let {
+            for (i in 0 until it.length()) {
+                val b = readBill(it.getJSONObject(i))
+                billMap[b.id] = db.billDao().insertBill(b.copy(id = 0, customerId = custMap[b.customerId] ?: b.customerId))
+            }
+        }
+        root.optJSONArray("billItems")?.let {
+            val lines = ArrayList<BillItem>()
+            for (i in 0 until it.length()) {
+                val l = readLine(it.getJSONObject(i)); val nb = billMap[l.billId] ?: continue
+                lines.add(l.copy(id = 0, billId = nb))
+            }
+            if (lines.isNotEmpty()) db.billDao().insertLines(lines)
+        }
+        // Purchases + items
+        val purMap = HashMap<Long, Long>()
+        root.optJSONArray("purchases")?.let {
+            for (i in 0 until it.length()) {
+                val p = readPurchase(it.getJSONObject(i))
+                purMap[p.id] = db.purchaseDao().insertPurchase(p.copy(id = 0, supplierId = suppMap[p.supplierId] ?: p.supplierId))
+            }
+        }
+        root.optJSONArray("purchaseItems")?.let {
+            val lines = ArrayList<PurchaseItem>()
+            for (i in 0 until it.length()) {
+                val l = readPLine(it.getJSONObject(i)); val np = purMap[l.purchaseId] ?: continue
+                lines.add(l.copy(id = 0, purchaseId = np))
+            }
+            if (lines.isNotEmpty()) db.purchaseDao().insertLines(lines)
+        }
+        // Receipts / expenses
+        root.optJSONArray("receipts")?.let {
+            for (i in 0 until it.length()) {
+                val r = readReceipt(it.getJSONObject(i))
+                val nb = if (r.billId > 0) (billMap[r.billId] ?: 0L) else 0L
+                db.receiptDao().insert(r.copy(id = 0, billId = nb))
+            }
+        }
+        root.optJSONArray("expenses")?.let {
+            for (i in 0 until it.length()) {
+                val ex = readExpense(it.getJSONObject(i))
+                val np = if (ex.purchaseId > 0) (purMap[ex.purchaseId] ?: 0L) else 0L
+                db.expenseDao().insert(ex.copy(id = 0, purchaseId = np))
+            }
+        }
+        // Journals
+        val jMap = HashMap<Long, Long>()
+        root.optJSONArray("journalEntries")?.let {
+            for (i in 0 until it.length()) {
+                val e = readJEntry(it.getJSONObject(i))
+                jMap[e.id] = db.journalDao().insertEntry(e.copy(id = 0))
+            }
+        }
+        root.optJSONArray("journalLines")?.let {
+            val lines = ArrayList<JournalLine>()
+            for (i in 0 until it.length()) {
+                val l = readJLine(it.getJSONObject(i)); val ne = jMap[l.entryId] ?: continue
+                lines.add(l.copy(id = 0, entryId = ne, headId = headMap[l.headId] ?: l.headId))
+            }
+            if (lines.isNotEmpty()) db.journalDao().insertLines(lines)
+        }
+        // Diary + attachments
+        val diaryMap = HashMap<Long, Long>()
+        root.optJSONArray("diaryEntries")?.let {
+            for (i in 0 until it.length()) {
+                val e = readEntry(it.getJSONObject(i))
+                diaryMap[e.id] = db.diaryDao().insert(e.copy(id = 0))
+            }
+        }
+        root.optJSONArray("diaryAttachments")?.let {
+            for (i in 0 until it.length()) {
+                val a = readAtt(context, it.getJSONObject(i)); val ne = diaryMap[a.entryId] ?: continue
+                db.diaryDao().insertAttachment(a.copy(id = 0, entryId = ne))
+            }
+        }
+        // Item attachments
+        root.optJSONArray("itemAttachments")?.let {
+            for (i in 0 until it.length()) {
+                val a = readItemAtt(context, it.getJSONObject(i)); val ni = itemMap[a.itemId] ?: continue
+                db.itemAttachmentDao().insert(a.copy(id = 0, itemId = ni))
+            }
+        }
     }
 
     // ---- serialisers ----

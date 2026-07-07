@@ -35,6 +35,7 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
@@ -94,15 +95,15 @@ class ReceiptsViewModel(app: Application) : AndroidViewModel(app) {
 
     init { viewModelScope.launch { payFromOptions.value = repo.payFromNames() } }
 
-    fun addAgainstInvoice(bill: Bill, amount: Double, mode: PayMode) {
+    fun addAgainstInvoice(bill: Bill, amount: Double, mode: PayMode, dateMillis: Long) {
         if (amount <= 0) { message.value = "Enter a valid amount"; return }
-        viewModelScope.launch { repo.addReceipt(bill, amount, mode); message.value = "Receipt added" }
+        viewModelScope.launch { repo.addReceipt(bill, amount, mode, dateMillis); message.value = "Receipt added" }
     }
 
-    fun addStandalone(payFrom: String, amount: Double, mode: PayMode) {
+    fun addStandalone(payFrom: String, amount: Double, mode: PayMode, dateMillis: Long) {
         if (amount <= 0) { message.value = "Enter a valid amount"; return }
         viewModelScope.launch {
-            repo.addStandaloneReceipt(payFrom.trim().ifBlank { "Cash receipt" }, amount, mode)
+            repo.addStandaloneReceipt(payFrom.trim().ifBlank { "Cash receipt" }, amount, mode, dateMillis)
             payFromOptions.value = repo.payFromNames()
             message.value = "Receipt added"
         }
@@ -232,8 +233,8 @@ fun ReceiptsScreen(
             outstanding = outstanding,
             payFromOptions = payFromOptions,
             onDismiss = { showAdd = false },
-            onAddInvoice = { bill, amt, mode -> vm.addAgainstInvoice(bill, amt, mode); showAdd = false },
-            onAddOther = { payFrom, amt, mode -> vm.addStandalone(payFrom, amt, mode); showAdd = false }
+            onAddInvoice = { bill, amt, mode, date -> vm.addAgainstInvoice(bill, amt, mode, date); showAdd = false },
+            onAddOther = { payFrom, amt, mode, date -> vm.addStandalone(payFrom, amt, mode, date); showAdd = false }
         )
     }
     editFor?.let { r ->
@@ -253,6 +254,18 @@ fun ReceiptsScreen(
             dismissButton = { TextButton(onClick = { deleteFor = null }) { Text("Cancel") } }
         )
     }
+}
+
+private fun pickReceiptDate(context: Context, current: Long, onPicked: (Long) -> Unit) {
+    val c = java.util.Calendar.getInstance().apply { timeInMillis = current }
+    android.app.DatePickerDialog(
+        context,
+        { _, y, m, d ->
+            c.set(java.util.Calendar.YEAR, y); c.set(java.util.Calendar.MONTH, m); c.set(java.util.Calendar.DAY_OF_MONTH, d)
+            onPicked(c.timeInMillis)
+        },
+        c.get(java.util.Calendar.YEAR), c.get(java.util.Calendar.MONTH), c.get(java.util.Calendar.DAY_OF_MONTH)
+    ).show()
 }
 
 private fun sharePdf(context: Context, r: Receipt) {
@@ -281,14 +294,16 @@ private fun AddReceiptDialog(
     outstanding: List<Bill>,
     payFromOptions: List<String>,
     onDismiss: () -> Unit,
-    onAddInvoice: (Bill, Double, PayMode) -> Unit,
-    onAddOther: (String, Double, PayMode) -> Unit
+    onAddInvoice: (Bill, Double, PayMode, Long) -> Unit,
+    onAddOther: (String, Double, PayMode, Long) -> Unit
 ) {
+    val context = LocalContext.current
     var againstInvoice by remember { mutableStateOf(outstanding.isNotEmpty()) }
     var selected by remember { mutableStateOf(outstanding.firstOrNull()) }
     var payFrom by remember { mutableStateOf("") }
     var amount by remember { mutableStateOf(outstanding.firstOrNull()?.balance?.let { Format.money(it) } ?: "") }
     var mode by remember { mutableStateOf(PayMode.CASH) }
+    var dateMillis by remember { mutableStateOf(System.currentTimeMillis()) }
     var billExpanded by remember { mutableStateOf(false) }
     var payFromExpanded by remember { mutableStateOf(false) }
 
@@ -364,15 +379,19 @@ private fun AddReceiptDialog(
                         FilterChip(selected = mode == m, onClick = { mode = m }, label = { Text(m.label) })
                     }
                 }
+                OutlinedButton(
+                    onClick = { pickReceiptDate(context, dateMillis) { dateMillis = it } },
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                ) { Text("Date: ${Format.date(dateMillis)}") }
             }
         },
         confirmButton = {
             Button(onClick = {
                 val amt = amount.toDoubleOrNull() ?: 0.0
                 if (againstInvoice) {
-                    selected?.let { onAddInvoice(it, amt.coerceAtMost(it.balance), mode) }
+                    selected?.let { onAddInvoice(it, amt.coerceAtMost(it.balance), mode, dateMillis) }
                 } else {
-                    onAddOther(payFrom.trim(), amt, mode)
+                    onAddOther(payFrom.trim(), amt, mode, dateMillis)
                 }
             }) { Text("Add") }
         },
