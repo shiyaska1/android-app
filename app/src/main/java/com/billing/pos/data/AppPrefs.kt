@@ -43,5 +43,15 @@ class AppPrefs(context: Context) {
         get() = p.getBoolean("licensed", false)
         set(v) { p.edit().putBoolean("licensed", v).apply() }
 
+    // ---- thermal printer ----
+    /** Bluetooth MAC address of the chosen thermal printer ("" = auto-pick). */
+    var printerAddress: String
+        get() = p.getString("printer_addr", "") ?: ""
+        set(v) { p.edit().putString("printer_addr", v).apply() }
+
+    var printerName: String
+        get() = p.getString("printer_name", "") ?: ""
+        set(v) { p.edit().putString("printer_name", v).apply() }
+
     fun clearSession() { loggedInUserId = -1L }
 }

@@ -7,10 +7,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
+import androidx.compose.material.icons.filled.Print
+import androidx.compose.material3.Divider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -32,7 +35,7 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(onBack: () -> Unit) {
+fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
     val context = LocalContext.current
     val prefs = remember { AppPrefs(context) }
     val scope = rememberCoroutineScope()
@@ -102,6 +105,12 @@ fun SettingsScreen(onBack: () -> Unit) {
                 },
                 modifier = Modifier.fillMaxWidth().padding(top = 16.dp)
             ) { Text("Save") }
+
+            Divider(Modifier.padding(vertical = 16.dp))
+            OutlinedButton(onClick = onOpenPrinter, modifier = Modifier.fillMaxWidth()) {
+                Icon(Icons.Filled.Print, contentDescription = null)
+                Text("  Thermal printer setup & test")
+            }
         }
     }
 }

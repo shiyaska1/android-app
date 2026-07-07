@@ -41,6 +41,7 @@ import com.billing.pos.ui.license.LicenseScreen
 import com.billing.pos.ui.license.RegisterScreen
 import com.billing.pos.ui.outstanding.OutstandingScreen
 import com.billing.pos.ui.pricesearch.PriceSearchScreen
+import com.billing.pos.ui.printer.PrinterSetupScreen
 import com.billing.pos.ui.purchase.PurchaseListScreen
 import com.billing.pos.ui.purchase.PurchaseScreen
 import com.billing.pos.ui.purchase.SuppliersScreen
@@ -200,7 +201,10 @@ private fun AppNav() {
             ExpensesScreen(onBack = { nav.popBackStack() })
         }
         composable("settings") {
-            SettingsScreen(onBack = { nav.popBackStack() })
+            SettingsScreen(onBack = { nav.popBackStack() }, onOpenPrinter = { nav.navigate("printer") })
+        }
+        composable("printer") {
+            PrinterSetupScreen(onBack = { nav.popBackStack() })
         }
         composable("customers") {
             CustomersScreen(onBack = { nav.popBackStack() })

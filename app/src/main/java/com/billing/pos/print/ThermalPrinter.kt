@@ -9,6 +9,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.core.content.ContextCompat
+import com.billing.pos.data.AppPrefs
 import com.billing.pos.data.Bill
 import com.billing.pos.data.BillItem
 import com.billing.pos.data.CompanyInfo
@@ -62,7 +63,7 @@ object ThermalPrinter {
             ?: throw PrinterException("No Bluetooth on this device")
         if (!adapter.isEnabled) throw PrinterException("Bluetooth is turned off")
 
-        val device = pickPrinter(adapter)
+        val device = pickPrinter(adapter, AppPrefs(context).printerAddress)
             ?: throw PrinterException("No paired printer found. Pair it in Settings first.")
 
         // cancelDiscovery() needs BLUETOOTH_SCAN on API 31+; it's only an optimisation
@@ -126,12 +127,58 @@ object ThermalPrinter {
     }
 
     @SuppressLint("MissingPermission")
-    private fun pickPrinter(adapter: BluetoothAdapter): BluetoothDevice? {
+    private fun pickPrinter(adapter: BluetoothAdapter, preferredAddress: String): BluetoothDevice? {
         val bonded = adapter.bondedDevices ?: emptySet()
+        if (preferredAddress.isNotBlank()) {
+            bonded.firstOrNull { it.address == preferredAddress }?.let { return it }
+        }
         return bonded.firstOrNull {
             val n = (it.name ?: "").lowercase()
             n.contains("print") || n.contains("pos") || n.contains("bt") || n.contains("thermal")
         } ?: bonded.firstOrNull()
+    }
+
+    /** A paired Bluetooth device the user can choose as their printer. */
+    data class BtDevice(val name: String, val address: String)
+
+    /** Lists paired Bluetooth devices, or empty if permission/adapter unavailable. */
+    @SuppressLint("MissingPermission")
+    fun bondedPrinters(context: Context): List<BtDevice> {
+        if (!hasConnectPermission(context)) return emptyList()
+        val adapter = BluetoothAdapter.getDefaultAdapter() ?: return emptyList()
+        val bonded = adapter.bondedDevices ?: return emptyList()
+        return bonded.map { BtDevice(it.name ?: "(unknown)", it.address) }.sortedBy { it.name.lowercase() }
+    }
+
+    /** Returns a human message if Bluetooth isn't ready to print, else null. */
+    fun bluetoothProblem(context: Context): String? {
+        if (!hasConnectPermission(context)) return "Bluetooth permission not granted"
+        val adapter = BluetoothAdapter.getDefaultAdapter() ?: return "No Bluetooth on this device"
+        if (!adapter.isEnabled) return "Bluetooth is turned off"
+        return null
+    }
+
+    /** Prints a short test slip to confirm the connection works. */
+    @SuppressLint("MissingPermission")
+    fun testPrint(context: Context, company: CompanyInfo) {
+        sendBytes(context, buildTest(company))
+    }
+
+    private fun buildTest(company: CompanyInfo): ByteArray {
+        val sb = StringBuilder()
+        sb.append(center(company.name.ifBlank { "My Shop" })).append('\n')
+        sb.append(center("PRINTER TEST")).append('\n')
+        sb.append(line()).append('\n')
+        sb.append("Connection OK!\n")
+        sb.append("32-column test:\n")
+        sb.append("1234567890123456789012345678901\n")
+        sb.append(Format.dateTime(System.currentTimeMillis())).append('\n')
+        sb.append(line()).append('\n')
+        sb.append("\n\n\n")
+        val text = sb.toString().toByteArray(Charsets.US_ASCII)
+        val init = byteArrayOf(ESC.toByte(), '@'.code.toByte())
+        val cut = byteArrayOf(GS.toByte(), 'V'.code.toByte(), 66, 0)
+        return init + text + cut
     }
 
     // ---- ESC/POS byte building -------------------------------------------------
