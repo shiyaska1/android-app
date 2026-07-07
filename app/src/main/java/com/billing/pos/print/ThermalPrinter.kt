@@ -178,13 +178,16 @@ object ThermalPrinter {
         val text = sb.toString().toByteArray(Charsets.US_ASCII)
         val init = byteArrayOf(ESC.toByte(), '@'.code.toByte())
         val cut = byteArrayOf(GS.toByte(), 'V'.code.toByte(), 66, 0)
-        return init + text + cut
+        return init + BOLD_ON + text + cut
     }
 
     // ---- ESC/POS byte building -------------------------------------------------
 
     private const val ESC = 0x1B
     private const val GS = 0x1D
+
+    /** Emphasized (ESC E 1) + double-strike (ESC G 1) → dark, bold text for the whole slip. */
+    private val BOLD_ON = byteArrayOf(ESC.toByte(), 'E'.code.toByte(), 1, ESC.toByte(), 'G'.code.toByte(), 1)
 
     private fun buildReceipt(company: CompanyInfo, bill: Bill, lines: List<BillItem>): ByteArray {
         val sb = StringBuilder()
@@ -221,7 +224,7 @@ object ThermalPrinter {
         val text = sb.toString().toByteArray(Charsets.US_ASCII)
         val init = byteArrayOf(ESC.toByte(), '@'.code.toByte())          // initialize
         val cut = byteArrayOf(GS.toByte(), 'V'.code.toByte(), 66, 0)      // partial cut (ignored if unsupported)
-        return init + text + cut
+        return init + BOLD_ON + text + cut
     }
 
     private fun buildPurchase(company: CompanyInfo, pur: Purchase, lines: List<PurchaseItem>): ByteArray {
@@ -255,7 +258,7 @@ object ThermalPrinter {
         val text = sb.toString().toByteArray(Charsets.US_ASCII)
         val init = byteArrayOf(ESC.toByte(), '@'.code.toByte())
         val cut = byteArrayOf(GS.toByte(), 'V'.code.toByte(), 66, 0)
-        return init + text + cut
+        return init + BOLD_ON + text + cut
     }
 
     private fun buildReceiptVoucher(company: CompanyInfo, r: Receipt): ByteArray {
@@ -279,7 +282,7 @@ object ThermalPrinter {
         val text = sb.toString().toByteArray(Charsets.US_ASCII)
         val init = byteArrayOf(ESC.toByte(), '@'.code.toByte())
         val cut = byteArrayOf(GS.toByte(), 'V'.code.toByte(), 66, 0)
-        return init + text + cut
+        return init + BOLD_ON + text + cut
     }
 
     private fun line() = "-".repeat(COLS)
