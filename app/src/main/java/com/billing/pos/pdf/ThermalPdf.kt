@@ -51,6 +51,11 @@ object ThermalPdf {
         add(rule())
         add(kv("GRAND TOTAL", Format.money(bill.grandTotal)), true)
         add(rule())
+        if (bill.remarks.isNotBlank()) {
+            add("Note:")
+            bill.remarks.chunked(COLS).forEach { add(it) }
+            add(rule())
+        }
         add(center("Thank you! Visit again."))
         return write(context, "invoice_${bill.billNo}", out)
     }

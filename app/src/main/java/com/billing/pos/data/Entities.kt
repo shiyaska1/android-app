@@ -64,7 +64,9 @@ data class Bill(
     /** Amount already received. Credit invoices start at 0; others = grandTotal. */
     val paidAmount: Double = 0.0,
     val customerGstin: String = "",
-    val source: String = ""
+    val source: String = "",
+    /** Free-text note; printed on the bill only when non-blank. */
+    val remarks: String = ""
 ) {
     val balance: Double get() = (grandTotal - paidAmount).coerceAtLeast(0.0)
     val paymentStatus: String

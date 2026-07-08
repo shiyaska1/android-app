@@ -218,6 +218,11 @@ object ThermalPrinter {
         sb.append(line()).append('\n')
         sb.append(kv("GRAND TOTAL", Format.money(bill.grandTotal))).append('\n')
         sb.append(line()).append('\n')
+        if (bill.remarks.isNotBlank()) {
+            sb.append("Note:\n")
+            bill.remarks.chunked(COLS).forEach { sb.append(it).append('\n') }
+            sb.append(line()).append('\n')
+        }
         sb.append(center("Thank you! Visit again.")).append('\n')
         sb.append("\n\n\n")
 

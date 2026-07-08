@@ -66,6 +66,7 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
     var payment by mutableStateOf(PaymentMethod.CASH); private set
     var additionalChargeText by mutableStateOf(""); private set
     var discountText by mutableStateOf(""); private set
+    var remarks by mutableStateOf(""); private set
     var billNo by mutableStateOf("INV-0001"); private set
     var dateMillis by mutableStateOf(System.currentTimeMillis()); private set
 
@@ -109,6 +110,8 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
     fun selectPayment(m: PaymentMethod) { payment = m; dirty = true }
     fun setAdditionalCharge(v: String) { additionalChargeText = v; dirty = true }
     fun setDiscount(v: String) { discountText = v; dirty = true }
+    fun setRemarks(v: String) { remarks = v; dirty = true }
+    fun setDate(millis: Long) { dateMillis = millis; dirty = true }
 
     fun addItemToCart(item: Item) {
         val idx = cart.indexOfFirst { it.itemId == item.id }
@@ -224,7 +227,8 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
             grandTotal = grandTotal,
             paidAmount = paid,
             customerGstin = customer.gstin,
-            source = editingSource
+            source = editingSource,
+            remarks = remarks.trim()
         )
         val lines = cart.map {
             BillItem(
@@ -290,6 +294,7 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
             payment = PaymentMethod.values().firstOrNull { it.label == bill.paymentMethod } ?: PaymentMethod.CASH
             additionalChargeText = if (bill.additionalCharge != 0.0) bill.additionalCharge.toString() else ""
             discountText = if (bill.discount != 0.0) bill.discount.toString() else ""
+            remarks = bill.remarks
             selectedCustomer = customers.value.firstOrNull { it.id == bill.customerId }
                 ?: Customer(id = bill.customerId, name = bill.customerName)
             cart.clear()
@@ -304,6 +309,7 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
         cart.clear()
         additionalChargeText = ""
         discountText = ""
+        remarks = ""
         payment = PaymentMethod.CASH
         dateMillis = System.currentTimeMillis()
         selectedCustomer = customers.value.firstOrNull { it.isDefault } ?: customers.value.firstOrNull()

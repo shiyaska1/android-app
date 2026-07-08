@@ -12,7 +12,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -23,6 +25,8 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Assessment
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Dialpad
+import androidx.compose.material.icons.filled.EditNote
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.NoteAdd
 import androidx.compose.material.icons.filled.PersonAdd
@@ -115,6 +119,8 @@ fun BillingScreen(
     var showItemPicker by remember { mutableStateOf(false) }
     var showCustomLine by remember { mutableStateOf(false) }
     var showWhatsApp by remember { mutableStateOf(false) }
+    var showBillInfo by remember { mutableStateOf(false) }
+    var showNotes by remember { mutableStateOf(false) }
 
     val prefs = remember { com.billing.pos.data.AppPrefs(context) }
     var licensed by remember { mutableStateOf(prefs.licensed) }
@@ -165,6 +171,14 @@ fun BillingScreen(
                     actionIconContentColor = MaterialTheme.colorScheme.onPrimary
                 ),
                 actions = {
+                    IconButton(onClick = { showBillInfo = !showBillInfo }) {
+                        Icon(Icons.Filled.Info, contentDescription = "Bill no & date",
+                            tint = if (showBillInfo) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.6f))
+                    }
+                    IconButton(onClick = { showNotes = !showNotes }) {
+                        Icon(Icons.Filled.EditNote, contentDescription = "Remarks & attachments",
+                            tint = if (showNotes) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.6f))
+                    }
                     IconButton(onClick = { vm.newBill() }) {
                         Icon(Icons.Filled.NoteAdd, contentDescription = "New bill")
                     }
@@ -245,27 +259,6 @@ fun BillingScreen(
                 .padding(pad)
                 .padding(12.dp)
         ) {
-            // --- Header: bill no + date ---
-            Card(Modifier.fillMaxWidth()) {
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(12.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Column {
-                        Label("Bill No")
-                        Text(vm.billNo, fontWeight = FontWeight.Bold)
-                    }
-                    Column(horizontalAlignment = Alignment.End) {
-                        Label("Date")
-                        Text(Format.date(vm.dateMillis), fontWeight = FontWeight.Bold)
-                    }
-                }
-            }
-
-            Spacer(Modifier.padding(6.dp))
-
             // --- Customer (searchable) + New + Payment, all one line ---
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 var expanded by remember { mutableStateOf(false) }
@@ -417,57 +410,78 @@ fun BillingScreen(
                 Spacer(Modifier.padding(2.dp))
             }
 
-            // --- Actions ---
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            // --- Optional: Bill No + editable Date (toggle) ---
+            if (showBillInfo) {
+                Row(
+                    Modifier.fillMaxWidth().padding(top = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Label("Bill No")
+                        Text(vm.billNo, fontWeight = FontWeight.Bold)
+                    }
+                    OutlinedButton(onClick = { pickBillDate(context, vm.dateMillis) { vm.setDate(it) } }) {
+                        Text("Date: ${Format.date(vm.dateMillis)}")
+                    }
+                }
+            }
+
+            // --- Optional: Remarks (+ attachment placeholder) on one line (toggle) ---
+            if (showNotes) {
+                OutlinedTextField(
+                    value = vm.remarks,
+                    onValueChange = { vm.setRemarks(it) },
+                    label = { Text("Remarks (prints only if filled)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                )
+            }
+
+            if (readOnly) {
+                Spacer(Modifier.padding(2.dp))
+                Text(
+                    "View only — you don't have permission to edit invoices.",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+
+            // --- Actions: Save / PDF / WhatsApp / Print, one line ---
+            Spacer(Modifier.padding(2.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Button(
                     onClick = { scope.launch { vm.saveCurrent() } },
-                    enabled = !readOnly,
+                    enabled = !readOnly, contentPadding = PaddingValues(horizontal = 8.dp),
                     modifier = Modifier.weight(1f)
                 ) { Text("Save") }
-
+                OutlinedButton(
+                    onClick = { scope.launch { vm.saveCurrent()?.let { sharePdf(context, it) } } },
+                    contentPadding = PaddingValues(horizontal = 8.dp),
+                    modifier = Modifier.weight(1f)
+                ) { Text("PDF") }
                 Button(
                     onClick = {
                         scope.launch {
-                            if (vm.needsWhatsAppInfo()) {
-                                showWhatsApp = true
-                            } else {
+                            if (vm.needsWhatsAppInfo()) showWhatsApp = true
+                            else {
                                 val saved = vm.saveCurrent() ?: return@launch
-                                sendWhatsApp(context, vm.selectedCustomer?.phone ?: "", saved) {
-                                    scope.launch { snackbar.showSnackbar(it) }
-                                }
+                                sendWhatsApp(context, vm.selectedCustomer?.phone ?: "", saved) { scope.launch { snackbar.showSnackbar(it) } }
                             }
                         }
                     },
-                    enabled = !readOnly,
+                    enabled = !readOnly, contentPadding = PaddingValues(horizontal = 8.dp),
                     modifier = Modifier.weight(1f)
-                ) { Icon(Icons.Filled.Share, null); Text("WhatsApp") }
-            }
-
-            Spacer(Modifier.padding(2.dp))
-
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(
+                ) { Icon(Icons.Filled.Share, null, modifier = Modifier.size(18.dp)) }
+                Button(
                     onClick = {
-                        scope.launch {
-                            val saved = vm.saveCurrent() ?: return@launch
-                            sharePdf(context, saved)
-                        }
-                    },
-                    modifier = Modifier.weight(1f)
-                ) { Icon(Icons.Filled.Share, null); Text("PDF") }
-
-                OutlinedButton(
-                    onClick = {
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
-                            !ThermalPrinter.hasConnectPermission(context)
-                        ) {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !ThermalPrinter.hasConnectPermission(context)) {
                             printPermission.launch(Manifest.permission.BLUETOOTH_CONNECT)
-                        } else {
-                            scope.launch { doPrint(context, vm, snackbar) }
-                        }
+                        } else scope.launch { doPrint(context, vm, snackbar) }
                     },
+                    contentPadding = PaddingValues(horizontal = 8.dp),
                     modifier = Modifier.weight(1f)
-                ) { Icon(Icons.Filled.Print, null); Text("Print") }
+                ) { Icon(Icons.Filled.Print, null, modifier = Modifier.size(18.dp)); Text(" Print", maxLines = 1) }
             }
         }
     }
@@ -535,6 +549,18 @@ private suspend fun doPrint(
     }
     result.onSuccess { snackbar.showSnackbar("Sent to printer") }
         .onFailure { snackbar.showSnackbar(it.message ?: "Print failed") }
+}
+
+private fun pickBillDate(context: android.content.Context, current: Long, onPicked: (Long) -> Unit) {
+    val c = java.util.Calendar.getInstance().apply { timeInMillis = current }
+    android.app.DatePickerDialog(
+        context,
+        { _, y, m, d ->
+            c.set(java.util.Calendar.YEAR, y); c.set(java.util.Calendar.MONTH, m); c.set(java.util.Calendar.DAY_OF_MONTH, d)
+            onPicked(c.timeInMillis)
+        },
+        c.get(java.util.Calendar.YEAR), c.get(java.util.Calendar.MONTH), c.get(java.util.Calendar.DAY_OF_MONTH)
+    ).show()
 }
 
 private fun sharePdf(context: android.content.Context, saved: BillWithItems) {
