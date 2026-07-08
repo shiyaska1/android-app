@@ -32,7 +32,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.Fastfood
 import androidx.compose.material.icons.filled.NoteAdd
 import androidx.compose.material.icons.filled.PersonAdd
@@ -42,6 +45,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -110,7 +114,11 @@ fun QuickBillScreen(
     val photos by vm.itemPhotos.collectAsStateSafe()
     val customers by vm.customers.collectAsStateSafe()
     var showNewCustomer by remember { mutableStateOf(false) }
-    var custExpanded by remember { mutableStateOf(false) }
+    var showNotes by remember { mutableStateOf(false) }
+
+    val attachPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris -> vm.addAttachmentUris(context, uris) }
     val message by vm.message.collectAsStateSafe()
 
     LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); vm.consumeMessage() } }
@@ -178,6 +186,10 @@ fun QuickBillScreen(
                 title = { Text("Quick Bill") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } },
                 actions = {
+                    IconButton(onClick = { showNotes = !showNotes }) {
+                        Icon(Icons.Filled.EditNote, contentDescription = "Remarks & attachments",
+                            tint = if (showNotes) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.6f))
+                    }
                     IconButton(onClick = { vm.newBill() }) {
                         Icon(Icons.Filled.NoteAdd, contentDescription = "New bill (clear)")
                     }
@@ -218,32 +230,6 @@ fun QuickBillScreen(
                 }
             }
 
-            // Customer dropdown + add-new + editable date
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                ExposedDropdownMenuBox(expanded = custExpanded, onExpandedChange = { custExpanded = !custExpanded }, modifier = Modifier.weight(1f)) {
-                    OutlinedTextField(
-                        readOnly = true,
-                        value = vm.selectedCustomer?.name ?: "Cash Customer",
-                        onValueChange = {},
-                        label = { Text("Customer") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(custExpanded) },
-                        modifier = Modifier.menuAnchor().fillMaxWidth()
-                    )
-                    ExposedDropdownMenu(expanded = custExpanded, onDismissRequest = { custExpanded = false }) {
-                        customers.forEach { c ->
-                            DropdownMenuItem(text = { Text(c.name + if (c.isDefault) "  (default)" else "") }, onClick = { vm.selectCustomer(c); custExpanded = false })
-                        }
-                    }
-                }
-                IconButton(onClick = { showNewCustomer = true }) { Icon(Icons.Filled.PersonAdd, contentDescription = "New customer") }
-                OutlinedButton(onClick = { pickQuickDate(context, vm.dateMillis) { vm.updateDate(it) } }, contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp)) {
-                    Text(Format.date(vm.dateMillis), fontSize = 12.sp)
-                }
-            }
             Card(
                 Modifier.fillMaxWidth().padding(horizontal = 8.dp).clickable { showCart = true },
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
@@ -279,13 +265,37 @@ fun QuickBillScreen(
                 }
             }
 
-            // Bottom: remarks + payment mode + actions
+            // Bottom: (toggle) remarks + attachment, payment mode + actions
             Divider()
-            OutlinedTextField(
-                value = vm.remarks, onValueChange = { vm.updateRemarks(it) },
-                label = { Text("Remarks (prints on bill)") }, singleLine = true,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp)
-            )
+            if (showNotes) {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    OutlinedTextField(
+                        value = vm.remarks, onValueChange = { vm.updateRemarks(it) },
+                        label = { Text("Remarks (prints on bill)") }, singleLine = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(onClick = { runCatching { attachPicker.launch(arrayOf("*/*")) } }) {
+                        Icon(Icons.Filled.AttachFile, contentDescription = "Attach document")
+                    }
+                }
+                if (vm.editAttachments.isNotEmpty()) {
+                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        vm.editAttachments.forEach { att ->
+                            AssistChip(
+                                onClick = {},
+                                label = { Text(att.name, maxLines = 1) },
+                                trailingIcon = {
+                                    Icon(Icons.Filled.Close, contentDescription = "Remove",
+                                        modifier = Modifier.size(16.dp).clickable { vm.removeBillAttachment(att) })
+                                }
+                            )
+                        }
+                    }
+                }
+            }
             Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 PaymentMethod.values().forEach { m ->
                     FilterChip(selected = vm.payment == m, onClick = { vm.selectPayment(m) }, label = { Text(m.label) })
@@ -307,7 +317,7 @@ fun QuickBillScreen(
     }
 
     if (showCart) {
-        CartDialog(vm = vm, onDismiss = { showCart = false })
+        CartDialog(vm = vm, onDismiss = { showCart = false }, onAddCustomer = { showNewCustomer = true })
     }
     if (showNewCustomer) {
         NewCustomerDialog(
@@ -379,15 +389,43 @@ private fun ItemTile(item: Item, photoPath: String?, onClick: () -> Unit) {
 }
 
 @Composable
-private fun CartDialog(vm: BillingViewModel, onDismiss: () -> Unit) {
+@OptIn(ExperimentalMaterial3Api::class)
+private fun CartDialog(vm: BillingViewModel, onDismiss: () -> Unit, onAddCustomer: () -> Unit) {
+    val context = LocalContext.current
+    val customers by vm.customers.collectAsStateSafe()
+    var custExpanded by remember { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Cart") },
         text = {
-            if (vm.cart.isEmpty()) {
-                Text("Cart is empty. Tap items to add.")
-            } else {
-                Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
+            Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
+                // Customer + add-new + date
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    ExposedDropdownMenuBox(expanded = custExpanded, onExpandedChange = { custExpanded = !custExpanded }, modifier = Modifier.weight(1f)) {
+                        OutlinedTextField(
+                            readOnly = true,
+                            value = vm.selectedCustomer?.name ?: "Cash Customer",
+                            onValueChange = {},
+                            label = { Text("Customer") },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(custExpanded) },
+                            modifier = Modifier.menuAnchor().fillMaxWidth()
+                        )
+                        ExposedDropdownMenu(expanded = custExpanded, onDismissRequest = { custExpanded = false }) {
+                            customers.forEach { c ->
+                                DropdownMenuItem(text = { Text(c.name + if (c.isDefault) "  (default)" else "") }, onClick = { vm.selectCustomer(c); custExpanded = false })
+                            }
+                        }
+                    }
+                    IconButton(onClick = onAddCustomer) { Icon(Icons.Filled.PersonAdd, contentDescription = "New customer") }
+                }
+                OutlinedButton(onClick = { pickQuickDate(context, vm.dateMillis) { vm.updateDate(it) } }, modifier = Modifier.padding(top = 4.dp)) {
+                    Text("Date: ${Format.date(vm.dateMillis)}")
+                }
+                Divider(Modifier.padding(vertical = 8.dp))
+
+                if (vm.cart.isEmpty()) {
+                    Text("Cart is empty. Tap items to add.")
+                } else {
                     vm.cart.forEachIndexed { index, line ->
                         var priceText by remember(line.uid) { mutableStateOf(Format.money(line.price)) }
                         Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
