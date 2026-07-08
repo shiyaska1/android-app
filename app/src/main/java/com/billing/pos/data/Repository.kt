@@ -21,6 +21,7 @@ class Repository(context: Context) {
     private val customerDao = db.customerDao()
     private val itemDao = db.itemDao()
     private val itemAttachmentDao = db.itemAttachmentDao()
+    private val billAttachmentDao = db.billAttachmentDao()
     private val billDao = db.billDao()
     private val userDao = db.userDao()
     private val receiptDao = db.receiptDao()
@@ -33,6 +34,7 @@ class Repository(context: Context) {
     val customers: Flow<List<Customer>> = customerDao.observeAll()
     val items: Flow<List<Item>> = itemDao.observeAll()
     val itemAttachments: Flow<List<ItemAttachment>> = itemAttachmentDao.observeAll()
+    val billAttachments: Flow<List<BillAttachment>> = billAttachmentDao.observeAll()
     val users: Flow<List<User>> = userDao.observeAll()
     val allBills: Flow<List<Bill>> = billDao.observeAll()
     val allReceipts: Flow<List<Receipt>> = receiptDao.observeAll()
@@ -214,6 +216,14 @@ class Repository(context: Context) {
         com.billing.pos.items.ItemAttachmentStore.delete(attachment)
     }
 
+    // ---- bill attachments (documents attached to an invoice) ----
+    suspend fun billAttachmentsFor(billId: Long): List<BillAttachment> = billAttachmentDao.forBill(billId)
+    suspend fun addBillAttachment(attachment: BillAttachment): Long = billAttachmentDao.insert(attachment)
+    suspend fun deleteBillAttachment(attachment: BillAttachment) {
+        billAttachmentDao.delete(attachment)
+        com.billing.pos.bills.BillAttachmentStore.delete(attachment)
+    }
+
     /** Bill number for the next locally-created bill, e.g. INV-0001. */
     suspend fun nextBillNo(): String {
         val n = billDao.localCount() + 1
@@ -223,7 +233,11 @@ class Repository(context: Context) {
     // ---- bills ----
     suspend fun saveBill(bill: Bill, lines: List<BillItem>): Long = billDao.saveBill(bill, lines)
     suspend fun updateBill(bill: Bill, lines: List<BillItem>) = billDao.updateBill(bill, lines)
-    suspend fun deleteBill(bill: Bill) = billDao.deleteBill(bill)
+    suspend fun deleteBill(bill: Bill) {
+        billAttachmentDao.forBill(bill.id).forEach { com.billing.pos.bills.BillAttachmentStore.delete(it) }
+        billAttachmentDao.deleteForBill(bill.id)
+        billDao.deleteBill(bill)
+    }
     suspend fun linesFor(billId: Long): List<BillItem> = billDao.linesFor(billId)
     suspend fun billById(id: Long): Bill? = billDao.byId(id)
     fun billsBetween(from: Long, to: Long): Flow<List<Bill>> = billDao.observeBetween(from, to)

@@ -56,6 +56,8 @@ object FullBackup {
         root.put("journalLines", JSONArray().apply { db.journalDao().allLines().forEach { put(jLineJson(it)) } })
         val itemAtts = db.itemAttachmentDao().all()
         root.put("itemAttachments", JSONArray().apply { itemAtts.forEach { put(itemAttJson(it)) } })
+        val billAtts = db.billAttachmentDao().all()
+        root.put("billAttachments", JSONArray().apply { billAtts.forEach { put(billAttJson(it)) } })
 
         val dir = File(context.cacheDir, "shared").apply { mkdirs() }
         val zip = File(dir, "pos-full-backup.zip")
@@ -79,6 +81,14 @@ object FullBackup {
                     zos.closeEntry()
                 }
             }
+            billAtts.forEach { att ->
+                val f = File(att.path)
+                if (f.exists()) {
+                    zos.putNextEntry(ZipEntry("billfiles/" + f.name))
+                    f.inputStream().use { it.copyTo(zos) }
+                    zos.closeEntry()
+                }
+            }
         }
         return zip
     }
@@ -89,6 +99,7 @@ object FullBackup {
 
         val filesDir = AttachmentStore.dir(context)
         val itemFilesDir = com.billing.pos.items.ItemAttachmentStore.dir(context)
+        val billFilesDir = com.billing.pos.bills.BillAttachmentStore.dir(context)
         var json: String? = null
         ZipInputStream(ByteArrayInputStream(bytes)).use { zis ->
             var e = zis.nextEntry
@@ -98,6 +109,10 @@ object FullBackup {
                         e.name.endsWith(".json") -> json = zis.readBytes().toString(Charsets.UTF_8)
                         e.name.startsWith("itemfiles/") -> {
                             val out = File(itemFilesDir, e.name.removePrefix("itemfiles/"))
+                            out.outputStream().use { zis.copyTo(it) }
+                        }
+                        e.name.startsWith("billfiles/") -> {
+                            val out = File(billFilesDir, e.name.removePrefix("billfiles/"))
                             out.outputStream().use { zis.copyTo(it) }
                         }
                         e.name.startsWith("files/") -> {
@@ -160,6 +175,9 @@ object FullBackup {
         }
         root.optJSONArray("itemAttachments")?.let {
             for (i in 0 until it.length()) db.itemAttachmentDao().insert(readItemAtt(context, it.getJSONObject(i)))
+        }
+        root.optJSONArray("billAttachments")?.let {
+            for (i in 0 until it.length()) db.billAttachmentDao().insert(readBillAtt(context, it.getJSONObject(i)))
         }
 
         "Restore complete"
@@ -308,6 +326,13 @@ object FullBackup {
                 db.itemAttachmentDao().insert(a.copy(id = 0, itemId = ni))
             }
         }
+        // Bill attachments
+        root.optJSONArray("billAttachments")?.let {
+            for (i in 0 until it.length()) {
+                val a = readBillAtt(context, it.getJSONObject(i)); val nb = billMap[a.billId] ?: continue
+                db.billAttachmentDao().insert(a.copy(id = 0, billId = nb))
+            }
+        }
     }
 
     // ---- serialisers ----
@@ -391,6 +416,9 @@ object FullBackup {
 
     private fun itemAttJson(a: ItemAttachment) = JSONObject().put("id", a.id).put("itemId", a.itemId)
         .put("file", File(a.path).name).put("name", a.name).put("mime", a.mime).put("kind", a.kind)
+
+    private fun billAttJson(a: BillAttachment) = JSONObject().put("id", a.id).put("billId", a.billId)
+        .put("file", File(a.path).name).put("name", a.name).put("mime", a.mime)
 
     private fun attJson(a: DiaryAttachment) = JSONObject().put("id", a.id).put("entryId", a.entryId)
         .put("file", if (a.type == AttachmentType.LOCATION) "" else File(a.path).name)
@@ -511,6 +539,12 @@ object FullBackup {
         id = o.optLong("id"), itemId = o.optLong("itemId"),
         path = File(com.billing.pos.items.ItemAttachmentStore.dir(context), o.optString("file")).absolutePath,
         name = o.optString("name"), mime = o.optString("mime"), kind = o.optString("kind", "PHOTO")
+    )
+
+    private fun readBillAtt(context: Context, o: JSONObject) = BillAttachment(
+        id = o.optLong("id"), billId = o.optLong("billId"),
+        path = File(com.billing.pos.bills.BillAttachmentStore.dir(context), o.optString("file")).absolutePath,
+        name = o.optString("name"), mime = o.optString("mime")
     )
 
     private fun readJLine(o: JSONObject) = JournalLine(

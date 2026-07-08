@@ -186,8 +186,17 @@ object ThermalPrinter {
     private const val ESC = 0x1B
     private const val GS = 0x1D
 
-    /** Emphasized (ESC E 1) + double-strike (ESC G 1) → dark, bold text for the whole slip. */
-    private val BOLD_ON = byteArrayOf(ESC.toByte(), 'E'.code.toByte(), 1, ESC.toByte(), 'G'.code.toByte(), 1)
+    /**
+     * Darkens + bolds the whole slip:
+     *  - ESC 7 (max heating dots, long heat time, short interval) → darker dots on cheap printers
+     *  - ESC E 1 emphasized (bold)
+     *  - ESC G 1 double-strike (overprints each dot)
+     */
+    private val BOLD_ON = byteArrayOf(
+        ESC.toByte(), '7'.code.toByte(), 7, 0x50, 2,
+        ESC.toByte(), 'E'.code.toByte(), 1,
+        ESC.toByte(), 'G'.code.toByte(), 1
+    )
 
     private fun buildReceipt(company: CompanyInfo, bill: Bill, lines: List<BillItem>): ByteArray {
         val sb = StringBuilder()

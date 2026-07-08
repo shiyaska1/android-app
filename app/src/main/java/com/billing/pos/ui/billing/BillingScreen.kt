@@ -5,6 +5,9 @@ import android.content.Intent
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,6 +26,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Assessment
+import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Dialpad
 import androidx.compose.material.icons.filled.EditNote
@@ -34,6 +39,7 @@ import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Divider
@@ -153,6 +159,11 @@ fun BillingScreen(
     val scanLauncher = rememberLauncherForActivityResult(ScanContract()) { result ->
         result.contents?.let { vm.onBarcodeScanned(it) }
     }
+
+    // Attach documents to the invoice.
+    val attachPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris -> vm.addAttachmentUris(context, uris) }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
@@ -427,15 +438,38 @@ fun BillingScreen(
                 }
             }
 
-            // --- Optional: Remarks (+ attachment placeholder) on one line (toggle) ---
+            // --- Optional: Remarks + Attach documents on one line (toggle) ---
             if (showNotes) {
-                OutlinedTextField(
-                    value = vm.remarks,
-                    onValueChange = { vm.updateRemarks(it) },
-                    label = { Text("Remarks (prints only if filled)") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
-                )
+                Row(
+                    Modifier.fillMaxWidth().padding(top = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    OutlinedTextField(
+                        value = vm.remarks,
+                        onValueChange = { vm.updateRemarks(it) },
+                        label = { Text("Remarks (prints only if filled)") },
+                        singleLine = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(onClick = { runCatching { attachPicker.launch(arrayOf("*/*")) } }) {
+                        Icon(Icons.Filled.AttachFile, contentDescription = "Attach document")
+                    }
+                }
+                if (vm.editAttachments.isNotEmpty()) {
+                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 2.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        vm.editAttachments.forEach { att ->
+                            AssistChip(
+                                onClick = {},
+                                label = { Text(att.name, maxLines = 1) },
+                                trailingIcon = {
+                                    Icon(Icons.Filled.Close, contentDescription = "Remove",
+                                        modifier = Modifier.size(16.dp).clickable { vm.removeBillAttachment(att) })
+                                }
+                            )
+                        }
+                    }
+                }
             }
 
             if (readOnly) {

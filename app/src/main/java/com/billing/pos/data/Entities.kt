@@ -78,6 +78,16 @@ data class Bill(
         }
 }
 
+/** A document/photo attached to a saved bill. */
+@Entity(tableName = "bill_attachments")
+data class BillAttachment(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val billId: Long,
+    val path: String,
+    val name: String,
+    val mime: String
+)
+
 /** A single line on a saved bill. */
 @Entity(tableName = "bill_items")
 data class BillItem(

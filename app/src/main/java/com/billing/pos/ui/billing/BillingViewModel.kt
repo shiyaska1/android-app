@@ -9,18 +9,21 @@ import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.billing.pos.data.Bill
+import com.billing.pos.data.BillAttachment
 import com.billing.pos.data.BillItem
 import com.billing.pos.data.BillWithItems
 import com.billing.pos.data.Customer
 import com.billing.pos.data.Item
 import com.billing.pos.data.PaymentMethod
 import com.billing.pos.data.Repository
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** One editable line in the current (unsaved) bill. uid is a stable client id. */
 data class CartLine(
@@ -63,6 +66,8 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
     // ---- editable bill state ----
     var selectedCustomer by mutableStateOf<Customer?>(null); private set
     val cart: SnapshotStateList<CartLine> = mutableStateListOf()
+    /** Documents attached to the current invoice (staged; persisted on save). */
+    val editAttachments: SnapshotStateList<BillAttachment> = mutableStateListOf()
     var payment by mutableStateOf(PaymentMethod.CASH); private set
     var additionalChargeText by mutableStateOf(""); private set
     var discountText by mutableStateOf(""); private set
@@ -112,6 +117,21 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
     fun setDiscount(v: String) { discountText = v; dirty = true }
     fun updateRemarks(v: String) { remarks = v; dirty = true }
     fun updateDate(millis: Long) { dateMillis = millis; dirty = true }
+
+    fun addAttachmentUris(context: android.content.Context, uris: List<android.net.Uri>) {
+        if (uris.isEmpty()) return
+        viewModelScope.launch {
+            val added = withContext(Dispatchers.IO) { uris.mapNotNull { com.billing.pos.bills.BillAttachmentStore.copyIn(context, it) } }
+            editAttachments.addAll(added); dirty = true
+        }
+    }
+    fun removeBillAttachment(att: BillAttachment) {
+        editAttachments.remove(att); dirty = true
+        viewModelScope.launch {
+            if (att.id > 0) repo.deleteBillAttachment(att)
+            else withContext(Dispatchers.IO) { com.billing.pos.bills.BillAttachmentStore.delete(att) }
+        }
+    }
 
     fun addItemToCart(item: Item) {
         val idx = cart.indexOfFirst { it.itemId == item.id }
@@ -255,6 +275,14 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
             editingPaidAmount = paid
             _message.value = "Bill $billNo saved"
         }
+        // Persist any newly-attached documents, then reload so they carry real ids.
+        val savedBillId = saved.bill.id
+        val newAtts = editAttachments.filter { it.id == 0L }
+        if (newAtts.isNotEmpty()) {
+            newAtts.forEach { repo.addBillAttachment(it.copy(billId = savedBillId)) }
+            editAttachments.clear()
+            editAttachments.addAll(repo.billAttachmentsFor(savedBillId))
+        }
         lastSaved = saved
         dirty = false
         return saved
@@ -302,6 +330,8 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
             remarks = bill.remarks
             selectedCustomer = customers.value.firstOrNull { it.id == bill.customerId }
                 ?: Customer(id = bill.customerId, name = bill.customerName)
+            editAttachments.clear()
+            editAttachments.addAll(repo.billAttachmentsFor(bill.id))
             cart.clear()
             lines.forEach { cart.add(CartLine(0, it.name, it.price, it.taxPercent, it.qty)) }
             dirty = false
@@ -312,6 +342,9 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
     /** Clears the form for a brand-new bill and refreshes the auto bill number. */
     fun newBill() {
         cart.clear()
+        val unsaved = editAttachments.filter { it.id == 0L }
+        editAttachments.clear()
+        if (unsaved.isNotEmpty()) viewModelScope.launch(Dispatchers.IO) { unsaved.forEach { com.billing.pos.bills.BillAttachmentStore.delete(it) } }
         additionalChargeText = ""
         discountText = ""
         remarks = ""

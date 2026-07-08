@@ -4,4 +4,5 @@
     <files-path name="docs" path="docs/" />
     <files-path name="diary" path="diary/" />
     <files-path name="items" path="items/" />
+    <files-path name="bills" path="bills/" />
 </paths>

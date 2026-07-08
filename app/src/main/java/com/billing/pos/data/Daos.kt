@@ -58,6 +58,27 @@ interface ItemDao {
 }
 
 @Dao
+interface BillAttachmentDao {
+    @Query("SELECT * FROM bill_attachments")
+    fun observeAll(): Flow<List<BillAttachment>>
+
+    @Query("SELECT * FROM bill_attachments")
+    suspend fun all(): List<BillAttachment>
+
+    @Query("SELECT * FROM bill_attachments WHERE billId = :billId ORDER BY id")
+    suspend fun forBill(billId: Long): List<BillAttachment>
+
+    @Insert
+    suspend fun insert(attachment: BillAttachment): Long
+
+    @Delete
+    suspend fun delete(attachment: BillAttachment)
+
+    @Query("DELETE FROM bill_attachments WHERE billId = :billId")
+    suspend fun deleteForBill(billId: Long)
+}
+
+@Dao
 interface ItemAttachmentDao {
     @Query("SELECT * FROM item_attachments")
     fun observeAll(): Flow<List<ItemAttachment>>
