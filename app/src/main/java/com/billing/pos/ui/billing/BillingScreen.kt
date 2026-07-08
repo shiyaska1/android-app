@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Dialpad
 import androidx.compose.material.icons.filled.EditNote
+import androidx.compose.material.icons.filled.Gesture
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.NoteAdd
@@ -127,6 +128,7 @@ fun BillingScreen(
     var showWhatsApp by remember { mutableStateOf(false) }
     var showBillInfo by remember { mutableStateOf(false) }
     var showNotes by remember { mutableStateOf(false) }
+    var showHandwrite by remember { mutableStateOf(false) }
 
     val prefs = remember { com.billing.pos.data.AppPrefs(context) }
     var licensed by remember { mutableStateOf(prefs.licensed) }
@@ -321,6 +323,7 @@ fun BillingScreen(
                 ToolAction(Icons.Filled.Add, "Item") { showItemPicker = true }
                 ToolAction(Icons.Filled.Dialpad, "Price") { showCustomLine = true }
                 ToolAction(Icons.Filled.NoteAdd, "New") { showNewItem = true }
+                ToolAction(Icons.Filled.Gesture, "Write") { showHandwrite = true }
                 ToolAction(Icons.Filled.QrCodeScanner, "Scan") {
                     scanLauncher.launch(ScanOptions().setPrompt("Scan item barcode").setBeepEnabled(true).setOrientationLocked(false))
                 }
@@ -568,6 +571,9 @@ fun BillingScreen(
             onPick = { vm.addItemToCart(it); showItemPicker = false },
             onNewItem = { showItemPicker = false; showNewItem = true }
         )
+    }
+    if (showHandwrite) {
+        HandwriteQuickBillDialog(vm = vm, onDismiss = { showHandwrite = false })
     }
 }
 

@@ -83,5 +83,8 @@ dependencies {
     implementation("com.journeyapps:zxing-android-embedded:4.3.0")
     implementation("com.google.zxing:core:3.5.3")
 
+    // On-device handwriting recognition (offline after one-time model download)
+    implementation("com.google.mlkit:digital-ink-recognition:18.1.0")
+
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

@@ -166,6 +166,30 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * Adds a line captured from handwriting. Looks the name up in the item master
+     * (case-insensitive); if missing, creates the master item with [price], then adds
+     * the line to the cart. [onResult] reports success + a short status message.
+     */
+    fun addHandwrittenLine(rawName: String, price: Double, onResult: (Boolean, String) -> Unit) {
+        val name = rawName.trim()
+        if (name.isBlank()) { onResult(false, "Couldn't read the item name — write it again"); return }
+        viewModelScope.launch {
+            val match = items.value.firstOrNull { it.name.equals(name, ignoreCase = true) }
+                ?: repo.itemByName(name)
+            if (match != null) {
+                val rate = if (price > 0.0) price else match.price
+                cart.add(CartLine(match.id, match.name, rate, match.taxPercent, 1.0))
+                onResult(true, "Added ${match.name}")
+            } else {
+                val id = repo.addItem(name, price, 0.0)
+                cart.add(CartLine(id, name, price, 0.0, 1.0))
+                onResult(true, "New item \"$name\" saved & added")
+            }
+            dirty = true
+        }
+    }
+
     fun changeQty(index: Int, delta: Double) {
         val line = cart.getOrNull(index) ?: return
         val q = (line.qty + delta)
