@@ -248,6 +248,11 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
         } else {
             val id = repo.saveBill(bill, lines)
             saved = BillWithItems(bill.copy(id = id), lines)
+            // Keep editing this same bill so re-saving (e.g. after Print) updates it
+            // instead of creating a duplicate with the same bill number.
+            editingBillId = id
+            editingWasCredit = payment == PaymentMethod.CREDIT
+            editingPaidAmount = paid
             _message.value = "Bill $billNo saved"
         }
         lastSaved = saved

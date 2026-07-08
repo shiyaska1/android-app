@@ -8,6 +8,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -33,6 +34,8 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Fastfood
+import androidx.compose.material.icons.filled.NoteAdd
+import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Search
@@ -43,11 +46,15 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Divider
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -82,6 +89,7 @@ import com.billing.pos.data.PaymentMethod
 import com.billing.pos.pdf.ThermalPdf
 import com.billing.pos.print.ThermalPrinter
 import com.billing.pos.ui.billing.BillingViewModel
+import com.billing.pos.ui.billing.NewCustomerDialog
 import com.billing.pos.ui.billing.collectAsStateSafe
 import com.billing.pos.ui.common.rememberThumbnail
 import com.billing.pos.util.Format
@@ -100,6 +108,9 @@ fun QuickBillScreen(
     val snackbar = remember { SnackbarHostState() }
     val items by vm.items.collectAsStateSafe()
     val photos by vm.itemPhotos.collectAsStateSafe()
+    val customers by vm.customers.collectAsStateSafe()
+    var showNewCustomer by remember { mutableStateOf(false) }
+    var custExpanded by remember { mutableStateOf(false) }
     val message by vm.message.collectAsStateSafe()
 
     LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); vm.consumeMessage() } }
@@ -148,12 +159,14 @@ fun QuickBillScreen(
         runCatching { context.startActivity(Intent.createChooser(base, "Share bill").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
     }
 
-    /** Saves the current cart, runs [after] with the saved bill, then starts a fresh bill. */
+    /**
+     * Saves the current cart and runs [after] with the saved bill. The cart is kept
+     * (re-saving updates the same bill); use the New-bill icon to clear.
+     */
     fun saveThen(after: (BillWithItems) -> Unit) {
         scope.launch {
             val saved = vm.saveCurrent() ?: return@launch
             after(saved)
-            vm.newBill()
             showCart = false
         }
     }
@@ -164,10 +177,16 @@ fun QuickBillScreen(
             TopAppBar(
                 title = { Text("Quick Bill") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } },
+                actions = {
+                    IconButton(onClick = { vm.newBill() }) {
+                        Icon(Icons.Filled.NoteAdd, contentDescription = "New bill (clear)")
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                     titleContentColor = MaterialTheme.colorScheme.onPrimary,
-                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary
+                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary,
+                    actionIconContentColor = MaterialTheme.colorScheme.onPrimary
                 )
             )
         }
@@ -196,6 +215,33 @@ fun QuickBillScreen(
                             contentAlignment = Alignment.Center
                         ) { Text("${vm.cart.size}", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold) }
                     }
+                }
+            }
+
+            // Customer dropdown + add-new + editable date
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                ExposedDropdownMenuBox(expanded = custExpanded, onExpandedChange = { custExpanded = !custExpanded }, modifier = Modifier.weight(1f)) {
+                    OutlinedTextField(
+                        readOnly = true,
+                        value = vm.selectedCustomer?.name ?: "Cash Customer",
+                        onValueChange = {},
+                        label = { Text("Customer") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(custExpanded) },
+                        modifier = Modifier.menuAnchor().fillMaxWidth()
+                    )
+                    ExposedDropdownMenu(expanded = custExpanded, onDismissRequest = { custExpanded = false }) {
+                        customers.forEach { c ->
+                            DropdownMenuItem(text = { Text(c.name + if (c.isDefault) "  (default)" else "") }, onClick = { vm.selectCustomer(c); custExpanded = false })
+                        }
+                    }
+                }
+                IconButton(onClick = { showNewCustomer = true }) { Icon(Icons.Filled.PersonAdd, contentDescription = "New customer") }
+                OutlinedButton(onClick = { pickQuickDate(context, vm.dateMillis) { vm.updateDate(it) } }, contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp)) {
+                    Text(Format.date(vm.dateMillis), fontSize = 12.sp)
                 }
             }
             Card(
@@ -233,9 +279,14 @@ fun QuickBillScreen(
                 }
             }
 
-            // Bottom: payment mode + actions
+            // Bottom: remarks + payment mode + actions
             Divider()
-            Row(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 8.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            OutlinedTextField(
+                value = vm.remarks, onValueChange = { vm.updateRemarks(it) },
+                label = { Text("Remarks (prints on bill)") }, singleLine = true,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp)
+            )
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 PaymentMethod.values().forEach { m ->
                     FilterChip(selected = vm.payment == m, onClick = { vm.selectPayment(m) }, label = { Text(m.label) })
                 }
@@ -258,6 +309,24 @@ fun QuickBillScreen(
     if (showCart) {
         CartDialog(vm = vm, onDismiss = { showCart = false })
     }
+    if (showNewCustomer) {
+        NewCustomerDialog(
+            onDismiss = { showNewCustomer = false },
+            onSave = { n, p, a -> vm.addCustomer(n, p, a) { showNewCustomer = false } }
+        )
+    }
+}
+
+private fun pickQuickDate(context: android.content.Context, current: Long, onPicked: (Long) -> Unit) {
+    val c = java.util.Calendar.getInstance().apply { timeInMillis = current }
+    android.app.DatePickerDialog(
+        context,
+        { _, y, m, d ->
+            c.set(java.util.Calendar.YEAR, y); c.set(java.util.Calendar.MONTH, m); c.set(java.util.Calendar.DAY_OF_MONTH, d)
+            onPicked(c.timeInMillis)
+        },
+        c.get(java.util.Calendar.YEAR), c.get(java.util.Calendar.MONTH), c.get(java.util.Calendar.DAY_OF_MONTH)
+    ).show()
 }
 
 @Composable
