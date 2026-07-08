@@ -160,6 +160,9 @@ interface BillDao {
     @Query("SELECT * FROM bill_items")
     suspend fun allLines(): List<BillItem>
 
+    @Query("SELECT * FROM bill_items")
+    fun observeAllLines(): Flow<List<BillItem>>
+
     @Query("SELECT name AS name, SUM(qty) AS qty FROM bill_items GROUP BY name COLLATE NOCASE")
     fun observeSoldQty(): Flow<List<NameQty>>
 

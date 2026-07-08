@@ -59,13 +59,14 @@ import com.billing.pos.data.AppPrefs
 import com.billing.pos.data.Repository
 import com.billing.pos.pdf.TablePdf
 import com.billing.pos.ui.billing.collectAsStateSafe
-import com.billing.pos.ui.common.ListFilters
+import com.billing.pos.ui.common.DateSearchFilter
 import com.billing.pos.ui.common.endOfDay
 import com.billing.pos.ui.common.rememberPdfDownloader
 import com.billing.pos.ui.common.startOfDay
 import com.billing.pos.util.Format
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
@@ -78,6 +79,18 @@ class InvoiceListViewModel(app: Application) : AndroidViewModel(app) {
 
     val bills: StateFlow<List<Bill>> =
         repo.allBills.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** Phone/WhatsApp number keyed by customer id (0 for walk-in). */
+    val phoneByCustomer: StateFlow<Map<Long, String>> =
+        repo.customers.map { list -> list.associate { it.id to it.phone } }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
+    /** Lower-cased, space-joined item names keyed by bill id. */
+    val itemNamesByBill: StateFlow<Map<Long, String>> =
+        repo.billLines.map { lines ->
+            lines.groupBy { it.billId }
+                .mapValues { (_, l) -> l.joinToString(" ") { it.name }.lowercase() }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
     val message = MutableStateFlow<String?>(null)
     fun consumeMessage() { message.value = null }
@@ -127,15 +140,22 @@ fun InvoiceListScreen(
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
     val bills by vm.bills.collectAsStateSafe()
+    val phoneByCustomer by vm.phoneByCustomer.collectAsStateSafe()
+    val itemNamesByBill by vm.itemNamesByBill.collectAsStateSafe()
     val message by vm.message.collectAsStateSafe()
     var pendingDelete by remember { mutableStateOf<Bill?>(null) }
-    var voucherQ by remember { mutableStateOf("") }
-    var nameQ by remember { mutableStateOf("") }
+    var searchQ by remember { mutableStateOf("") }
     var fromMillis by remember { mutableStateOf<Long?>(null) }
     var toMillis by remember { mutableStateOf<Long?>(null) }
     val filtered = bills.filter {
-        (voucherQ.isBlank() || it.billNo.contains(voucherQ, true)) &&
-            (nameQ.isBlank() || it.customerName.contains(nameQ, true)) &&
+        val q = searchQ.trim()
+        val matches = q.isBlank() ||
+            it.billNo.contains(q, true) ||
+            it.customerName.contains(q, true) ||
+            it.remarks.contains(q, true) ||
+            (phoneByCustomer[it.customerId]?.contains(q, true) == true) ||
+            (itemNamesByBill[it.id]?.contains(q, true) == true)
+        matches &&
             (fromMillis == null || it.dateMillis >= startOfDay(fromMillis!!)) &&
             (toMillis == null || it.dateMillis <= endOfDay(toMillis!!))
     }
@@ -208,11 +228,11 @@ fun InvoiceListScreen(
             ) { Text("You don't have permission to view invoices", color = MaterialTheme.colorScheme.outline) }
         } else {
             Column(Modifier.fillMaxSize().padding(pad)) {
-                ListFilters(
-                    voucher = voucherQ, onVoucher = { voucherQ = it },
-                    name = nameQ, onName = { nameQ = it }, nameLabel = "Customer",
+                DateSearchFilter(
+                    query = searchQ, onQuery = { searchQ = it },
                     from = fromMillis, onFrom = { fromMillis = it },
-                    to = toMillis, onTo = { toMillis = it }
+                    to = toMillis, onTo = { toMillis = it },
+                    searchLabel = "Bill no, customer, phone, item, remark"
                 )
                 if (filtered.isEmpty()) {
                     Text(

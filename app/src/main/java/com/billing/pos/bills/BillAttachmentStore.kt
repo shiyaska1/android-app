@@ -1,6 +1,7 @@
 package com.billing.pos.bills
 
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.core.content.FileProvider
@@ -38,6 +39,16 @@ object BillAttachmentStore {
 
     fun uriFor(context: Context, attachment: BillAttachment): Uri =
         FileProvider.getUriForFile(context, "${context.packageName}.provider", File(attachment.path))
+
+    /** Opens the attachment in a viewer app. Returns false if nothing can open it. */
+    fun open(context: Context, attachment: BillAttachment): Boolean = runCatching {
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uriFor(context, attachment), attachment.mime.ifBlank { "*/*" })
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(intent)
+        true
+    }.getOrDefault(false)
 
     private fun extFromMime(mime: String): String = when (mime) {
         "image/jpeg" -> "jpg"; "image/png" -> "png"; "image/webp" -> "webp"

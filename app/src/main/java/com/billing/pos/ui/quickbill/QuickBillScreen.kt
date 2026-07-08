@@ -285,7 +285,7 @@ fun QuickBillScreen(
                     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         vm.editAttachments.forEach { att ->
                             AssistChip(
-                                onClick = {},
+                                onClick = { com.billing.pos.bills.BillAttachmentStore.open(context, att) },
                                 label = { Text(att.name, maxLines = 1) },
                                 trailingIcon = {
                                     Icon(Icons.Filled.Close, contentDescription = "Remove",

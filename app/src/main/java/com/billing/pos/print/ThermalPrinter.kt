@@ -187,13 +187,14 @@ object ThermalPrinter {
     private const val GS = 0x1D
 
     /**
-     * Darkens + bolds the whole slip:
-     *  - ESC 7 (max heating dots, long heat time, short interval) → darker dots on cheap printers
-     *  - ESC E 1 emphasized (bold)
-     *  - ESC G 1 double-strike (overprints each dot)
+     * Makes the whole slip bold, using every widely-supported ESC/POS bold flag so at least
+     * one is honoured by cheap printers:
+     *  - ESC ! 0x08  print-mode emphasized bit
+     *  - ESC E 1     emphasized on
+     *  - ESC G 1     double-strike (overprints each dot → darker)
      */
     private val BOLD_ON = byteArrayOf(
-        ESC.toByte(), '7'.code.toByte(), 7, 0x50, 2,
+        ESC.toByte(), '!'.code.toByte(), 0x08,
         ESC.toByte(), 'E'.code.toByte(), 1,
         ESC.toByte(), 'G'.code.toByte(), 1
     )

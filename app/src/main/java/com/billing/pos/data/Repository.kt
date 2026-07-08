@@ -37,6 +37,7 @@ class Repository(context: Context) {
     val billAttachments: Flow<List<BillAttachment>> = billAttachmentDao.observeAll()
     val users: Flow<List<User>> = userDao.observeAll()
     val allBills: Flow<List<Bill>> = billDao.observeAll()
+    val billLines: Flow<List<BillItem>> = billDao.observeAllLines()
     val allReceipts: Flow<List<Receipt>> = receiptDao.observeAll()
     val allExpenses: Flow<List<Expense>> = expenseDao.observeAll()
     val suppliers: Flow<List<Supplier>> = supplierDao.observeAll()
