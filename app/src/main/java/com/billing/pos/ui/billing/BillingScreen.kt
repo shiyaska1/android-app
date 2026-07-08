@@ -421,7 +421,7 @@ fun BillingScreen(
                         Label("Bill No")
                         Text(vm.billNo, fontWeight = FontWeight.Bold)
                     }
-                    OutlinedButton(onClick = { pickBillDate(context, vm.dateMillis) { vm.setDate(it) } }) {
+                    OutlinedButton(onClick = { pickBillDate(context, vm.dateMillis) { vm.updateDate(it) } }) {
                         Text("Date: ${Format.date(vm.dateMillis)}")
                     }
                 }
@@ -431,7 +431,7 @@ fun BillingScreen(
             if (showNotes) {
                 OutlinedTextField(
                     value = vm.remarks,
-                    onValueChange = { vm.setRemarks(it) },
+                    onValueChange = { vm.updateRemarks(it) },
                     label = { Text("Remarks (prints only if filled)") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth().padding(top = 4.dp)

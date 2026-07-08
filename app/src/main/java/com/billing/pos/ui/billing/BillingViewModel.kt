@@ -110,8 +110,8 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
     fun selectPayment(m: PaymentMethod) { payment = m; dirty = true }
     fun setAdditionalCharge(v: String) { additionalChargeText = v; dirty = true }
     fun setDiscount(v: String) { discountText = v; dirty = true }
-    fun setRemarks(v: String) { remarks = v; dirty = true }
-    fun setDate(millis: Long) { dateMillis = millis; dirty = true }
+    fun updateRemarks(v: String) { remarks = v; dirty = true }
+    fun updateDate(millis: Long) { dateMillis = millis; dirty = true }
 
     fun addItemToCart(item: Item) {
         val idx = cart.indexOfFirst { it.itemId == item.id }
