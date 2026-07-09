@@ -18,6 +18,9 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Divider
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -38,6 +41,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.billing.pos.data.Item
 import com.billing.pos.ocr.ScannedItem
 
 private class OcrRow(name: String, price: String) {
@@ -51,9 +55,11 @@ private class OcrRow(name: String, price: String) {
  * the bill. On Update, only the ticked, non-blank rows are returned; the caller adds
  * them to the cart and creates any missing item-master entries.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BillOcrReviewDialog(
     initial: List<ScannedItem>,
+    masterItems: List<Item>,
     onDismiss: () -> Unit,
     onConfirm: (List<ScannedItem>) -> Unit
 ) {
@@ -85,10 +91,33 @@ fun BillOcrReviewDialog(
                     itemsIndexed(rows) { index, row ->
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Checkbox(checked = row.include, onCheckedChange = { row.include = it })
-                            OutlinedTextField(
-                                value = row.name, onValueChange = { row.name = it },
-                                label = { Text("Item name") }, singleLine = true, modifier = Modifier.weight(1f)
-                            )
+                            var expanded by remember { mutableStateOf(false) }
+                            val suggestions = remember(row.name, masterItems) {
+                                val q = row.name.trim()
+                                if (q.isBlank()) emptyList()
+                                else masterItems.filter { it.name.contains(q, ignoreCase = true) }
+                                    .sortedBy { it.name.lowercase() }.take(6)
+                            }
+                            ExposedDropdownMenuBox(
+                                expanded = expanded && suggestions.isNotEmpty(),
+                                onExpandedChange = { expanded = it },
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                OutlinedTextField(
+                                    value = row.name,
+                                    onValueChange = { row.name = it; expanded = true },
+                                    label = { Text("Item name") }, singleLine = true,
+                                    modifier = Modifier.menuAnchor().fillMaxWidth()
+                                )
+                                ExposedDropdownMenu(expanded = expanded && suggestions.isNotEmpty(), onDismissRequest = { expanded = false }) {
+                                    suggestions.forEach { item ->
+                                        DropdownMenuItem(
+                                            text = { Text("${item.name}   ₹${trimNum(item.price)}") },
+                                            onClick = { row.name = item.name; row.price = trimNum(item.price); expanded = false }
+                                        )
+                                    }
+                                }
+                            }
                             androidx.compose.foundation.layout.Spacer(Modifier.width(6.dp))
                             OutlinedTextField(
                                 value = row.price, onValueChange = { row.price = it.filter { c -> c.isDigit() || c == '.' } },

@@ -670,6 +670,7 @@ fun BillingScreen(
     ocrReview?.let { parsed ->
         BillOcrReviewDialog(
             initial = parsed,
+            masterItems = items,
             onDismiss = { ocrReview = null },
             onConfirm = { edited -> vm.addOcrItemsToCart(edited); ocrReview = null }
         )
