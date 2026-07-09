@@ -72,6 +72,8 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
     var additionalChargeText by mutableStateOf(""); private set
     var discountText by mutableStateOf(""); private set
     var remarks by mutableStateOf(""); private set
+    /** When it parses to a number, overrides the computed grand total (photo / manual bills). */
+    var manualTotalText by mutableStateOf(""); private set
     var billNo by mutableStateOf("INV-0001"); private set
     var dateMillis by mutableStateOf(System.currentTimeMillis()); private set
 
@@ -108,7 +110,9 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
     val taxTotal: Double get() = cart.sumOf { it.tax }
     val additionalCharge: Double get() = additionalChargeText.toDoubleOrNull() ?: 0.0
     val discount: Double get() = discountText.toDoubleOrNull() ?: 0.0
-    val grandTotal: Double get() = subTotal + taxTotal + additionalCharge - discount
+    val grandTotal: Double get() =
+        manualTotalText.toDoubleOrNull() ?: (subTotal + taxTotal + additionalCharge - discount)
+    val isManualTotal: Boolean get() = manualTotalText.toDoubleOrNull() != null
 
     // ---- mutations ----
     fun selectCustomer(c: Customer) { selectedCustomer = c; dirty = true }
@@ -116,6 +120,8 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
     fun setAdditionalCharge(v: String) { additionalChargeText = v; dirty = true }
     fun setDiscount(v: String) { discountText = v; dirty = true }
     fun updateRemarks(v: String) { remarks = v; dirty = true }
+    fun setManualTotal(v: String) { manualTotalText = v.filter { it.isDigit() || it == '.' }; dirty = true }
+    fun clearManualTotal() { manualTotalText = ""; dirty = true }
     fun updateDate(millis: Long) { dateMillis = millis; dirty = true }
 
     fun addAttachmentUris(context: android.content.Context, uris: List<android.net.Uri>) {
@@ -190,6 +196,34 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * Adds each OCR-scanned line as a cart line. New names are created in the item master;
+     * the parsed price (if any) is used, else the master price. Grand total stays automatic.
+     */
+    fun addOcrItemsToCart(scanned: List<com.billing.pos.ocr.ScannedItem>) {
+        if (scanned.isEmpty()) { _message.value = "No items found in the photo"; return }
+        viewModelScope.launch {
+            var added = 0
+            scanned.forEach { s ->
+                val name = s.name.trim()
+                if (name.isBlank()) return@forEach
+                val match = items.value.firstOrNull { it.name.equals(name, ignoreCase = true) }
+                    ?: repo.itemByName(name)
+                if (match != null) {
+                    val rate = if (s.price > 0.0) s.price else match.price
+                    cart.add(CartLine(match.id, match.name, rate, match.taxPercent, 1.0))
+                } else {
+                    val id = repo.addItem(name, s.price, 0.0)
+                    cart.add(CartLine(id, name, s.price, 0.0, 1.0))
+                }
+                added++
+            }
+            manualTotalText = ""   // OCR bills use the auto-computed total
+            dirty = true
+            _message.value = "Added $added item(s) from photo"
+        }
+    }
+
     fun changeQty(index: Int, delta: Double) {
         val line = cart.getOrNull(index) ?: return
         val q = (line.qty + delta)
@@ -245,7 +279,8 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
     suspend fun saveCurrent(): BillWithItems? {
         val customer = selectedCustomer
         if (customer == null) { _message.value = "Select a customer"; return null }
-        if (cart.isEmpty()) { _message.value = "Add at least one item"; return null }
+        val hasPhoto = editAttachments.any { it.mime.startsWith("image/") }
+        if (cart.isEmpty() && !isManualTotal && !hasPhoto) { _message.value = "Add at least one item"; return null }
 
         if (!dirty && lastSaved != null) return lastSaved
 
@@ -358,6 +393,11 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
             editAttachments.addAll(repo.billAttachmentsFor(bill.id))
             cart.clear()
             lines.forEach { cart.add(CartLine(0, it.name, it.price, it.taxPercent, it.qty)) }
+            // A saved photo/manual bill has no lines but a total — keep it editable.
+            manualTotalText = if (lines.isEmpty() && bill.grandTotal > 0.0) {
+                val g = bill.grandTotal
+                if (g == g.toLong().toDouble()) g.toLong().toString() else g.toString()
+            } else ""
             dirty = false
             lastSaved = BillWithItems(bill, lines)
         }
@@ -372,6 +412,7 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
         additionalChargeText = ""
         discountText = ""
         remarks = ""
+        manualTotalText = ""
         payment = PaymentMethod.CASH
         dateMillis = System.currentTimeMillis()
         selectedCustomer = customers.value.firstOrNull { it.isDefault } ?: customers.value.firstOrNull()

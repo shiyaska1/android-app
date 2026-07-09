@@ -5,6 +5,7 @@ import android.content.Intent
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
@@ -30,7 +31,9 @@ import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Dialpad
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.EditNote
+import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Gesture
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
@@ -40,6 +43,7 @@ import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -73,6 +77,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
@@ -129,6 +134,9 @@ fun BillingScreen(
     var showBillInfo by remember { mutableStateOf(false) }
     var showNotes by remember { mutableStateOf(false) }
     var showHandwrite by remember { mutableStateOf(false) }
+    var capturedPhotoUri by remember { mutableStateOf<android.net.Uri?>(null) }
+    var showPhotoOptions by remember { mutableStateOf(false) }
+    var showSetTotal by remember { mutableStateOf(false) }
 
     val prefs = remember { com.billing.pos.data.AppPrefs(context) }
     var licensed by remember { mutableStateOf(prefs.licensed) }
@@ -166,6 +174,11 @@ fun BillingScreen(
     val attachPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments()
     ) { uris -> vm.addAttachmentUris(context, uris) }
+
+    // Photo bill: take a picture, then choose picture-bill or OCR-into-cart.
+    val photoCapture = com.billing.pos.ocr.rememberImageCamera { uri ->
+        capturedPhotoUri = uri; showPhotoOptions = true
+    }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
@@ -324,6 +337,7 @@ fun BillingScreen(
                 ToolAction(Icons.Filled.Dialpad, "Price") { showCustomLine = true }
                 ToolAction(Icons.Filled.NoteAdd, "New") { showNewItem = true }
                 ToolAction(Icons.Filled.Gesture, "Write") { showHandwrite = true }
+                ToolAction(Icons.Filled.PhotoCamera, "Photo") { photoCapture() }
                 ToolAction(Icons.Filled.QrCodeScanner, "Scan") {
                     scanLauncher.launch(ScanOptions().setPrompt("Scan item barcode").setBeepEnabled(true).setOrientationLocked(false))
                 }
@@ -333,12 +347,26 @@ fun BillingScreen(
 
             // --- Cart grid (scrollable, editable rate) ---
             Card(Modifier.weight(1f).fillMaxWidth()) {
+              Column(Modifier.fillMaxSize()) {
+                val billPhotos = vm.editAttachments.filter { it.mime.startsWith("image/") }
+                if (billPhotos.isNotEmpty()) {
+                    Row(
+                        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        billPhotos.forEach { att -> BillPhotoThumb(att) { vm.removeBillAttachment(att) } }
+                    }
+                    Divider()
+                }
                 if (vm.cart.isEmpty()) {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text("No items added", color = MaterialTheme.colorScheme.outline)
+                    Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+                        Text(
+                            if (billPhotos.isEmpty()) "No items added" else "Picture bill — enter the total below",
+                            color = MaterialTheme.colorScheme.outline
+                        )
                     }
                 } else {
-                    LazyColumn(Modifier.padding(horizontal = 8.dp)) {
+                    LazyColumn(Modifier.weight(1f).padding(horizontal = 8.dp)) {
                         itemsIndexed(vm.cart, key = { _, line -> line.uid }) { index, line ->
                             var priceText by remember(line.uid) { mutableStateOf(Format.money(line.price)) }
                             var qtyText by remember(line.uid, line.qty) { mutableStateOf(Format.qty(line.qty)) }
@@ -378,6 +406,7 @@ fun BillingScreen(
                         }
                     }
                 }
+              }
             }
 
             Spacer(Modifier.padding(2.dp))
@@ -406,9 +435,16 @@ fun BillingScreen(
                         )
                     }
                     Divider(Modifier.padding(vertical = 6.dp))
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Text("GRAND TOTAL", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                        if (vm.isManualTotal) {
+                            Text("  (manual)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                        }
+                        Spacer(Modifier.weight(1f))
                         Text(Format.rupee(vm.grandTotal), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                        IconButton(onClick = { showSetTotal = true }) {
+                            Icon(Icons.Filled.Edit, contentDescription = "Type total manually", tint = MaterialTheme.colorScheme.primary)
+                        }
                     }
                 }
             }
@@ -574,6 +610,59 @@ fun BillingScreen(
     }
     if (showHandwrite) {
         HandwriteQuickBillDialog(vm = vm, onDismiss = { showHandwrite = false })
+    }
+
+    // After taking a photo: choose picture-bill or OCR-into-cart.
+    if (showPhotoOptions && capturedPhotoUri != null) {
+        val uri = capturedPhotoUri!!
+        AlertDialog(
+            onDismissRequest = { showPhotoOptions = false },
+            title = { Text("Use this photo as…") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("• Picture bill — attach the photo as the item and type the total yourself.")
+                    Text("• Read items — read each line, add them to the bill (new names are saved to items), and total automatically.")
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    vm.addAttachmentUris(context, listOf(uri))
+                    showPhotoOptions = false
+                    showSetTotal = true
+                }) { Text("Picture bill") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showPhotoOptions = false
+                    scope.launch {
+                        val lines = com.billing.pos.ocr.TextOcr.lines(context, uri)
+                        vm.addOcrItemsToCart(com.billing.pos.ocr.ItemListParser.parse(lines))
+                    }
+                }) { Text("Read items") }
+            }
+        )
+    }
+
+    // Type the grand total manually (photo / no-line bills).
+    if (showSetTotal) {
+        var totalText by remember { mutableStateOf(vm.manualTotalText) }
+        AlertDialog(
+            onDismissRequest = { showSetTotal = false },
+            title = { Text("Enter total amount") },
+            text = {
+                OutlinedTextField(
+                    value = totalText,
+                    onValueChange = { totalText = it.filter { c -> c.isDigit() || c == '.' } },
+                    label = { Text("Grand total") }, singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = { TextButton(onClick = { vm.setManualTotal(totalText); showSetTotal = false }) { Text("Set") } },
+            dismissButton = {
+                TextButton(onClick = { vm.clearManualTotal(); showSetTotal = false }) { Text("Auto") }
+            }
+        )
     }
 }
 
@@ -749,6 +838,39 @@ private fun ToolAction(
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         IconButton(onClick = onClick) { Icon(icon, contentDescription = label) }
         Text(label, style = MaterialTheme.typography.labelSmall)
+    }
+}
+
+/** A thumbnail of a photo attached as the "picture bill", with a remove badge. */
+@Composable
+private fun BillPhotoThumb(att: com.billing.pos.data.BillAttachment, onRemove: () -> Unit) {
+    val context = LocalContext.current
+    val bmp = com.billing.pos.ui.common.rememberThumbnail(att.path, 300)
+    Box(Modifier.size(96.dp)) {
+        Box(
+            Modifier.size(96.dp)
+                .clip(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+                .clickable { com.billing.pos.bills.BillAttachmentStore.open(context, att) },
+            contentAlignment = Alignment.Center
+        ) {
+            if (bmp != null) {
+                androidx.compose.foundation.Image(
+                    bmp, contentDescription = att.name,
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                Icon(Icons.Filled.PhotoCamera, null, tint = MaterialTheme.colorScheme.primary)
+            }
+        }
+        Box(
+            Modifier.align(Alignment.TopEnd).padding(2.dp).size(22.dp)
+                .clip(androidx.compose.foundation.shape.RoundedCornerShape(11.dp))
+                .background(androidx.compose.ui.graphics.Color(0xAA000000)).clickable { onRemove() },
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(Icons.Filled.Close, contentDescription = "Remove", tint = androidx.compose.ui.graphics.Color.White, modifier = Modifier.size(15.dp))
+        }
     }
 }
 
