@@ -51,4 +51,20 @@ interface DiaryDao {
 
     @Query("DELETE FROM diary_attachments WHERE entryId = :entryId")
     suspend fun deleteAttachmentsFor(entryId: Long)
+
+    // ---- body blocks (ordered text / image / voice / …) ----
+    @Query("SELECT * FROM diary_blocks WHERE entryId = :entryId ORDER BY position ASC")
+    suspend fun blocksFor(entryId: Long): List<DiaryBlock>
+
+    @Query("SELECT * FROM diary_blocks")
+    suspend fun allBlocks(): List<DiaryBlock>
+
+    @Query("SELECT * FROM diary_blocks")
+    fun observeAllBlocks(): Flow<List<DiaryBlock>>
+
+    @Insert
+    suspend fun insertBlock(block: DiaryBlock): Long
+
+    @Query("DELETE FROM diary_blocks WHERE entryId = :entryId")
+    suspend fun deleteBlocksFor(entryId: Long)
 }

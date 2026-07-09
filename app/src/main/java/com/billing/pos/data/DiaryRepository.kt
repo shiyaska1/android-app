@@ -9,6 +9,7 @@ class DiaryRepository(context: Context) {
 
     fun search(query: String): Flow<List<DiaryEntry>> = dao.search(query)
     val allAttachments: Flow<List<DiaryAttachment>> = dao.observeAllAttachments()
+    val allBlocks: Flow<List<DiaryBlock>> = dao.observeAllBlocks()
 
     suspend fun byId(id: Long): DiaryEntry? = dao.byId(id)
     suspend fun attachmentsFor(entryId: Long): List<DiaryAttachment> = dao.attachmentsFor(entryId)
@@ -23,10 +24,23 @@ class DiaryRepository(context: Context) {
         dao.deleteAttachment(attachment)
     }
 
-    /** Deletes the entry, its attachment rows, and their files. */
+    // ---- body blocks ----
+    suspend fun blocksFor(entryId: Long): List<DiaryBlock> = dao.blocksFor(entryId)
+
+    /** Replaces all blocks for an entry with the given ordered list (positions reassigned). */
+    suspend fun replaceBlocks(entryId: Long, blocks: List<DiaryBlock>) {
+        dao.deleteBlocksFor(entryId)
+        blocks.forEachIndexed { index, b ->
+            dao.insertBlock(b.copy(id = 0, entryId = entryId, position = index))
+        }
+    }
+
+    /** Deletes the entry, its attachment + block rows, and their files. */
     suspend fun deleteEntry(entry: DiaryEntry) {
         dao.attachmentsFor(entry.id).forEach { AttachmentStore.delete(it) }
         dao.deleteAttachmentsFor(entry.id)
+        dao.blocksFor(entry.id).forEach { b -> if (b.path.isNotBlank()) runCatching { java.io.File(b.path).delete() } }
+        dao.deleteBlocksFor(entry.id)
         dao.delete(entry)
     }
 }

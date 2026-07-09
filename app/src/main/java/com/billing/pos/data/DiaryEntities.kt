@@ -38,3 +38,23 @@ data class DiaryAttachment(
     val mime: String,
     val type: AttachmentType
 )
+
+/** Kind of content block making up a diary entry's body. */
+enum class BlockType { TEXT, IMAGE, VIDEO, AUDIO, DOCUMENT, LOCATION }
+
+/**
+ * One ordered block in a diary entry's body. A TEXT block holds typed text; media
+ * blocks reference a file in app storage. LOCATION stores its maps URL in [text].
+ */
+@Entity(tableName = "diary_blocks")
+data class DiaryBlock(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val entryId: Long,
+    val position: Int,
+    val type: BlockType,
+    val text: String = "",
+    val path: String = "",
+    val name: String = "",
+    val mime: String = "",
+    val durationMs: Long = 0
+)

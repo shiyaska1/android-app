@@ -46,6 +46,8 @@ object FullBackup {
         root.put("diaryEntries", JSONArray().apply { db.diaryDao().allEntries().forEach { put(entryJson(it)) } })
         val attachments = db.diaryDao().allAttachments()
         root.put("diaryAttachments", JSONArray().apply { attachments.forEach { put(attJson(it)) } })
+        val diaryBlocks = db.diaryDao().allBlocks()
+        root.put("diaryBlocks", JSONArray().apply { diaryBlocks.forEach { put(blockJson(it)) } })
 
         root.put("suppliers", JSONArray().apply { db.supplierDao().all().forEach { put(supplierJson(it)) } })
         root.put("purchases", JSONArray().apply { db.purchaseDao().all().forEach { put(purchaseJson(it)) } })
@@ -71,6 +73,16 @@ object FullBackup {
                     zos.putNextEntry(ZipEntry("files/" + f.name))
                     f.inputStream().use { it.copyTo(zos) }
                     zos.closeEntry()
+                }
+            }
+            diaryBlocks.forEach { b ->
+                if (b.path.isNotBlank()) {
+                    val f = File(b.path)
+                    if (f.exists()) {
+                        zos.putNextEntry(ZipEntry("files/" + f.name))
+                        f.inputStream().use { it.copyTo(zos) }
+                        zos.closeEntry()
+                    }
                 }
             }
             itemAtts.forEach { att ->
@@ -155,6 +167,9 @@ object FullBackup {
         root.optJSONArray("expenses")?.let { for (i in 0 until it.length()) db.expenseDao().insert(readExpense(it.getJSONObject(i))) }
         root.optJSONArray("users")?.let { for (i in 0 until it.length()) db.userDao().insert(readUser(it.getJSONObject(i))) }
         root.optJSONArray("diaryEntries")?.let { for (i in 0 until it.length()) db.diaryDao().insert(readEntry(it.getJSONObject(i))) }
+        root.optJSONArray("diaryBlocks")?.let {
+            for (i in 0 until it.length()) db.diaryDao().insertBlock(readBlock(context, it.getJSONObject(i)))
+        }
         root.optJSONArray("diaryAttachments")?.let {
             for (i in 0 until it.length()) db.diaryDao().insertAttachment(readAtt(context, it.getJSONObject(i)))
         }
@@ -319,6 +334,12 @@ object FullBackup {
                 db.diaryDao().insertAttachment(a.copy(id = 0, entryId = ne))
             }
         }
+        root.optJSONArray("diaryBlocks")?.let {
+            for (i in 0 until it.length()) {
+                val b = readBlock(context, it.getJSONObject(i)); val ne = diaryMap[b.entryId] ?: continue
+                db.diaryDao().insertBlock(b.copy(id = 0, entryId = ne))
+            }
+        }
         // Item attachments
         root.optJSONArray("itemAttachments")?.let {
             for (i in 0 until it.length()) {
@@ -424,6 +445,11 @@ object FullBackup {
         .put("file", if (a.type == AttachmentType.LOCATION) "" else File(a.path).name)
         .put("locUrl", if (a.type == AttachmentType.LOCATION) a.path else "")
         .put("name", a.name).put("mime", a.mime).put("type", a.type.name)
+
+    private fun blockJson(b: DiaryBlock) = JSONObject().put("id", b.id).put("entryId", b.entryId)
+        .put("position", b.position).put("type", b.type.name).put("text", b.text)
+        .put("file", if (b.path.isBlank()) "" else File(b.path).name)
+        .put("name", b.name).put("mime", b.mime).put("durationMs", b.durationMs)
 
     // ---- deserialisers ----
     private fun readCust(o: JSONObject) = Customer(
@@ -559,6 +585,17 @@ object FullBackup {
         return DiaryAttachment(
             id = o.optLong("id"), entryId = o.optLong("entryId"), path = path,
             name = o.optString("name"), mime = o.optString("mime"), type = type
+        )
+    }
+
+    private fun readBlock(context: Context, o: JSONObject): DiaryBlock {
+        val type = runCatching { BlockType.valueOf(o.optString("type", "TEXT")) }.getOrDefault(BlockType.TEXT)
+        val file = o.optString("file")
+        val path = if (file.isBlank()) "" else File(AttachmentStore.dir(context), file).absolutePath
+        return DiaryBlock(
+            id = o.optLong("id"), entryId = o.optLong("entryId"), position = o.optInt("position"),
+            type = type, text = o.optString("text"), path = path,
+            name = o.optString("name"), mime = o.optString("mime"), durationMs = o.optLong("durationMs")
         )
     }
 }

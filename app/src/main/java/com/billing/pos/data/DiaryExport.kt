@@ -14,6 +14,7 @@ object DiaryExport {
         val dao = AppDatabase.get(context).diaryDao()
         val entry = dao.byId(entryId) ?: return null
         val attachments = dao.attachmentsFor(entryId)
+        val blocks = dao.blocksFor(entryId)
 
         val root = JSONObject()
         root.put("title", entry.title)
@@ -30,6 +31,15 @@ object DiaryExport {
             )
         }
         root.put("attachments", arr)
+        val blockArr = JSONArray()
+        blocks.forEach { b ->
+            blockArr.put(
+                JSONObject().put("type", b.type.name).put("text", b.text)
+                    .put("name", b.name).put("mime", b.mime)
+                    .put("file", if (b.path.isBlank()) "" else File(b.path).name)
+            )
+        }
+        root.put("blocks", blockArr)
 
         val dir = File(context.cacheDir, "shared").apply { mkdirs() }
         val safe = (entry.title.ifBlank { "diary-$entryId" }).replace(Regex("[^A-Za-z0-9_-]"), "_").take(40)
@@ -40,6 +50,14 @@ object DiaryExport {
             zos.closeEntry()
             attachments.filter { it.type != AttachmentType.LOCATION }.forEach { a ->
                 val f = File(a.path)
+                if (f.exists()) {
+                    zos.putNextEntry(ZipEntry("files/" + f.name))
+                    f.inputStream().use { it.copyTo(zos) }
+                    zos.closeEntry()
+                }
+            }
+            blocks.filter { it.path.isNotBlank() }.forEach { b ->
+                val f = File(b.path)
                 if (f.exists()) {
                     zos.putNextEntry(ZipEntry("files/" + f.name))
                     f.inputStream().use { it.copyTo(zos) }

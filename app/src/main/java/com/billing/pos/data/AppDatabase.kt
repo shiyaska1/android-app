@@ -10,13 +10,13 @@ import androidx.room.TypeConverters
     entities = [
         Customer::class, Item::class, Bill::class, BillItem::class,
         User::class, Receipt::class, Expense::class,
-        DiaryEntry::class, DiaryAttachment::class,
+        DiaryEntry::class, DiaryAttachment::class, DiaryBlock::class,
         Supplier::class, Purchase::class, PurchaseItem::class,
         AccountGroup::class, AccountHead::class,
         JournalEntry::class, JournalLine::class,
         ItemAttachment::class, BillAttachment::class
     ],
-    version = 18,
+    version = 19,
     exportSchema = false
 )
 @TypeConverters(Converters::class)

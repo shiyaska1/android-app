@@ -49,6 +49,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 
@@ -62,8 +63,13 @@ class DiaryListViewModel(app: Application) : AndroidViewModel(app) {
         .flatMapLatest { repo.search(it.trim()) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val attachments: StateFlow<List<DiaryAttachment>> =
-        repo.allAttachments.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    /** Count of media (attachments + non-text blocks) per entry, for the list badge. */
+    val mediaCounts: StateFlow<Map<Long, Int>> =
+        combine(repo.allAttachments, repo.allBlocks) { atts, blocks ->
+            val a = atts.groupingBy { it.entryId }.eachCount()
+            val b = blocks.filter { it.type != com.billing.pos.data.BlockType.TEXT }.groupingBy { it.entryId }.eachCount()
+            (a.keys + b.keys).associateWith { (a[it] ?: 0) + (b[it] ?: 0) }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
     fun setQuery(q: String) { query.value = q }
 }
@@ -76,10 +82,8 @@ fun DiaryListScreen(
     vm: DiaryListViewModel = viewModel()
 ) {
     val entries by vm.entries.collectAsStateSafe()
-    val attachments by vm.attachments.collectAsStateSafe()
+    val counts by vm.mediaCounts.collectAsStateSafe()
     val query by vm.query.collectAsStateSafe()
-
-    val counts = attachments.groupingBy { it.entryId }.eachCount()
 
     Scaffold(
         topBar = {

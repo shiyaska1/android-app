@@ -41,6 +41,40 @@ object AttachmentStore {
     fun fromFile(file: File, name: String, mime: String): DiaryAttachment =
         DiaryAttachment(entryId = 0, path = file.absolutePath, name = name, mime = mime, type = typeOf(mime))
 
+    /** A fresh file in the diary storage dir with the given extension. */
+    fun newFile(context: Context, ext: String): File =
+        File(dir(context), "blk_${System.nanoTime()}.$ext")
+
+    /**
+     * Decodes [uri], scales it so the longest side is at most [maxDim]px, and writes a
+     * JPEG at [quality] into [dest]. Returns true on success. Keeps file size small.
+     */
+    fun compressImageTo(context: Context, uri: Uri, dest: File, maxDim: Int = 1600, quality: Int = 80): Boolean {
+        val resolver = context.contentResolver
+        return try {
+            val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            resolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it, null, bounds) }
+            val w = bounds.outWidth; val h = bounds.outHeight
+            if (w <= 0 || h <= 0) return false
+            var sample = 1
+            while (w / (sample * 2) >= maxDim || h / (sample * 2) >= maxDim) sample *= 2
+            val opts = android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }
+            val decoded = resolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it, null, opts) }
+                ?: return false
+            val scale = maxDim.toFloat() / maxOf(decoded.width, decoded.height)
+            val bmp = if (scale < 1f)
+                android.graphics.Bitmap.createScaledBitmap(decoded, (decoded.width * scale).toInt(), (decoded.height * scale).toInt(), true)
+            else decoded
+            dest.outputStream().use { bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, quality, it) }
+            if (bmp !== decoded) bmp.recycle()
+            decoded.recycle()
+            dest.exists() && dest.length() > 0
+        } catch (e: Exception) {
+            dest.delete()
+            false
+        }
+    }
+
     fun delete(attachment: DiaryAttachment) {
         runCatching { File(attachment.path).delete() }
     }

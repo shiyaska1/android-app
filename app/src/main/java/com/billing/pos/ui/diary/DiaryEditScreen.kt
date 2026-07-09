@@ -52,6 +52,7 @@ import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Place
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Videocam
@@ -75,6 +76,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -100,12 +102,16 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.billing.pos.data.AttachmentType
-import com.billing.pos.data.DiaryAttachment
+import com.billing.pos.data.BlockType
 import com.billing.pos.data.DiaryExport
 import com.billing.pos.data.DownloadSaver
 import com.billing.pos.diary.AttachmentStore
 import com.billing.pos.ui.billing.collectAsStateSafe
+import com.billing.pos.ui.common.rememberThumbnail
+import com.canhub.cropper.CropImageContract
+import com.canhub.cropper.CropImageContractOptions
+import com.canhub.cropper.CropImageOptions
+import com.canhub.cropper.CropImageView
 import com.billing.pos.util.Format
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -134,22 +140,32 @@ fun DiaryEditScreen(
     val titleStyle = diaryStyle(vm.titleSize, vm.titleColor, vm.titleBold, vm.titleItalic)
     val bodyStyle = diaryStyle(vm.bodySize, vm.bodyColor, vm.bodyBold, vm.bodyItalic)
 
-    val photoPicker = rememberLauncherForActivityResult(
-        ActivityResultContracts.PickMultipleVisualMedia()
-    ) { uris -> vm.addUris(context, uris) }
+    // Image: camera or gallery → crop → compressed image block.
+    val imageCropper = rememberLauncherForActivityResult(CropImageContract()) { result ->
+        val uri = result.uriContent
+        if (result.isSuccessful && uri != null) vm.addImageUri(context, uri)
+    }
+    fun pickImage() {
+        runCatching {
+            imageCropper.launch(
+                CropImageContractOptions(
+                    null,
+                    CropImageOptions(
+                        imageSourceIncludeCamera = true,
+                        imageSourceIncludeGallery = true,
+                        guidelines = CropImageView.Guidelines.ON
+                    )
+                )
+            )
+        }.onFailure { vm.message.value = "Could not open camera / gallery" }
+    }
 
     val docPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments()
-    ) { uris -> vm.addUris(context, uris) }
+    ) { uris -> vm.addFileUris(context, uris) }
 
-    // Camera capture — file the camera writes into, then attaches.
+    // Video capture — file the camera writes into, then adds a block.
     var pendingCapture by remember { mutableStateOf<File?>(null) }
-    val takePhoto = rememberLauncherForActivityResult(
-        ActivityResultContracts.TakePicture()
-    ) { ok ->
-        val f = pendingCapture; pendingCapture = null
-        if (ok && f != null) vm.addCapturedFile(f, "Photo_${f.name}", "image/jpeg") else f?.delete()
-    }
     val takeVideo = rememberLauncherForActivityResult(
         ActivityResultContracts.CaptureVideo()
     ) { ok ->
@@ -161,10 +177,6 @@ fun DiaryEditScreen(
         val file = File(AttachmentStore.dir(context), "cam_${System.nanoTime()}.$ext")
         pendingCapture = file
         return FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
-    }
-    fun launchPhoto() {
-        runCatching { takePhoto.launch(captureUri("jpg")) }
-            .onFailure { pendingCapture?.delete(); pendingCapture = null; vm.message.value = "No camera app found" }
     }
     fun launchVideo() {
         runCatching { takeVideo.launch(captureUri("mp4")) }
@@ -240,7 +252,7 @@ fun DiaryEditScreen(
             if (spoken.isNotBlank()) {
                 when (speechTarget) {
                     "title" -> vm.title = appendText(vm.title, spoken)
-                    "remarks" -> vm.remarks = appendText(vm.remarks, spoken)
+                    "body" -> vm.appendSpokenToBody(spoken)
                 }
             }
         }
@@ -343,7 +355,7 @@ fun DiaryEditScreen(
                 }
             }
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
-                Text("Remarks / notes", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                Text("Notes", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
                 IconButton(onClick = { searchMode = !searchMode }) {
                     Icon(
                         if (searchMode) Icons.Filled.Edit else Icons.Filled.Search,
@@ -352,62 +364,52 @@ fun DiaryEditScreen(
                 }
             }
             if (searchMode) {
-                RemarksSearchView(text = vm.remarks, lineStyle = bodyStyle)
+                RemarksSearchView(text = vm.notesText(), lineStyle = bodyStyle)
             } else {
-                OutlinedTextField(
-                    value = vm.remarks, onValueChange = { vm.remarks = it },
-                    label = { Text("Remarks / notes") },
-                    minLines = 4,
-                    textStyle = bodyStyle,
-                    trailingIcon = {
-                        IconButton(onClick = { startSpeech("remarks") }) {
-                            Icon(Icons.Filled.Mic, contentDescription = "Speak remarks")
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
+                // Ordered body blocks: text, image, voice, etc.
+                vm.blocks.forEachIndexed { index, block ->
+                    BlockEditor(
+                        block = block,
+                        isFirst = index == 0,
+                        isLast = index == vm.blocks.size - 1,
+                        bodyStyle = bodyStyle,
+                        onMoveUp = { vm.moveUp(index) },
+                        onMoveDown = { vm.moveDown(index) },
+                        onRemove = { vm.removeBlock(index) },
+                        onOpen = { openBlock(context, block) { vm.message.value = it } },
+                        onSpeak = { startSpeech("body") }
+                    )
+                }
+                if (vm.recording) {
+                    Text("● Recording…", color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 4.dp))
+                }
 
-            // --- Attachments ---
-            Text("Attachments", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 16.dp))
-            Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(
-                    onClick = {
-                        photoPicker.launch(
-                            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)
-                        )
-                    },
-                    modifier = Modifier.weight(1f)
-                ) { Icon(Icons.Filled.PhotoLibrary, null); Text("Media") }
-                OutlinedButton(onClick = { docPicker.launch(arrayOf("*/*")) }, modifier = Modifier.weight(1f)) {
-                    Icon(Icons.Filled.Description, null); Text("Files")
+                // --- Add-to-note toolbar ---
+                Divider(Modifier.padding(vertical = 8.dp))
+                Text("Add to note", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.outline)
+                Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { vm.addTextBlock() }, modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Filled.Edit, null); Text(" Text")
+                    }
+                    OutlinedButton(onClick = { pickImage() }, modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Filled.PhotoCamera, null); Text(" Photo")
+                    }
+                    OutlinedButton(onClick = { toggleRecord() }, modifier = Modifier.weight(1f)) {
+                        if (vm.recording) { Icon(Icons.Filled.Stop, null); Text(" Stop") }
+                        else { Icon(Icons.Filled.Mic, null); Text(" Voice") }
+                    }
                 }
-                OutlinedButton(onClick = { toggleRecord() }, modifier = Modifier.weight(1f)) {
-                    if (vm.recording) { Icon(Icons.Filled.Stop, null); Text("Stop") }
-                    else { Icon(Icons.Filled.Mic, null); Text("Voice") }
+                Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { withCamera { launchVideo() } }, modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Filled.Videocam, null); Text(" Video")
+                    }
+                    OutlinedButton(onClick = { docPicker.launch(arrayOf("*/*")) }, modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Filled.Description, null); Text(" File")
+                    }
+                    OutlinedButton(onClick = { requestLocation() }, modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Filled.Place, null); Text(" Place")
+                    }
                 }
-            }
-            Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { withCamera { launchPhoto() } }, modifier = Modifier.weight(1f)) {
-                    Icon(Icons.Filled.PhotoCamera, null); Text("Take photo")
-                }
-                OutlinedButton(onClick = { withCamera { launchVideo() } }, modifier = Modifier.weight(1f)) {
-                    Icon(Icons.Filled.Videocam, null); Text("Record video")
-                }
-            }
-            OutlinedButton(onClick = { requestLocation() }, modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
-                Icon(Icons.Filled.Place, null); Text("Attach location")
-            }
-            if (vm.recording) {
-                Text("● Recording…", color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 4.dp))
-            }
-
-            vm.attachments.forEach { att ->
-                AttachmentRow(
-                    att = att,
-                    onOpen = { openAttachment(context, att) { vm.message.value = it } },
-                    onRemove = { vm.removeAttachment(att) }
-                )
             }
 
             // --- Reminder ---
@@ -462,39 +464,120 @@ fun DiaryEditScreen(
     }
 }
 
+/** Renders one body block (text field / image / voice player / file row) plus its controls. */
 @Composable
-private fun AttachmentRow(att: DiaryAttachment, onOpen: () -> Unit, onRemove: () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().clickable { onOpen() }.padding(vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        val icon = when (att.type) {
-            AttachmentType.IMAGE -> Icons.Filled.Image
-            AttachmentType.VIDEO -> Icons.Filled.Videocam
-            AttachmentType.AUDIO -> Icons.Filled.Mic
-            AttachmentType.DOCUMENT -> Icons.Filled.Description
-            AttachmentType.LOCATION -> Icons.Filled.Place
+private fun BlockEditor(
+    block: BlockUi,
+    isFirst: Boolean,
+    isLast: Boolean,
+    bodyStyle: TextStyle,
+    onMoveUp: () -> Unit,
+    onMoveDown: () -> Unit,
+    onRemove: () -> Unit,
+    onOpen: () -> Unit,
+    onSpeak: () -> Unit
+) {
+    Column(Modifier.fillMaxWidth().padding(top = 6.dp)) {
+        when (block.type) {
+            BlockType.TEXT -> OutlinedTextField(
+                value = block.text, onValueChange = { block.text = it },
+                placeholder = { Text("Write here…") },
+                minLines = 2, textStyle = bodyStyle,
+                trailingIcon = {
+                    IconButton(onClick = onSpeak) { Icon(Icons.Filled.Mic, contentDescription = "Dictate") }
+                },
+                modifier = Modifier.fillMaxWidth()
+            )
+            BlockType.IMAGE -> {
+                val bmp = rememberThumbnail(block.path, 800)
+                Box(
+                    Modifier.fillMaxWidth().height(200.dp).clip(RoundedCornerShape(10.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant).clickable { onOpen() },
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (bmp != null) {
+                        androidx.compose.foundation.Image(
+                            bmp, contentDescription = block.name,
+                            contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else {
+                        Icon(Icons.Filled.Image, null, tint = MaterialTheme.colorScheme.primary)
+                    }
+                }
+            }
+            BlockType.AUDIO -> VoicePlayer(path = block.path, durationMs = block.durationMs)
+            else -> Row(
+                Modifier.fillMaxWidth().clickable { onOpen() }.padding(vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                val icon = when (block.type) {
+                    BlockType.VIDEO -> Icons.Filled.Videocam
+                    BlockType.LOCATION -> Icons.Filled.Place
+                    else -> Icons.Filled.Description
+                }
+                Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                Text(block.name.ifBlank { "Attachment" }, Modifier.weight(1f).padding(start = 8.dp), maxLines = 1)
+            }
         }
-        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-        Text(att.name, Modifier.weight(1f).padding(start = 8.dp), maxLines = 1)
-        IconButton(onClick = onRemove) {
-            Icon(Icons.Filled.Delete, "Remove", tint = MaterialTheme.colorScheme.error)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onMoveUp, enabled = !isFirst) { Icon(Icons.Filled.KeyboardArrowUp, "Move up") }
+            IconButton(onClick = onMoveDown, enabled = !isLast) { Icon(Icons.Filled.KeyboardArrowDown, "Move down") }
+            IconButton(onClick = onRemove) { Icon(Icons.Filled.Delete, "Remove", tint = MaterialTheme.colorScheme.error) }
         }
+        Divider()
     }
-    Divider()
 }
 
-private fun openAttachment(context: Context, att: DiaryAttachment, onError: (String) -> Unit) {
+/** A small inline play/pause bar for a recorded voice block. */
+@Composable
+private fun VoicePlayer(path: String, durationMs: Long) {
+    var playing by remember(path) { mutableStateOf(false) }
+    var prepared by remember(path) { mutableStateOf(false) }
+    val player = remember(path) { android.media.MediaPlayer() }
+    DisposableEffect(path) {
+        onDispose { runCatching { player.stop() }; runCatching { player.release() } }
+    }
+    Row(
+        Modifier.fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .padding(horizontal = 8.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        IconButton(onClick = {
+            runCatching {
+                if (playing) { player.pause(); playing = false }
+                else {
+                    if (!prepared) { player.setDataSource(path); player.prepare(); prepared = true }
+                    player.setOnCompletionListener { playing = false }
+                    player.start(); playing = true
+                }
+            }.onFailure { playing = false }
+        }) {
+            Icon(
+                if (playing) Icons.Filled.Stop else Icons.Filled.PlayArrow,
+                contentDescription = if (playing) "Pause" else "Play",
+                tint = MaterialTheme.colorScheme.primary
+            )
+        }
+        val secs = (durationMs / 1000).toInt()
+        Text("Voice note" + if (secs > 0) "  ${secs / 60}:${"%02d".format(secs % 60)}" else "", Modifier.weight(1f))
+        Icon(Icons.Filled.Mic, contentDescription = null, tint = MaterialTheme.colorScheme.outline)
+    }
+}
+
+private fun openBlock(context: Context, block: BlockUi, onError: (String) -> Unit) {
     runCatching {
-        if (att.type == AttachmentType.LOCATION) {
+        if (block.type == BlockType.LOCATION) {
             context.startActivity(
-                Intent(Intent.ACTION_VIEW, Uri.parse(att.path)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                Intent(Intent.ACTION_VIEW, Uri.parse(block.text)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             )
             return
         }
-        val uri = AttachmentStore.uriFor(context, att)
+        val uri = FileProvider.getUriForFile(context, "${context.packageName}.provider", File(block.path))
         val intent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(uri, att.mime)
+            setDataAndType(uri, block.mime.ifBlank { "*/*" })
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
         }
         context.startActivity(intent)
