@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -884,8 +885,8 @@ private fun SaleBatchPickDialog(
             if (batches.isEmpty()) {
                 Text("No batch stock for this item. Add a batch in the item form, purchase, or import.", color = MaterialTheme.colorScheme.outline)
             } else {
-                androidx.compose.foundation.lazy.LazyColumn(Modifier.fillMaxWidth().heightIn(max = 340.dp)) {
-                    androidx.compose.foundation.lazy.items(batches, key = { it.id }) { b ->
+                LazyColumn(Modifier.fillMaxWidth().heightIn(max = 340.dp)) {
+                    items(batches, key = { it.id }) { b ->
                         val out = b.quantity <= 0.0
                         Column(
                             Modifier.fillMaxWidth().clickable(enabled = !out) { onPick(b) }.padding(vertical = 10.dp)
