@@ -126,11 +126,11 @@ class PurchaseViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun addItem(name: String, price: Double, taxPercent: Double, barcode: String, addToCart: Boolean, onCreated: () -> Unit) {
+    fun addItem(name: String, price: Double, taxPercent: Double, barcode: String, category: String, addToCart: Boolean, onCreated: () -> Unit) {
         if (name.isBlank()) { _message.value = "Enter item name"; return }
         viewModelScope.launch {
-            val id = repo.addItem(name, price, taxPercent, barcode)
-            if (addToCart) addItemToCart(Item(id, name.trim(), price, taxPercent, barcode.trim()))
+            val id = repo.addItem(name, price, taxPercent, barcode, hsn = "", category = category)
+            if (addToCart) addItemToCart(Item(id, name.trim(), price, taxPercent, barcode.trim(), category = category.trim()))
             _message.value = "Item added"
             onCreated()
         }

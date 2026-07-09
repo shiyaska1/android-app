@@ -14,11 +14,16 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Divider
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -82,16 +87,20 @@ fun NewCustomerDialog(
     )
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NewItemDialog(
     onDismiss: () -> Unit,
-    onSave: (name: String, price: Double, taxPercent: Double, barcode: String, addToCart: Boolean) -> Unit
+    categories: List<String> = emptyList(),
+    onSave: (name: String, price: Double, taxPercent: Double, barcode: String, category: String, addToCart: Boolean) -> Unit
 ) {
     var name by remember { mutableStateOf("") }
     var price by remember { mutableStateOf("") }
     var taxable by remember { mutableStateOf(false) }
     var taxPercent by remember { mutableStateOf("18") }
     var barcode by remember { mutableStateOf("") }
+    var category by remember { mutableStateOf("") }
+    var catMenu by remember { mutableStateOf(false) }
     val scanLauncher = rememberLauncherForActivityResult(ScanContract()) { result ->
         result.contents?.let { barcode = it }
     }
@@ -140,6 +149,27 @@ fun NewItemDialog(
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
+                // Category (optional): pick an existing one, or type / tap + for a new one.
+                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    ExposedDropdownMenuBox(expanded = catMenu, onExpandedChange = { catMenu = !catMenu }, modifier = Modifier.weight(1f)) {
+                        OutlinedTextField(
+                            value = category, onValueChange = { category = it },
+                            label = { Text("Category (optional)") }, singleLine = true,
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = catMenu) },
+                            modifier = Modifier.menuAnchor().fillMaxWidth()
+                        )
+                        if (categories.isNotEmpty()) {
+                            ExposedDropdownMenu(expanded = catMenu, onDismissRequest = { catMenu = false }) {
+                                categories.forEach { c ->
+                                    DropdownMenuItem(text = { Text(c) }, onClick = { category = c; catMenu = false })
+                                }
+                            }
+                        }
+                    }
+                    IconButton(onClick = { category = ""; catMenu = false }) {
+                        Icon(Icons.Filled.Add, contentDescription = "New category")
+                    }
+                }
                 OutlinedTextField(
                     value = barcode, onValueChange = { barcode = it },
                     label = { Text("Barcode (optional)") }, singleLine = true,
@@ -158,7 +188,7 @@ fun NewItemDialog(
             TextButton(onClick = {
                 val p = price.toDoubleOrNull() ?: 0.0
                 val t = if (taxable) (taxPercent.toDoubleOrNull() ?: 0.0) else 0.0
-                onSave(name, p, t, barcode, true)
+                onSave(name, p, t, barcode, category, true)
             }) { Text("Save & add") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }

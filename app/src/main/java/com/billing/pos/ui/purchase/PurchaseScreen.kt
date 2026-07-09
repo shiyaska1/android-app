@@ -329,7 +329,11 @@ fun PurchaseScreen(
         )
     }
     if (showNewItem) {
-        NewItemDialog(onDismiss = { showNewItem = false }, onSave = { n, price, tax, barcode, add -> vm.addItem(n, price, tax, barcode, add) { showNewItem = false } })
+        NewItemDialog(
+            onDismiss = { showNewItem = false },
+            categories = items.map { it.category }.filter { it.isNotBlank() }.distinct().sortedBy { it.lowercase() },
+            onSave = { n, price, tax, barcode, cat, add -> vm.addItem(n, price, tax, barcode, cat, add) { showNewItem = false } }
+        )
     }
     if (showCustomLine) {
         CustomLineDialog(onDismiss = { showCustomLine = false }, onAdd = { desc, price, tax, saveToMaster, sellingPrice -> vm.addCustomLine(desc, price, tax, saveToMaster, sellingPrice) })

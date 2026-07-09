@@ -590,9 +590,11 @@ fun BillingScreen(
         )
     }
     if (showNewItem) {
+        val itemCategories = remember(items) { items.map { it.category }.filter { it.isNotBlank() }.distinct().sortedBy { it.lowercase() } }
         NewItemDialog(
             onDismiss = { showNewItem = false },
-            onSave = { n, price, tax, barcode, add -> vm.addItem(n, price, tax, barcode, add) { showNewItem = false } }
+            categories = itemCategories,
+            onSave = { n, price, tax, barcode, cat, add -> vm.addItem(n, price, tax, barcode, cat, add) { showNewItem = false } }
         )
     }
     if (showCustomLine) {

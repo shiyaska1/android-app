@@ -43,6 +43,7 @@ import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Divider
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -211,6 +212,22 @@ class ItemsViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { repo.deleteItem(item); message.value = "Item deleted" }
     }
 
+    /** Imports items from an .xlsx/.csv file, skipping names already in the master. */
+    fun importSpreadsheet(context: Context, uri: Uri) {
+        viewModelScope.launch {
+            val rows = withContext(Dispatchers.IO) { com.billing.pos.data.SpreadsheetImport.read(context, uri) }
+            if (rows.isEmpty()) { message.value = "No item rows found in the file"; return@launch }
+            var added = 0; var skipped = 0
+            rows.forEach { r ->
+                if (repo.itemByName(r.name) == null) {
+                    repo.addItem(r.name, r.price, r.taxPercent, r.barcode, r.hsn, r.category, r.openingStock, r.unit, r.location)
+                    added++
+                } else skipped++
+            }
+            message.value = "Imported $added item(s)" + if (skipped > 0) ", skipped $skipped existing" else ""
+        }
+    }
+
     /** Inserts scanned items into the master, skipping any name that already exists. */
     fun importItems(list: List<ImportItem>, onDone: (Int) -> Unit) {
         viewModelScope.launch {
@@ -279,10 +296,19 @@ fun ItemsScreen(
     var deleteFor by remember { mutableStateOf<Item?>(null) }
     var printFor by remember { mutableStateOf<Item?>(null) }
 
-    // Scan a printed item list → parse → review before importing.
+    // Import items: Excel/CSV file, camera scan, or gallery photo (OCR → review).
     var scanResult by remember { mutableStateOf<List<com.billing.pos.ocr.ScannedItem>?>(null) }
+    var importMenu by remember { mutableStateOf(false) }
     val scanList = com.billing.pos.ocr.rememberListScanner { lines ->
         scanResult = com.billing.pos.ocr.ItemListParser.parse(lines)
+    }
+    val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) vm.importSpreadsheet(context, uri)
+    }
+    val galleryScan = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) scope.launch {
+            scanResult = com.billing.pos.ocr.ItemListParser.parse(com.billing.pos.ocr.TextOcr.lines(context, uri))
+        }
     }
 
     fun doPrint(item: Item, count: Int) {
@@ -357,8 +383,34 @@ fun ItemsScreen(
                     actionIconContentColor = MaterialTheme.colorScheme.onPrimary
                 ),
                 actions = {
-                    IconButton(onClick = { scanList() }) {
-                        Icon(Icons.Filled.DocumentScanner, contentDescription = "Scan printed item list")
+                    Box {
+                        IconButton(onClick = { importMenu = true }) {
+                            Icon(Icons.Filled.DocumentScanner, contentDescription = "Import items")
+                        }
+                        DropdownMenu(expanded = importMenu, onDismissRequest = { importMenu = false }) {
+                            DropdownMenuItem(
+                                text = { Text("Import Excel / CSV") },
+                                onClick = {
+                                    importMenu = false
+                                    filePicker.launch(arrayOf(
+                                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                        "application/vnd.ms-excel", "text/csv", "text/comma-separated-values",
+                                        "application/octet-stream", "*/*"
+                                    ))
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Scan with camera") },
+                                onClick = { importMenu = false; scanList() }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Pick photo (gallery)") },
+                                onClick = {
+                                    importMenu = false
+                                    galleryScan.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                                }
+                            )
+                        }
                     }
                     IconButton(onClick = { downloadPdf { buildItemsPdf() } }) {
                         Icon(Icons.Filled.Download, contentDescription = "Download list PDF")
