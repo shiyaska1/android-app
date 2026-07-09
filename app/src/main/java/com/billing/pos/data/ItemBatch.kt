@@ -38,4 +38,7 @@ interface ItemBatchDao {
 
     @Query("DELETE FROM item_batches WHERE itemId = :itemId")
     suspend fun deleteForItem(itemId: Long)
+
+    @Query("DELETE FROM item_batches")
+    suspend fun deleteAll()
 }

@@ -604,11 +604,13 @@ fun BillingScreen(
         )
     }
     if (showItemPicker) {
+        val stockByItem by vm.stockByItem.collectAsStateSafe()
         ItemPickerDialog(
             items = items,
             onDismiss = { showItemPicker = false },
             onPick = { vm.addItemToCart(it); showItemPicker = false },
-            onNewItem = { showItemPicker = false; showNewItem = true }
+            onNewItem = { showItemPicker = false; showNewItem = true },
+            stockByItem = stockByItem
         )
     }
     if (showHandwrite) {

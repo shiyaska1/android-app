@@ -307,7 +307,8 @@ fun ItemPickerDialog(
     items: List<Item>,
     onDismiss: () -> Unit,
     onPick: (Item) -> Unit,
-    onNewItem: () -> Unit
+    onNewItem: () -> Unit,
+    stockByItem: Map<Long, Double> = emptyMap()
 ) {
     var query by remember { mutableStateOf("") }
     val filtered = remember(query, items) {
@@ -347,8 +348,10 @@ fun ItemPickerDialog(
                                 Text(item.name)
                                 Text(
                                     Format.rupee(item.price) +
-                                        if (item.taxPercent > 0) "  •  ${Format.money(item.taxPercent)}% tax" else "  •  no tax",
-                                    style = androidx.compose.material3.MaterialTheme.typography.bodySmall
+                                        "  •  Stock ${Format.qty(stockByItem[item.id] ?: item.openingStock)} ${item.unit}" +
+                                        if (item.storeLocation.isNotBlank()) "  •  ${item.storeLocation}" else "",
+                                    style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
+                                    color = androidx.compose.material3.MaterialTheme.colorScheme.outline
                                 )
                                 Divider(Modifier.padding(top = 8.dp))
                             }

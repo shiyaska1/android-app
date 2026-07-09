@@ -240,6 +240,10 @@ class ItemsViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { repo.deleteItem(item); message.value = "Item deleted" }
     }
 
+    fun clearAllItems() {
+        viewModelScope.launch { repo.clearAllItems(); message.value = "All items cleared" }
+    }
+
     /** Imports items from an .xlsx/.csv file, skipping names already in the master. */
     fun importSpreadsheet(context: Context, uri: Uri) {
         viewModelScope.launch {
@@ -312,6 +316,7 @@ fun ItemsScreen(
     val requireBatch = remember { com.billing.pos.data.AppPrefs(context).requireItemBatch }
     val expiryRows by vm.expiryRows.collectAsStateSafe()
     var showExpiry by remember { mutableStateOf(false) }
+    var confirmClear by remember { mutableStateOf(false) }
 
     LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); vm.consumeMessage() } }
 
@@ -475,6 +480,11 @@ fun ItemsScreen(
                                 text = { Text("Download blank template") },
                                 onClick = { importMenu = false; requestTemplate() }
                             )
+                            Divider()
+                            DropdownMenuItem(
+                                text = { Text("Clear all items", color = MaterialTheme.colorScheme.error) },
+                                onClick = { importMenu = false; confirmClear = true }
+                            )
                             DropdownMenuItem(
                                 text = { Text("Scan with camera") },
                                 onClick = { importMenu = false; scanList() }
@@ -593,6 +603,15 @@ fun ItemsScreen(
     }
     if (showExpiry) {
         ExpiryReportDialog(rows = expiryRows, onDismiss = { showExpiry = false })
+    }
+    if (confirmClear) {
+        AlertDialog(
+            onDismissRequest = { confirmClear = false },
+            title = { Text("Clear all items?") },
+            text = { Text("Removes every item, its batches and photos. Existing bills keep their lines. This cannot be undone.") },
+            confirmButton = { TextButton(onClick = { vm.clearAllItems(); confirmClear = false }) { Text("Clear all", color = MaterialTheme.colorScheme.error) } },
+            dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("Cancel") } }
+        )
     }
     deleteFor?.let { item ->
         AlertDialog(

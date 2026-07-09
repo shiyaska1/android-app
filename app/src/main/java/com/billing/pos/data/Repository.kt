@@ -207,6 +207,14 @@ class Repository(context: Context) {
         db.itemBatchDao().deleteForItem(item.id)
         itemDao.delete(item)
     }
+
+    /** Removes every master item, its batches and its attachment files. Bills keep their lines. */
+    suspend fun clearAllItems() {
+        itemAttachmentDao.all().forEach { com.billing.pos.items.ItemAttachmentStore.delete(it) }
+        itemAttachmentDao.deleteAll()
+        db.itemBatchDao().deleteAll()
+        itemDao.deleteAll()
+    }
     suspend fun itemByBarcode(barcode: String): Item? = itemDao.byBarcode(barcode.trim())
     suspend fun itemByName(name: String): Item? = itemDao.byName(name.trim())
 
