@@ -51,10 +51,6 @@ android {
     buildFeatures {
         compose = true
     }
-    androidResources {
-        // Keep the TFLite face model uncompressed so it can be memory-mapped.
-        noCompress += "tflite"
-    }
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
@@ -92,10 +88,6 @@ dependencies {
 
     // On-device text recognition / OCR (bundled Latin model — fully offline)
     implementation("com.google.mlkit:text-recognition:16.0.1")
-
-    // Face attendance: on-device face detection + TensorFlow Lite face embeddings (offline)
-    implementation("com.google.mlkit:face-detection:16.1.7")
-    implementation("org.tensorflow:tensorflow-lite:2.16.1")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

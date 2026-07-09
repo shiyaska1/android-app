@@ -20,7 +20,6 @@ import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.Description
-import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.LocalShipping
 import androidx.compose.material.icons.filled.ManageAccounts
@@ -82,7 +81,6 @@ fun DashboardScreen(
     onAccounts: () -> Unit,
     onJournal: () -> Unit,
     onDiary: () -> Unit,
-    onAttendance: () -> Unit,
     onUsers: () -> Unit,
     onSettings: () -> Unit,
     onBackup: () -> Unit,
@@ -107,7 +105,6 @@ fun DashboardScreen(
         if (Session.canManageUsers) add(Tile("Accounts", Icons.Filled.AccountTree, onAccounts))
         if (Session.canManageUsers) add(Tile("Journal", Icons.Filled.Book, onJournal))
         add(Tile("My Diary", Icons.Filled.MenuBook, onDiary))
-        add(Tile("Attendance", Icons.Filled.Face, onAttendance))
         if (Session.canManageUsers) add(Tile("Users", Icons.Filled.ManageAccounts, onUsers))
         if (Session.canManageUsers) add(Tile("Settings", Icons.Filled.Settings, onSettings))
         if (Session.canExport || Session.canImport) add(Tile("Backup", Icons.Filled.Backup, onBackup))

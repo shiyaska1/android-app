@@ -14,10 +14,11 @@ import androidx.room.TypeConverters
         Supplier::class, Purchase::class, PurchaseItem::class,
         AccountGroup::class, AccountHead::class,
         JournalEntry::class, JournalLine::class,
-        ItemAttachment::class, BillAttachment::class,
-        Employee::class, AttendanceRecord::class
+        ItemAttachment::class, BillAttachment::class
     ],
-    version = 20,
+    // v20 held the (now-removed) attendance tables; bump to 21 so devices on v20
+    // migrate forward cleanly instead of hitting a downgrade error.
+    version = 21,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -35,7 +36,6 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun purchaseDao(): PurchaseDao
     abstract fun accountDao(): AccountDao
     abstract fun journalDao(): JournalDao
-    abstract fun attendanceDao(): AttendanceDao
 
     companion object {
         @Volatile private var INSTANCE: AppDatabase? = null
