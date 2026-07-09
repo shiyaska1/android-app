@@ -1,9 +1,12 @@
 package com.billing.pos.ui.settings
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
@@ -17,7 +20,9 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.ui.Alignment
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -45,6 +50,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
     var address by remember { mutableStateOf(prefs.companyAddress) }
     var phone by remember { mutableStateOf(prefs.companyPhone) }
     var gstin by remember { mutableStateOf(prefs.companyGstin) }
+    var requireBatch by remember { mutableStateOf(prefs.requireItemBatch) }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
@@ -69,7 +75,21 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
                 .fillMaxSize()
                 .padding(pad)
                 .padding(16.dp)
+                .verticalScroll(rememberScrollState())
         ) {
+            // Registered install number (entered when the app was set up).
+            Text(
+                "Registered mobile number",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.outline
+            )
+            Text(
+                prefs.mobileNumber.ifBlank { "Not registered" },
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.primary
+            )
+            Divider(Modifier.padding(vertical = 12.dp))
+
             Text(
                 "Shown on printed bills and PDF invoices.",
                 style = MaterialTheme.typography.bodySmall,
@@ -110,6 +130,18 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
             OutlinedButton(onClick = onOpenPrinter, modifier = Modifier.fillMaxWidth()) {
                 Icon(Icons.Filled.Print, contentDescription = null)
                 Text("  Thermal printer setup & test")
+            }
+
+            Divider(Modifier.padding(vertical = 16.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Item batch tracking", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        "Track batch numbers + expiry dates per item; enable the expiry report.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline
+                    )
+                }
+                Switch(checked = requireBatch, onCheckedChange = { requireBatch = it; prefs.requireItemBatch = it })
             }
         }
     }

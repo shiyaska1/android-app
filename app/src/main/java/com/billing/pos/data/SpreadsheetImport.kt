@@ -17,7 +17,10 @@ data class ImportedItemRow(
     val unit: String,
     val barcode: String,
     val hsn: String,
-    val location: String
+    val location: String,
+    val batchNo: String = "",
+    val expiryMillis: Long = 0,
+    val batchQty: Double = 0.0
 )
 
 /**
@@ -45,6 +48,9 @@ object SpreadsheetImport {
         val iBarcode = col("barcode", "bar code")
         val iHsn = col("hsn", "sac")
         val iLoc = col("location", "rack", "shelf")
+        val iBatch = col("batch no", "batch", "lot")
+        val iExpiry = col("expiry", "exp date", "expiry date")
+        val iBatchQty = col("batch qty", "batch quantity")
 
         return rows.drop(1).mapNotNull { r ->
             fun cell(i: Int) = if (i in 0 until r.size) r[i].trim() else ""
@@ -59,9 +65,29 @@ object SpreadsheetImport {
                 unit = (if (iUnit >= 0) cell(iUnit) else "").ifBlank { "PCS" },
                 barcode = if (iBarcode >= 0) cell(iBarcode) else "",
                 hsn = if (iHsn >= 0) cell(iHsn) else "",
-                location = if (iLoc >= 0) cell(iLoc) else ""
+                location = if (iLoc >= 0) cell(iLoc) else "",
+                batchNo = if (iBatch >= 0) cell(iBatch) else "",
+                expiryMillis = if (iExpiry >= 0) parseDate(cell(iExpiry)) else 0L,
+                batchQty = if (iBatchQty >= 0) cell(iBatchQty).toDoubleOrNull() ?: 0.0 else 0.0
             )
         }
+    }
+
+    /** Parses an Excel serial number or a text date (several common formats) to millis; 0 if none. */
+    private fun parseDate(s: String): Long {
+        val t = s.trim()
+        if (t.isBlank()) return 0L
+        t.toDoubleOrNull()?.let { serial ->
+            if (serial in 20000.0..90000.0) return ((serial - 25569.0) * 86400000.0).toLong()
+        }
+        for (f in listOf("yyyy-MM-dd", "dd/MM/yyyy", "dd-MM-yyyy", "MM/dd/yyyy", "yyyy/MM/dd", "dd/MM/yy")) {
+            val parsed = runCatching {
+                val sdf = java.text.SimpleDateFormat(f, java.util.Locale.US).apply { isLenient = false }
+                sdf.parse(t)?.time
+            }.getOrNull()
+            if (parsed != null) return parsed
+        }
+        return 0L
     }
 
     // ---- xlsx ----

@@ -53,5 +53,10 @@ class AppPrefs(context: Context) {
         get() = p.getString("printer_name", "") ?: ""
         set(v) { p.edit().putString("printer_name", v).apply() }
 
+    // ---- item batch tracking (batch no + expiry) ----
+    var requireItemBatch: Boolean
+        get() = p.getBoolean("require_item_batch", false)
+        set(v) { p.edit().putBoolean("require_item_batch", v).apply() }
+
     fun clearSession() { loggedInUserId = -1L }
 }

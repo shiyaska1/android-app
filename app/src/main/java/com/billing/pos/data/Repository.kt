@@ -204,10 +204,21 @@ class Repository(context: Context) {
     suspend fun deleteItem(item: Item) {
         itemAttachmentDao.forItem(item.id).forEach { com.billing.pos.items.ItemAttachmentStore.delete(it) }
         itemAttachmentDao.deleteForItem(item.id)
+        db.itemBatchDao().deleteForItem(item.id)
         itemDao.delete(item)
     }
     suspend fun itemByBarcode(barcode: String): Item? = itemDao.byBarcode(barcode.trim())
     suspend fun itemByName(name: String): Item? = itemDao.byName(name.trim())
+
+    // ---- item batches (batch no + expiry + qty) ----
+    private val itemBatchDao = db.itemBatchDao()
+    val itemBatches: Flow<List<ItemBatch>> = itemBatchDao.observeAll()
+    suspend fun batchesForItem(itemId: Long): List<ItemBatch> = itemBatchDao.forItem(itemId)
+    suspend fun addBatch(batch: ItemBatch): Long = itemBatchDao.insert(batch)
+    suspend fun replaceBatches(itemId: Long, batches: List<ItemBatch>) {
+        itemBatchDao.deleteForItem(itemId)
+        batches.forEach { itemBatchDao.insert(it.copy(id = 0, itemId = itemId)) }
+    }
 
     // ---- item attachments (photos / location photo / PDF catalogue) ----
     suspend fun itemAttachmentsFor(itemId: Long): List<ItemAttachment> = itemAttachmentDao.forItem(itemId)

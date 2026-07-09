@@ -34,6 +34,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DocumentScanner
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.EventBusy
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PhotoLibrary
@@ -112,6 +113,9 @@ import kotlinx.coroutines.withContext
 /** An item with its computed stock, last purchase rate and last supplier. */
 data class ItemStockRow(val item: Item, val stock: Double, val purchaseRate: Double, val lastSupplier: String = "")
 
+/** A row in the batch-expiry report. */
+data class ExpiryRow(val itemName: String, val batchNo: String, val expiryMillis: Long, val quantity: Double)
+
 /** Common units of measure offered in the item entry dropdown. */
 val ITEM_UNITS = listOf(
     "PCS", "NOS", "BOX", "PACK", "SET", "PAIR", "DOZEN",
@@ -151,12 +155,33 @@ class ItemsViewModel(app: Application) : AndroidViewModel(app) {
     /** Attachments (photos / location photo / PDF) staged for the item being edited. */
     val editAttachments: SnapshotStateList<ItemAttachment> = mutableStateListOf()
 
-    /** Load the current item's attachments into the staging list when a dialog opens. */
+    /** Batches (batch no + expiry + qty) staged for the item being edited. */
+    val editBatches: SnapshotStateList<com.billing.pos.data.ItemBatch> = mutableStateListOf()
+
+    /** Item batches joined with item names, sorted by expiry, for the expiry report. */
+    val expiryRows: StateFlow<List<ExpiryRow>> =
+        combine(repo.itemBatches, repo.items) { batches, items ->
+            val nameById = items.associate { it.id to it.name }
+            batches.filter { it.expiryMillis > 0 }
+                .sortedBy { it.expiryMillis }
+                .map { ExpiryRow(nameById[it.itemId] ?: "?", it.batchNo, it.expiryMillis, it.quantity) }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** Load the current item's attachments + batches into the staging lists when a dialog opens. */
     fun beginEdit(item: Item?) {
         editAttachments.clear()
+        editBatches.clear()
         val id = item?.id ?: return
-        viewModelScope.launch { editAttachments.addAll(repo.itemAttachmentsFor(id)) }
+        viewModelScope.launch {
+            editAttachments.addAll(repo.itemAttachmentsFor(id))
+            editBatches.addAll(repo.batchesForItem(id))
+        }
     }
+
+    fun addBatchRow(batchNo: String, expiryMillis: Long, qty: Double) {
+        editBatches.add(com.billing.pos.data.ItemBatch(itemId = 0, batchNo = batchNo.trim(), expiryMillis = expiryMillis, quantity = qty))
+    }
+    fun removeBatchRow(index: Int) { if (index in editBatches.indices) editBatches.removeAt(index) }
 
     fun addUris(context: android.content.Context, uris: List<Uri>, kind: String) {
         if (uris.isEmpty()) return
@@ -183,6 +208,7 @@ class ItemsViewModel(app: Application) : AndroidViewModel(app) {
     fun cancelEdit() {
         val unsaved = editAttachments.filter { it.id == 0L }
         editAttachments.clear()
+        editBatches.clear()
         if (unsaved.isNotEmpty()) viewModelScope.launch(Dispatchers.IO) { unsaved.forEach { ItemAttachmentStore.delete(it) } }
     }
 
@@ -204,6 +230,8 @@ class ItemsViewModel(app: Application) : AndroidViewModel(app) {
             }
             editAttachments.filter { it.id == 0L }.forEach { repo.addItemAttachment(it.copy(itemId = id)) }
             editAttachments.clear()
+            repo.replaceBatches(id, editBatches.toList())
+            editBatches.clear()
             message.value = "Saved"; onDone()
         }
     }
@@ -219,10 +247,18 @@ class ItemsViewModel(app: Application) : AndroidViewModel(app) {
             if (rows.isEmpty()) { message.value = "No item rows found in the file"; return@launch }
             var added = 0; var skipped = 0
             rows.forEach { r ->
-                if (repo.itemByName(r.name) == null) {
-                    repo.addItem(r.name, r.price, r.taxPercent, r.barcode, r.hsn, r.category, r.openingStock, r.unit, r.location)
+                val existing = repo.itemByName(r.name)
+                val itemId = if (existing == null) {
                     added++
-                } else skipped++
+                    repo.addItem(r.name, r.price, r.taxPercent, r.barcode, r.hsn, r.category, r.openingStock, r.unit, r.location)
+                } else { skipped++; existing.id }
+                if (r.batchNo.isNotBlank() || r.expiryMillis > 0) {
+                    repo.addBatch(com.billing.pos.data.ItemBatch(
+                        itemId = itemId, batchNo = r.batchNo,
+                        expiryMillis = r.expiryMillis,
+                        quantity = if (r.batchQty > 0) r.batchQty else r.openingStock
+                    ))
+                }
             }
             message.value = "Imported $added item(s)" + if (skipped > 0) ", skipped $skipped existing" else ""
         }
@@ -234,8 +270,8 @@ class ItemsViewModel(app: Application) : AndroidViewModel(app) {
             val file = withContext(Dispatchers.IO) {
                 val f = java.io.File(context.cacheDir, "item-import-template.csv")
                 f.writeText(
-                    "Name,Price,Tax,Category,Opening Stock,Unit,Barcode,HSN,Location\n" +
-                        "Sample item,100,0,General,10,PCS,,,\n"
+                    "Name,Price,Tax,Category,Opening Stock,Unit,Barcode,HSN,Location,Batch No,Expiry Date,Batch Qty\n" +
+                        "Sample item,100,0,General,10,PCS,,,,B001,2026-12-31,10\n"
                 )
                 f
             }
@@ -273,6 +309,9 @@ fun ItemsScreen(
     val rows by vm.rows.collectAsStateSafe()
     val categories by vm.categories.collectAsStateSafe()
     val message by vm.message.collectAsStateSafe()
+    val requireBatch = remember { com.billing.pos.data.AppPrefs(context).requireItemBatch }
+    val expiryRows by vm.expiryRows.collectAsStateSafe()
+    var showExpiry by remember { mutableStateOf(false) }
 
     LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); vm.consumeMessage() } }
 
@@ -411,6 +450,11 @@ fun ItemsScreen(
                     actionIconContentColor = MaterialTheme.colorScheme.onPrimary
                 ),
                 actions = {
+                    if (requireBatch) {
+                        IconButton(onClick = { showExpiry = true }) {
+                            Icon(Icons.Filled.EventBusy, contentDescription = "Batch expiry report")
+                        }
+                    }
                     Box {
                         IconButton(onClick = { importMenu = true }) {
                             Icon(Icons.Filled.DocumentScanner, contentDescription = "Import items")
@@ -534,6 +578,10 @@ fun ItemsScreen(
             existing = editing,
             categories = categories,
             attachments = vm.editAttachments,
+            showBatches = requireBatch,
+            batches = vm.editBatches,
+            onAddBatch = { no, exp, q -> vm.addBatchRow(no, exp, q) },
+            onRemoveBatch = { vm.removeBatchRow(it) },
             onAddPhotoGallery = { pickPhotos("PHOTO") },
             onAddPhotoCamera = { withCamera { launchCapture("PHOTO") } },
             onAddLocationPhoto = { withCamera { launchCapture("LOCATION") } },
@@ -542,6 +590,9 @@ fun ItemsScreen(
             onDismiss = { vm.cancelEdit(); showDialog = false },
             onSave = { n, p, t, b, h, cat, os, u, loc -> vm.save(editing, n, p, t, b, h, cat, os, u, loc) { showDialog = false } }
         )
+    }
+    if (showExpiry) {
+        ExpiryReportDialog(rows = expiryRows, onDismiss = { showExpiry = false })
     }
     deleteFor?.let { item ->
         AlertDialog(
@@ -572,6 +623,10 @@ private fun ItemDialog(
     existing: Item?,
     categories: List<String>,
     attachments: List<ItemAttachment>,
+    showBatches: Boolean,
+    batches: List<com.billing.pos.data.ItemBatch>,
+    onAddBatch: (String, Long, Double) -> Unit,
+    onRemoveBatch: (Int) -> Unit,
     onAddPhotoGallery: () -> Unit,
     onAddPhotoCamera: () -> Unit,
     onAddLocationPhoto: () -> Unit,
@@ -580,6 +635,7 @@ private fun ItemDialog(
     onDismiss: () -> Unit,
     onSave: (String, Double, Double, String, String, String, Double, String, String) -> Unit
 ) {
+    var showBatchInput by remember { mutableStateOf(false) }
     var name by remember { mutableStateOf(existing?.name ?: "") }
     var price by remember { mutableStateOf(existing?.price?.let { Format.money(it) } ?: "") }
     var priceForQty by remember { mutableStateOf("1") }
@@ -708,6 +764,27 @@ private fun ItemDialog(
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth()
                 )
 
+                // --- Batches (batch no + expiry + qty) — shown when batch tracking is on ---
+                if (showBatches) {
+                    Divider(Modifier.padding(top = 4.dp))
+                    Text("Batches", style = MaterialTheme.typography.titleSmall)
+                    batches.forEachIndexed { i, b ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(b.batchNo.ifBlank { "(no batch no)" }, fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    (if (b.expiryMillis > 0) "Exp ${Format.date(b.expiryMillis)}" else "No expiry") + "   •   Qty ${Format.qty(b.quantity)}",
+                                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline
+                                )
+                            }
+                            IconButton(onClick = { onRemoveBatch(i) }) { Icon(Icons.Filled.Delete, "Remove batch", tint = MaterialTheme.colorScheme.error) }
+                        }
+                    }
+                    OutlinedButton(onClick = { showBatchInput = true }, modifier = Modifier.fillMaxWidth()) {
+                        Icon(Icons.Filled.Add, null); Text(" Add batch")
+                    }
+                }
+
                 Row {
                     FilterChip(selected = !taxable, onClick = { taxable = false }, label = { Text("Without tax") })
                     androidx.compose.foundation.layout.Spacer(Modifier.padding(4.dp))
@@ -775,17 +852,100 @@ private fun ItemDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = {
-                val entered = price.toDoubleOrNull() ?: 0.0
-                val forQty = (priceForQty.toDoubleOrNull() ?: 1.0).takeIf { it > 0.0 } ?: 1.0
-                val p = entered / forQty            // store the per-unit price
-                val t = if (taxable) (taxPercent.toDoubleOrNull() ?: 0.0) else 0.0
-                val os = openingStock.toDoubleOrNull() ?: 0.0
-                onSave(name, p, t, barcode, hsn, category, os, unit, storeLocation)
-            }) { Text("Save") }
+            TextButton(
+                enabled = !(showBatches && batches.isEmpty()),
+                onClick = {
+                    val entered = price.toDoubleOrNull() ?: 0.0
+                    val forQty = (priceForQty.toDoubleOrNull() ?: 1.0).takeIf { it > 0.0 } ?: 1.0
+                    val p = entered / forQty            // store the per-unit price
+                    val t = if (taxable) (taxPercent.toDoubleOrNull() ?: 0.0) else 0.0
+                    val os = openingStock.toDoubleOrNull() ?: 0.0
+                    onSave(name, p, t, barcode, hsn, category, os, unit, storeLocation)
+                }
+            ) { Text(if (showBatches && batches.isEmpty()) "Add a batch" else "Save") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
+
+    if (showBatchInput) {
+        BatchInputDialog(
+            onDismiss = { showBatchInput = false },
+            onAdd = { no, exp, q -> onAddBatch(no, exp, q); showBatchInput = false }
+        )
+    }
+}
+
+/** Enter one batch: batch number, expiry date and quantity. */
+@Composable
+private fun BatchInputDialog(onDismiss: () -> Unit, onAdd: (String, Long, Double) -> Unit) {
+    val context = LocalContext.current
+    var batchNo by remember { mutableStateOf("") }
+    var qty by remember { mutableStateOf("") }
+    var expiry by remember { mutableStateOf(0L) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Add batch") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(value = batchNo, onValueChange = { batchNo = it }, label = { Text("Batch no *") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(
+                    value = qty, onValueChange = { qty = it.filter { c -> c.isDigit() || c == '.' } },
+                    label = { Text("Quantity") }, singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedButton(onClick = { pickDate(context, if (expiry > 0) expiry else System.currentTimeMillis()) { expiry = it } }, modifier = Modifier.fillMaxWidth()) {
+                    Text(if (expiry > 0) "Expiry: ${Format.date(expiry)}" else "Set expiry date")
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = batchNo.isNotBlank(), onClick = { onAdd(batchNo.trim(), expiry, qty.toDoubleOrNull() ?: 0.0) }) { Text("Add") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
+/** Full-list report of item batches by expiry, with expired ones flagged. */
+@Composable
+private fun ExpiryReportDialog(rows: List<ExpiryRow>, onDismiss: () -> Unit) {
+    val now = System.currentTimeMillis()
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Batch expiry") },
+        text = {
+            if (rows.isEmpty()) {
+                Text("No batches with an expiry date yet.", color = MaterialTheme.colorScheme.outline)
+            } else {
+                LazyColumn(Modifier.fillMaxWidth().height(400.dp)) {
+                    items(rows) { r ->
+                        val expired = r.expiryMillis in 1 until now
+                        Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(r.itemName, fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    "Batch ${r.batchNo.ifBlank { "-" }}  •  Exp ${Format.date(r.expiryMillis)}  •  Qty ${Format.qty(r.quantity)}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (expired) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outline
+                                )
+                            }
+                            if (expired) Text("EXPIRED", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelSmall)
+                        }
+                        Divider()
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } }
+    )
+}
+
+private fun pickDate(context: android.content.Context, current: Long, onPicked: (Long) -> Unit) {
+    val c = java.util.Calendar.getInstance().apply { timeInMillis = current }
+    android.app.DatePickerDialog(
+        context,
+        { _, y, m, d -> c.set(java.util.Calendar.YEAR, y); c.set(java.util.Calendar.MONTH, m); c.set(java.util.Calendar.DAY_OF_MONTH, d); onPicked(c.timeInMillis) },
+        c.get(java.util.Calendar.YEAR), c.get(java.util.Calendar.MONTH), c.get(java.util.Calendar.DAY_OF_MONTH)
+    ).show()
 }
 
 /** A small square thumbnail (image) or PDF tile for one staged attachment, with a remove badge. */

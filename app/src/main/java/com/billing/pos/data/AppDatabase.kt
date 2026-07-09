@@ -14,11 +14,11 @@ import androidx.room.TypeConverters
         Supplier::class, Purchase::class, PurchaseItem::class,
         AccountGroup::class, AccountHead::class,
         JournalEntry::class, JournalLine::class,
-        ItemAttachment::class, BillAttachment::class
+        ItemAttachment::class, BillAttachment::class,
+        ItemBatch::class
     ],
-    // v20 held the (now-removed) attendance tables; bump to 21 so devices on v20
-    // migrate forward cleanly instead of hitting a downgrade error.
-    version = 21,
+    // v20 held the (now-removed) attendance tables; v22 adds item batches.
+    version = 22,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -36,6 +36,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun purchaseDao(): PurchaseDao
     abstract fun accountDao(): AccountDao
     abstract fun journalDao(): JournalDao
+    abstract fun itemBatchDao(): ItemBatchDao
 
     companion object {
         @Volatile private var INSTANCE: AppDatabase? = null

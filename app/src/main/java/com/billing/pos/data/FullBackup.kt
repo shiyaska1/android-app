@@ -58,6 +58,7 @@ object FullBackup {
         root.put("journalLines", JSONArray().apply { db.journalDao().allLines().forEach { put(jLineJson(it)) } })
         val itemAtts = db.itemAttachmentDao().all()
         root.put("itemAttachments", JSONArray().apply { itemAtts.forEach { put(itemAttJson(it)) } })
+        root.put("itemBatches", JSONArray().apply { db.itemBatchDao().all().forEach { put(batchJson(it)) } })
         val billAtts = db.billAttachmentDao().all()
         root.put("billAttachments", JSONArray().apply { billAtts.forEach { put(billAttJson(it)) } })
 
@@ -190,6 +191,9 @@ object FullBackup {
         }
         root.optJSONArray("itemAttachments")?.let {
             for (i in 0 until it.length()) db.itemAttachmentDao().insert(readItemAtt(context, it.getJSONObject(i)))
+        }
+        root.optJSONArray("itemBatches")?.let {
+            for (i in 0 until it.length()) db.itemBatchDao().insert(readBatch(it.getJSONObject(i)))
         }
         root.optJSONArray("billAttachments")?.let {
             for (i in 0 until it.length()) db.billAttachmentDao().insert(readBillAtt(context, it.getJSONObject(i)))
@@ -347,6 +351,12 @@ object FullBackup {
                 db.itemAttachmentDao().insert(a.copy(id = 0, itemId = ni))
             }
         }
+        root.optJSONArray("itemBatches")?.let {
+            for (i in 0 until it.length()) {
+                val b = readBatch(it.getJSONObject(i)); val ni = itemMap[b.itemId] ?: continue
+                db.itemBatchDao().insert(b.copy(id = 0, itemId = ni))
+            }
+        }
         // Bill attachments
         root.optJSONArray("billAttachments")?.let {
             for (i in 0 until it.length()) {
@@ -434,6 +444,14 @@ object FullBackup {
 
     private fun jLineJson(l: JournalLine) = JSONObject().put("id", l.id).put("entryId", l.entryId)
         .put("headId", l.headId).put("headName", l.headName).put("amount", l.amount).put("isDebit", l.isDebit)
+
+    private fun batchJson(b: ItemBatch) = JSONObject().put("id", b.id).put("itemId", b.itemId)
+        .put("batchNo", b.batchNo).put("expiryMillis", b.expiryMillis).put("quantity", b.quantity)
+
+    private fun readBatch(o: JSONObject) = ItemBatch(
+        id = o.optLong("id"), itemId = o.optLong("itemId"), batchNo = o.optString("batchNo"),
+        expiryMillis = o.optLong("expiryMillis"), quantity = o.optDouble("quantity", 0.0)
+    )
 
     private fun itemAttJson(a: ItemAttachment) = JSONObject().put("id", a.id).put("itemId", a.itemId)
         .put("file", File(a.path).name).put("name", a.name).put("mime", a.mime).put("kind", a.kind)
