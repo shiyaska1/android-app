@@ -60,6 +60,8 @@ object FullBackup {
         root.put("itemAttachments", JSONArray().apply { itemAtts.forEach { put(itemAttJson(it)) } })
         val billAtts = db.billAttachmentDao().all()
         root.put("billAttachments", JSONArray().apply { billAtts.forEach { put(billAttJson(it)) } })
+        root.put("employees", JSONArray().apply { db.attendanceDao().allEmployees().forEach { put(empJson(it)) } })
+        root.put("attendance", JSONArray().apply { db.attendanceDao().allAttendance().forEach { put(attnJson(it)) } })
 
         val dir = File(context.cacheDir, "shared").apply { mkdirs() }
         val zip = File(dir, "pos-full-backup.zip")
@@ -167,6 +169,8 @@ object FullBackup {
         root.optJSONArray("expenses")?.let { for (i in 0 until it.length()) db.expenseDao().insert(readExpense(it.getJSONObject(i))) }
         root.optJSONArray("users")?.let { for (i in 0 until it.length()) db.userDao().insert(readUser(it.getJSONObject(i))) }
         root.optJSONArray("diaryEntries")?.let { for (i in 0 until it.length()) db.diaryDao().insert(readEntry(it.getJSONObject(i))) }
+        root.optJSONArray("employees")?.let { for (i in 0 until it.length()) db.attendanceDao().insertEmployee(readEmp(it.getJSONObject(i))) }
+        root.optJSONArray("attendance")?.let { for (i in 0 until it.length()) db.attendanceDao().insertAttendance(readAttn(it.getJSONObject(i))) }
         root.optJSONArray("diaryBlocks")?.let {
             for (i in 0 until it.length()) db.diaryDao().insertBlock(readBlock(context, it.getJSONObject(i)))
         }
@@ -340,6 +344,19 @@ object FullBackup {
                 db.diaryDao().insertBlock(b.copy(id = 0, entryId = ne))
             }
         }
+        // Employees + attendance
+        val empMap = HashMap<Long, Long>()
+        root.optJSONArray("employees")?.let {
+            for (i in 0 until it.length()) {
+                val e = readEmp(it.getJSONObject(i)); empMap[e.id] = db.attendanceDao().insertEmployee(e.copy(id = 0))
+            }
+        }
+        root.optJSONArray("attendance")?.let {
+            for (i in 0 until it.length()) {
+                val a = readAttn(it.getJSONObject(i)); val ne = empMap[a.employeeId] ?: continue
+                db.attendanceDao().insertAttendance(a.copy(id = 0, employeeId = ne))
+            }
+        }
         // Item attachments
         root.optJSONArray("itemAttachments")?.let {
             for (i in 0 until it.length()) {
@@ -450,6 +467,12 @@ object FullBackup {
         .put("position", b.position).put("type", b.type.name).put("text", b.text)
         .put("file", if (b.path.isBlank()) "" else File(b.path).name)
         .put("name", b.name).put("mime", b.mime).put("durationMs", b.durationMs)
+
+    private fun empJson(e: Employee) = JSONObject().put("id", e.id).put("name", e.name)
+        .put("phone", e.phone).put("role", e.role).put("embedding", e.embedding).put("active", e.active)
+
+    private fun attnJson(a: AttendanceRecord) = JSONObject().put("id", a.id).put("employeeId", a.employeeId)
+        .put("employeeName", a.employeeName).put("timeMillis", a.timeMillis).put("type", a.type)
 
     // ---- deserialisers ----
     private fun readCust(o: JSONObject) = Customer(
@@ -587,6 +610,16 @@ object FullBackup {
             name = o.optString("name"), mime = o.optString("mime"), type = type
         )
     }
+
+    private fun readEmp(o: JSONObject) = Employee(
+        id = o.optLong("id"), name = o.optString("name"), phone = o.optString("phone"),
+        role = o.optString("role"), embedding = o.optString("embedding"), photoPath = "", active = o.optBoolean("active", true)
+    )
+
+    private fun readAttn(o: JSONObject) = AttendanceRecord(
+        id = o.optLong("id"), employeeId = o.optLong("employeeId"), employeeName = o.optString("employeeName"),
+        timeMillis = o.optLong("timeMillis"), type = o.optString("type")
+    )
 
     private fun readBlock(context: Context, o: JSONObject): DiaryBlock {
         val type = runCatching { BlockType.valueOf(o.optString("type", "TEXT")) }.getOrDefault(BlockType.TEXT)

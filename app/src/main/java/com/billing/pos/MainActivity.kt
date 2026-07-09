@@ -26,6 +26,8 @@ import com.billing.pos.ui.auth.BootScreen
 import com.billing.pos.ui.auth.LoginScreen
 import com.billing.pos.ui.backup.BackupScreen
 import com.billing.pos.ui.accounts.ChartOfAccountsScreen
+import com.billing.pos.ui.attendance.AttendanceScreen
+import com.billing.pos.ui.attendance.EmployeesScreen
 import com.billing.pos.ui.billing.BillingScreen
 import com.billing.pos.ui.cashbook.CashBookScreen
 import com.billing.pos.ui.customers.CustomersScreen
@@ -160,6 +162,7 @@ private fun AppNav() {
                 onAccounts = { nav.navigate("accounts") },
                 onJournal = { nav.navigate("journal") },
                 onDiary = { nav.navigate("diary") },
+                onAttendance = { nav.navigate("attendance") },
                 onUsers = { nav.navigate("users") },
                 onSettings = { nav.navigate("settings") },
                 onBackup = { nav.navigate("backup") },
@@ -284,6 +287,15 @@ private fun AppNav() {
                 onBack = { nav.popBackStack() },
                 onOpen = { id -> nav.navigate("diary/edit/$id") }
             )
+        }
+        composable("attendance") {
+            AttendanceScreen(
+                onBack = { nav.popBackStack() },
+                onEmployees = { nav.navigate("employees") }
+            )
+        }
+        composable("employees") {
+            EmployeesScreen(onBack = { nav.popBackStack() })
         }
         composable(
             route = "diary/edit/{id}",
