@@ -9,9 +9,10 @@
       and its toolbar/confirm-crop menu icon must be visible: a brand-coloured bar
       with white title + white icons so the "done" (crop) button shows clearly.
     -->
-    <style name="Theme.Cropper" parent="Theme.AppCompat.Light.NoActionBar">
+    <style name="Theme.Cropper" parent="Theme.MaterialComponents.Light.NoActionBar">
         <item name="colorPrimary">@color/brand</item>
-        <item name="colorPrimaryDark">@color/brand</item>
+        <item name="colorPrimaryVariant">@color/brand</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
         <item name="colorAccent">@color/brand</item>
         <item name="colorControlNormal">#FFFFFF</item>
         <item name="android:textColorPrimary">#FFFFFF</item>
