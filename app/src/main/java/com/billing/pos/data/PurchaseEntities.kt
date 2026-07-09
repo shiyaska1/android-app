@@ -51,5 +51,7 @@ data class PurchaseItem(
     val qty: Double,
     val price: Double,
     val taxPercent: Double,
-    val lineTotal: Double
+    val lineTotal: Double,
+    /** Batch/lot received (when batch tracking is on). */
+    val batchNo: String = ""
 )

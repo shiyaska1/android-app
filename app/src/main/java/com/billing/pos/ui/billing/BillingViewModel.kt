@@ -32,6 +32,7 @@ data class CartLine(
     val price: Double,
     val taxPercent: Double,
     val qty: Double,
+    val batchNo: String = "",
     val uid: Long = nextUid()
 ) {
     val base: Double get() = price * qty
@@ -55,6 +56,10 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
         repo.customers.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val items: StateFlow<List<Item>> =
         repo.items.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    /** All item batches (batch no + expiry + qty), for the sale batch picker. */
+    val allBatches: StateFlow<List<com.billing.pos.data.ItemBatch>> =
+        repo.itemBatches.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     /** itemId -> current stock (opening + purchased - sold), for the item picker. */
     val stockByItem: StateFlow<Map<Long, Double>> =
         kotlinx.coroutines.flow.combine(repo.items, repo.purchaseLines, repo.soldQty) { list, pLines, sold ->
@@ -156,6 +161,14 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
         } else {
             cart.add(CartLine(item.id, item.name, item.price, item.taxPercent, 1.0))
         }
+        dirty = true
+    }
+
+    /** Adds an item to the cart tied to a specific batch (batch tracking on). */
+    fun addItemWithBatch(item: Item, batch: com.billing.pos.data.ItemBatch) {
+        val idx = cart.indexOfFirst { it.itemId == item.id && it.batchNo == batch.batchNo }
+        if (idx >= 0) cart[idx] = cart[idx].copy(qty = cart[idx].qty + 1)
+        else cart.add(CartLine(item.id, item.name, item.price, item.taxPercent, 1.0, batchNo = batch.batchNo))
         dirty = true
     }
 
@@ -326,7 +339,8 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
                 qty = it.qty,
                 price = it.price,
                 taxPercent = it.taxPercent,
-                lineTotal = it.total
+                lineTotal = it.total,
+                batchNo = it.batchNo
             )
         }
         val saved: BillWithItems
@@ -337,6 +351,9 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
         } else {
             val id = repo.saveBill(bill, lines)
             saved = BillWithItems(bill.copy(id = id), lines)
+            // Deduct sold quantities from their chosen batches (new bills only).
+            cart.filter { it.batchNo.isNotBlank() && it.itemId > 0 }
+                .forEach { repo.deductBatch(it.itemId, it.batchNo, it.qty) }
             // Keep editing this same bill so re-saving (e.g. after Print) updates it
             // instead of creating a duplicate with the same bill number.
             editingBillId = id
@@ -402,7 +419,7 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
             editAttachments.clear()
             editAttachments.addAll(repo.billAttachmentsFor(bill.id))
             cart.clear()
-            lines.forEach { cart.add(CartLine(0, it.name, it.price, it.taxPercent, it.qty)) }
+            lines.forEach { cart.add(CartLine(0, it.name, it.price, it.taxPercent, it.qty, batchNo = it.batchNo)) }
             // A saved photo/manual bill has no lines but a total — keep it editable.
             manualTotalText = if (lines.isEmpty() && bill.grandTotal > 0.0) {
                 val g = bill.grandTotal

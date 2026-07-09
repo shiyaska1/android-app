@@ -227,6 +227,11 @@ class Repository(context: Context) {
         itemBatchDao.deleteForItem(itemId)
         batches.forEach { itemBatchDao.insert(it.copy(id = 0, itemId = itemId)) }
     }
+    suspend fun batchByItemAndNo(itemId: Long, batchNo: String): ItemBatch? = itemBatchDao.byItemAndNo(itemId, batchNo)
+    /** Deducts a sold quantity from a batch's stock. */
+    suspend fun deductBatch(itemId: Long, batchNo: String, qty: Double) {
+        if (batchNo.isNotBlank()) itemBatchDao.deductQty(itemId, batchNo, qty)
+    }
 
     // ---- item attachments (photos / location photo / PDF catalogue) ----
     suspend fun itemAttachmentsFor(itemId: Long): List<ItemAttachment> = itemAttachmentDao.forItem(itemId)

@@ -41,4 +41,10 @@ interface ItemBatchDao {
 
     @Query("DELETE FROM item_batches")
     suspend fun deleteAll()
+
+    @Query("SELECT * FROM item_batches WHERE itemId = :itemId AND batchNo = :batchNo LIMIT 1")
+    suspend fun byItemAndNo(itemId: Long, batchNo: String): ItemBatch?
+
+    @Query("UPDATE item_batches SET quantity = quantity - :qty WHERE itemId = :itemId AND batchNo = :batchNo")
+    suspend fun deductQty(itemId: Long, batchNo: String, qty: Double)
 }

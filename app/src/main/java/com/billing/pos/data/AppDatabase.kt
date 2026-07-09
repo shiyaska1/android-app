@@ -17,8 +17,9 @@ import androidx.room.TypeConverters
         ItemAttachment::class, BillAttachment::class,
         ItemBatch::class
     ],
-    // v20 held the (now-removed) attendance tables; v22 adds item batches.
-    version = 22,
+    // v20 held the (now-removed) attendance tables; v22 adds item batches;
+    // v23 adds batchNo to bill/purchase lines.
+    version = 23,
     exportSchema = false
 )
 @TypeConverters(Converters::class)

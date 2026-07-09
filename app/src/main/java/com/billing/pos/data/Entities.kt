@@ -97,7 +97,9 @@ data class BillItem(
     val qty: Double,
     val price: Double,
     val taxPercent: Double,
-    val lineTotal: Double
+    val lineTotal: Double,
+    /** Batch/lot this line was sold from (when batch tracking is on). */
+    val batchNo: String = ""
 )
 
 /** Convenience wrapper: a bill plus its lines. */

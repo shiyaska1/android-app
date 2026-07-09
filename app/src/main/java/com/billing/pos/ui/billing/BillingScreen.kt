@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -138,6 +139,8 @@ fun BillingScreen(
     var showPhotoOptions by remember { mutableStateOf(false) }
     var showSetTotal by remember { mutableStateOf(false) }
     var ocrReview by remember { mutableStateOf<List<com.billing.pos.ocr.ScannedItem>?>(null) }
+    val requireBatch = remember { com.billing.pos.data.AppPrefs(context).requireItemBatch }
+    var batchPickFor by remember { mutableStateOf<com.billing.pos.data.Item?>(null) }
 
     val prefs = remember { com.billing.pos.data.AppPrefs(context) }
     var licensed by remember { mutableStateOf(prefs.licensed) }
@@ -374,7 +377,8 @@ fun BillingScreen(
                             Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(line.name, Modifier.weight(1f), fontWeight = FontWeight.SemiBold, maxLines = 1)
-                                    if (line.taxPercent > 0) Text("+${Format.money(line.taxPercent)}%", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                                    if (line.batchNo.isNotBlank()) Text("B:${line.batchNo}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                                    if (line.taxPercent > 0) Text("  +${Format.money(line.taxPercent)}%", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
                                     IconButton(onClick = { vm.removeLine(index) }) { Icon(Icons.Filled.Delete, "Remove", tint = MaterialTheme.colorScheme.error) }
                                 }
                                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -608,9 +612,18 @@ fun BillingScreen(
         ItemPickerDialog(
             items = items,
             onDismiss = { showItemPicker = false },
-            onPick = { vm.addItemToCart(it); showItemPicker = false },
+            onPick = { showItemPicker = false; if (requireBatch) batchPickFor = it else vm.addItemToCart(it) },
             onNewItem = { showItemPicker = false; showNewItem = true },
             stockByItem = stockByItem
+        )
+    }
+    batchPickFor?.let { item ->
+        val allBatches by vm.allBatches.collectAsStateSafe()
+        SaleBatchPickDialog(
+            item = item,
+            batches = allBatches.filter { it.itemId == item.id },
+            onPick = { batch -> vm.addItemWithBatch(item, batch); batchPickFor = null },
+            onDismiss = { batchPickFor = null }
         )
     }
     if (showHandwrite) {
@@ -854,6 +867,43 @@ private fun ToolAction(
         IconButton(onClick = onClick) { Icon(icon, contentDescription = label) }
         Text(label, style = MaterialTheme.typography.labelSmall)
     }
+}
+
+/** Pick which batch to sell from (shows each batch's stock + expiry). */
+@Composable
+private fun SaleBatchPickDialog(
+    item: com.billing.pos.data.Item,
+    batches: List<com.billing.pos.data.ItemBatch>,
+    onPick: (com.billing.pos.data.ItemBatch) -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Batch — ${item.name}") },
+        text = {
+            if (batches.isEmpty()) {
+                Text("No batch stock for this item. Add a batch in the item form, purchase, or import.", color = MaterialTheme.colorScheme.outline)
+            } else {
+                androidx.compose.foundation.lazy.LazyColumn(Modifier.fillMaxWidth().heightIn(max = 340.dp)) {
+                    androidx.compose.foundation.lazy.items(batches, key = { it.id }) { b ->
+                        val out = b.quantity <= 0.0
+                        Column(
+                            Modifier.fillMaxWidth().clickable(enabled = !out) { onPick(b) }.padding(vertical = 10.dp)
+                        ) {
+                            Text(b.batchNo.ifBlank { "(no batch no)" }, fontWeight = FontWeight.SemiBold)
+                            Text(
+                                "Stock ${Format.qty(b.quantity)}" + (if (b.expiryMillis > 0) "   •   Exp ${Format.date(b.expiryMillis)}" else "") + (if (out) "   •   OUT OF STOCK" else ""),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (out) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outline
+                            )
+                            Divider(Modifier.padding(top = 8.dp))
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } }
+    )
 }
 
 /** A thumbnail of a photo attached as the "picture bill", with a remove badge. */

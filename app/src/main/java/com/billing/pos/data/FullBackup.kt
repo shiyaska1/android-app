@@ -384,7 +384,7 @@ object FullBackup {
 
     private fun lineJson(l: BillItem) = JSONObject().put("id", l.id).put("billId", l.billId)
         .put("name", l.name).put("qty", l.qty).put("price", l.price)
-        .put("taxPercent", l.taxPercent).put("lineTotal", l.lineTotal)
+        .put("taxPercent", l.taxPercent).put("lineTotal", l.lineTotal).put("batchNo", l.batchNo)
 
     private fun receiptJson(r: Receipt) = JSONObject().put("id", r.id).put("receiptNo", r.receiptNo)
         .put("billId", r.billId).put("billNo", r.billNo).put("customerName", r.customerName)
@@ -428,7 +428,7 @@ object FullBackup {
 
     private fun pLineJson(l: PurchaseItem) = JSONObject().put("id", l.id).put("purchaseId", l.purchaseId)
         .put("name", l.name).put("qty", l.qty).put("price", l.price)
-        .put("taxPercent", l.taxPercent).put("lineTotal", l.lineTotal)
+        .put("taxPercent", l.taxPercent).put("lineTotal", l.lineTotal).put("batchNo", l.batchNo)
 
     private fun groupJson(g: AccountGroup) = JSONObject().put("id", g.id).put("name", g.name)
         .put("nature", g.nature.name).put("isSystem", g.isSystem)
@@ -496,7 +496,8 @@ object FullBackup {
     private fun readLine(o: JSONObject) = BillItem(
         id = o.optLong("id"), billId = o.optLong("billId"), name = o.optString("name"),
         qty = o.optDouble("qty", 0.0), price = o.optDouble("price", 0.0),
-        taxPercent = o.optDouble("taxPercent", 0.0), lineTotal = o.optDouble("lineTotal", 0.0)
+        taxPercent = o.optDouble("taxPercent", 0.0), lineTotal = o.optDouble("lineTotal", 0.0),
+        batchNo = o.optString("batchNo")
     )
 
     private fun readReceipt(o: JSONObject) = Receipt(
@@ -556,7 +557,8 @@ object FullBackup {
     private fun readPLine(o: JSONObject) = PurchaseItem(
         id = o.optLong("id"), purchaseId = o.optLong("purchaseId"), name = o.optString("name"),
         qty = o.optDouble("qty", 0.0), price = o.optDouble("price", 0.0),
-        taxPercent = o.optDouble("taxPercent", 0.0), lineTotal = o.optDouble("lineTotal", 0.0)
+        taxPercent = o.optDouble("taxPercent", 0.0), lineTotal = o.optDouble("lineTotal", 0.0),
+        batchNo = o.optString("batchNo")
     )
 
     private fun readGroup(o: JSONObject) = AccountGroup(
