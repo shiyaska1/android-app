@@ -137,6 +137,7 @@ fun BillingScreen(
     var capturedPhotoUri by remember { mutableStateOf<android.net.Uri?>(null) }
     var showPhotoOptions by remember { mutableStateOf(false) }
     var showSetTotal by remember { mutableStateOf(false) }
+    var ocrReview by remember { mutableStateOf<List<com.billing.pos.ocr.ScannedItem>?>(null) }
 
     val prefs = remember { com.billing.pos.data.AppPrefs(context) }
     var licensed by remember { mutableStateOf(prefs.licensed) }
@@ -636,7 +637,7 @@ fun BillingScreen(
                     showPhotoOptions = false
                     scope.launch {
                         val lines = com.billing.pos.ocr.TextOcr.lines(context, uri)
-                        vm.addOcrItemsToCart(com.billing.pos.ocr.ItemListParser.parse(lines))
+                        ocrReview = com.billing.pos.ocr.ItemListParser.parse(lines)
                     }
                 }) { Text("Read items") }
             }
@@ -662,6 +663,15 @@ fun BillingScreen(
             dismissButton = {
                 TextButton(onClick = { vm.clearManualTotal(); showSetTotal = false }) { Text("Auto") }
             }
+        )
+    }
+
+    // Verify + edit OCR-read items before adding them to the bill.
+    ocrReview?.let { parsed ->
+        BillOcrReviewDialog(
+            initial = parsed,
+            onDismiss = { ocrReview = null },
+            onConfirm = { edited -> vm.addOcrItemsToCart(edited); ocrReview = null }
         )
     }
 }
