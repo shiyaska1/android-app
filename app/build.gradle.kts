@@ -88,12 +88,6 @@ dependencies {
 
     // On-device text recognition / OCR (bundled Latin model — fully offline)
     implementation("com.google.mlkit:text-recognition:16.0.1")
-    // Camera capture + crop for the OCR steps
-    implementation("com.vanniktech:android-image-cropper:4.6.0")
-    // The cropper's activity needs an AppCompat theme (its base class is AppCompatActivity)
-    implementation("androidx.appcompat:appcompat:1.7.0")
-    // …and its toolbar uses Material Components theme attributes to render
-    implementation("com.google.android.material:material:1.12.0")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

@@ -108,10 +108,6 @@ import com.billing.pos.data.DownloadSaver
 import com.billing.pos.diary.AttachmentStore
 import com.billing.pos.ui.billing.collectAsStateSafe
 import com.billing.pos.ui.common.rememberThumbnail
-import com.canhub.cropper.CropImageContract
-import com.canhub.cropper.CropImageContractOptions
-import com.canhub.cropper.CropImageOptions
-import com.canhub.cropper.CropImageView
 import com.billing.pos.util.Format
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -140,25 +136,13 @@ fun DiaryEditScreen(
     val titleStyle = diaryStyle(vm.titleSize, vm.titleColor, vm.titleBold, vm.titleItalic)
     val bodyStyle = diaryStyle(vm.bodySize, vm.bodyColor, vm.bodyBold, vm.bodyItalic)
 
-    // Image: camera or gallery → crop → compressed image block.
-    val imageCropper = rememberLauncherForActivityResult(CropImageContract()) { result ->
-        val uri = result.uriContent
-        if (result.isSuccessful && uri != null) vm.addImageUri(context, uri)
-    }
-    fun pickImage() {
-        runCatching {
-            imageCropper.launch(
-                CropImageContractOptions(
-                    null,
-                    CropImageOptions(
-                        imageSourceIncludeCamera = true,
-                        imageSourceIncludeGallery = true,
-                        guidelines = CropImageView.Guidelines.ON
-                    )
-                )
-            )
-        }.onFailure { vm.message.value = "Could not open camera / gallery" }
-    }
+    // Image: photograph with the camera → auto-shrink → image block.
+    val pickImage = com.billing.pos.ocr.rememberImageCamera { uri -> vm.addImageUri(context, uri) }
+
+    // Pick an existing image from the gallery → auto-shrink → image block.
+    val galleryPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickVisualMedia()
+    ) { uri -> if (uri != null) vm.addImageUri(context, uri) }
 
     val docPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments()
@@ -394,18 +378,26 @@ fun DiaryEditScreen(
                     OutlinedButton(onClick = { pickImage() }, modifier = Modifier.weight(1f)) {
                         Icon(Icons.Filled.PhotoCamera, null); Text(" Photo")
                     }
+                    OutlinedButton(
+                        onClick = { galleryPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(Icons.Filled.PhotoLibrary, null); Text(" Gallery")
+                    }
+                }
+                Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = { toggleRecord() }, modifier = Modifier.weight(1f)) {
                         if (vm.recording) { Icon(Icons.Filled.Stop, null); Text(" Stop") }
                         else { Icon(Icons.Filled.Mic, null); Text(" Voice") }
                     }
-                }
-                Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = { withCamera { launchVideo() } }, modifier = Modifier.weight(1f)) {
                         Icon(Icons.Filled.Videocam, null); Text(" Video")
                     }
                     OutlinedButton(onClick = { docPicker.launch(arrayOf("*/*")) }, modifier = Modifier.weight(1f)) {
                         Icon(Icons.Filled.Description, null); Text(" File")
                     }
+                }
+                Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = { requestLocation() }, modifier = Modifier.weight(1f)) {
                         Icon(Icons.Filled.Place, null); Text(" Place")
                     }
