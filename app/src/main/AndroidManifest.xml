@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <!-- Bluetooth thermal printer (classic SPP). -->
     <uses-permission android:name="android.permission.BLUETOOTH"
@@ -95,5 +96,15 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths" />
         </provider>
+
+        <!--
+          The image cropper (CropImageActivity) extends AppCompatActivity and must run
+          under an AppCompat theme; the app's own theme is a framework Material theme,
+          so we override the cropper activity's theme here to prevent a crash on launch.
+        -->
+        <activity
+            android:name="com.canhub.cropper.CropImageActivity"
+            android:theme="@style/Theme.AppCompat.Light.NoActionBar"
+            tools:replace="android:theme" />
     </application>
 </manifest>

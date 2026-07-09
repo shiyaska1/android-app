@@ -90,6 +90,8 @@ dependencies {
     implementation("com.google.mlkit:text-recognition:16.0.1")
     // Camera capture + crop for the OCR steps
     implementation("com.vanniktech:android-image-cropper:4.6.0")
+    // The cropper's activity needs an AppCompat theme (its base class is AppCompatActivity)
+    implementation("androidx.appcompat:appcompat:1.7.0")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
