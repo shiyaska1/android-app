@@ -33,6 +33,8 @@ data class CartLine(
     val taxPercent: Double,
     val qty: Double,
     val batchNo: String = "",
+    /** In-memory only: expiry for a newly-received purchase batch. */
+    val batchExpiry: Long = 0,
     val uid: Long = nextUid()
 ) {
     val base: Double get() = price * qty

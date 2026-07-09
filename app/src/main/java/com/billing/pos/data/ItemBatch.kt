@@ -47,4 +47,7 @@ interface ItemBatchDao {
 
     @Query("UPDATE item_batches SET quantity = quantity - :qty WHERE itemId = :itemId AND batchNo = :batchNo")
     suspend fun deductQty(itemId: Long, batchNo: String, qty: Double)
+
+    @Query("UPDATE item_batches SET quantity = quantity + :qty WHERE itemId = :itemId AND batchNo = :batchNo")
+    suspend fun addQty(itemId: Long, batchNo: String, qty: Double)
 }

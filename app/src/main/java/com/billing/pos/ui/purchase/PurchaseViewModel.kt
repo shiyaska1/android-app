@@ -31,6 +31,9 @@ class PurchaseViewModel(app: Application) : AndroidViewModel(app) {
         repo.suppliers.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val items: StateFlow<List<Item>> =
         repo.items.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    /** All item batches, for the purchase batch dialog (pick existing / create new). */
+    val allBatches: StateFlow<List<com.billing.pos.data.ItemBatch>> =
+        repo.itemBatches.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     var selectedSupplier by mutableStateOf<Supplier?>(null); private set
     val cart: SnapshotStateList<CartLine> = mutableStateListOf()
@@ -80,6 +83,12 @@ class PurchaseViewModel(app: Application) : AndroidViewModel(app) {
         val idx = cart.indexOfFirst { it.itemId == item.id && item.id != 0L }
         if (idx >= 0) cart[idx] = cart[idx].copy(qty = cart[idx].qty + 1)
         else cart.add(CartLine(item.id, item.name, item.price, item.taxPercent, 1.0))
+        dirty = true
+    }
+
+    /** Adds a purchase line for a batch (existing or new); stock is received on save. */
+    fun addBatchLine(item: Item, batchNo: String, expiryMillis: Long, qty: Double, price: Double) {
+        cart.add(CartLine(item.id, item.name, price, item.taxPercent, qty.takeIf { it > 0 } ?: 1.0, batchNo = batchNo.trim(), batchExpiry = expiryMillis))
         dirty = true
     }
 
@@ -173,7 +182,7 @@ class PurchaseViewModel(app: Application) : AndroidViewModel(app) {
             source = editingSource
         )
         val lines = cart.map {
-            PurchaseItem(0, editId ?: 0, it.name, it.qty, it.price, it.taxPercent, it.total)
+            PurchaseItem(0, editId ?: 0, it.name, it.qty, it.price, it.taxPercent, it.total, batchNo = it.batchNo)
         }
         val saved: PurchaseWithItems
         if (editId != null) {
@@ -183,6 +192,9 @@ class PurchaseViewModel(app: Application) : AndroidViewModel(app) {
         } else {
             val id = repo.savePurchase(purchase, lines)
             saved = PurchaseWithItems(purchase.copy(id = id), lines)
+            // Receive batch stock for new purchases (add to existing / create new).
+            cart.filter { it.batchNo.isNotBlank() && it.itemId > 0 }
+                .forEach { repo.receiveBatch(it.itemId, it.batchNo, it.batchExpiry, it.qty) }
             _message.value = "Purchase $purchaseNo saved"
         }
         lastSaved = saved

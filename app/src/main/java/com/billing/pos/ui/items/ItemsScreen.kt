@@ -164,6 +164,9 @@ class ItemsViewModel(app: Application) : AndroidViewModel(app) {
         editSizes.add(com.billing.pos.data.ItemSize(itemId = 0, name = name.trim(), price = price))
     }
     fun removeSizeRow(index: Int) { if (index in editSizes.indices) editSizes.removeAt(index) }
+    fun updateSizeRow(index: Int, name: String, price: Double) {
+        if (index in editSizes.indices) editSizes[index] = editSizes[index].copy(name = name, price = price)
+    }
 
     /** Item batches joined with item names, sorted by expiry, for the expiry report. */
     val expiryRows: StateFlow<List<ExpiryRow>> =
@@ -610,6 +613,7 @@ fun ItemsScreen(
             sizes = vm.editSizes,
             onAddSize = { nm, pr -> vm.addSizeRow(nm, pr) },
             onRemoveSize = { vm.removeSizeRow(it) },
+            onUpdateSize = { idx, nm, pr -> vm.updateSizeRow(idx, nm, pr) },
             onAddPhotoGallery = { pickPhotos("PHOTO") },
             onAddPhotoCamera = { withCamera { launchCapture("PHOTO") } },
             onAddLocationPhoto = { withCamera { launchCapture("LOCATION") } },
@@ -668,6 +672,7 @@ private fun ItemDialog(
     sizes: List<com.billing.pos.data.ItemSize>,
     onAddSize: (String, Double) -> Unit,
     onRemoveSize: (Int) -> Unit,
+    onUpdateSize: (Int, String, Double) -> Unit,
     onAddPhotoGallery: () -> Unit,
     onAddPhotoCamera: () -> Unit,
     onAddLocationPhoto: () -> Unit,
@@ -844,11 +849,20 @@ private fun ItemDialog(
                     Text("Sizes", style = MaterialTheme.typography.titleSmall)
                     Text("Leave empty for a single-price item.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
                     sizes.forEachIndexed { i, s ->
+                        var nm by remember(s.id) { mutableStateOf(s.name) }
+                        var pr by remember(s.id) { mutableStateOf(Format.money(s.price)) }
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
-                                Text(s.name, fontWeight = FontWeight.SemiBold)
-                                Text(Format.rupee(s.price), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
-                            }
+                            OutlinedTextField(
+                                value = nm, onValueChange = { nm = it; onUpdateSize(i, nm, pr.toDoubleOrNull() ?: 0.0) },
+                                label = { Text("Size") }, singleLine = true, modifier = Modifier.weight(1f)
+                            )
+                            androidx.compose.foundation.layout.Spacer(Modifier.size(6.dp))
+                            OutlinedTextField(
+                                value = pr, onValueChange = { pr = it.filter { c -> c.isDigit() || c == '.' }; onUpdateSize(i, nm, pr.toDoubleOrNull() ?: 0.0) },
+                                label = { Text("Price") }, singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                modifier = Modifier.width(100.dp)
+                            )
                             IconButton(onClick = { onRemoveSize(i) }) { Icon(Icons.Filled.Delete, "Remove size", tint = MaterialTheme.colorScheme.error) }
                         }
                     }

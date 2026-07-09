@@ -11,10 +11,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -105,6 +108,8 @@ fun PurchaseScreen(
     var showNewSupplier by remember { mutableStateOf(false) }
     var showNewItem by remember { mutableStateOf(false) }
     var showItemPicker by remember { mutableStateOf(false) }
+    val requireBatch = remember { AppPrefs(context).requireItemBatch }
+    var batchFor by remember { mutableStateOf<com.billing.pos.data.Item?>(null) }
     var showCustomLine by remember { mutableStateOf(false) }
 
     val readOnly = vm.editingId != null && !Session.canEdit
@@ -342,10 +347,80 @@ fun PurchaseScreen(
         ItemPickerDialog(
             items = items,
             onDismiss = { showItemPicker = false },
-            onPick = { vm.addItemToCart(it); showItemPicker = false },
+            onPick = { showItemPicker = false; if (requireBatch) batchFor = it else vm.addItemToCart(it) },
             onNewItem = { showItemPicker = false; showNewItem = true }
         )
     }
+    batchFor?.let { item ->
+        val allBatches by vm.allBatches.collectAsStateSafe()
+        PurchaseBatchDialog(
+            item = item,
+            existing = allBatches.filter { it.itemId == item.id },
+            onAdd = { no, exp, q, price -> vm.addBatchLine(item, no, exp, q, price); batchFor = null },
+            onDismiss = { batchFor = null }
+        )
+    }
+}
+
+/** Receive stock into a batch on purchase: pick an existing batch or create a new one. */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+private fun PurchaseBatchDialog(
+    item: com.billing.pos.data.Item,
+    existing: List<com.billing.pos.data.ItemBatch>,
+    onAdd: (String, Long, Double, Double) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    var batchNo by remember { mutableStateOf("") }
+    var expiry by remember { mutableStateOf(0L) }
+    var qty by remember { mutableStateOf("") }
+    var price by remember { mutableStateOf(if (item.price > 0) com.billing.pos.util.Format.money(item.price) else "") }
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { androidx.compose.material3.Text("Batch — ${item.name}") },
+        text = {
+            androidx.compose.foundation.layout.Column(verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)) {
+                if (existing.isNotEmpty()) {
+                    androidx.compose.material3.Text("Add to existing batch:", style = androidx.compose.material3.MaterialTheme.typography.labelMedium, color = androidx.compose.material3.MaterialTheme.colorScheme.outline)
+                    LazyColumn(Modifier.fillMaxWidth().heightIn(max = 130.dp)) {
+                        items(existing, key = { it.id }) { b ->
+                            androidx.compose.material3.Text(
+                                "${b.batchNo}  (stock ${com.billing.pos.util.Format.qty(b.quantity)}${if (b.expiryMillis > 0) ", exp ${com.billing.pos.util.Format.date(b.expiryMillis)}" else ""})",
+                                Modifier.fillMaxWidth().clickable { batchNo = b.batchNo; expiry = b.expiryMillis }.padding(vertical = 8.dp),
+                                color = if (batchNo == b.batchNo) androidx.compose.material3.MaterialTheme.colorScheme.primary else androidx.compose.material3.MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+                    androidx.compose.material3.Divider()
+                }
+                androidx.compose.material3.OutlinedTextField(value = batchNo, onValueChange = { batchNo = it }, label = { androidx.compose.material3.Text("Batch no * (new or picked)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                androidx.compose.material3.OutlinedButton(onClick = { pickPurchaseDate(context, if (expiry > 0) expiry else System.currentTimeMillis()) { expiry = it } }, modifier = Modifier.fillMaxWidth()) {
+                    androidx.compose.material3.Text(if (expiry > 0) "Expiry: ${com.billing.pos.util.Format.date(expiry)}" else "Set expiry date")
+                }
+                androidx.compose.foundation.layout.Row(horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)) {
+                    androidx.compose.material3.OutlinedTextField(value = qty, onValueChange = { qty = it.filter { c -> c.isDigit() || c == '.' } }, label = { androidx.compose.material3.Text("Qty *") }, singleLine = true, keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal), modifier = Modifier.weight(1f))
+                    androidx.compose.material3.OutlinedTextField(value = price, onValueChange = { price = it.filter { c -> c.isDigit() || c == '.' } }, label = { androidx.compose.material3.Text("Cost") }, singleLine = true, keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal), modifier = Modifier.weight(1f))
+                }
+            }
+        },
+        confirmButton = {
+            androidx.compose.material3.TextButton(
+                enabled = batchNo.isNotBlank() && (qty.toDoubleOrNull() ?: 0.0) > 0.0,
+                onClick = { onAdd(batchNo.trim(), expiry, qty.toDoubleOrNull() ?: 0.0, price.toDoubleOrNull() ?: item.price) }
+            ) { androidx.compose.material3.Text("Add") }
+        },
+        dismissButton = { androidx.compose.material3.TextButton(onClick = onDismiss) { androidx.compose.material3.Text("Cancel") } }
+    )
+}
+
+private fun pickPurchaseDate(context: android.content.Context, current: Long, onPicked: (Long) -> Unit) {
+    val c = java.util.Calendar.getInstance().apply { timeInMillis = current }
+    android.app.DatePickerDialog(
+        context,
+        { _, y, m, d -> c.set(java.util.Calendar.YEAR, y); c.set(java.util.Calendar.MONTH, m); c.set(java.util.Calendar.DAY_OF_MONTH, d); onPicked(c.timeInMillis) },
+        c.get(java.util.Calendar.YEAR), c.get(java.util.Calendar.MONTH), c.get(java.util.Calendar.DAY_OF_MONTH)
+    ).show()
 }
 
 private suspend fun doPrint(context: android.content.Context, vm: PurchaseViewModel, snackbar: SnackbarHostState) {

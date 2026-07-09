@@ -235,6 +235,13 @@ class Repository(context: Context) {
     suspend fun deductBatch(itemId: Long, batchNo: String, qty: Double) {
         if (batchNo.isNotBlank()) itemBatchDao.deductQty(itemId, batchNo, qty)
     }
+    /** Receives stock into a batch: adds to an existing batch, or creates a new one. */
+    suspend fun receiveBatch(itemId: Long, batchNo: String, expiryMillis: Long, qty: Double) {
+        if (batchNo.isBlank() || itemId <= 0) return
+        val existing = itemBatchDao.byItemAndNo(itemId, batchNo)
+        if (existing != null) itemBatchDao.addQty(itemId, batchNo, qty)
+        else itemBatchDao.insert(ItemBatch(itemId = itemId, batchNo = batchNo, expiryMillis = expiryMillis, quantity = qty))
+    }
 
     // ---- item sizes (variants with their own price) ----
     private val itemSizeDao = db.itemSizeDao()
