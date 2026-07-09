@@ -15,6 +15,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Divider
@@ -94,6 +95,7 @@ fun NewItemDialog(
     val scanLauncher = rememberLauncherForActivityResult(ScanContract()) { result ->
         result.contents?.let { barcode = it }
     }
+    val scanName = com.billing.pos.ocr.rememberNameScanner { if (it.isNotBlank()) name = it }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -103,6 +105,11 @@ fun NewItemDialog(
                 OutlinedTextField(
                     value = name, onValueChange = { name = it },
                     label = { Text("Item name *") }, singleLine = true,
+                    trailingIcon = {
+                        IconButton(onClick = { scanName() }) {
+                            Icon(Icons.Filled.PhotoCamera, contentDescription = "Scan item name", tint = MaterialTheme.colorScheme.primary)
+                        }
+                    },
                     modifier = Modifier.fillMaxWidth()
                 )
                 OutlinedTextField(

@@ -86,5 +86,10 @@ dependencies {
     // On-device handwriting recognition (offline after one-time model download)
     implementation("com.google.mlkit:digital-ink-recognition:18.1.0")
 
+    // On-device text recognition / OCR (bundled Latin model — fully offline)
+    implementation("com.google.mlkit:text-recognition:16.0.1")
+    // Camera capture + crop for the OCR steps
+    implementation("com.vanniktech:android-image-cropper:4.6.0")
+
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

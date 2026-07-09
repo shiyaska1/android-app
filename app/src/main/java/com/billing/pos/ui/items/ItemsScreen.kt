@@ -32,6 +32,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DocumentScanner
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.PhotoCamera
@@ -209,6 +210,22 @@ class ItemsViewModel(app: Application) : AndroidViewModel(app) {
     fun delete(item: Item) {
         viewModelScope.launch { repo.deleteItem(item); message.value = "Item deleted" }
     }
+
+    /** Inserts scanned items into the master, skipping any name that already exists. */
+    fun importItems(list: List<ImportItem>, onDone: (Int) -> Unit) {
+        viewModelScope.launch {
+            var added = 0
+            list.forEach { p ->
+                val name = p.name.trim()
+                if (name.isNotBlank() && repo.itemByName(name) == null) {
+                    repo.addItem(name, p.price, 0.0, "", "", p.category, p.openingStock, p.unit, "")
+                    added++
+                }
+            }
+            message.value = "Imported $added new item(s)"
+            onDone(added)
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -261,6 +278,12 @@ fun ItemsScreen(
     var editing by remember { mutableStateOf<Item?>(null) }
     var deleteFor by remember { mutableStateOf<Item?>(null) }
     var printFor by remember { mutableStateOf<Item?>(null) }
+
+    // Scan a printed item list → parse → review before importing.
+    var scanResult by remember { mutableStateOf<List<com.billing.pos.ocr.ScannedItem>?>(null) }
+    val scanList = com.billing.pos.ocr.rememberListScanner { lines ->
+        scanResult = com.billing.pos.ocr.ItemListParser.parse(lines)
+    }
 
     fun doPrint(item: Item, count: Int) {
         scope.launch {
@@ -334,6 +357,9 @@ fun ItemsScreen(
                     actionIconContentColor = MaterialTheme.colorScheme.onPrimary
                 ),
                 actions = {
+                    IconButton(onClick = { scanList() }) {
+                        Icon(Icons.Filled.DocumentScanner, contentDescription = "Scan printed item list")
+                    }
                     IconButton(onClick = { downloadPdf { buildItemsPdf() } }) {
                         Icon(Icons.Filled.Download, contentDescription = "Download list PDF")
                     }
@@ -445,6 +471,15 @@ fun ItemsScreen(
     printFor?.let { item ->
         PrintCountDialog(item = item, onDismiss = { printFor = null }, onPrint = { count -> printFor = null; requestPrint(item, count) })
     }
+    scanResult?.let { parsed ->
+        ScanImportDialog(
+            initial = parsed,
+            existingNames = rows.map { it.item.name.trim().lowercase() }.toSet(),
+            categories = categories,
+            onDismiss = { scanResult = null },
+            onImport = { list -> vm.importItems(list) { scanResult = null } }
+        )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -492,6 +527,7 @@ private fun ItemDialog(
         }
         runCatching { speechLauncher.launch(intent) }
     }
+    val scanName = com.billing.pos.ocr.rememberNameScanner { if (it.isNotBlank()) name = it }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -504,8 +540,13 @@ private fun ItemDialog(
                 OutlinedTextField(
                     value = name, onValueChange = { name = it }, label = { Text("Name *") }, singleLine = true,
                     trailingIcon = {
-                        IconButton(onClick = { speakName() }) {
-                            Icon(Icons.Filled.Mic, contentDescription = "Speak item name", tint = MaterialTheme.colorScheme.primary)
+                        Row {
+                            IconButton(onClick = { scanName() }) {
+                                Icon(Icons.Filled.PhotoCamera, contentDescription = "Scan item name", tint = MaterialTheme.colorScheme.primary)
+                            }
+                            IconButton(onClick = { speakName() }) {
+                                Icon(Icons.Filled.Mic, contentDescription = "Speak item name", tint = MaterialTheme.colorScheme.primary)
+                            }
                         }
                     },
                     modifier = Modifier.fillMaxWidth()
