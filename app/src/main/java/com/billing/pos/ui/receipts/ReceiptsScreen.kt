@@ -22,6 +22,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.LibraryAdd
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Print
 import androidx.compose.material3.AlertDialog
@@ -116,6 +117,15 @@ class ReceiptsViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    fun addBulk(mode: PayMode, rows: List<com.billing.pos.ui.common.BulkEntryRow>) {
+        if (rows.isEmpty()) { message.value = "Nothing to save"; return }
+        viewModelScope.launch {
+            rows.forEach { r -> repo.addStandaloneReceipt(r.party.ifBlank { "Cash receipt" }, r.amount, mode, r.dateMillis) }
+            payFromOptions.value = repo.payFromNames()
+            message.value = "${rows.size} receipt(s) added"
+        }
+    }
+
     fun edit(old: Receipt, amount: Double, mode: PayMode) {
         if (amount <= 0) { message.value = "Enter a valid amount"; return }
         viewModelScope.launch { repo.updateReceipt(old, amount, mode); message.value = "Receipt updated" }
@@ -143,6 +153,7 @@ fun ReceiptsScreen(
     LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); vm.consumeMessage() } }
 
     var showAdd by remember { mutableStateOf(false) }
+    var showBulk by remember { mutableStateOf(false) }
     var editFor by remember { mutableStateOf<Receipt?>(null) }
     var deleteFor by remember { mutableStateOf<Receipt?>(null) }
     var printFor by remember { mutableStateOf<Receipt?>(null) }
@@ -212,6 +223,11 @@ fun ReceiptsScreen(
                     actionIconContentColor = MaterialTheme.colorScheme.onPrimary
                 ),
                 actions = {
+                    if (Session.canCreateReceipt) {
+                        IconButton(onClick = { showBulk = true }) {
+                            Icon(Icons.Filled.LibraryAdd, contentDescription = "Bulk add receipts")
+                        }
+                    }
                     if (Session.canViewReceipt) {
                         IconButton(onClick = { downloadPdf { buildReceiptsPdf() } }) {
                             Icon(Icons.Filled.Download, contentDescription = "Download PDF")
@@ -287,6 +303,15 @@ fun ReceiptsScreen(
         }
     }
 
+    if (showBulk) {
+        com.billing.pos.ui.common.BulkEntryDialog(
+            title = "Bulk receipts",
+            isPayment = false,
+            defaultDate = System.currentTimeMillis(),
+            onDismiss = { showBulk = false },
+            onConfirm = { mode, rows -> vm.addBulk(mode, rows); showBulk = false }
+        )
+    }
     if (showAdd) {
         AddReceiptDialog(
             outstanding = outstanding,

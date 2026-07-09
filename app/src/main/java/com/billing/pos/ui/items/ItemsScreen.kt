@@ -228,6 +228,22 @@ class ItemsViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Writes a blank import template (CSV with the expected headers) to Downloads. */
+    fun downloadTemplate(context: Context) {
+        viewModelScope.launch {
+            val file = withContext(Dispatchers.IO) {
+                val f = java.io.File(context.cacheDir, "item-import-template.csv")
+                f.writeText(
+                    "Name,Price,Tax,Category,Opening Stock,Unit,Barcode,HSN,Location\n" +
+                        "Sample item,100,0,General,10,PCS,,,\n"
+                )
+                f
+            }
+            val ok = withContext(Dispatchers.IO) { DownloadSaver.save(context, file, file.name, "text/csv") }
+            message.value = if (ok) "Template saved to Downloads: ${file.name}" else "Could not save template"
+        }
+    }
+
     /** Inserts scanned items into the master, skipping any name that already exists. */
     fun importItems(list: List<ImportItem>, onDone: (Int) -> Unit) {
         viewModelScope.launch {
@@ -320,10 +336,22 @@ fun ItemsScreen(
         }
     }
     var pendingPrint by remember { mutableStateOf<Pair<Item, Int>?>(null) }
+    var pendingTemplate by remember { mutableStateOf(false) }
     val storagePermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         val pp = pendingPrint; pendingPrint = null
-        if (granted && pp != null) doPrint(pp.first, pp.second)
-        else scope.launch { snackbar.showSnackbar("Storage permission denied") }
+        val tpl = pendingTemplate; pendingTemplate = false
+        when {
+            granted && pp != null -> doPrint(pp.first, pp.second)
+            granted && tpl -> vm.downloadTemplate(context)
+            else -> scope.launch { snackbar.showSnackbar("Storage permission denied") }
+        }
+    }
+    fun requestTemplate() {
+        if (DownloadSaver.needsLegacyPermission() &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_EXTERNAL_STORAGE) !=
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) { pendingTemplate = true; storagePermission.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE) }
+        else vm.downloadTemplate(context)
     }
     fun requestPrint(item: Item, count: Int) {
         if (DownloadSaver.needsLegacyPermission() &&
@@ -398,6 +426,10 @@ fun ItemsScreen(
                                         "application/octet-stream", "*/*"
                                     ))
                                 }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Download blank template") },
+                                onClick = { importMenu = false; requestTemplate() }
                             )
                             DropdownMenuItem(
                                 text = { Text("Scan with camera") },

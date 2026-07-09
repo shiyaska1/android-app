@@ -16,6 +16,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.LibraryAdd
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -89,6 +90,14 @@ class ExpensesViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { repo.addExpense(description, amount, mode, dateMillis); message.value = "Payment added" }
     }
 
+    fun addBulk(mode: PayMode, rows: List<com.billing.pos.ui.common.BulkEntryRow>) {
+        if (rows.isEmpty()) { message.value = "Nothing to save"; return }
+        viewModelScope.launch {
+            rows.forEach { r -> repo.addExpenseFull(r.description, r.amount, mode, r.dateMillis, r.party) }
+            message.value = "${rows.size} payment(s) added"
+        }
+    }
+
     fun addAgainstPurchase(purchase: com.billing.pos.data.Purchase, amount: Double, mode: PayMode) {
         if (amount <= 0) { message.value = "Enter a valid amount"; return }
         viewModelScope.launch { repo.addPaymentForPurchase(purchase, amount, mode); message.value = "Payment added" }
@@ -119,6 +128,7 @@ fun ExpensesScreen(
     LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); vm.consumeMessage() } }
 
     var showAdd by remember { mutableStateOf(false) }
+    var showBulk by remember { mutableStateOf(false) }
     var editFor by remember { mutableStateOf<Expense?>(null) }
     var deleteFor by remember { mutableStateOf<Expense?>(null) }
 
@@ -163,6 +173,11 @@ fun ExpensesScreen(
                     actionIconContentColor = MaterialTheme.colorScheme.onPrimary
                 ),
                 actions = {
+                    if (Session.canCreatePayment) {
+                        IconButton(onClick = { showBulk = true }) {
+                            Icon(Icons.Filled.LibraryAdd, contentDescription = "Bulk add payments")
+                        }
+                    }
                     if (Session.canViewPayment) {
                         IconButton(onClick = { downloadPdf { buildPaymentsPdf() } }) {
                             Icon(Icons.Filled.Download, contentDescription = "Download PDF")
@@ -232,6 +247,15 @@ fun ExpensesScreen(
         }
     }
 
+    if (showBulk) {
+        com.billing.pos.ui.common.BulkEntryDialog(
+            title = "Bulk payments",
+            isPayment = true,
+            defaultDate = System.currentTimeMillis(),
+            onDismiss = { showBulk = false },
+            onConfirm = { mode, rows -> vm.addBulk(mode, rows); showBulk = false }
+        )
+    }
     if (showAdd) {
         val purchases by vm.purchases.collectAsStateSafe()
         val outstanding = purchases.filter { it.balance > 0.001 }

@@ -300,6 +300,20 @@ class Repository(context: Context) {
         return expense
     }
 
+    /** Like [addExpense] but also records the party paid to. */
+    suspend fun addExpenseFull(description: String, amount: Double, mode: PayMode, dateMillis: Long, payTo: String): Expense {
+        val expense = Expense(
+            voucherNo = nextVoucherNo(),
+            dateMillis = dateMillis,
+            description = description.trim(),
+            amount = amount,
+            paymentMode = mode.label,
+            payTo = payTo.trim()
+        )
+        expenseDao.insert(expense)
+        return expense
+    }
+
     /** Edits a receipt and re-applies the difference to the linked invoice's paid amount. */
     suspend fun updateReceipt(old: Receipt, newAmount: Double, mode: PayMode) {
         if (old.billId > 0) {
