@@ -12,6 +12,9 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
 import androidx.compose.material.icons.filled.Print
 import androidx.compose.material3.Divider
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -38,6 +41,11 @@ import androidx.compose.ui.unit.dp
 import com.billing.pos.data.AppPrefs
 import kotlinx.coroutines.launch
 
+val BUSINESS_TYPES = listOf(
+    "General", "Textiles", "Mobile shop", "Electrical & plumbing",
+    "Automobiles", "Grocery", "Medical store", "Restaurant"
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
@@ -51,6 +59,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
     var phone by remember { mutableStateOf(prefs.companyPhone) }
     var gstin by remember { mutableStateOf(prefs.companyGstin) }
     var requireBatch by remember { mutableStateOf(prefs.requireItemBatch) }
+    var businessType by remember { mutableStateOf(prefs.businessType) }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
@@ -130,6 +139,27 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
             OutlinedButton(onClick = onOpenPrinter, modifier = Modifier.fillMaxWidth()) {
                 Icon(Icons.Filled.Print, contentDescription = null)
                 Text("  Thermal printer setup & test")
+            }
+
+            Divider(Modifier.padding(vertical = 16.dp))
+            // Business type: drives medical (chemical content) and restaurant (sizes).
+            Text("Business type", style = MaterialTheme.typography.titleSmall)
+            var typeMenu by remember { mutableStateOf(false) }
+            ExposedDropdownMenuBox(expanded = typeMenu, onExpandedChange = { typeMenu = !typeMenu }) {
+                OutlinedTextField(
+                    readOnly = true, value = businessType.ifBlank { "General" }, onValueChange = {},
+                    label = { Text("Type") },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(typeMenu) },
+                    modifier = Modifier.menuAnchor().fillMaxWidth().padding(top = 4.dp)
+                )
+                ExposedDropdownMenu(expanded = typeMenu, onDismissRequest = { typeMenu = false }) {
+                    BUSINESS_TYPES.forEach { t ->
+                        DropdownMenuItem(text = { Text(t) }, onClick = {
+                            businessType = t; prefs.businessType = t; typeMenu = false
+                            if (t == "Medical store") { requireBatch = true; prefs.requireItemBatch = true }
+                        })
+                    }
+                }
             }
 
             Divider(Modifier.padding(vertical = 16.dp))

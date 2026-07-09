@@ -20,7 +20,8 @@ data class ImportedItemRow(
     val location: String,
     val batchNo: String = "",
     val expiryMillis: Long = 0,
-    val batchQty: Double = 0.0
+    val batchQty: Double = 0.0,
+    val chemicalContent: String = ""
 )
 
 /**
@@ -51,6 +52,7 @@ object SpreadsheetImport {
         val iBatch = col("batch no", "batch", "lot")
         val iExpiry = col("expiry", "exp date", "expiry date")
         val iBatchQty = col("batch qty", "batch quantity")
+        val iChem = col("chemical content", "chemical", "composition", "salt", "content")
 
         return rows.drop(1).mapNotNull { r ->
             fun cell(i: Int) = if (i in 0 until r.size) r[i].trim() else ""
@@ -68,7 +70,8 @@ object SpreadsheetImport {
                 location = if (iLoc >= 0) cell(iLoc) else "",
                 batchNo = if (iBatch >= 0) cell(iBatch) else "",
                 expiryMillis = if (iExpiry >= 0) parseDate(cell(iExpiry)) else 0L,
-                batchQty = if (iBatchQty >= 0) cell(iBatchQty).toDoubleOrNull() ?: 0.0 else 0.0
+                batchQty = if (iBatchQty >= 0) cell(iBatchQty).toDoubleOrNull() ?: 0.0 else 0.0,
+                chemicalContent = if (iChem >= 0) cell(iChem) else ""
             )
         }
     }

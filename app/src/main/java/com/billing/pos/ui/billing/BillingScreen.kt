@@ -142,6 +142,7 @@ fun BillingScreen(
     var ocrReview by remember { mutableStateOf<List<com.billing.pos.ocr.ScannedItem>?>(null) }
     val requireBatch = remember { com.billing.pos.data.AppPrefs(context).requireItemBatch }
     var batchPickFor by remember { mutableStateOf<com.billing.pos.data.Item?>(null) }
+    var sizePickFor by remember { mutableStateOf<com.billing.pos.data.Item?>(null) }
 
     val prefs = remember { com.billing.pos.data.AppPrefs(context) }
     var licensed by remember { mutableStateOf(prefs.licensed) }
@@ -610,12 +611,29 @@ fun BillingScreen(
     }
     if (showItemPicker) {
         val stockByItem by vm.stockByItem.collectAsStateSafe()
+        val allSizes by vm.allSizes.collectAsStateSafe()
         ItemPickerDialog(
             items = items,
             onDismiss = { showItemPicker = false },
-            onPick = { showItemPicker = false; if (requireBatch) batchPickFor = it else vm.addItemToCart(it) },
+            onPick = { picked ->
+                showItemPicker = false
+                when {
+                    allSizes.any { s -> s.itemId == picked.id } -> sizePickFor = picked
+                    requireBatch -> batchPickFor = picked
+                    else -> vm.addItemToCart(picked)
+                }
+            },
             onNewItem = { showItemPicker = false; showNewItem = true },
             stockByItem = stockByItem
+        )
+    }
+    sizePickFor?.let { item ->
+        val allSizes by vm.allSizes.collectAsStateSafe()
+        SaleSizePickDialog(
+            item = item,
+            sizes = allSizes.filter { it.itemId == item.id },
+            onPick = { size -> vm.addItemWithSize(item, size); sizePickFor = null },
+            onDismiss = { sizePickFor = null }
         )
     }
     batchPickFor?.let { item ->
@@ -868,6 +886,32 @@ private fun ToolAction(
         IconButton(onClick = onClick) { Icon(icon, contentDescription = label) }
         Text(label, style = MaterialTheme.typography.labelSmall)
     }
+}
+
+/** Pick which size/variant to sell (each has its own price). */
+@Composable
+private fun SaleSizePickDialog(
+    item: com.billing.pos.data.Item,
+    sizes: List<com.billing.pos.data.ItemSize>,
+    onPick: (com.billing.pos.data.ItemSize) -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Size — ${item.name}") },
+        text = {
+            LazyColumn(Modifier.fillMaxWidth().heightIn(max = 340.dp)) {
+                items(sizes, key = { it.id }) { s ->
+                    Column(Modifier.fillMaxWidth().clickable { onPick(s) }.padding(vertical = 12.dp)) {
+                        Text(s.name, fontWeight = FontWeight.SemiBold)
+                        Text(Format.rupee(s.price), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                        Divider(Modifier.padding(top = 8.dp))
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } }
+    )
 }
 
 /** Pick which batch to sell from (shows each batch's stock + expiry). */

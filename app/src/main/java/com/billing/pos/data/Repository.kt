@@ -191,13 +191,14 @@ class Repository(context: Context) {
 
     suspend fun addItem(
         name: String, price: Double, taxPercent: Double, barcode: String = "", hsn: String = "",
-        category: String = "", openingStock: Double = 0.0, unit: String = "PCS", storeLocation: String = ""
+        category: String = "", openingStock: Double = 0.0, unit: String = "PCS", storeLocation: String = "",
+        chemicalContent: String = ""
     ): Long =
         itemDao.insert(Item(
             name = name.trim(), price = price, taxPercent = taxPercent,
             barcode = barcode.trim(), hsn = hsn.trim(),
             category = category.trim(), openingStock = openingStock, unit = unit.trim().ifBlank { "PCS" },
-            storeLocation = storeLocation.trim()
+            storeLocation = storeLocation.trim(), chemicalContent = chemicalContent.trim()
         ))
 
     suspend fun updateItem(item: Item) = itemDao.update(item)
@@ -205,14 +206,16 @@ class Repository(context: Context) {
         itemAttachmentDao.forItem(item.id).forEach { com.billing.pos.items.ItemAttachmentStore.delete(it) }
         itemAttachmentDao.deleteForItem(item.id)
         db.itemBatchDao().deleteForItem(item.id)
+        db.itemSizeDao().deleteForItem(item.id)
         itemDao.delete(item)
     }
 
-    /** Removes every master item, its batches and its attachment files. Bills keep their lines. */
+    /** Removes every master item, its batches, sizes and attachment files. Bills keep their lines. */
     suspend fun clearAllItems() {
         itemAttachmentDao.all().forEach { com.billing.pos.items.ItemAttachmentStore.delete(it) }
         itemAttachmentDao.deleteAll()
         db.itemBatchDao().deleteAll()
+        db.itemSizeDao().deleteAll()
         itemDao.deleteAll()
     }
     suspend fun itemByBarcode(barcode: String): Item? = itemDao.byBarcode(barcode.trim())
@@ -231,6 +234,15 @@ class Repository(context: Context) {
     /** Deducts a sold quantity from a batch's stock. */
     suspend fun deductBatch(itemId: Long, batchNo: String, qty: Double) {
         if (batchNo.isNotBlank()) itemBatchDao.deductQty(itemId, batchNo, qty)
+    }
+
+    // ---- item sizes (variants with their own price) ----
+    private val itemSizeDao = db.itemSizeDao()
+    val itemSizes: Flow<List<ItemSize>> = itemSizeDao.observeAll()
+    suspend fun sizesForItem(itemId: Long): List<ItemSize> = itemSizeDao.forItem(itemId)
+    suspend fun replaceSizes(itemId: Long, sizes: List<ItemSize>) {
+        itemSizeDao.deleteForItem(itemId)
+        sizes.forEach { itemSizeDao.insert(it.copy(id = 0, itemId = itemId)) }
     }
 
     // ---- item attachments (photos / location photo / PDF catalogue) ----

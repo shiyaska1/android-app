@@ -60,6 +60,10 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
     val allBatches: StateFlow<List<com.billing.pos.data.ItemBatch>> =
         repo.itemBatches.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    /** All item sizes/variants, for the sale size picker. */
+    val allSizes: StateFlow<List<com.billing.pos.data.ItemSize>> =
+        repo.itemSizes.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     /** itemId -> current stock (opening + purchased - sold), for the item picker. */
     val stockByItem: StateFlow<Map<Long, Double>> =
         kotlinx.coroutines.flow.combine(repo.items, repo.purchaseLines, repo.soldQty) { list, pLines, sold ->
@@ -161,6 +165,15 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
         } else {
             cart.add(CartLine(item.id, item.name, item.price, item.taxPercent, 1.0))
         }
+        dirty = true
+    }
+
+    /** Adds an item at the chosen size's price; the size is shown/printed in the line name. */
+    fun addItemWithSize(item: Item, size: com.billing.pos.data.ItemSize) {
+        val name = "${item.name} (${size.name})"
+        val idx = cart.indexOfFirst { it.itemId == item.id && it.name == name }
+        if (idx >= 0) cart[idx] = cart[idx].copy(qty = cart[idx].qty + 1)
+        else cart.add(CartLine(item.id, name, size.price, item.taxPercent, 1.0))
         dirty = true
     }
 

@@ -30,7 +30,9 @@ data class Item(
     /** Unit of measure, e.g. PCS, KG, LTR. */
     val unit: String = "PCS",
     /** Where the item sits in the store (rack/shelf), as free text. */
-    val storeLocation: String = ""
+    val storeLocation: String = "",
+    /** Composition / salt / chemical content (medical stores). Searchable. */
+    val chemicalContent: String = ""
 )
 
 /**

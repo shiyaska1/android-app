@@ -312,7 +312,8 @@ fun ItemPickerDialog(
 ) {
     var query by remember { mutableStateOf("") }
     val filtered = remember(query, items) {
-        if (query.isBlank()) items else items.filter { it.name.contains(query, ignoreCase = true) }
+        if (query.isBlank()) items
+        else items.filter { it.name.contains(query, ignoreCase = true) || it.chemicalContent.contains(query, ignoreCase = true) }
     }
     val startVoice = rememberVoiceInput { query = it }
 
@@ -353,6 +354,13 @@ fun ItemPickerDialog(
                                     style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
                                     color = androidx.compose.material3.MaterialTheme.colorScheme.outline
                                 )
+                                if (item.chemicalContent.isNotBlank()) {
+                                    Text(
+                                        item.chemicalContent,
+                                        style = androidx.compose.material3.MaterialTheme.typography.labelSmall,
+                                        color = androidx.compose.material3.MaterialTheme.colorScheme.primary
+                                    )
+                                }
                                 Divider(Modifier.padding(top = 8.dp))
                             }
                         }

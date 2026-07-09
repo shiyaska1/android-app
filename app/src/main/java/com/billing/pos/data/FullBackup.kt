@@ -59,6 +59,7 @@ object FullBackup {
         val itemAtts = db.itemAttachmentDao().all()
         root.put("itemAttachments", JSONArray().apply { itemAtts.forEach { put(itemAttJson(it)) } })
         root.put("itemBatches", JSONArray().apply { db.itemBatchDao().all().forEach { put(batchJson(it)) } })
+        root.put("itemSizes", JSONArray().apply { db.itemSizeDao().all().forEach { put(sizeJson(it)) } })
         val billAtts = db.billAttachmentDao().all()
         root.put("billAttachments", JSONArray().apply { billAtts.forEach { put(billAttJson(it)) } })
 
@@ -194,6 +195,9 @@ object FullBackup {
         }
         root.optJSONArray("itemBatches")?.let {
             for (i in 0 until it.length()) db.itemBatchDao().insert(readBatch(it.getJSONObject(i)))
+        }
+        root.optJSONArray("itemSizes")?.let {
+            for (i in 0 until it.length()) db.itemSizeDao().insert(readSize(it.getJSONObject(i)))
         }
         root.optJSONArray("billAttachments")?.let {
             for (i in 0 until it.length()) db.billAttachmentDao().insert(readBillAtt(context, it.getJSONObject(i)))
@@ -357,6 +361,12 @@ object FullBackup {
                 db.itemBatchDao().insert(b.copy(id = 0, itemId = ni))
             }
         }
+        root.optJSONArray("itemSizes")?.let {
+            for (i in 0 until it.length()) {
+                val s = readSize(it.getJSONObject(i)); val ni = itemMap[s.itemId] ?: continue
+                db.itemSizeDao().insert(s.copy(id = 0, itemId = ni))
+            }
+        }
         // Bill attachments
         root.optJSONArray("billAttachments")?.let {
             for (i in 0 until it.length()) {
@@ -373,7 +383,7 @@ object FullBackup {
     private fun itemJson(i: Item) = JSONObject().put("id", i.id).put("name", i.name)
         .put("price", i.price).put("taxPercent", i.taxPercent).put("barcode", i.barcode).put("hsn", i.hsn)
         .put("category", i.category).put("openingStock", i.openingStock).put("unit", i.unit)
-        .put("storeLocation", i.storeLocation)
+        .put("storeLocation", i.storeLocation).put("chemicalContent", i.chemicalContent)
 
     private fun billJson(b: Bill) = JSONObject().put("id", b.id).put("billNo", b.billNo)
         .put("dateMillis", b.dateMillis).put("customerId", b.customerId).put("customerName", b.customerName)
@@ -453,6 +463,13 @@ object FullBackup {
         expiryMillis = o.optLong("expiryMillis"), quantity = o.optDouble("quantity", 0.0)
     )
 
+    private fun sizeJson(s: ItemSize) = JSONObject().put("id", s.id).put("itemId", s.itemId)
+        .put("name", s.name).put("price", s.price)
+
+    private fun readSize(o: JSONObject) = ItemSize(
+        id = o.optLong("id"), itemId = o.optLong("itemId"), name = o.optString("name"), price = o.optDouble("price", 0.0)
+    )
+
     private fun itemAttJson(a: ItemAttachment) = JSONObject().put("id", a.id).put("itemId", a.itemId)
         .put("file", File(a.path).name).put("name", a.name).put("mime", a.mime).put("kind", a.kind)
 
@@ -480,7 +497,8 @@ object FullBackup {
         price = o.optDouble("price", 0.0), taxPercent = o.optDouble("taxPercent", 0.0),
         barcode = o.optString("barcode"), hsn = o.optString("hsn"),
         category = o.optString("category"), openingStock = o.optDouble("openingStock", 0.0),
-        unit = o.optString("unit", "PCS"), storeLocation = o.optString("storeLocation")
+        unit = o.optString("unit", "PCS"), storeLocation = o.optString("storeLocation"),
+        chemicalContent = o.optString("chemicalContent")
     )
 
     private fun readBill(o: JSONObject) = Bill(

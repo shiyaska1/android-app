@@ -158,6 +158,13 @@ class ItemsViewModel(app: Application) : AndroidViewModel(app) {
     /** Batches (batch no + expiry + qty) staged for the item being edited. */
     val editBatches: SnapshotStateList<com.billing.pos.data.ItemBatch> = mutableStateListOf()
 
+    /** Sizes/variants (name + price) staged for the item being edited. */
+    val editSizes: SnapshotStateList<com.billing.pos.data.ItemSize> = mutableStateListOf()
+    fun addSizeRow(name: String, price: Double) {
+        editSizes.add(com.billing.pos.data.ItemSize(itemId = 0, name = name.trim(), price = price))
+    }
+    fun removeSizeRow(index: Int) { if (index in editSizes.indices) editSizes.removeAt(index) }
+
     /** Item batches joined with item names, sorted by expiry, for the expiry report. */
     val expiryRows: StateFlow<List<ExpiryRow>> =
         combine(repo.itemBatches, repo.items) { batches, items ->
@@ -171,10 +178,12 @@ class ItemsViewModel(app: Application) : AndroidViewModel(app) {
     fun beginEdit(item: Item?) {
         editAttachments.clear()
         editBatches.clear()
+        editSizes.clear()
         val id = item?.id ?: return
         viewModelScope.launch {
             editAttachments.addAll(repo.itemAttachmentsFor(id))
             editBatches.addAll(repo.batchesForItem(id))
+            editSizes.addAll(repo.sizesForItem(id))
         }
     }
 
@@ -209,22 +218,24 @@ class ItemsViewModel(app: Application) : AndroidViewModel(app) {
         val unsaved = editAttachments.filter { it.id == 0L }
         editAttachments.clear()
         editBatches.clear()
+        editSizes.clear()
         if (unsaved.isNotEmpty()) viewModelScope.launch(Dispatchers.IO) { unsaved.forEach { ItemAttachmentStore.delete(it) } }
     }
 
     fun save(
         existing: Item?, name: String, price: Double, tax: Double, barcode: String, hsn: String,
-        category: String, openingStock: Double, unit: String, storeLocation: String, onDone: () -> Unit
+        category: String, openingStock: Double, unit: String, storeLocation: String, chemicalContent: String, onDone: () -> Unit
     ) {
         if (name.isBlank()) { message.value = "Enter a name"; return }
         viewModelScope.launch {
             val id: Long = if (existing == null) {
-                repo.addItem(name, price, tax, barcode, hsn, category, openingStock, unit, storeLocation)
+                repo.addItem(name, price, tax, barcode, hsn, category, openingStock, unit, storeLocation, chemicalContent)
             } else {
                 repo.updateItem(existing.copy(
                     name = name.trim(), price = price, taxPercent = tax, barcode = barcode.trim(),
                     hsn = hsn.trim(), category = category.trim(), openingStock = openingStock,
-                    unit = unit.trim().ifBlank { "PCS" }, storeLocation = storeLocation.trim()
+                    unit = unit.trim().ifBlank { "PCS" }, storeLocation = storeLocation.trim(),
+                    chemicalContent = chemicalContent.trim()
                 ))
                 existing.id
             }
@@ -232,6 +243,8 @@ class ItemsViewModel(app: Application) : AndroidViewModel(app) {
             editAttachments.clear()
             repo.replaceBatches(id, editBatches.toList())
             editBatches.clear()
+            repo.replaceSizes(id, editSizes.toList())
+            editSizes.clear()
             message.value = "Saved"; onDone()
         }
     }
@@ -254,7 +267,7 @@ class ItemsViewModel(app: Application) : AndroidViewModel(app) {
                 val existing = repo.itemByName(r.name)
                 val itemId = if (existing == null) {
                     added++
-                    repo.addItem(r.name, r.price, r.taxPercent, r.barcode, r.hsn, r.category, r.openingStock, r.unit, r.location)
+                    repo.addItem(r.name, r.price, r.taxPercent, r.barcode, r.hsn, r.category, r.openingStock, r.unit, r.location, r.chemicalContent)
                 } else { skipped++; existing.id }
                 if (r.batchNo.isNotBlank() || r.expiryMillis > 0) {
                     repo.addBatch(com.billing.pos.data.ItemBatch(
@@ -274,8 +287,8 @@ class ItemsViewModel(app: Application) : AndroidViewModel(app) {
             val file = withContext(Dispatchers.IO) {
                 val f = java.io.File(context.cacheDir, "item-import-template.csv")
                 f.writeText(
-                    "Name,Price,Tax,Category,Opening Stock,Unit,Barcode,HSN,Location,Batch No,Expiry Date,Batch Qty\n" +
-                        "Sample item,100,0,General,10,PCS,,,,B001,2026-12-31,10\n"
+                    "Name,Price,Tax,Category,Opening Stock,Unit,Barcode,HSN,Location,Chemical Content,Batch No,Expiry Date,Batch Qty\n" +
+                        "Sample item,100,0,General,10,PCS,,,,,B001,2026-12-31,10\n"
                 )
                 f
             }
@@ -314,6 +327,7 @@ fun ItemsScreen(
     val categories by vm.categories.collectAsStateSafe()
     val message by vm.message.collectAsStateSafe()
     val requireBatch = remember { com.billing.pos.data.AppPrefs(context).requireItemBatch }
+    val businessType = remember { com.billing.pos.data.AppPrefs(context).businessType }
     val expiryRows by vm.expiryRows.collectAsStateSafe()
     var showExpiry by remember { mutableStateOf(false) }
     var confirmClear by remember { mutableStateOf(false) }
@@ -592,13 +606,17 @@ fun ItemsScreen(
             batches = vm.editBatches,
             onAddBatch = { no, exp, q -> vm.addBatchRow(no, exp, q) },
             onRemoveBatch = { vm.removeBatchRow(it) },
+            businessType = businessType,
+            sizes = vm.editSizes,
+            onAddSize = { nm, pr -> vm.addSizeRow(nm, pr) },
+            onRemoveSize = { vm.removeSizeRow(it) },
             onAddPhotoGallery = { pickPhotos("PHOTO") },
             onAddPhotoCamera = { withCamera { launchCapture("PHOTO") } },
             onAddLocationPhoto = { withCamera { launchCapture("LOCATION") } },
             onAddCatalogue = { runCatching { cataloguePicker.launch(arrayOf("application/pdf")) } },
             onRemoveAttachment = { vm.removeAttachment(it) },
             onDismiss = { vm.cancelEdit(); showDialog = false },
-            onSave = { n, p, t, b, h, cat, os, u, loc -> vm.save(editing, n, p, t, b, h, cat, os, u, loc) { showDialog = false } }
+            onSave = { n, p, t, b, h, cat, os, u, loc, chem -> vm.save(editing, n, p, t, b, h, cat, os, u, loc, chem) { showDialog = false } }
         )
     }
     if (showExpiry) {
@@ -646,15 +664,23 @@ private fun ItemDialog(
     batches: List<com.billing.pos.data.ItemBatch>,
     onAddBatch: (String, Long, Double) -> Unit,
     onRemoveBatch: (Int) -> Unit,
+    businessType: String,
+    sizes: List<com.billing.pos.data.ItemSize>,
+    onAddSize: (String, Double) -> Unit,
+    onRemoveSize: (Int) -> Unit,
     onAddPhotoGallery: () -> Unit,
     onAddPhotoCamera: () -> Unit,
     onAddLocationPhoto: () -> Unit,
     onAddCatalogue: () -> Unit,
     onRemoveAttachment: (ItemAttachment) -> Unit,
     onDismiss: () -> Unit,
-    onSave: (String, Double, Double, String, String, String, Double, String, String) -> Unit
+    onSave: (String, Double, Double, String, String, String, Double, String, String, String) -> Unit
 ) {
     var showBatchInput by remember { mutableStateOf(false) }
+    var showSizeInput by remember { mutableStateOf(false) }
+    var chemical by remember { mutableStateOf(existing?.chemicalContent ?: "") }
+    val isMedical = businessType == "Medical store"
+    val isRestaurant = businessType == "Restaurant"
     var name by remember { mutableStateOf(existing?.name ?: "") }
     var price by remember { mutableStateOf(existing?.price?.let { Format.money(it) } ?: "") }
     var priceForQty by remember { mutableStateOf("1") }
@@ -804,6 +830,33 @@ private fun ItemDialog(
                     }
                 }
 
+                // Medical: chemical content / composition (searchable at sale).
+                if (isMedical) {
+                    OutlinedTextField(
+                        value = chemical, onValueChange = { chemical = it },
+                        label = { Text("Chemical content / composition") }, modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                // Restaurant: sizes/variants, each with its own selling price.
+                if (isRestaurant) {
+                    Divider(Modifier.padding(top = 4.dp))
+                    Text("Sizes", style = MaterialTheme.typography.titleSmall)
+                    Text("Leave empty for a single-price item.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                    sizes.forEachIndexed { i, s ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(s.name, fontWeight = FontWeight.SemiBold)
+                                Text(Format.rupee(s.price), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                            }
+                            IconButton(onClick = { onRemoveSize(i) }) { Icon(Icons.Filled.Delete, "Remove size", tint = MaterialTheme.colorScheme.error) }
+                        }
+                    }
+                    OutlinedButton(onClick = { showSizeInput = true }, modifier = Modifier.fillMaxWidth()) {
+                        Icon(Icons.Filled.Add, null); Text(" Add size")
+                    }
+                }
+
                 Row {
                     FilterChip(selected = !taxable, onClick = { taxable = false }, label = { Text("Without tax") })
                     androidx.compose.foundation.layout.Spacer(Modifier.padding(4.dp))
@@ -879,7 +932,7 @@ private fun ItemDialog(
                     val p = entered / forQty            // store the per-unit price
                     val t = if (taxable) (taxPercent.toDoubleOrNull() ?: 0.0) else 0.0
                     val os = openingStock.toDoubleOrNull() ?: 0.0
-                    onSave(name, p, t, barcode, hsn, category, os, unit, storeLocation)
+                    onSave(name, p, t, barcode, hsn, category, os, unit, storeLocation, chemical)
                 }
             ) { Text(if (showBatches && batches.isEmpty()) "Add a batch" else "Save") }
         },
@@ -892,6 +945,35 @@ private fun ItemDialog(
             onAdd = { no, exp, q -> onAddBatch(no, exp, q); showBatchInput = false }
         )
     }
+    if (showSizeInput) {
+        SizeInputDialog(
+            onDismiss = { showSizeInput = false },
+            onAdd = { nm, pr -> onAddSize(nm, pr); showSizeInput = false }
+        )
+    }
+}
+
+/** Enter one size/variant: a name and its selling price. */
+@Composable
+private fun SizeInputDialog(onDismiss: () -> Unit, onAdd: (String, Double) -> Unit) {
+    var name by remember { mutableStateOf("") }
+    var price by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Add size") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Size name *  (e.g. Small)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(
+                    value = price, onValueChange = { price = it.filter { c -> c.isDigit() || c == '.' } },
+                    label = { Text("Selling price *") }, singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = { TextButton(enabled = name.isNotBlank(), onClick = { onAdd(name.trim(), price.toDoubleOrNull() ?: 0.0) }) { Text("Add") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
 }
 
 /** Enter one batch: batch number, expiry date and quantity. */
@@ -928,15 +1010,28 @@ private fun BatchInputDialog(onDismiss: () -> Unit, onAdd: (String, Long, Double
 @Composable
 private fun ExpiryReportDialog(rows: List<ExpiryRow>, onDismiss: () -> Unit) {
     val now = System.currentTimeMillis()
+    var daysText by remember { mutableStateOf("") }
+    val days = daysText.toIntOrNull()
+    val cutoff = if (days != null) now + days * 86_400_000L else Long.MAX_VALUE
+    val shown = rows.filter { it.expiryMillis <= cutoff }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Batch expiry") },
         text = {
-            if (rows.isEmpty()) {
-                Text("No batches with an expiry date yet.", color = MaterialTheme.colorScheme.outline)
-            } else {
-                LazyColumn(Modifier.fillMaxWidth().height(400.dp)) {
-                    items(rows) { r ->
+            Column {
+                OutlinedTextField(
+                    value = daysText, onValueChange = { daysText = it.filter { c -> c.isDigit() } },
+                    label = { Text("Expiring within days (blank = all)") }, singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp)
+                )
+                if (shown.isEmpty()) {
+                    Text(
+                        if (rows.isEmpty()) "No batches with an expiry date yet." else "No batches expiring in $days days.",
+                        color = MaterialTheme.colorScheme.outline
+                    )
+                } else LazyColumn(Modifier.fillMaxWidth().height(360.dp)) {
+                    items(shown) { r ->
                         val expired = r.expiryMillis in 1 until now
                         Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {

@@ -58,5 +58,10 @@ class AppPrefs(context: Context) {
         get() = p.getBoolean("require_item_batch", false)
         set(v) { p.edit().putBoolean("require_item_batch", v).apply() }
 
+    /** Business vertical, drives medical (chemical content) and restaurant (sizes) features. */
+    var businessType: String
+        get() = p.getString("business_type", "") ?: ""
+        set(v) { p.edit().putString("business_type", v).apply() }
+
     fun clearSession() { loggedInUserId = -1L }
 }
