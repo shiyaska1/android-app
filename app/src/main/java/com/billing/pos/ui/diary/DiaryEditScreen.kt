@@ -59,6 +59,7 @@ import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Divider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -136,13 +137,18 @@ fun DiaryEditScreen(
     val titleStyle = diaryStyle(vm.titleSize, vm.titleColor, vm.titleBold, vm.titleItalic)
     val bodyStyle = diaryStyle(vm.bodySize, vm.bodyColor, vm.bodyBold, vm.bodyItalic)
 
-    // Image: photograph with the camera → auto-shrink → image block.
-    val pickImage = com.billing.pos.ocr.rememberImageCamera { uri -> vm.addImageUri(context, uri) }
+    // When ticked, photos added below are also read with OCR and the text lands in the note.
+    var readTextFromImage by remember { mutableStateOf(false) }
 
-    // Pick an existing image from the gallery → auto-shrink → image block.
+    // Image: photograph with the camera → auto-shrink → image block (+ OCR if ticked).
+    val pickImage = com.billing.pos.ocr.rememberImageCamera { uri ->
+        vm.addImageUri(context, uri, readTextFromImage)
+    }
+
+    // Pick an existing image from the gallery → auto-shrink → image block (+ OCR if ticked).
     val galleryPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.PickVisualMedia()
-    ) { uri -> if (uri != null) vm.addImageUri(context, uri) }
+    ) { uri -> if (uri != null) vm.addImageUri(context, uri, readTextFromImage) }
 
     val docPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments()
@@ -383,6 +389,20 @@ fun DiaryEditScreen(
                         modifier = Modifier.weight(1f)
                     ) {
                         Icon(Icons.Filled.PhotoLibrary, null); Text(" Gallery")
+                    }
+                }
+                Row(
+                    Modifier.fillMaxWidth().clickable { readTextFromImage = !readTextFromImage },
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Checkbox(checked = readTextFromImage, onCheckedChange = { readTextFromImage = it })
+                    Column {
+                        Text("Read text from image (OCR)", style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            "When ticked, text in the next Photo/Gallery image is added to the note.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.outline
+                        )
                     }
                 }
                 Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {

@@ -19,6 +19,7 @@ import com.billing.pos.data.DiaryEntry
 import com.billing.pos.data.DiaryRepository
 import com.billing.pos.diary.AttachmentStore
 import com.billing.pos.diary.ReminderScheduler
+import com.billing.pos.ocr.TextOcr
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
@@ -121,13 +122,27 @@ class DiaryEditViewModel(app: Application) : AndroidViewModel(app) {
         if (blocks.isEmpty()) blocks.add(BlockUi(0, BlockType.TEXT))
     }
 
-    /** Crops-then-compresses images are added here (from camera or gallery). */
-    fun addImageUri(context: Context, uri: Uri) {
+    /**
+     * Compressed images are added here (from camera or gallery).
+     * When [ocr] is true the image is also read with on-device OCR and the recognized
+     * text is appended as a text block right below the photo.
+     */
+    fun addImageUri(context: Context, uri: Uri, ocr: Boolean = false) {
         viewModelScope.launch {
             val dest = AttachmentStore.newFile(context, "jpg")
             val ok = withContext(Dispatchers.IO) { AttachmentStore.compressImageTo(context, uri, dest) }
-            if (ok) blocks.add(BlockUi(0, BlockType.IMAGE, path = dest.absolutePath, name = "Photo.jpg", mime = "image/jpeg"))
-            else message.value = "Could not add image"
+            if (!ok) { message.value = "Could not add image"; return@launch }
+            blocks.add(BlockUi(0, BlockType.IMAGE, path = dest.absolutePath, name = "Photo.jpg", mime = "image/jpeg"))
+            if (!ocr) return@launch
+
+            message.value = "Reading text…"
+            // Read the original (full-resolution) image; fall back to the stored copy.
+            var text = TextOcr.lines(context, uri).joinToString("\n").trim()
+            if (text.isBlank()) text = TextOcr.lines(context, Uri.fromFile(dest)).joinToString("\n").trim()
+            if (text.isNotBlank()) {
+                blocks.add(BlockUi(0, BlockType.TEXT, text))
+                message.value = "Text added to note"
+            } else message.value = "No text found in the image"
         }
     }
 
