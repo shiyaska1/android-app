@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.ManageAccounts
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.MoneyOff
 import androidx.compose.material.icons.filled.Payments
+import androidx.compose.material.icons.filled.PlaylistAddCheck
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.PointOfSale
 import androidx.compose.material.icons.filled.PowerSettingsNew
@@ -81,6 +82,7 @@ fun DashboardScreen(
     onQuotations: () -> Unit,
     onSalesReturns: () -> Unit,
     onPurchaseReturns: () -> Unit,
+    onLpos: () -> Unit,
     onVatReport: () -> Unit,
     onOutstanding: () -> Unit,
     onAccounts: () -> Unit,
@@ -107,6 +109,7 @@ fun DashboardScreen(
         add(Tile("New Purchase", Icons.Filled.ShoppingCart, onNewPurchase))
         if (Session.canViewInvoice) add(Tile("Purchases", Icons.Filled.Inventory2, onPurchases))
         if (Session.canViewInvoice) add(Tile("Purchase Return", Icons.Filled.AssignmentReturned, onPurchaseReturns))
+        add(Tile("Purchase Order", Icons.Filled.PlaylistAddCheck, onLpos))
         add(Tile("Suppliers", Icons.Filled.LocalShipping, onSuppliers))
         if (Session.canViewInvoice) add(Tile("VAT Report", Icons.Filled.Description, onVatReport))
         if (Session.canViewInvoice) add(Tile("Outstanding", Icons.Filled.AccountBalance, onOutstanding))

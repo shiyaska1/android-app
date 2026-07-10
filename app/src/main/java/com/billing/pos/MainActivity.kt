@@ -48,6 +48,8 @@ import com.billing.pos.ui.salesreturn.SalesReturnListScreen
 import com.billing.pos.ui.salesreturn.SalesReturnScreen
 import com.billing.pos.ui.purchasereturn.PurchaseReturnListScreen
 import com.billing.pos.ui.purchasereturn.PurchaseReturnScreen
+import com.billing.pos.ui.lpo.PurchaseQuotationListScreen
+import com.billing.pos.ui.lpo.PurchaseQuotationScreen
 import com.billing.pos.ui.purchase.PurchaseListScreen
 import com.billing.pos.ui.purchase.PurchaseScreen
 import com.billing.pos.ui.purchase.SuppliersScreen
@@ -163,6 +165,7 @@ private fun AppNav() {
                 onQuotations = { nav.navigate("quotations") },
                 onSalesReturns = { nav.navigate("salesreturns") },
                 onPurchaseReturns = { nav.navigate("purchasereturns") },
+                onLpos = { nav.navigate("lpos") },
                 onVatReport = { nav.navigate("vat") },
                 onOutstanding = { nav.navigate("outstanding") },
                 onAccounts = { nav.navigate("accounts") },
@@ -271,6 +274,18 @@ private fun AppNav() {
             route = "purchasereturn/edit/{id}",
             arguments = listOf(navArgument("id") { type = NavType.LongType })
         ) { entry -> PurchaseReturnScreen(editId = entry.arguments?.getLong("id"), onBack = { nav.popBackStack() }) }
+        composable("lpos") {
+            PurchaseQuotationListScreen(
+                onBack = { nav.popBackStack() },
+                onOpen = { id -> nav.navigate("lpo/edit/$id") },
+                onNew = { nav.navigate("lpo") }
+            )
+        }
+        composable("lpo") { PurchaseQuotationScreen(editId = null, onBack = { nav.popBackStack() }) }
+        composable(
+            route = "lpo/edit/{id}",
+            arguments = listOf(navArgument("id") { type = NavType.LongType })
+        ) { entry -> PurchaseQuotationScreen(editId = entry.arguments?.getLong("id"), onBack = { nav.popBackStack() }) }
         composable("items") {
             ItemsScreen(onBack = { nav.popBackStack() })
         }

@@ -66,6 +66,8 @@ object FullBackup {
         root.put("salesReturnItems", JSONArray().apply { db.salesReturnDao().allLines().forEach { put(srItemJson(it)) } })
         root.put("purchaseReturns", JSONArray().apply { db.purchaseReturnDao().all().forEach { put(purchaseReturnJson(it)) } })
         root.put("purchaseReturnItems", JSONArray().apply { db.purchaseReturnDao().allLines().forEach { put(prItemJson(it)) } })
+        root.put("purchaseQuotations", JSONArray().apply { db.purchaseQuotationDao().all().forEach { put(lpoJson(it)) } })
+        root.put("purchaseQuotationItems", JSONArray().apply { db.purchaseQuotationDao().allLines().forEach { put(lpoItemJson(it)) } })
         val billAtts = db.billAttachmentDao().all()
         root.put("billAttachments", JSONArray().apply { billAtts.forEach { put(billAttJson(it)) } })
 
@@ -222,6 +224,12 @@ object FullBackup {
             val ls = ArrayList<PurchaseReturnItem>()
             for (i in 0 until it.length()) ls.add(readPRItem(it.getJSONObject(i)))
             if (ls.isNotEmpty()) db.purchaseReturnDao().insertLines(ls)
+        }
+        root.optJSONArray("purchaseQuotations")?.let { for (i in 0 until it.length()) db.purchaseQuotationDao().insertHeader(readLpo(it.getJSONObject(i))) }
+        root.optJSONArray("purchaseQuotationItems")?.let {
+            val ls = ArrayList<PurchaseQuotationItem>()
+            for (i in 0 until it.length()) ls.add(readLpoItem(it.getJSONObject(i)))
+            if (ls.isNotEmpty()) db.purchaseQuotationDao().insertLines(ls)
         }
         root.optJSONArray("billAttachments")?.let {
             for (i in 0 until it.length()) db.billAttachmentDao().insert(readBillAtt(context, it.getJSONObject(i)))
@@ -430,6 +438,19 @@ object FullBackup {
                 db.purchaseReturnDao().insertLines(listOf(l.copy(id = 0, returnId = nr)))
             }
         }
+        // Purchase quotations (LPO)
+        val lpoMap = HashMap<Long, Long>()
+        root.optJSONArray("purchaseQuotations")?.let {
+            for (i in 0 until it.length()) {
+                val r = readLpo(it.getJSONObject(i)); lpoMap[r.id] = db.purchaseQuotationDao().insertHeader(r.copy(id = 0))
+            }
+        }
+        root.optJSONArray("purchaseQuotationItems")?.let {
+            for (i in 0 until it.length()) {
+                val l = readLpoItem(it.getJSONObject(i)); val nl = lpoMap[l.lpoId] ?: continue
+                db.purchaseQuotationDao().insertLines(listOf(l.copy(id = 0, lpoId = nl)))
+            }
+        }
         // Bill attachments
         root.optJSONArray("billAttachments")?.let {
             for (i in 0 until it.length()) {
@@ -597,6 +618,30 @@ object FullBackup {
         id = o.optLong("id"), returnId = o.optLong("returnId"), itemId = o.optLong("itemId"), name = o.optString("name"),
         qty = o.optDouble("qty", 0.0), price = o.optDouble("price", 0.0),
         taxPercent = o.optDouble("taxPercent", 0.0), lineTotal = o.optDouble("lineTotal", 0.0), batchNo = o.optString("batchNo")
+    )
+
+    private fun lpoJson(r: PurchaseQuotation) = JSONObject().put("id", r.id).put("lpoNo", r.lpoNo)
+        .put("dateMillis", r.dateMillis).put("supplierId", r.supplierId).put("supplierName", r.supplierName)
+        .put("subTotal", r.subTotal).put("taxTotal", r.taxTotal)
+        .put("additionalCharge", r.additionalCharge).put("discount", r.discount).put("grandTotal", r.grandTotal)
+        .put("remarks", r.remarks)
+
+    private fun readLpo(o: JSONObject) = PurchaseQuotation(
+        id = o.optLong("id"), lpoNo = o.optString("lpoNo"), dateMillis = o.optLong("dateMillis"),
+        supplierId = o.optLong("supplierId"), supplierName = o.optString("supplierName"),
+        subTotal = o.optDouble("subTotal", 0.0), taxTotal = o.optDouble("taxTotal", 0.0),
+        additionalCharge = o.optDouble("additionalCharge", 0.0), discount = o.optDouble("discount", 0.0),
+        grandTotal = o.optDouble("grandTotal", 0.0), remarks = o.optString("remarks")
+    )
+
+    private fun lpoItemJson(l: PurchaseQuotationItem) = JSONObject().put("id", l.id).put("lpoId", l.lpoId)
+        .put("itemId", l.itemId).put("name", l.name).put("qty", l.qty).put("price", l.price)
+        .put("taxPercent", l.taxPercent).put("lineTotal", l.lineTotal)
+
+    private fun readLpoItem(o: JSONObject) = PurchaseQuotationItem(
+        id = o.optLong("id"), lpoId = o.optLong("lpoId"), itemId = o.optLong("itemId"), name = o.optString("name"),
+        qty = o.optDouble("qty", 0.0), price = o.optDouble("price", 0.0),
+        taxPercent = o.optDouble("taxPercent", 0.0), lineTotal = o.optDouble("lineTotal", 0.0)
     )
 
     private fun readSize(o: JSONObject) = ItemSize(

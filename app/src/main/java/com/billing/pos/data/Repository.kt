@@ -273,6 +273,16 @@ class Repository(context: Context) {
     suspend fun purchaseReturnById(id: Long): PurchaseReturn? = purchaseReturnDao.byId(id)
     suspend fun purchaseReturnLines(id: Long): List<PurchaseReturnItem> = purchaseReturnDao.linesFor(id)
 
+    // ---- purchase quotations (LPO) ----
+    private val purchaseQuotationDao = db.purchaseQuotationDao()
+    val purchaseQuotations: Flow<List<PurchaseQuotation>> = purchaseQuotationDao.observeAll()
+    suspend fun nextLpoNo(): String = "LPO-" + (purchaseQuotationDao.count() + 1).toString().padStart(4, '0')
+    suspend fun savePurchaseQuotation(r: PurchaseQuotation, lines: List<PurchaseQuotationItem>): Long = purchaseQuotationDao.save(r, lines)
+    suspend fun updatePurchaseQuotation(r: PurchaseQuotation, lines: List<PurchaseQuotationItem>) = purchaseQuotationDao.update(r, lines)
+    suspend fun deletePurchaseQuotation(r: PurchaseQuotation) = purchaseQuotationDao.delete(r)
+    suspend fun purchaseQuotationById(id: Long): PurchaseQuotation? = purchaseQuotationDao.byId(id)
+    suspend fun purchaseQuotationLines(id: Long): List<PurchaseQuotationItem> = purchaseQuotationDao.linesFor(id)
+
     // ---- item sizes (variants with their own price) ----
     private val itemSizeDao = db.itemSizeDao()
     val itemSizes: Flow<List<ItemSize>> = itemSizeDao.observeAll()

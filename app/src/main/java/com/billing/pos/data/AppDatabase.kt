@@ -18,10 +18,11 @@ import androidx.room.TypeConverters
         ItemBatch::class, ItemSize::class,
         Quotation::class, QuotationItem::class,
         SalesReturn::class, SalesReturnItem::class,
-        PurchaseReturn::class, PurchaseReturnItem::class
+        PurchaseReturn::class, PurchaseReturnItem::class,
+        PurchaseQuotation::class, PurchaseQuotationItem::class
     ],
-    // v25 adds quotations; v26 adds sales returns; v27 adds purchase returns.
-    version = 27,
+    // v25 quotations; v26 sales returns; v27 purchase returns; v28 purchase quotations (LPO).
+    version = 28,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -44,6 +45,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun quotationDao(): QuotationDao
     abstract fun salesReturnDao(): SalesReturnDao
     abstract fun purchaseReturnDao(): PurchaseReturnDao
+    abstract fun purchaseQuotationDao(): PurchaseQuotationDao
 
     companion object {
         @Volatile private var INSTANCE: AppDatabase? = null
