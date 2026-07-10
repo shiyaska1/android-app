@@ -194,6 +194,9 @@ class ItemsViewModel(app: Application) : AndroidViewModel(app) {
         editBatches.add(com.billing.pos.data.ItemBatch(itemId = 0, batchNo = batchNo.trim(), expiryMillis = expiryMillis, quantity = qty))
     }
     fun removeBatchRow(index: Int) { if (index in editBatches.indices) editBatches.removeAt(index) }
+    fun updateBatchRow(index: Int, batchNo: String, expiryMillis: Long, qty: Double) {
+        if (index in editBatches.indices) editBatches[index] = editBatches[index].copy(batchNo = batchNo.trim(), expiryMillis = expiryMillis, quantity = qty)
+    }
 
     fun addUris(context: android.content.Context, uris: List<Uri>, kind: String) {
         if (uris.isEmpty()) return
@@ -609,6 +612,7 @@ fun ItemsScreen(
             batches = vm.editBatches,
             onAddBatch = { no, exp, q -> vm.addBatchRow(no, exp, q) },
             onRemoveBatch = { vm.removeBatchRow(it) },
+            onUpdateBatch = { idx, no, exp, q -> vm.updateBatchRow(idx, no, exp, q) },
             businessType = businessType,
             sizes = vm.editSizes,
             onAddSize = { nm, pr -> vm.addSizeRow(nm, pr) },
@@ -668,6 +672,7 @@ private fun ItemDialog(
     batches: List<com.billing.pos.data.ItemBatch>,
     onAddBatch: (String, Long, Double) -> Unit,
     onRemoveBatch: (Int) -> Unit,
+    onUpdateBatch: (Int, String, Long, Double) -> Unit,
     businessType: String,
     sizes: List<com.billing.pos.data.ItemSize>,
     onAddSize: (String, Double) -> Unit,
@@ -682,6 +687,7 @@ private fun ItemDialog(
     onSave: (String, Double, Double, String, String, String, Double, String, String, String) -> Unit
 ) {
     var showBatchInput by remember { mutableStateOf(false) }
+    var editBatchIndex by remember { mutableStateOf(-1) }
     var showSizeInput by remember { mutableStateOf(false) }
     var chemical by remember { mutableStateOf(existing?.chemicalContent ?: "") }
     val isMedical = businessType == "Medical store"
@@ -820,10 +826,10 @@ private fun ItemDialog(
                     Text("Batches", style = MaterialTheme.typography.titleSmall)
                     batches.forEachIndexed { i, b ->
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
+                            Column(Modifier.weight(1f).clickable { editBatchIndex = i }) {
                                 Text(b.batchNo.ifBlank { "(no batch no)" }, fontWeight = FontWeight.SemiBold)
                                 Text(
-                                    (if (b.expiryMillis > 0) "Exp ${Format.date(b.expiryMillis)}" else "No expiry") + "   •   Qty ${Format.qty(b.quantity)}",
+                                    (if (b.expiryMillis > 0) "Exp ${Format.date(b.expiryMillis)}" else "No expiry") + "   •   Qty ${Format.qty(b.quantity)}  •  tap to edit",
                                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline
                                 )
                             }
@@ -959,6 +965,14 @@ private fun ItemDialog(
             onAdd = { no, exp, q -> onAddBatch(no, exp, q); showBatchInput = false }
         )
     }
+    if (editBatchIndex in batches.indices) {
+        val b = batches[editBatchIndex]
+        BatchInputDialog(
+            initialNo = b.batchNo, initialExpiry = b.expiryMillis, initialQty = b.quantity,
+            onDismiss = { editBatchIndex = -1 },
+            onAdd = { no, exp, q -> onUpdateBatch(editBatchIndex, no, exp, q); editBatchIndex = -1 }
+        )
+    }
     if (showSizeInput) {
         SizeInputDialog(
             onDismiss = { showSizeInput = false },
@@ -992,14 +1006,20 @@ private fun SizeInputDialog(onDismiss: () -> Unit, onAdd: (String, Double) -> Un
 
 /** Enter one batch: batch number, expiry date and quantity. */
 @Composable
-private fun BatchInputDialog(onDismiss: () -> Unit, onAdd: (String, Long, Double) -> Unit) {
+private fun BatchInputDialog(
+    onDismiss: () -> Unit,
+    onAdd: (String, Long, Double) -> Unit,
+    initialNo: String = "",
+    initialExpiry: Long = 0L,
+    initialQty: Double = 0.0
+) {
     val context = LocalContext.current
-    var batchNo by remember { mutableStateOf("") }
-    var qty by remember { mutableStateOf("") }
-    var expiry by remember { mutableStateOf(0L) }
+    var batchNo by remember { mutableStateOf(initialNo) }
+    var qty by remember { mutableStateOf(if (initialQty > 0) Format.qty(initialQty) else "") }
+    var expiry by remember { mutableStateOf(initialExpiry) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Add batch") },
+        title = { Text(if (initialNo.isBlank() && initialExpiry == 0L) "Add batch" else "Edit batch") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(value = batchNo, onValueChange = { batchNo = it }, label = { Text("Batch no *") }, singleLine = true, modifier = Modifier.fillMaxWidth())

@@ -115,6 +115,10 @@ fun QuickBillScreen(
     val customers by vm.customers.collectAsStateSafe()
     var showNewCustomer by remember { mutableStateOf(false) }
     var showNotes by remember { mutableStateOf(false) }
+    val requireBatch = remember { com.billing.pos.data.AppPrefs(context).requireItemBatch }
+    val allSizes by vm.allSizes.collectAsStateSafe()
+    var sizePickFor by remember { mutableStateOf<com.billing.pos.data.Item?>(null) }
+    var batchPickFor by remember { mutableStateOf<com.billing.pos.data.Item?>(null) }
 
     val attachPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments()
@@ -259,7 +263,13 @@ fun QuickBillScreen(
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         items(filtered, key = { it.id }) { item ->
-                            ItemTile(item, photos[item.id]) { vm.addItemToCart(item) }
+                            ItemTile(item, photos[item.id]) {
+                                when {
+                                    allSizes.any { s -> s.itemId == item.id } -> sizePickFor = item
+                                    requireBatch -> batchPickFor = item
+                                    else -> vm.addItemToCart(item)
+                                }
+                            }
                         }
                     }
                 }
@@ -316,6 +326,23 @@ fun QuickBillScreen(
         }
     }
 
+    sizePickFor?.let { item ->
+        com.billing.pos.ui.billing.SaleSizePickDialog(
+            item = item,
+            sizes = allSizes.filter { it.itemId == item.id },
+            onPick = { size -> vm.addItemWithSize(item, size); sizePickFor = null },
+            onDismiss = { sizePickFor = null }
+        )
+    }
+    batchPickFor?.let { item ->
+        val allBatches by vm.allBatches.collectAsStateSafe()
+        com.billing.pos.ui.billing.SaleBatchPickDialog(
+            item = item,
+            batches = allBatches.filter { it.itemId == item.id },
+            onPick = { batch -> vm.addItemWithBatch(item, batch); batchPickFor = null },
+            onDismiss = { batchPickFor = null }
+        )
+    }
     if (showCart) {
         CartDialog(vm = vm, onDismiss = { showCart = false }, onAddCustomer = { showNewCustomer = true })
     }

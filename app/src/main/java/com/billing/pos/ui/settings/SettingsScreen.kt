@@ -181,6 +181,25 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
                     }
                 }
             }
+            if (com.billing.pos.data.SampleData.itemsFor(businessType).isNotEmpty()) {
+                OutlinedButton(
+                    onClick = {
+                        scope.launch {
+                            val repo = com.billing.pos.data.Repository(context)
+                            val samples = com.billing.pos.data.SampleData.itemsFor(businessType)
+                            var added = 0
+                            samples.forEach { s ->
+                                if (repo.itemByName(s.name) == null) {
+                                    repo.addItem(s.name, s.price, 0.0, "", "", s.category, 0.0, s.unit, "", s.chemical)
+                                    added++
+                                }
+                            }
+                            snackbar.showSnackbar("Loaded $added sample $businessType item(s)")
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                ) { Text("Load sample items for $businessType") }
+            }
 
             Divider(Modifier.padding(vertical = 16.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {

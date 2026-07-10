@@ -890,7 +890,7 @@ private fun ToolAction(
 
 /** Pick which size/variant to sell (each has its own price). */
 @Composable
-private fun SaleSizePickDialog(
+internal fun SaleSizePickDialog(
     item: com.billing.pos.data.Item,
     sizes: List<com.billing.pos.data.ItemSize>,
     onPick: (com.billing.pos.data.ItemSize) -> Unit,
@@ -916,7 +916,7 @@ private fun SaleSizePickDialog(
 
 /** Pick which batch to sell from (shows each batch's stock + expiry). */
 @Composable
-private fun SaleBatchPickDialog(
+internal fun SaleBatchPickDialog(
     item: com.billing.pos.data.Item,
     batches: List<com.billing.pos.data.ItemBatch>,
     onPick: (com.billing.pos.data.ItemBatch) -> Unit,
