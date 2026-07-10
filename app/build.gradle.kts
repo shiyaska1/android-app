@@ -16,6 +16,12 @@ android {
         versionCode = 1
         versionName = "1.0"
         vectorDrawables { useSupportLibrary = true }
+
+        // Real Android phones are arm. The x86/x86_64 native libs are emulator-only
+        // and cost ~42 MB of APK for the two ML Kit engines. Ship arm only.
+        ndk {
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+        }
     }
 
     signingConfigs {
@@ -31,9 +37,18 @@ android {
         debug {
             // Sign with the committed stable key so customers can update without data loss.
             signingConfig = signingConfigs.getByName("stable")
+            // CI ships this variant, so shrink it: strips unused code (material-icons-extended
+            // alone bundles thousands of unreferenced icons) and unused resources.
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
         }
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             signingConfig = signingConfigs.getByName("stable")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
