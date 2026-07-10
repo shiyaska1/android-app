@@ -49,7 +49,7 @@ object ThermalPdf {
         add(rule())
         for (l in lines) {
             add(clip(l.name, COLS))
-            add(row("  @${Format.money(l.price)}", Format.qty(l.qty), Format.money(l.lineTotal)))
+            add(row("  @${Format.money(l.price)}" + (if (l.unit.isNotBlank()) "/${l.unit}" else ""), Format.qty(l.qty), Format.money(l.lineTotal)))
         }
         add(rule())
         add(kv("Sub Total", Format.money(bill.subTotal)))

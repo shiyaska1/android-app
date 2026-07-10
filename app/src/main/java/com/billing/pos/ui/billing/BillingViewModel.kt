@@ -16,6 +16,7 @@ import com.billing.pos.data.Customer
 import com.billing.pos.data.Item
 import com.billing.pos.data.PaymentMethod
 import com.billing.pos.data.Repository
+import com.billing.pos.data.primaryChoice
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -35,11 +36,18 @@ data class CartLine(
     val batchNo: String = "",
     /** In-memory only: expiry for a newly-received purchase batch. */
     val batchExpiry: Long = 0,
+    /** Unit this line is billed in. Blank = the item's primary unit. */
+    val unit: String = "",
+    /** Primary units in one [unit]; 1.0 for the primary unit, 1/factor for the secondary. */
+    val primaryPerUnit: Double = 1.0,
     val uid: Long = nextUid()
 ) {
     val base: Double get() = price * qty
     val tax: Double get() = base * taxPercent / 100.0
     val total: Double get() = base + tax
+
+    /** [qty] expressed in the item's primary unit, for stock math. */
+    val primaryQty: Double get() = qty * primaryPerUnit
 
     companion object {
         private var counter = 0L
@@ -160,12 +168,21 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun addItemToCart(item: Item) {
-        val idx = cart.indexOfFirst { it.itemId == item.id }
+    /** Adds an item in its primary unit (the no-prompt path for single-unit items). */
+    fun addItemToCart(item: Item) = addItemWithUnit(item, item.primaryChoice())
+
+    /** Adds an item billed in [choice]'s unit, at that unit's rate. */
+    fun addItemWithUnit(item: Item, choice: com.billing.pos.data.UnitChoice) {
+        val idx = cart.indexOfFirst { it.itemId == item.id && it.unit == choice.unit && it.batchNo.isBlank() }
         if (idx >= 0) {
             cart[idx] = cart[idx].copy(qty = cart[idx].qty + 1)
         } else {
-            cart.add(CartLine(item.id, item.name, item.price, item.taxPercent, 1.0))
+            cart.add(
+                CartLine(
+                    item.id, item.name, choice.price, item.taxPercent, 1.0,
+                    unit = choice.unit, primaryPerUnit = choice.primaryPerUnit
+                )
+            )
         }
         dirty = true
     }
@@ -175,15 +192,24 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
         val name = "${item.name} (${size.name})"
         val idx = cart.indexOfFirst { it.itemId == item.id && it.name == name }
         if (idx >= 0) cart[idx] = cart[idx].copy(qty = cart[idx].qty + 1)
-        else cart.add(CartLine(item.id, name, size.price, item.taxPercent, 1.0))
+        else cart.add(CartLine(item.id, name, size.price, item.taxPercent, 1.0, unit = item.unit))
         dirty = true
     }
 
-    /** Adds an item to the cart tied to a specific batch (batch tracking on). */
-    fun addItemWithBatch(item: Item, batch: com.billing.pos.data.ItemBatch) {
-        val idx = cart.indexOfFirst { it.itemId == item.id && it.batchNo == batch.batchNo }
+    /** Adds an item to the cart tied to a specific batch (batch tracking on), in [choice]'s unit. */
+    fun addItemWithBatch(
+        item: Item,
+        batch: com.billing.pos.data.ItemBatch,
+        choice: com.billing.pos.data.UnitChoice = item.primaryChoice()
+    ) {
+        val idx = cart.indexOfFirst { it.itemId == item.id && it.batchNo == batch.batchNo && it.unit == choice.unit }
         if (idx >= 0) cart[idx] = cart[idx].copy(qty = cart[idx].qty + 1)
-        else cart.add(CartLine(item.id, item.name, item.price, item.taxPercent, 1.0, batchNo = batch.batchNo))
+        else cart.add(
+            CartLine(
+                item.id, item.name, choice.price, item.taxPercent, 1.0, batchNo = batch.batchNo,
+                unit = choice.unit, primaryPerUnit = choice.primaryPerUnit
+            )
+        )
         dirty = true
     }
 
@@ -355,7 +381,9 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
                 price = it.price,
                 taxPercent = it.taxPercent,
                 lineTotal = it.total,
-                batchNo = it.batchNo
+                batchNo = it.batchNo,
+                unit = it.unit,
+                primaryQty = it.primaryQty
             )
         }
         val saved: BillWithItems
@@ -368,7 +396,7 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
             saved = BillWithItems(bill.copy(id = id), lines)
             // Deduct sold quantities from their chosen batches (new bills only).
             cart.filter { it.batchNo.isNotBlank() && it.itemId > 0 }
-                .forEach { repo.deductBatch(it.itemId, it.batchNo, it.qty) }
+                .forEach { repo.deductBatch(it.itemId, it.batchNo, it.primaryQty) }
             // Keep editing this same bill so re-saving (e.g. after Print) updates it
             // instead of creating a duplicate with the same bill number.
             editingBillId = id
@@ -434,7 +462,15 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
             editAttachments.clear()
             editAttachments.addAll(repo.billAttachmentsFor(bill.id))
             cart.clear()
-            lines.forEach { cart.add(CartLine(0, it.name, it.price, it.taxPercent, it.qty, batchNo = it.batchNo)) }
+            lines.forEach {
+                val perUnit = if (it.primaryQty > 0 && it.qty > 0) it.primaryQty / it.qty else 1.0
+                cart.add(
+                    CartLine(
+                        0, it.name, it.price, it.taxPercent, it.qty, batchNo = it.batchNo,
+                        unit = it.unit, primaryPerUnit = perUnit
+                    )
+                )
+            }
             // A saved photo/manual bill has no lines but a total — keep it editable.
             manualTotalText = if (lines.isEmpty() && bill.grandTotal > 0.0) {
                 val g = bill.grandTotal

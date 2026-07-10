@@ -53,5 +53,9 @@ data class PurchaseItem(
     val taxPercent: Double,
     val lineTotal: Double,
     /** Batch/lot received (when batch tracking is on). */
-    val batchNo: String = ""
+    val batchNo: String = "",
+    /** Unit this line was purchased in (blank = the item's primary unit). */
+    val unit: String = "",
+    /** [qty] converted to the item's primary unit, for stock math. 0 = legacy row, use [qty]. */
+    val primaryQty: Double = 0.0
 )

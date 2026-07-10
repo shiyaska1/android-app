@@ -21,8 +21,9 @@ import androidx.room.TypeConverters
         PurchaseReturn::class, PurchaseReturnItem::class,
         PurchaseQuotation::class, PurchaseQuotationItem::class
     ],
-    // v25 quotations; v26 sales returns; v27 purchase returns; v28 purchase quotations (LPO).
-    version = 28,
+    // v25 quotations; v26 sales returns; v27 purchase returns; v28 purchase quotations (LPO);
+    // v29 dual units (item secondaryUnit/conversionFactor + line unit/primaryQty).
+    version = 29,
     exportSchema = false
 )
 @TypeConverters(Converters::class)

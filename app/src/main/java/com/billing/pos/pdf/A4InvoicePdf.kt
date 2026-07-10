@@ -119,7 +119,8 @@ object A4InvoicePdf {
             }
             c.drawText("${i + 1}", cNo + 4f, y + 14f, cell)
             c.drawText(clip(l.name, 44), cItem + 4f, y + 14f, cell)
-            c.drawText(Format.qty(l.qty), cRate - 4f, y + 14f, rightCell)
+            val qtyText = Format.qty(l.qty) + if (l.unit.isNotBlank()) " ${l.unit}" else ""
+            c.drawText(qtyText, cRate - 4f, y + 14f, rightCell)
             c.drawText(Format.money(l.price), cAmt - 4f, y + 14f, rightCell)
             c.drawText(Format.money(l.lineTotal), xEnd - 4f, y + 14f, rightCell)
             y += rowH

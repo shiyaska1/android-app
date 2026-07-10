@@ -38,7 +38,11 @@ data class SalesReturnItem(
     val price: Double,
     val taxPercent: Double,
     val lineTotal: Double,
-    val batchNo: String = ""
+    val batchNo: String = "",
+    /** Unit this line was returned in (blank = the item's primary unit). */
+    val unit: String = "",
+    /** [qty] converted to the item's primary unit, for stock math. 0 = legacy row, use [qty]. */
+    val primaryQty: Double = 0.0
 )
 
 data class SalesReturnWithItems(val ret: SalesReturn, val lines: List<SalesReturnItem>)

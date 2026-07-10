@@ -93,7 +93,10 @@ import com.billing.pos.data.PaymentMethod
 import com.billing.pos.pdf.InvoicePdf
 import com.billing.pos.pdf.ThermalPdf
 import com.billing.pos.print.ThermalPrinter
+import com.billing.pos.data.hasTwoUnits
+import com.billing.pos.data.primaryChoice
 import com.billing.pos.ui.billing.BillingViewModel
+import com.billing.pos.ui.billing.UnitPickDialog
 import com.billing.pos.ui.billing.NewCustomerDialog
 import com.billing.pos.ui.billing.collectAsStateSafe
 import com.billing.pos.ui.common.rememberThumbnail
@@ -121,6 +124,8 @@ fun QuickBillScreen(
     val allBatchesTop by vm.allBatches.collectAsStateSafe()
     var sizePickFor by remember { mutableStateOf<com.billing.pos.data.Item?>(null) }
     var batchPickFor by remember { mutableStateOf<com.billing.pos.data.Item?>(null) }
+    var unitPickFor by remember { mutableStateOf<com.billing.pos.data.Item?>(null) }
+    var pendingChoice by remember { mutableStateOf<com.billing.pos.data.UnitChoice?>(null) }
 
     val attachPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments()
@@ -268,7 +273,10 @@ fun QuickBillScreen(
                             ItemTile(item, photos[item.id]) {
                                 when {
                                     allSizes.any { s -> s.itemId == item.id } -> sizePickFor = item
-                                    requireBatch && allBatchesTop.any { b -> b.itemId == item.id } -> batchPickFor = item
+                                    item.hasTwoUnits -> unitPickFor = item
+                                    requireBatch && allBatchesTop.any { b -> b.itemId == item.id } -> {
+                                        pendingChoice = item.primaryChoice(); batchPickFor = item
+                                    }
                                     else -> vm.addItemToCart(item)
                                 }
                             }
@@ -336,13 +344,29 @@ fun QuickBillScreen(
             onDismiss = { sizePickFor = null }
         )
     }
+    unitPickFor?.let { item ->
+        val allBatches by vm.allBatches.collectAsStateSafe()
+        UnitPickDialog(
+            item = item,
+            onPick = { choice ->
+                unitPickFor = null
+                if (requireBatch && allBatches.any { it.itemId == item.id }) {
+                    pendingChoice = choice; batchPickFor = item
+                } else vm.addItemWithUnit(item, choice)
+            },
+            onDismiss = { unitPickFor = null }
+        )
+    }
     batchPickFor?.let { item ->
         val allBatches by vm.allBatches.collectAsStateSafe()
         com.billing.pos.ui.billing.SaleBatchPickDialog(
             item = item,
             batches = allBatches.filter { it.itemId == item.id },
-            onPick = { batch -> vm.addItemWithBatch(item, batch); batchPickFor = null },
-            onDismiss = { batchPickFor = null }
+            onPick = { batch ->
+                vm.addItemWithBatch(item, batch, pendingChoice ?: item.primaryChoice())
+                pendingChoice = null; batchPickFor = null
+            },
+            onDismiss = { pendingChoice = null; batchPickFor = null }
         )
     }
     if (showCart) {

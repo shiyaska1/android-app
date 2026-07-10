@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
@@ -90,6 +91,9 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.billing.pos.auth.Session
 import com.billing.pos.data.BillWithItems
 import com.billing.pos.data.PaymentMethod
+import com.billing.pos.data.hasTwoUnits
+import com.billing.pos.data.primaryChoice
+import com.billing.pos.data.unitChoices
 import com.billing.pos.pdf.InvoicePdf
 import com.billing.pos.pdf.ThermalPdf
 import com.billing.pos.print.ThermalPrinter
@@ -144,6 +148,9 @@ fun BillingScreen(
     val requireBatch = remember { com.billing.pos.data.AppPrefs(context).requireItemBatch }
     var batchPickFor by remember { mutableStateOf<com.billing.pos.data.Item?>(null) }
     var sizePickFor by remember { mutableStateOf<com.billing.pos.data.Item?>(null) }
+    var unitPickFor by remember { mutableStateOf<com.billing.pos.data.Item?>(null) }
+    // Unit chosen for the item currently going through the batch picker.
+    var pendingChoice by remember { mutableStateOf<com.billing.pos.data.UnitChoice?>(null) }
 
     val prefs = remember { com.billing.pos.data.AppPrefs(context) }
     var licensed by remember { mutableStateOf(prefs.licensed) }
@@ -621,12 +628,29 @@ fun BillingScreen(
                 showItemPicker = false
                 when {
                     allSizes.any { s -> s.itemId == picked.id } -> sizePickFor = picked
-                    requireBatch && allBatches.any { b -> b.itemId == picked.id } -> batchPickFor = picked
+                    // Two different units → ask which one. Same unit → no prompt.
+                    picked.hasTwoUnits -> unitPickFor = picked
+                    requireBatch && allBatches.any { b -> b.itemId == picked.id } -> {
+                        pendingChoice = picked.primaryChoice(); batchPickFor = picked
+                    }
                     else -> vm.addItemToCart(picked)
                 }
             },
             onNewItem = { showItemPicker = false; showNewItem = true },
             stockByItem = stockByItem
+        )
+    }
+    unitPickFor?.let { item ->
+        val allBatches by vm.allBatches.collectAsStateSafe()
+        UnitPickDialog(
+            item = item,
+            onPick = { choice ->
+                unitPickFor = null
+                if (requireBatch && allBatches.any { it.itemId == item.id }) {
+                    pendingChoice = choice; batchPickFor = item
+                } else vm.addItemWithUnit(item, choice)
+            },
+            onDismiss = { unitPickFor = null }
         )
     }
     sizePickFor?.let { item ->
@@ -643,8 +667,11 @@ fun BillingScreen(
         SaleBatchPickDialog(
             item = item,
             batches = allBatches.filter { it.itemId == item.id },
-            onPick = { batch -> vm.addItemWithBatch(item, batch); batchPickFor = null },
-            onDismiss = { batchPickFor = null }
+            onPick = { batch ->
+                vm.addItemWithBatch(item, batch, pendingChoice ?: item.primaryChoice())
+                pendingChoice = null; batchPickFor = null
+            },
+            onDismiss = { pendingChoice = null; batchPickFor = null }
         )
     }
     if (showHandwrite) {
@@ -921,6 +948,45 @@ internal fun SaleSizePickDialog(
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } }
+    )
+}
+
+/**
+ * Pick which unit to bill an item in. Only shown when the item's primary and secondary
+ * units differ; the secondary rate is the primary price / conversion factor, rounded to 2dp.
+ */
+@Composable
+internal fun UnitPickDialog(
+    item: com.billing.pos.data.Item,
+    onPick: (com.billing.pos.data.UnitChoice) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val choices = item.unitChoices()
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Unit — ${item.name}") },
+        text = {
+            Column(Modifier.fillMaxWidth()) {
+                Text(
+                    "1 ${item.unit} = ${Format.qty(item.conversionFactor)} ${item.secondaryUnit}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.outline
+                )
+                Spacer(Modifier.height(8.dp))
+                choices.forEach { ch ->
+                    Column(Modifier.fillMaxWidth().clickable { onPick(ch) }.padding(vertical = 10.dp)) {
+                        Text(ch.unit, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            "Rate ${Format.rupee(ch.price)} per ${ch.unit}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.outline
+                        )
+                        Divider(Modifier.padding(top = 8.dp))
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
 }
 

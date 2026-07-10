@@ -63,7 +63,11 @@ import com.billing.pos.data.PurchaseQuotationItem
 import com.billing.pos.data.Repository
 import com.billing.pos.data.Supplier
 import com.billing.pos.ui.billing.CartLine
+import com.billing.pos.data.UnitChoice
+import com.billing.pos.data.hasTwoUnits
+import com.billing.pos.data.primaryChoice
 import com.billing.pos.ui.billing.ItemPickerDialog
+import com.billing.pos.ui.billing.UnitPickDialog
 import com.billing.pos.ui.billing.collectAsStateSafe
 import com.billing.pos.ui.common.DocumentPdfAction
 import com.billing.pos.pdf.PdfDoc
@@ -107,10 +111,12 @@ class PurchaseQuotationViewModel(app: Application) : AndroidViewModel(app) {
     val grandTotal get() = subTotal + taxTotal + additionalCharge - discount
 
     fun selectSupplier(s: Supplier) { selectedSupplier = s }
-    fun addItemToCart(item: Item) {
-        val idx = cart.indexOfFirst { it.itemId == item.id && item.id != 0L }
+    fun addItemToCart(item: Item) = addItemWithUnit(item, item.primaryChoice())
+
+    fun addItemWithUnit(item: Item, choice: UnitChoice) {
+        val idx = cart.indexOfFirst { it.itemId == item.id && it.unit == choice.unit && item.id != 0L }
         if (idx >= 0) cart[idx] = cart[idx].copy(qty = cart[idx].qty + 1)
-        else cart.add(CartLine(item.id, item.name, item.price, item.taxPercent, 1.0))
+        else cart.add(CartLine(item.id, item.name, choice.price, item.taxPercent, 1.0, unit = choice.unit, primaryPerUnit = choice.primaryPerUnit))
     }
     fun changeQty(i: Int, d: Double) { val l = cart.getOrNull(i) ?: return; val q = l.qty + d; if (q <= 0) cart.removeAt(i) else cart[i] = l.copy(qty = q) }
     fun setQty(i: Int, q: Double) { val l = cart.getOrNull(i) ?: return; if (q <= 0) cart.removeAt(i) else cart[i] = l.copy(qty = q) }
@@ -128,7 +134,7 @@ class PurchaseQuotationViewModel(app: Application) : AndroidViewModel(app) {
             remarks = r.remarks
             selectedSupplier = suppliers.value.firstOrNull { it.id == r.supplierId } ?: Supplier(r.supplierId, r.supplierName)
             cart.clear()
-            repo.purchaseQuotationLines(id).forEach { cart.add(CartLine(it.itemId, it.name, it.price, it.taxPercent, it.qty)) }
+            repo.purchaseQuotationLines(id).forEach { cart.add(CartLine(it.itemId, it.name, it.price, it.taxPercent, it.qty, unit = it.unit)) }
         }
     }
 
@@ -150,7 +156,7 @@ class PurchaseQuotationViewModel(app: Application) : AndroidViewModel(app) {
                 subTotal = subTotal, taxTotal = taxTotal, additionalCharge = additionalCharge,
                 discount = discount, grandTotal = grandTotal, remarks = remarks.trim()
             )
-            val lines = cart.map { PurchaseQuotationItem(0, r.id, it.itemId, it.name, it.qty, it.price, it.taxPercent, it.total) }
+            val lines = cart.map { PurchaseQuotationItem(0, r.id, it.itemId, it.name, it.qty, it.price, it.taxPercent, it.total, it.unit) }
             val eid = editingId
             if (eid != null) { repo.updatePurchaseQuotation(r, lines); message.value = "LPO $lpoNo updated" }
             else { repo.savePurchaseQuotation(r, lines); editingId = null; message.value = "LPO $lpoNo saved" }
@@ -172,6 +178,7 @@ fun PurchaseQuotationScreen(editId: Long?, onBack: () -> Unit, vm: PurchaseQuota
     LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); vm.consumeMessage() } }
 
     var showItemPicker by remember { mutableStateOf(false) }
+    var unitPickFor by remember { mutableStateOf<Item?>(null) }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
@@ -185,7 +192,7 @@ fun PurchaseQuotationScreen(editId: Long?, onBack: () -> Unit, vm: PurchaseQuota
                         else PdfDoc(
                             docTitle = "PURCHASE ORDER", docNo = vm.lpoNo, dateMillis = vm.dateMillis,
                             partyLabel = "Order To", partyName = vm.selectedSupplier?.name ?: "",
-                            lines = vm.cart.map { PdfLine(it.name, it.qty, it.price, it.total) },
+                            lines = vm.cart.map { PdfLine(it.name, it.qty, it.price, it.total, it.unit) },
                             subTotal = vm.subTotal, taxTotal = vm.taxTotal, additionalCharge = vm.additionalCharge,
                             discount = vm.discount, grandTotal = vm.grandTotal, grandLabel = "ORDER TOTAL",
                             remarks = vm.remarks, filePrefix = "lpo"
@@ -226,6 +233,7 @@ fun PurchaseQuotationScreen(editId: Long?, onBack: () -> Unit, vm: PurchaseQuota
                         Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(line.name, Modifier.weight(1f), fontWeight = FontWeight.SemiBold, maxLines = 1)
+                                if (line.unit.isNotBlank()) Text(line.unit, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
                                 IconButton(onClick = { vm.removeLine(i) }) { Icon(Icons.Filled.Delete, "Remove", tint = MaterialTheme.colorScheme.error) }
                             }
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -265,8 +273,18 @@ fun PurchaseQuotationScreen(editId: Long?, onBack: () -> Unit, vm: PurchaseQuota
         ItemPickerDialog(
             items = items,
             onDismiss = { showItemPicker = false },
-            onPick = { picked -> showItemPicker = false; vm.addItemToCart(picked) },
+            onPick = { picked ->
+                showItemPicker = false
+                if (picked.hasTwoUnits) unitPickFor = picked else vm.addItemToCart(picked)
+            },
             onNewItem = { showItemPicker = false }
+        )
+    }
+    unitPickFor?.let { item ->
+        UnitPickDialog(
+            item = item,
+            onPick = { choice -> vm.addItemWithUnit(item, choice); unitPickFor = null },
+            onDismiss = { unitPickFor = null }
         )
     }
 }

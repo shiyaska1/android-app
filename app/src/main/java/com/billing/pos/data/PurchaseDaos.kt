@@ -110,8 +110,11 @@ interface PurchaseDao {
     @Query("SELECT * FROM purchase_items")
     suspend fun allLines(): List<PurchaseItem>
 
+    /** [PurchaseLineInfo.qty] is the PRIMARY-unit quantity, so stock math stays unit-correct. */
     @Query(
-        "SELECT pi.name AS name, pi.price AS price, pi.qty AS qty, p.dateMillis AS dateMillis " +
+        "SELECT pi.name AS name, pi.price AS price, " +
+            "CASE WHEN pi.primaryQty > 0 THEN pi.primaryQty ELSE pi.qty END AS qty, " +
+            "p.dateMillis AS dateMillis " +
             "FROM purchase_items pi JOIN purchases p ON pi.purchaseId = p.id"
     )
     fun observePurchaseLines(): Flow<List<PurchaseLineInfo>>

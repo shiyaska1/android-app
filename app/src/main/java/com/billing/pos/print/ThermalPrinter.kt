@@ -224,7 +224,7 @@ object ThermalPrinter {
         sb.append(line()).append('\n')
         for (l in lines) {
             sb.append(clip(l.name, COLS)).append('\n')
-            sb.append(row("  @${Format.money(l.price)}", Format.qty(l.qty), Format.money(l.lineTotal)))
+            sb.append(row("  @${Format.money(l.price)}" + (if (l.unit.isNotBlank()) "/${l.unit}" else ""), Format.qty(l.qty), Format.money(l.lineTotal)))
                 .append('\n')
         }
         sb.append(line()).append('\n')
@@ -267,7 +267,7 @@ object ThermalPrinter {
         sb.append(line()).append('\n')
         for (l in lines) {
             sb.append(clip(l.name, COLS)).append('\n')
-            sb.append(row("  @${Format.money(l.price)}", Format.qty(l.qty), Format.money(l.lineTotal))).append('\n')
+            sb.append(row("  @${Format.money(l.price)}" + (if (l.unit.isNotBlank()) "/${l.unit}" else ""), Format.qty(l.qty), Format.money(l.lineTotal))).append('\n')
         }
         sb.append(line()).append('\n')
         sb.append(kv("Sub Total", Format.money(pur.subTotal))).append('\n')

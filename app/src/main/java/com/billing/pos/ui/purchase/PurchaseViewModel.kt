@@ -13,6 +13,7 @@ import com.billing.pos.data.PaymentMethod
 import com.billing.pos.data.Purchase
 import com.billing.pos.data.PurchaseItem
 import com.billing.pos.data.Repository
+import com.billing.pos.data.primaryChoice
 import com.billing.pos.data.Supplier
 import com.billing.pos.ui.billing.CartLine
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -79,16 +80,27 @@ class PurchaseViewModel(app: Application) : AndroidViewModel(app) {
     fun setAdditionalCharge(v: String) { additionalChargeText = v; dirty = true }
     fun setDiscount(v: String) { discountText = v; dirty = true }
 
-    fun addItemToCart(item: Item) {
-        val idx = cart.indexOfFirst { it.itemId == item.id && item.id != 0L }
+    fun addItemToCart(item: Item) = addItemWithUnit(item, item.primaryChoice())
+
+    fun addItemWithUnit(item: Item, choice: com.billing.pos.data.UnitChoice) {
+        val idx = cart.indexOfFirst { it.itemId == item.id && it.unit == choice.unit && item.id != 0L }
         if (idx >= 0) cart[idx] = cart[idx].copy(qty = cart[idx].qty + 1)
-        else cart.add(CartLine(item.id, item.name, item.price, item.taxPercent, 1.0))
+        else cart.add(CartLine(item.id, item.name, choice.price, item.taxPercent, 1.0, unit = choice.unit, primaryPerUnit = choice.primaryPerUnit))
         dirty = true
     }
 
     /** Adds a purchase line for a batch (existing or new); stock is received on save. */
-    fun addBatchLine(item: Item, batchNo: String, expiryMillis: Long, qty: Double, price: Double) {
-        cart.add(CartLine(item.id, item.name, price, item.taxPercent, qty.takeIf { it > 0 } ?: 1.0, batchNo = batchNo.trim(), batchExpiry = expiryMillis))
+    fun addBatchLine(
+        item: Item, batchNo: String, expiryMillis: Long, qty: Double, price: Double,
+        choice: com.billing.pos.data.UnitChoice = item.primaryChoice()
+    ) {
+        cart.add(
+            CartLine(
+                item.id, item.name, price, item.taxPercent, qty.takeIf { it > 0 } ?: 1.0,
+                batchNo = batchNo.trim(), batchExpiry = expiryMillis,
+                unit = choice.unit, primaryPerUnit = choice.primaryPerUnit
+            )
+        )
         dirty = true
     }
 
@@ -182,7 +194,7 @@ class PurchaseViewModel(app: Application) : AndroidViewModel(app) {
             source = editingSource
         )
         val lines = cart.map {
-            PurchaseItem(0, editId ?: 0, it.name, it.qty, it.price, it.taxPercent, it.total, batchNo = it.batchNo)
+            PurchaseItem(0, editId ?: 0, it.name, it.qty, it.price, it.taxPercent, it.total, batchNo = it.batchNo, unit = it.unit, primaryQty = it.primaryQty)
         }
         val saved: PurchaseWithItems
         if (editId != null) {
@@ -194,7 +206,7 @@ class PurchaseViewModel(app: Application) : AndroidViewModel(app) {
             saved = PurchaseWithItems(purchase.copy(id = id), lines)
             // Receive batch stock for new purchases (add to existing / create new).
             cart.filter { it.batchNo.isNotBlank() && it.itemId > 0 }
-                .forEach { repo.receiveBatch(it.itemId, it.batchNo, it.batchExpiry, it.qty) }
+                .forEach { repo.receiveBatch(it.itemId, it.batchNo, it.batchExpiry, it.primaryQty) }
             _message.value = "Purchase $purchaseNo saved"
         }
         lastSaved = saved
@@ -219,7 +231,10 @@ class PurchaseViewModel(app: Application) : AndroidViewModel(app) {
             selectedSupplier = suppliers.value.firstOrNull { it.id == purchase.supplierId }
                 ?: Supplier(id = purchase.supplierId, name = purchase.supplierName)
             cart.clear()
-            lines.forEach { cart.add(CartLine(0, it.name, it.price, it.taxPercent, it.qty)) }
+            lines.forEach {
+                val perUnit = if (it.primaryQty > 0 && it.qty > 0) it.primaryQty / it.qty else 1.0
+                cart.add(CartLine(0, it.name, it.price, it.taxPercent, it.qty, batchNo = it.batchNo, unit = it.unit, primaryPerUnit = perUnit))
+            }
             dirty = false
             lastSaved = PurchaseWithItems(purchase, lines)
         }

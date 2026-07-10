@@ -467,6 +467,7 @@ object FullBackup {
     private fun itemJson(i: Item) = JSONObject().put("id", i.id).put("name", i.name)
         .put("price", i.price).put("taxPercent", i.taxPercent).put("barcode", i.barcode).put("hsn", i.hsn)
         .put("category", i.category).put("openingStock", i.openingStock).put("unit", i.unit)
+        .put("secondaryUnit", i.secondaryUnit).put("conversionFactor", i.conversionFactor)
         .put("storeLocation", i.storeLocation).put("chemicalContent", i.chemicalContent)
 
     private fun billJson(b: Bill) = JSONObject().put("id", b.id).put("billNo", b.billNo)
@@ -479,6 +480,7 @@ object FullBackup {
     private fun lineJson(l: BillItem) = JSONObject().put("id", l.id).put("billId", l.billId)
         .put("name", l.name).put("qty", l.qty).put("price", l.price)
         .put("taxPercent", l.taxPercent).put("lineTotal", l.lineTotal).put("batchNo", l.batchNo)
+        .put("unit", l.unit).put("primaryQty", l.primaryQty)
 
     private fun receiptJson(r: Receipt) = JSONObject().put("id", r.id).put("receiptNo", r.receiptNo)
         .put("billId", r.billId).put("billNo", r.billNo).put("customerName", r.customerName)
@@ -523,6 +525,7 @@ object FullBackup {
     private fun pLineJson(l: PurchaseItem) = JSONObject().put("id", l.id).put("purchaseId", l.purchaseId)
         .put("name", l.name).put("qty", l.qty).put("price", l.price)
         .put("taxPercent", l.taxPercent).put("lineTotal", l.lineTotal).put("batchNo", l.batchNo)
+        .put("unit", l.unit).put("primaryQty", l.primaryQty)
 
     private fun groupJson(g: AccountGroup) = JSONObject().put("id", g.id).put("name", g.name)
         .put("nature", g.nature.name).put("isSystem", g.isSystem)
@@ -564,12 +567,13 @@ object FullBackup {
     )
 
     private fun qItemJson(l: QuotationItem) = JSONObject().put("id", l.id).put("quotationId", l.quotationId)
-        .put("name", l.name).put("qty", l.qty).put("price", l.price).put("taxPercent", l.taxPercent).put("lineTotal", l.lineTotal)
+        .put("name", l.name).put("qty", l.qty).put("price", l.price).put("taxPercent", l.taxPercent).put("lineTotal", l.lineTotal).put("unit", l.unit)
 
     private fun readQItem(o: JSONObject) = QuotationItem(
         id = o.optLong("id"), quotationId = o.optLong("quotationId"), name = o.optString("name"),
         qty = o.optDouble("qty", 0.0), price = o.optDouble("price", 0.0),
-        taxPercent = o.optDouble("taxPercent", 0.0), lineTotal = o.optDouble("lineTotal", 0.0)
+        taxPercent = o.optDouble("taxPercent", 0.0), lineTotal = o.optDouble("lineTotal", 0.0),
+        unit = o.optString("unit")
     )
 
     private fun salesReturnJson(r: SalesReturn) = JSONObject().put("id", r.id).put("returnNo", r.returnNo)
@@ -589,11 +593,13 @@ object FullBackup {
     private fun srItemJson(l: SalesReturnItem) = JSONObject().put("id", l.id).put("returnId", l.returnId)
         .put("itemId", l.itemId).put("name", l.name).put("qty", l.qty).put("price", l.price)
         .put("taxPercent", l.taxPercent).put("lineTotal", l.lineTotal).put("batchNo", l.batchNo)
+        .put("unit", l.unit).put("primaryQty", l.primaryQty)
 
     private fun readSRItem(o: JSONObject) = SalesReturnItem(
         id = o.optLong("id"), returnId = o.optLong("returnId"), itemId = o.optLong("itemId"), name = o.optString("name"),
         qty = o.optDouble("qty", 0.0), price = o.optDouble("price", 0.0),
-        taxPercent = o.optDouble("taxPercent", 0.0), lineTotal = o.optDouble("lineTotal", 0.0), batchNo = o.optString("batchNo")
+        taxPercent = o.optDouble("taxPercent", 0.0), lineTotal = o.optDouble("lineTotal", 0.0), batchNo = o.optString("batchNo"),
+        unit = o.optString("unit"), primaryQty = o.optDouble("primaryQty", 0.0)
     )
 
     private fun purchaseReturnJson(r: PurchaseReturn) = JSONObject().put("id", r.id).put("returnNo", r.returnNo)
@@ -613,11 +619,13 @@ object FullBackup {
     private fun prItemJson(l: PurchaseReturnItem) = JSONObject().put("id", l.id).put("returnId", l.returnId)
         .put("itemId", l.itemId).put("name", l.name).put("qty", l.qty).put("price", l.price)
         .put("taxPercent", l.taxPercent).put("lineTotal", l.lineTotal).put("batchNo", l.batchNo)
+        .put("unit", l.unit).put("primaryQty", l.primaryQty)
 
     private fun readPRItem(o: JSONObject) = PurchaseReturnItem(
         id = o.optLong("id"), returnId = o.optLong("returnId"), itemId = o.optLong("itemId"), name = o.optString("name"),
         qty = o.optDouble("qty", 0.0), price = o.optDouble("price", 0.0),
-        taxPercent = o.optDouble("taxPercent", 0.0), lineTotal = o.optDouble("lineTotal", 0.0), batchNo = o.optString("batchNo")
+        taxPercent = o.optDouble("taxPercent", 0.0), lineTotal = o.optDouble("lineTotal", 0.0), batchNo = o.optString("batchNo"),
+        unit = o.optString("unit"), primaryQty = o.optDouble("primaryQty", 0.0)
     )
 
     private fun lpoJson(r: PurchaseQuotation) = JSONObject().put("id", r.id).put("lpoNo", r.lpoNo)
@@ -636,12 +644,13 @@ object FullBackup {
 
     private fun lpoItemJson(l: PurchaseQuotationItem) = JSONObject().put("id", l.id).put("lpoId", l.lpoId)
         .put("itemId", l.itemId).put("name", l.name).put("qty", l.qty).put("price", l.price)
-        .put("taxPercent", l.taxPercent).put("lineTotal", l.lineTotal)
+        .put("taxPercent", l.taxPercent).put("lineTotal", l.lineTotal).put("unit", l.unit)
 
     private fun readLpoItem(o: JSONObject) = PurchaseQuotationItem(
         id = o.optLong("id"), lpoId = o.optLong("lpoId"), itemId = o.optLong("itemId"), name = o.optString("name"),
         qty = o.optDouble("qty", 0.0), price = o.optDouble("price", 0.0),
-        taxPercent = o.optDouble("taxPercent", 0.0), lineTotal = o.optDouble("lineTotal", 0.0)
+        taxPercent = o.optDouble("taxPercent", 0.0), lineTotal = o.optDouble("lineTotal", 0.0),
+        unit = o.optString("unit")
     )
 
     private fun readSize(o: JSONObject) = ItemSize(
@@ -675,7 +684,10 @@ object FullBackup {
         price = o.optDouble("price", 0.0), taxPercent = o.optDouble("taxPercent", 0.0),
         barcode = o.optString("barcode"), hsn = o.optString("hsn"),
         category = o.optString("category"), openingStock = o.optDouble("openingStock", 0.0),
-        unit = o.optString("unit", "PCS"), storeLocation = o.optString("storeLocation"),
+        unit = o.optString("unit", "PCS"),
+        secondaryUnit = o.optString("secondaryUnit", "PCS"),
+        conversionFactor = o.optDouble("conversionFactor", 1.0),
+        storeLocation = o.optString("storeLocation"),
         chemicalContent = o.optString("chemicalContent")
     )
 
@@ -693,7 +705,8 @@ object FullBackup {
         id = o.optLong("id"), billId = o.optLong("billId"), name = o.optString("name"),
         qty = o.optDouble("qty", 0.0), price = o.optDouble("price", 0.0),
         taxPercent = o.optDouble("taxPercent", 0.0), lineTotal = o.optDouble("lineTotal", 0.0),
-        batchNo = o.optString("batchNo")
+        batchNo = o.optString("batchNo"), unit = o.optString("unit"),
+        primaryQty = o.optDouble("primaryQty", 0.0)
     )
 
     private fun readReceipt(o: JSONObject) = Receipt(
@@ -754,7 +767,8 @@ object FullBackup {
         id = o.optLong("id"), purchaseId = o.optLong("purchaseId"), name = o.optString("name"),
         qty = o.optDouble("qty", 0.0), price = o.optDouble("price", 0.0),
         taxPercent = o.optDouble("taxPercent", 0.0), lineTotal = o.optDouble("lineTotal", 0.0),
-        batchNo = o.optString("batchNo")
+        batchNo = o.optString("batchNo"), unit = o.optString("unit"),
+        primaryQty = o.optDouble("primaryQty", 0.0)
     )
 
     private fun readGroup(o: JSONObject) = AccountGroup(

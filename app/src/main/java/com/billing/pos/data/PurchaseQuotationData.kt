@@ -36,7 +36,9 @@ data class PurchaseQuotationItem(
     val qty: Double,
     val price: Double,
     val taxPercent: Double,
-    val lineTotal: Double
+    val lineTotal: Double,
+    /** Unit this line is ordered in (blank = the item's primary unit). */
+    val unit: String = ""
 )
 
 data class PurchaseQuotationWithItems(val lpo: PurchaseQuotation, val lines: List<PurchaseQuotationItem>)

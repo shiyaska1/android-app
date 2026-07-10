@@ -77,7 +77,10 @@ import com.billing.pos.data.PaymentMethod
 import com.billing.pos.pdf.PurchasePdf
 import com.billing.pos.print.ThermalPrinter
 import com.billing.pos.ui.billing.CustomLineDialog
+import com.billing.pos.data.hasTwoUnits
+import com.billing.pos.data.primaryChoice
 import com.billing.pos.ui.billing.ItemPickerDialog
+import com.billing.pos.ui.billing.UnitPickDialog
 import com.billing.pos.ui.billing.NewItemDialog
 import com.billing.pos.ui.billing.collectAsStateSafe
 import com.billing.pos.util.Format
@@ -108,6 +111,8 @@ fun PurchaseScreen(
     var showNewSupplier by remember { mutableStateOf(false) }
     var showNewItem by remember { mutableStateOf(false) }
     var showItemPicker by remember { mutableStateOf(false) }
+    var unitPickFor by remember { mutableStateOf<com.billing.pos.data.Item?>(null) }
+    var pendingChoice by remember { mutableStateOf<com.billing.pos.data.UnitChoice?>(null) }
     val requireBatch = remember { AppPrefs(context).requireItemBatch }
     var batchFor by remember { mutableStateOf<com.billing.pos.data.Item?>(null) }
     var showCustomLine by remember { mutableStateOf(false) }
@@ -347,8 +352,26 @@ fun PurchaseScreen(
         ItemPickerDialog(
             items = items,
             onDismiss = { showItemPicker = false },
-            onPick = { showItemPicker = false; if (requireBatch) batchFor = it else vm.addItemToCart(it) },
+            onPick = { picked ->
+                showItemPicker = false
+                when {
+                    picked.hasTwoUnits -> unitPickFor = picked
+                    requireBatch -> { pendingChoice = picked.primaryChoice(); batchFor = picked }
+                    else -> vm.addItemToCart(picked)
+                }
+            },
             onNewItem = { showItemPicker = false; showNewItem = true }
+        )
+    }
+    unitPickFor?.let { item ->
+        UnitPickDialog(
+            item = item,
+            onPick = { choice ->
+                unitPickFor = null
+                if (requireBatch) { pendingChoice = choice; batchFor = item }
+                else vm.addItemWithUnit(item, choice)
+            },
+            onDismiss = { unitPickFor = null }
         )
     }
     batchFor?.let { item ->
@@ -356,8 +379,11 @@ fun PurchaseScreen(
         PurchaseBatchDialog(
             item = item,
             existing = allBatches.filter { it.itemId == item.id },
-            onAdd = { no, exp, q, price -> vm.addBatchLine(item, no, exp, q, price); batchFor = null },
-            onDismiss = { batchFor = null }
+            onAdd = { no, exp, q, price ->
+                vm.addBatchLine(item, no, exp, q, price, pendingChoice ?: item.primaryChoice())
+                pendingChoice = null; batchFor = null
+            },
+            onDismiss = { pendingChoice = null; batchFor = null }
         )
     }
 }

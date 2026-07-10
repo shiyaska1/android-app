@@ -64,9 +64,13 @@ import com.billing.pos.data.PurchaseReturn
 import com.billing.pos.data.PurchaseReturnItem
 import com.billing.pos.data.Repository
 import com.billing.pos.data.Supplier
+import com.billing.pos.data.UnitChoice
+import com.billing.pos.data.hasTwoUnits
+import com.billing.pos.data.primaryChoice
 import com.billing.pos.ui.billing.CartLine
 import com.billing.pos.ui.billing.ItemPickerDialog
 import com.billing.pos.ui.billing.SaleBatchPickDialog
+import com.billing.pos.ui.billing.UnitPickDialog
 import com.billing.pos.ui.billing.collectAsStateSafe
 import com.billing.pos.ui.common.DocumentPdfAction
 import com.billing.pos.pdf.PdfDoc
@@ -112,15 +116,17 @@ class PurchaseReturnViewModel(app: Application) : AndroidViewModel(app) {
     val grandTotal get() = subTotal + taxTotal + additionalCharge - discount
 
     fun selectSupplier(s: Supplier) { selectedSupplier = s }
-    fun addItemToCart(item: Item) {
-        val idx = cart.indexOfFirst { it.itemId == item.id && it.batchNo.isBlank() && item.id != 0L }
+    fun addItemToCart(item: Item) = addItemWithUnit(item, item.primaryChoice())
+
+    fun addItemWithUnit(item: Item, choice: UnitChoice) {
+        val idx = cart.indexOfFirst { it.itemId == item.id && it.batchNo.isBlank() && it.unit == choice.unit && item.id != 0L }
         if (idx >= 0) cart[idx] = cart[idx].copy(qty = cart[idx].qty + 1)
-        else cart.add(CartLine(item.id, item.name, item.price, item.taxPercent, 1.0))
+        else cart.add(CartLine(item.id, item.name, choice.price, item.taxPercent, 1.0, unit = choice.unit, primaryPerUnit = choice.primaryPerUnit))
     }
-    fun addItemWithBatch(item: Item, batch: com.billing.pos.data.ItemBatch) {
-        val idx = cart.indexOfFirst { it.itemId == item.id && it.batchNo == batch.batchNo }
+    fun addItemWithBatch(item: Item, batch: com.billing.pos.data.ItemBatch, choice: UnitChoice = item.primaryChoice()) {
+        val idx = cart.indexOfFirst { it.itemId == item.id && it.batchNo == batch.batchNo && it.unit == choice.unit }
         if (idx >= 0) cart[idx] = cart[idx].copy(qty = cart[idx].qty + 1)
-        else cart.add(CartLine(item.id, item.name, item.price, item.taxPercent, 1.0, batchNo = batch.batchNo))
+        else cart.add(CartLine(item.id, item.name, choice.price, item.taxPercent, 1.0, batchNo = batch.batchNo, unit = choice.unit, primaryPerUnit = choice.primaryPerUnit))
     }
     fun changeQty(i: Int, d: Double) { val l = cart.getOrNull(i) ?: return; val q = l.qty + d; if (q <= 0) cart.removeAt(i) else cart[i] = l.copy(qty = q) }
     fun setQty(i: Int, q: Double) { val l = cart.getOrNull(i) ?: return; if (q <= 0) cart.removeAt(i) else cart[i] = l.copy(qty = q) }
@@ -138,7 +144,10 @@ class PurchaseReturnViewModel(app: Application) : AndroidViewModel(app) {
             remarks = r.remarks; billNo = r.billNo
             selectedSupplier = suppliers.value.firstOrNull { it.id == r.supplierId } ?: Supplier(r.supplierId, r.supplierName)
             cart.clear()
-            repo.purchaseReturnLines(id).forEach { cart.add(CartLine(it.itemId, it.name, it.price, it.taxPercent, it.qty, batchNo = it.batchNo)) }
+            repo.purchaseReturnLines(id).forEach {
+                val perUnit = if (it.primaryQty > 0 && it.qty > 0) it.primaryQty / it.qty else 1.0
+                cart.add(CartLine(it.itemId, it.name, it.price, it.taxPercent, it.qty, batchNo = it.batchNo, unit = it.unit, primaryPerUnit = perUnit))
+            }
         }
     }
 
@@ -160,13 +169,13 @@ class PurchaseReturnViewModel(app: Application) : AndroidViewModel(app) {
                 subTotal = subTotal, taxTotal = taxTotal, additionalCharge = additionalCharge,
                 discount = discount, grandTotal = grandTotal, remarks = remarks.trim()
             )
-            val lines = cart.map { PurchaseReturnItem(0, r.id, it.itemId, it.name, it.qty, it.price, it.taxPercent, it.total, it.batchNo) }
+            val lines = cart.map { PurchaseReturnItem(0, r.id, it.itemId, it.name, it.qty, it.price, it.taxPercent, it.total, it.batchNo, it.unit, it.primaryQty) }
             val eid = editingId
             if (eid != null) { repo.updatePurchaseReturn(r, lines); message.value = "Return $returnNo updated" }
             else {
                 repo.savePurchaseReturn(r, lines)
                 // Goods returned to supplier leave batch stock (new returns only).
-                cart.filter { it.batchNo.isNotBlank() && it.itemId > 0 }.forEach { repo.deductBatch(it.itemId, it.batchNo, it.qty) }
+                cart.filter { it.batchNo.isNotBlank() && it.itemId > 0 }.forEach { repo.deductBatch(it.itemId, it.batchNo, it.primaryQty) }
                 editingId = null
                 message.value = "Return $returnNo saved"
             }
@@ -192,6 +201,8 @@ fun PurchaseReturnScreen(editId: Long?, onBack: () -> Unit, vm: PurchaseReturnVi
 
     var showItemPicker by remember { mutableStateOf(false) }
     var batchPickFor by remember { mutableStateOf<Item?>(null) }
+    var unitPickFor by remember { mutableStateOf<Item?>(null) }
+    var pendingChoice by remember { mutableStateOf<UnitChoice?>(null) }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
@@ -206,7 +217,7 @@ fun PurchaseReturnScreen(editId: Long?, onBack: () -> Unit, vm: PurchaseReturnVi
                             docTitle = "PURCHASE RETURN", docNo = vm.returnNo, dateMillis = vm.dateMillis,
                             partyLabel = "Return To", partyName = vm.selectedSupplier?.name ?: "",
                             extraMeta = if (vm.billNo.isNotBlank()) "Against: ${vm.billNo}" else "",
-                            lines = vm.cart.map { PdfLine(it.name, it.qty, it.price, it.total) },
+                            lines = vm.cart.map { PdfLine(it.name, it.qty, it.price, it.total, it.unit) },
                             subTotal = vm.subTotal, taxTotal = vm.taxTotal, additionalCharge = vm.additionalCharge,
                             discount = vm.discount, grandTotal = vm.grandTotal, grandLabel = "DEBIT TOTAL",
                             remarks = vm.remarks, filePrefix = "purchase_return"
@@ -248,7 +259,8 @@ fun PurchaseReturnScreen(editId: Long?, onBack: () -> Unit, vm: PurchaseReturnVi
                         Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(line.name, Modifier.weight(1f), fontWeight = FontWeight.SemiBold, maxLines = 1)
-                                if (line.batchNo.isNotBlank()) Text("B:${line.batchNo}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                                if (line.unit.isNotBlank()) Text(line.unit, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
+                                if (line.batchNo.isNotBlank()) Text("  B:${line.batchNo}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                                 IconButton(onClick = { vm.removeLine(i) }) { Icon(Icons.Filled.Delete, "Remove", tint = MaterialTheme.colorScheme.error) }
                             }
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -290,17 +302,38 @@ fun PurchaseReturnScreen(editId: Long?, onBack: () -> Unit, vm: PurchaseReturnVi
             onDismiss = { showItemPicker = false },
             onPick = { picked ->
                 showItemPicker = false
-                if (requireBatch && allBatches.any { it.itemId == picked.id }) batchPickFor = picked else vm.addItemToCart(picked)
+                when {
+                    picked.hasTwoUnits -> unitPickFor = picked
+                    requireBatch && allBatches.any { it.itemId == picked.id } -> {
+                        pendingChoice = picked.primaryChoice(); batchPickFor = picked
+                    }
+                    else -> vm.addItemToCart(picked)
+                }
             },
             onNewItem = { showItemPicker = false }
+        )
+    }
+    unitPickFor?.let { item ->
+        UnitPickDialog(
+            item = item,
+            onPick = { choice ->
+                unitPickFor = null
+                if (requireBatch && allBatches.any { it.itemId == item.id }) {
+                    pendingChoice = choice; batchPickFor = item
+                } else vm.addItemWithUnit(item, choice)
+            },
+            onDismiss = { unitPickFor = null }
         )
     }
     batchPickFor?.let { item ->
         SaleBatchPickDialog(
             item = item,
             batches = allBatches.filter { it.itemId == item.id },
-            onPick = { batch -> vm.addItemWithBatch(item, batch); batchPickFor = null },
-            onDismiss = { batchPickFor = null }
+            onPick = { batch ->
+                vm.addItemWithBatch(item, batch, pendingChoice ?: item.primaryChoice())
+                pendingChoice = null; batchPickFor = null
+            },
+            onDismiss = { pendingChoice = null; batchPickFor = null }
         )
     }
 }

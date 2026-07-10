@@ -230,18 +230,24 @@ class ItemsViewModel(app: Application) : AndroidViewModel(app) {
 
     fun save(
         existing: Item?, name: String, price: Double, tax: Double, barcode: String, hsn: String,
-        category: String, openingStock: Double, unit: String, storeLocation: String, chemicalContent: String, onDone: () -> Unit
+        category: String, openingStock: Double, unit: String, storeLocation: String, chemicalContent: String,
+        secondaryUnit: String = "PCS", conversionFactor: Double = 1.0, onDone: () -> Unit
     ) {
         if (name.isBlank()) { message.value = "Enter a name"; return }
         viewModelScope.launch {
             val id: Long = if (existing == null) {
-                repo.addItem(name, price, tax, barcode, hsn, category, openingStock, unit, storeLocation, chemicalContent)
+                repo.addItem(
+                    name, price, tax, barcode, hsn, category, openingStock, unit, storeLocation, chemicalContent,
+                    secondaryUnit, conversionFactor
+                )
             } else {
                 repo.updateItem(existing.copy(
                     name = name.trim(), price = price, taxPercent = tax, barcode = barcode.trim(),
                     hsn = hsn.trim(), category = category.trim(), openingStock = openingStock,
                     unit = unit.trim().ifBlank { "PCS" }, storeLocation = storeLocation.trim(),
-                    chemicalContent = chemicalContent.trim()
+                    chemicalContent = chemicalContent.trim(),
+                    secondaryUnit = secondaryUnit.trim().ifBlank { "PCS" },
+                    conversionFactor = if (conversionFactor > 0) conversionFactor else 1.0
                 ))
                 existing.id
             }
@@ -624,7 +630,9 @@ fun ItemsScreen(
             onAddCatalogue = { runCatching { cataloguePicker.launch(arrayOf("application/pdf")) } },
             onRemoveAttachment = { vm.removeAttachment(it) },
             onDismiss = { vm.cancelEdit(); showDialog = false },
-            onSave = { n, p, t, b, h, cat, os, u, loc, chem -> vm.save(editing, n, p, t, b, h, cat, os, u, loc, chem) { showDialog = false } }
+            onSave = { n, p, t, b, h, cat, os, u, loc, chem, sec, f ->
+                vm.save(editing, n, p, t, b, h, cat, os, u, loc, chem, sec, f) { showDialog = false }
+            }
         )
     }
     if (showExpiry) {
@@ -684,7 +692,7 @@ private fun ItemDialog(
     onAddCatalogue: () -> Unit,
     onRemoveAttachment: (ItemAttachment) -> Unit,
     onDismiss: () -> Unit,
-    onSave: (String, Double, Double, String, String, String, Double, String, String, String) -> Unit
+    onSave: (String, Double, Double, String, String, String, Double, String, String, String, String, Double) -> Unit
 ) {
     var showBatchInput by remember { mutableStateOf(false) }
     var editBatchIndex by remember { mutableStateOf(-1) }
@@ -704,6 +712,21 @@ private fun ItemDialog(
     var openingStock by remember { mutableStateOf(if ((existing?.openingStock ?: 0.0) != 0.0) Format.qty(existing!!.openingStock) else "") }
     var unit by remember { mutableStateOf(existing?.unit?.ifBlank { "PCS" } ?: "PCS") }
     var unitMenu by remember { mutableStateOf(false) }
+    var secondaryUnit by remember { mutableStateOf(existing?.secondaryUnit?.ifBlank { "PCS" } ?: "PCS") }
+    var secUnitMenu by remember { mutableStateOf(false) }
+    var factorText by remember {
+        mutableStateOf(if ((existing?.conversionFactor ?: 1.0) != 1.0) Format.qty(existing!!.conversionFactor) else "1")
+    }
+    // Two genuinely different units → the factor matters and a unit prompt appears at billing.
+    val unitsDiffer = !secondaryUnit.trim().equals(unit.trim(), ignoreCase = true) &&
+        secondaryUnit.isNotBlank() && unit.isNotBlank()
+    val secRate = run {
+        val f = factorText.toDoubleOrNull() ?: 1.0
+        val entered = price.toDoubleOrNull() ?: 0.0
+        val forQty = priceForQty.toDoubleOrNull()?.takeIf { it > 0 } ?: 1.0
+        val perPrimary = entered / forQty
+        if (f > 0) kotlin.math.round(perPrimary / f * 100.0) / 100.0 else 0.0
+    }
     var storeLocation by remember { mutableStateOf(existing?.storeLocation ?: "") }
     val scanLauncher = rememberLauncherForActivityResult(ScanContract()) { result ->
         result.contents?.let { barcode = it }
@@ -772,10 +795,10 @@ private fun ItemDialog(
                     }
                 }
 
-                // Unit of measure (dropdown with common units).
+                // Primary unit — price and stock are always expressed in this unit.
                 ExposedDropdownMenuBox(expanded = unitMenu, onExpandedChange = { unitMenu = !unitMenu }) {
                     OutlinedTextField(
-                        value = unit, onValueChange = { unit = it }, label = { Text("Unit") }, singleLine = true,
+                        value = unit, onValueChange = { unit = it }, label = { Text("Primary unit") }, singleLine = true,
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = unitMenu) },
                         modifier = Modifier.menuAnchor().fillMaxWidth()
                     )
@@ -785,6 +808,43 @@ private fun ItemDialog(
                         }
                     }
                 }
+
+                // Secondary unit + how many of it make one primary unit.
+                Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Box(Modifier.weight(1f)) {
+                        ExposedDropdownMenuBox(expanded = secUnitMenu, onExpandedChange = { secUnitMenu = !secUnitMenu }) {
+                            OutlinedTextField(
+                                value = secondaryUnit, onValueChange = { secondaryUnit = it },
+                                label = { Text("Secondary unit") }, singleLine = true,
+                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = secUnitMenu) },
+                                modifier = Modifier.menuAnchor().fillMaxWidth()
+                            )
+                            ExposedDropdownMenu(expanded = secUnitMenu, onDismissRequest = { secUnitMenu = false }) {
+                                ITEM_UNITS.forEach { u ->
+                                    DropdownMenuItem(text = { Text(u) }, onClick = { secondaryUnit = u; secUnitMenu = false })
+                                }
+                            }
+                        }
+                    }
+                    OutlinedTextField(
+                        value = factorText,
+                        onValueChange = { factorText = it.filter { c -> c.isDigit() || c == '.' } },
+                        label = { Text("Conv. factor") }, singleLine = true,
+                        enabled = unitsDiffer,
+                        isError = unitsDiffer && (factorText.toDoubleOrNull() ?: 0.0) <= 1.0,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        modifier = Modifier.width(120.dp)
+                    )
+                }
+                Text(
+                    if (unitsDiffer)
+                        "1 ${unit.ifBlank { "PCS" }} = ${factorText.ifBlank { "?" }} ${secondaryUnit.ifBlank { "PCS" }}." +
+                            " Selling rate per ${secondaryUnit.ifBlank { "PCS" }} = ${Format.rupee(secRate)}"
+                    else "Both units are the same — no unit prompt when billing.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (unitsDiffer && (factorText.toDoubleOrNull() ?: 0.0) <= 1.0)
+                        MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outline
+                )
 
                 // Category: pick an existing one from the dropdown, or type/tap + for a new one.
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -944,17 +1004,29 @@ private fun ItemDialog(
             }
         },
         confirmButton = {
+            val factorInvalid = unitsDiffer && (factorText.toDoubleOrNull() ?: 0.0) <= 1.0
             TextButton(
-                enabled = !(showBatches && batches.isEmpty()),
+                enabled = !(showBatches && batches.isEmpty()) && !factorInvalid,
                 onClick = {
                     val entered = price.toDoubleOrNull() ?: 0.0
                     val forQty = (priceForQty.toDoubleOrNull() ?: 1.0).takeIf { it > 0.0 } ?: 1.0
                     val p = entered / forQty            // store the per-unit price
                     val t = if (taxable) (taxPercent.toDoubleOrNull() ?: 0.0) else 0.0
                     val os = openingStock.toDoubleOrNull() ?: 0.0
-                    onSave(name, p, t, barcode, hsn, category, os, unit, storeLocation, chemical)
+                    // Same units ⇒ factor is meaningless, force it to 1.
+                    val sec = if (unitsDiffer) secondaryUnit.trim() else unit.trim()
+                    val f = if (unitsDiffer) (factorText.toDoubleOrNull() ?: 1.0) else 1.0
+                    onSave(name, p, t, barcode, hsn, category, os, unit, storeLocation, chemical, sec, f)
                 }
-            ) { Text(if (showBatches && batches.isEmpty()) "Add a batch" else "Save") }
+            ) {
+                Text(
+                    when {
+                        showBatches && batches.isEmpty() -> "Add a batch"
+                        factorInvalid -> "Set conv. factor"
+                        else -> "Save"
+                    }
+                )
+            }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )

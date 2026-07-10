@@ -27,8 +27,12 @@ data class Item(
     val category: String = "",
     /** Stock on hand before any purchase/sale was recorded in this app. */
     val openingStock: Double = 0.0,
-    /** Unit of measure, e.g. PCS, KG, LTR. */
+    /** Primary unit of measure. [price] and stock are always expressed in this unit. e.g. BOX, PCS, KG. */
     val unit: String = "PCS",
+    /** Smaller alternate unit the item may also be sold in, e.g. PCS inside a BOX. */
+    val secondaryUnit: String = "PCS",
+    /** How many [secondaryUnit] make one [unit]. Always 1.0 when both units are the same. */
+    val conversionFactor: Double = 1.0,
     /** Where the item sits in the store (rack/shelf), as free text. */
     val storeLocation: String = "",
     /** Composition / salt / chemical content (medical stores). Searchable. */
@@ -101,7 +105,11 @@ data class BillItem(
     val taxPercent: Double,
     val lineTotal: Double,
     /** Batch/lot this line was sold from (when batch tracking is on). */
-    val batchNo: String = ""
+    val batchNo: String = "",
+    /** Unit this line was billed in (blank = the item's primary unit). */
+    val unit: String = "",
+    /** [qty] converted to the item's primary unit, for stock math. 0 = legacy row, use [qty]. */
+    val primaryQty: Double = 0.0
 )
 
 /** Convenience wrapper: a bill plus its lines. */

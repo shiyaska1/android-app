@@ -169,7 +169,11 @@ interface BillDao {
     @Query("SELECT * FROM bill_items")
     fun observeAllLines(): Flow<List<BillItem>>
 
-    @Query("SELECT name AS name, SUM(qty) AS qty FROM bill_items GROUP BY name COLLATE NOCASE")
+    /** Sold quantity in the item's PRIMARY unit (primaryQty), falling back to qty on legacy rows. */
+    @Query(
+        "SELECT name AS name, SUM(CASE WHEN primaryQty > 0 THEN primaryQty ELSE qty END) AS qty " +
+            "FROM bill_items GROUP BY name COLLATE NOCASE"
+    )
     fun observeSoldQty(): Flow<List<NameQty>>
 
     @Query(
