@@ -346,19 +346,39 @@ fun ItemPickerDialog(
                                     .clickable { onPick(item) }
                                     .padding(vertical = 10.dp)
                             ) {
-                                Text(item.name)
+                                // Item name — larger, bold.
                                 Text(
-                                    Format.rupee(item.price) +
-                                        "  •  Stock ${Format.qty(stockByItem[item.id] ?: item.openingStock)} ${item.unit}" +
-                                        if (item.storeLocation.isNotBlank()) "  •  ${item.storeLocation}" else "",
-                                    style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
-                                    color = androidx.compose.material3.MaterialTheme.colorScheme.outline
+                                    item.name,
+                                    style = androidx.compose.material3.MaterialTheme.typography.titleMedium,
+                                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                                    color = androidx.compose.material3.MaterialTheme.colorScheme.onSurface
                                 )
+                                // Price / stock / location — each a distinct colour.
+                                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    Text(
+                                        Format.rupee(item.price),
+                                        style = androidx.compose.material3.MaterialTheme.typography.bodyMedium,
+                                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                                        color = androidx.compose.material3.MaterialTheme.colorScheme.primary
+                                    )
+                                    Text(
+                                        "Stock ${Format.qty(stockByItem[item.id] ?: item.openingStock)} ${item.unit}",
+                                        style = androidx.compose.material3.MaterialTheme.typography.bodyMedium,
+                                        color = androidx.compose.material3.MaterialTheme.colorScheme.tertiary
+                                    )
+                                    if (item.storeLocation.isNotBlank()) {
+                                        Text(
+                                            item.storeLocation,
+                                            style = androidx.compose.material3.MaterialTheme.typography.bodyMedium,
+                                            color = androidx.compose.material3.MaterialTheme.colorScheme.secondary
+                                        )
+                                    }
+                                }
                                 if (item.chemicalContent.isNotBlank()) {
                                     Text(
                                         item.chemicalContent,
-                                        style = androidx.compose.material3.MaterialTheme.typography.labelSmall,
-                                        color = androidx.compose.material3.MaterialTheme.colorScheme.primary
+                                        style = androidx.compose.material3.MaterialTheme.typography.labelMedium,
+                                        color = androidx.compose.material3.MaterialTheme.colorScheme.error
                                     )
                                 }
                                 Divider(Modifier.padding(top = 8.dp))

@@ -612,6 +612,7 @@ fun BillingScreen(
     if (showItemPicker) {
         val stockByItem by vm.stockByItem.collectAsStateSafe()
         val allSizes by vm.allSizes.collectAsStateSafe()
+        val allBatches by vm.allBatches.collectAsStateSafe()
         ItemPickerDialog(
             items = items,
             onDismiss = { showItemPicker = false },
@@ -619,7 +620,7 @@ fun BillingScreen(
                 showItemPicker = false
                 when {
                     allSizes.any { s -> s.itemId == picked.id } -> sizePickFor = picked
-                    requireBatch -> batchPickFor = picked
+                    requireBatch && allBatches.any { b -> b.itemId == picked.id } -> batchPickFor = picked
                     else -> vm.addItemToCart(picked)
                 }
             },
@@ -646,7 +647,11 @@ fun BillingScreen(
         )
     }
     if (showHandwrite) {
-        HandwriteQuickBillDialog(vm = vm, onDismiss = { showHandwrite = false })
+        HandwriteQuickBillDialog(
+            vm = vm,
+            onDismiss = { showHandwrite = false },
+            onReview = { list -> showHandwrite = false; ocrReview = list }
+        )
     }
 
     // After taking a photo: choose picture-bill or OCR-into-cart.
@@ -929,8 +934,9 @@ internal fun SaleBatchPickDialog(
             if (batches.isEmpty()) {
                 Text("No batch stock for this item. Add a batch in the item form, purchase, or import.", color = MaterialTheme.colorScheme.outline)
             } else {
+                val fifo = batches.sortedBy { if (it.expiryMillis <= 0) Long.MAX_VALUE else it.expiryMillis }
                 LazyColumn(Modifier.fillMaxWidth().heightIn(max = 340.dp)) {
-                    items(batches, key = { it.id }) { b ->
+                    items(fifo, key = { it.id }) { b ->
                         val out = b.quantity <= 0.0
                         Column(
                             Modifier.fillMaxWidth().clickable(enabled = !out) { onPick(b) }.padding(vertical = 10.dp)

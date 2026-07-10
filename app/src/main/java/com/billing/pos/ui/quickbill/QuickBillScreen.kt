@@ -117,6 +117,7 @@ fun QuickBillScreen(
     var showNotes by remember { mutableStateOf(false) }
     val requireBatch = remember { com.billing.pos.data.AppPrefs(context).requireItemBatch }
     val allSizes by vm.allSizes.collectAsStateSafe()
+    val allBatchesTop by vm.allBatches.collectAsStateSafe()
     var sizePickFor by remember { mutableStateOf<com.billing.pos.data.Item?>(null) }
     var batchPickFor by remember { mutableStateOf<com.billing.pos.data.Item?>(null) }
 
@@ -266,7 +267,7 @@ fun QuickBillScreen(
                             ItemTile(item, photos[item.id]) {
                                 when {
                                     allSizes.any { s -> s.itemId == item.id } -> sizePickFor = item
-                                    requireBatch -> batchPickFor = item
+                                    requireBatch && allBatchesTop.any { b -> b.itemId == item.id } -> batchPickFor = item
                                     else -> vm.addItemToCart(item)
                                 }
                             }

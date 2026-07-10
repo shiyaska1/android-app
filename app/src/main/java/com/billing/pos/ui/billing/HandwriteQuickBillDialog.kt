@@ -56,9 +56,11 @@ private enum class ModelState { PREPARING, READY, ERROR }
 @Composable
 fun HandwriteQuickBillDialog(
     vm: BillingViewModel,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onReview: (List<com.billing.pos.ocr.ScannedItem>) -> Unit
 ) {
     val scope = rememberCoroutineScope()
+    val pending = remember { mutableStateListOf<com.billing.pos.ocr.ScannedItem>() }
     val recognizer = remember { InkRecognizer() }
     DisposableEffect(Unit) { onDispose { recognizer.close() } }
 
@@ -85,11 +87,11 @@ fun HandwriteQuickBillDialog(
             val price = priceRaw.filter { it.isDigit() || it == '.' }
                 .let { if (it.count { c -> c == '.' } > 1) it.replace(".", "") else it }
                 .toDoubleOrNull() ?: 0.0
-            vm.addHandwrittenLine(name, price) { ok, msg ->
-                status = if (ok) "$msg   •   ${vm.cart.size} in bill" else msg
-                if (ok) { itemStrokes.clear(); priceStrokes.clear() }
-                busy = false
-            }
+            if (name.isBlank()) { status = "Couldn't read the item name — write it again"; busy = false; return@launch }
+            pending.add(com.billing.pos.ocr.ScannedItem(name.trim(), price))
+            status = "Added \"${name.trim()}\"   •   ${pending.size} to review"
+            itemStrokes.clear(); priceStrokes.clear()
+            busy = false
         }
     }
 
@@ -105,7 +107,7 @@ fun HandwriteQuickBillDialog(
         ) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text("Handwrite Bill", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                Text("${vm.cart.size} items", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                Text("${pending.size} to review", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
             }
             Spacer(Modifier.height(6.dp))
 
@@ -146,7 +148,9 @@ fun HandwriteQuickBillDialog(
                 Button(onClick = { recognizeAndAdd() }, enabled = modelState == ModelState.READY && !busy, modifier = Modifier.weight(1f)) {
                     Text(if (busy) "Reading…" else "Next  →")
                 }
-                TextButton(onClick = onDismiss) { Text("Done") }
+                TextButton(onClick = { if (pending.isNotEmpty()) onReview(pending.toList()) else onDismiss() }) {
+                    Text(if (pending.isNotEmpty()) "Review (${pending.size})" else "Done")
+                }
             }
         }
     }
