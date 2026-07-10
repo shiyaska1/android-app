@@ -16,6 +16,7 @@ import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material.icons.filled.Assessment
+import androidx.compose.material.icons.filled.AssignmentReturn
 import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.Category
@@ -77,6 +78,7 @@ fun DashboardScreen(
     onPurchases: () -> Unit,
     onSuppliers: () -> Unit,
     onQuotations: () -> Unit,
+    onSalesReturns: () -> Unit,
     onVatReport: () -> Unit,
     onOutstanding: () -> Unit,
     onAccounts: () -> Unit,
@@ -93,6 +95,7 @@ fun DashboardScreen(
         add(Tile("Price Search", Icons.Filled.PriceCheck, onPriceSearch))
         if (Session.canViewInvoice) add(Tile("Invoices", Icons.Filled.ReceiptLong, onInvoices))
         add(Tile("Quotations", Icons.Filled.Description, onQuotations))
+        if (Session.canViewInvoice) add(Tile("Sales Return", Icons.Filled.AssignmentReturn, onSalesReturns))
         if (Session.canViewReceipt) add(Tile("Receipts", Icons.Filled.Payments, onReceipts))
         if (Session.canViewPayment) add(Tile("Payments", Icons.Filled.MoneyOff, onExpenses))
         if (Session.canViewCashbook) add(Tile("Cash Book", Icons.Filled.AccountBalanceWallet, onCashbook))
