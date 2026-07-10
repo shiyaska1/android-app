@@ -90,6 +90,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.billing.pos.auth.Session
 import com.billing.pos.data.BillWithItems
 import com.billing.pos.data.PaymentMethod
+import com.billing.pos.pdf.InvoicePdf
 import com.billing.pos.pdf.ThermalPdf
 import com.billing.pos.print.ThermalPrinter
 import com.journeyapps.barcodescanner.ScanContract
@@ -746,7 +747,7 @@ private fun pickBillDate(context: android.content.Context, current: Long, onPick
 
 private fun sharePdf(context: android.content.Context, saved: BillWithItems) {
     val company = com.billing.pos.data.AppPrefs(context).company
-    val uri = ThermalPdf.invoice(context, company, saved.bill, saved.lines)
+    val uri = InvoicePdf.make(context, company, saved.bill, saved.lines)
     val intent = Intent(Intent.ACTION_SEND).apply {
         type = "application/pdf"
         putExtra(Intent.EXTRA_STREAM, uri)
@@ -765,7 +766,7 @@ private fun sendWhatsApp(
     onInfo: (String) -> Unit
 ) {
     val company = com.billing.pos.data.AppPrefs(context).company
-    val uri = ThermalPdf.invoice(context, company, saved.bill, saved.lines)
+    val uri = InvoicePdf.make(context, company, saved.bill, saved.lines)
     val digits = phone.filter { it.isDigit() }
 
     fun tryPackage(pkg: String?): Boolean {

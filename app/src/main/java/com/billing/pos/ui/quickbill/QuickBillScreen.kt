@@ -90,6 +90,7 @@ import com.billing.pos.data.AppPrefs
 import com.billing.pos.data.BillWithItems
 import com.billing.pos.data.Item
 import com.billing.pos.data.PaymentMethod
+import com.billing.pos.pdf.InvoicePdf
 import com.billing.pos.pdf.ThermalPdf
 import com.billing.pos.print.ThermalPrinter
 import com.billing.pos.ui.billing.BillingViewModel
@@ -162,7 +163,7 @@ fun QuickBillScreen(
 
     fun shareWhatsApp(saved: BillWithItems) {
         val company = AppPrefs(context).company
-        val uri = ThermalPdf.invoice(context, company, saved.bill, saved.lines)
+        val uri = InvoicePdf.make(context, company, saved.bill, saved.lines)
         val base = Intent(Intent.ACTION_SEND).apply {
             type = "application/pdf"; putExtra(Intent.EXTRA_STREAM, uri)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)

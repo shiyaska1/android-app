@@ -58,6 +58,16 @@ class AppPrefs(context: Context) {
         get() = p.getString("receipt_width", "58mm") ?: "58mm"
         set(v) { p.edit().putString("receipt_width", v).apply() }
 
+    /** Absolute path to the company logo image ("" = none). Shown on A4 invoices. */
+    var logoPath: String
+        get() = p.getString("logo_path", "") ?: ""
+        set(v) { p.edit().putString("logo_path", v).apply() }
+
+    /** True if the logo image is a full-width banner (contains name/address itself). */
+    var logoFullWidth: Boolean
+        get() = p.getBoolean("logo_full_width", false)
+        set(v) { p.edit().putBoolean("logo_full_width", v).apply() }
+
     companion object {
         val RECEIPT_WIDTHS = listOf("58mm", "80mm", "A4")
         /** Monospace columns for a given width. */

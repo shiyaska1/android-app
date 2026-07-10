@@ -1,12 +1,22 @@
 package com.billing.pos.ui.settings
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Checkbox
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
@@ -61,6 +71,18 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
     var requireBatch by remember { mutableStateOf(prefs.requireItemBatch) }
     var businessType by remember { mutableStateOf(prefs.businessType) }
     var receiptWidth by remember { mutableStateOf(prefs.receiptWidth) }
+    var logoPath by remember { mutableStateOf(prefs.logoPath) }
+    var logoFull by remember { mutableStateOf(prefs.logoFullWidth) }
+    val logoPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) scope.launch {
+            val dest = java.io.File(context.filesDir, "company_logo.jpg")
+            val ok = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                com.billing.pos.diary.AttachmentStore.compressImageTo(context, uri, dest, 900, 88)
+            }
+            if (ok) { prefs.logoPath = dest.absolutePath; logoPath = dest.absolutePath; snackbar.showSnackbar("Logo saved") }
+            else snackbar.showSnackbar("Could not read image")
+        }
+    }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
@@ -135,6 +157,33 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
                 },
                 modifier = Modifier.fillMaxWidth().padding(top = 16.dp)
             ) { Text("Save") }
+
+            Divider(Modifier.padding(vertical = 16.dp))
+            Text("Company logo (A4 invoice)", style = MaterialTheme.typography.titleSmall)
+            if (logoPath.isNotBlank()) {
+                val bmp = com.billing.pos.ui.common.rememberThumbnail(logoPath, 400)
+                if (bmp != null) {
+                    Box(Modifier.fillMaxWidth().height(90.dp).padding(top = 6.dp)) {
+                        Image(bmp, contentDescription = "Logo", contentScale = ContentScale.Fit, modifier = Modifier.fillMaxWidth().height(84.dp))
+                    }
+                }
+            }
+            Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                OutlinedButton(onClick = { logoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }, modifier = Modifier.weight(1f)) {
+                    Text(if (logoPath.isBlank()) "Upload logo" else "Change logo")
+                }
+                if (logoPath.isNotBlank()) {
+                    Spacer(Modifier.size(8.dp))
+                    OutlinedButton(onClick = { prefs.logoPath = ""; logoPath = "" }) { Text("Remove") }
+                }
+            }
+            Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Logo is the full header", style = MaterialTheme.typography.bodyMedium)
+                    Text("Turn on if your logo image already includes name, address & phone.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                }
+                Checkbox(checked = logoFull, onCheckedChange = { logoFull = it; prefs.logoFullWidth = it })
+            }
 
             Divider(Modifier.padding(vertical = 16.dp))
             Text("Printer", style = MaterialTheme.typography.titleSmall)
