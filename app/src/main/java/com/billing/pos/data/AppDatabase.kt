@@ -15,11 +15,11 @@ import androidx.room.TypeConverters
         AccountGroup::class, AccountHead::class,
         JournalEntry::class, JournalLine::class,
         ItemAttachment::class, BillAttachment::class,
-        ItemBatch::class, ItemSize::class
+        ItemBatch::class, ItemSize::class,
+        Quotation::class, QuotationItem::class
     ],
-    // v22 adds item batches; v23 adds batchNo to lines; v24 adds item sizes
-    // + chemical content.
-    version = 24,
+    // v24 adds item sizes + chemical content; v25 adds quotations.
+    version = 25,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -39,6 +39,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun journalDao(): JournalDao
     abstract fun itemBatchDao(): ItemBatchDao
     abstract fun itemSizeDao(): ItemSizeDao
+    abstract fun quotationDao(): QuotationDao
 
     companion object {
         @Volatile private var INSTANCE: AppDatabase? = null

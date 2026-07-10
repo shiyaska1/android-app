@@ -243,6 +243,16 @@ class Repository(context: Context) {
         else itemBatchDao.insert(ItemBatch(itemId = itemId, batchNo = batchNo, expiryMillis = expiryMillis, quantity = qty))
     }
 
+    // ---- quotations ----
+    private val quotationDao = db.quotationDao()
+    val quotations: Flow<List<Quotation>> = quotationDao.observeAll()
+    suspend fun nextQuotationNo(): String = "QT-" + (quotationDao.count() + 1).toString().padStart(4, '0')
+    suspend fun saveQuotation(q: Quotation, lines: List<QuotationItem>): Long = quotationDao.save(q, lines)
+    suspend fun updateQuotation(q: Quotation, lines: List<QuotationItem>) = quotationDao.update(q, lines)
+    suspend fun deleteQuotation(q: Quotation) = quotationDao.delete(q)
+    suspend fun quotationById(id: Long): Quotation? = quotationDao.byId(id)
+    suspend fun quotationLines(id: Long): List<QuotationItem> = quotationDao.linesFor(id)
+
     // ---- item sizes (variants with their own price) ----
     private val itemSizeDao = db.itemSizeDao()
     val itemSizes: Flow<List<ItemSize>> = itemSizeDao.observeAll()

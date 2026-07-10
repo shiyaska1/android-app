@@ -42,6 +42,8 @@ import com.billing.pos.ui.outstanding.OutstandingScreen
 import com.billing.pos.ui.pricesearch.PriceSearchScreen
 import com.billing.pos.ui.printer.PrinterSetupScreen
 import com.billing.pos.ui.quickbill.QuickBillScreen
+import com.billing.pos.ui.quotation.QuotationListScreen
+import com.billing.pos.ui.quotation.QuotationScreen
 import com.billing.pos.ui.purchase.PurchaseListScreen
 import com.billing.pos.ui.purchase.PurchaseScreen
 import com.billing.pos.ui.purchase.SuppliersScreen
@@ -154,6 +156,7 @@ private fun AppNav() {
                 onNewPurchase = { nav.navigate("purchase") },
                 onPurchases = { nav.navigate("purchases") },
                 onSuppliers = { nav.navigate("suppliers") },
+                onQuotations = { nav.navigate("quotations") },
                 onVatReport = { nav.navigate("vat") },
                 onOutstanding = { nav.navigate("outstanding") },
                 onAccounts = { nav.navigate("accounts") },
@@ -226,6 +229,18 @@ private fun AppNav() {
         composable("suppliers") {
             SuppliersScreen(onBack = { nav.popBackStack() })
         }
+        composable("quotations") {
+            QuotationListScreen(
+                onBack = { nav.popBackStack() },
+                onOpen = { id -> nav.navigate("quotation/edit/$id") },
+                onNew = { nav.navigate("quotation") }
+            )
+        }
+        composable("quotation") { QuotationScreen(editId = null, onBack = { nav.popBackStack() }) }
+        composable(
+            route = "quotation/edit/{id}",
+            arguments = listOf(navArgument("id") { type = NavType.LongType })
+        ) { entry -> QuotationScreen(editId = entry.arguments?.getLong("id"), onBack = { nav.popBackStack() }) }
         composable("items") {
             ItemsScreen(onBack = { nav.popBackStack() })
         }

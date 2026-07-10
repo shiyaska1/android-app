@@ -129,26 +129,26 @@ object A4InvoicePdf {
         // vertical borders (sides + column separators) for the current page's table
         drawVerticalBorders(c, line, x0, xEnd, cItem, cQty, cRate, cAmt, secTop, y)
 
-        // ---- Totals ----
-        y += 12f
-        val lblX = cRate - 10f
+        // ---- Totals ----  (labels right-aligned in the Rate column, values in the Amount column)
+        y += 14f
+        val labelR = cAmt - 8f       // right edge for labels (never overlaps values)
+        val valueR = xEnd - 4f       // right edge for values (under the Amount column)
         fun total(label: String, value: String, bold: Boolean = false) {
-            val lp = if (bold) cellBold else cell
+            val lp = Paint(if (bold) cellBold else cell).apply { textAlign = Paint.Align.RIGHT }
             val vp = Paint(if (bold) cellBold else cell).apply { textAlign = Paint.Align.RIGHT }
-            c.drawText(label, lblX, y, lp)
-            c.drawText(value, cAmt - 4f, y, vp)
+            c.drawText(label, labelR, y, lp)
+            c.drawText(value, valueR, y, vp)
             y += 17f
         }
         total("Sub Total", Format.money(bill.subTotal))
         if (bill.taxTotal != 0.0) total("Tax", Format.money(bill.taxTotal))
         if (bill.additionalCharge != 0.0) total("Additional", Format.money(bill.additionalCharge))
         if (bill.discount != 0.0) total("Discount", "-" + Format.money(bill.discount))
-        c.drawLine(lblX, y - 4f, xEnd, y - 4f, line)
-        y += 4f
-        val gt = Paint(cellBold).apply { textSize = 13f }
-        val gtv = Paint(gt).apply { textAlign = Paint.Align.RIGHT }
-        c.drawText("GRAND TOTAL", lblX, y + 4f, gt)
-        c.drawText(Format.money(bill.grandTotal), cAmt - 4f, y + 4f, gtv)
+        c.drawLine(cRate, y - 2f, xEnd, y - 2f, line)
+        y += 8f
+        val gt = Paint(cellBold).apply { textSize = 13f; textAlign = Paint.Align.RIGHT }
+        c.drawText("GRAND TOTAL", labelR, y + 4f, gt)
+        c.drawText(Format.money(bill.grandTotal), valueR, y + 4f, gt)
         y += 30f
 
         if (bill.remarks.isNotBlank()) {

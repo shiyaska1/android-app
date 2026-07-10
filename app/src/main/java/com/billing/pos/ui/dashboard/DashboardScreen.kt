@@ -76,6 +76,7 @@ fun DashboardScreen(
     onNewPurchase: () -> Unit,
     onPurchases: () -> Unit,
     onSuppliers: () -> Unit,
+    onQuotations: () -> Unit,
     onVatReport: () -> Unit,
     onOutstanding: () -> Unit,
     onAccounts: () -> Unit,
@@ -91,6 +92,7 @@ fun DashboardScreen(
         add(Tile("Quick Bill", Icons.Filled.Restaurant, onQuickBill))
         add(Tile("Price Search", Icons.Filled.PriceCheck, onPriceSearch))
         if (Session.canViewInvoice) add(Tile("Invoices", Icons.Filled.ReceiptLong, onInvoices))
+        add(Tile("Quotations", Icons.Filled.Description, onQuotations))
         if (Session.canViewReceipt) add(Tile("Receipts", Icons.Filled.Payments, onReceipts))
         if (Session.canViewPayment) add(Tile("Payments", Icons.Filled.MoneyOff, onExpenses))
         if (Session.canViewCashbook) add(Tile("Cash Book", Icons.Filled.AccountBalanceWallet, onCashbook))

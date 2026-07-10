@@ -60,6 +60,8 @@ object FullBackup {
         root.put("itemAttachments", JSONArray().apply { itemAtts.forEach { put(itemAttJson(it)) } })
         root.put("itemBatches", JSONArray().apply { db.itemBatchDao().all().forEach { put(batchJson(it)) } })
         root.put("itemSizes", JSONArray().apply { db.itemSizeDao().all().forEach { put(sizeJson(it)) } })
+        root.put("quotations", JSONArray().apply { db.quotationDao().all().forEach { put(quotationJson(it)) } })
+        root.put("quotationItems", JSONArray().apply { db.quotationDao().allLines().forEach { put(qItemJson(it)) } })
         val billAtts = db.billAttachmentDao().all()
         root.put("billAttachments", JSONArray().apply { billAtts.forEach { put(billAttJson(it)) } })
 
@@ -198,6 +200,12 @@ object FullBackup {
         }
         root.optJSONArray("itemSizes")?.let {
             for (i in 0 until it.length()) db.itemSizeDao().insert(readSize(it.getJSONObject(i)))
+        }
+        root.optJSONArray("quotations")?.let { for (i in 0 until it.length()) db.quotationDao().insertHeader(readQuotation(it.getJSONObject(i))) }
+        root.optJSONArray("quotationItems")?.let {
+            val ls = ArrayList<QuotationItem>()
+            for (i in 0 until it.length()) ls.add(readQItem(it.getJSONObject(i)))
+            if (ls.isNotEmpty()) db.quotationDao().insertLines(ls)
         }
         root.optJSONArray("billAttachments")?.let {
             for (i in 0 until it.length()) db.billAttachmentDao().insert(readBillAtt(context, it.getJSONObject(i)))
@@ -367,6 +375,19 @@ object FullBackup {
                 db.itemSizeDao().insert(s.copy(id = 0, itemId = ni))
             }
         }
+        // Quotations
+        val quoteMap = HashMap<Long, Long>()
+        root.optJSONArray("quotations")?.let {
+            for (i in 0 until it.length()) {
+                val q = readQuotation(it.getJSONObject(i)); quoteMap[q.id] = db.quotationDao().insertHeader(q.copy(id = 0))
+            }
+        }
+        root.optJSONArray("quotationItems")?.let {
+            for (i in 0 until it.length()) {
+                val l = readQItem(it.getJSONObject(i)); val nq = quoteMap[l.quotationId] ?: continue
+                db.quotationDao().insertLines(listOf(l.copy(id = 0, quotationId = nq)))
+            }
+        }
         // Bill attachments
         root.optJSONArray("billAttachments")?.let {
             for (i in 0 until it.length()) {
@@ -465,6 +486,28 @@ object FullBackup {
 
     private fun sizeJson(s: ItemSize) = JSONObject().put("id", s.id).put("itemId", s.itemId)
         .put("name", s.name).put("price", s.price)
+
+    private fun quotationJson(q: Quotation) = JSONObject().put("id", q.id).put("quotationNo", q.quotationNo)
+        .put("dateMillis", q.dateMillis).put("customerId", q.customerId).put("customerName", q.customerName)
+        .put("subTotal", q.subTotal).put("taxTotal", q.taxTotal).put("additionalCharge", q.additionalCharge)
+        .put("discount", q.discount).put("grandTotal", q.grandTotal).put("remarks", q.remarks)
+
+    private fun readQuotation(o: JSONObject) = Quotation(
+        id = o.optLong("id"), quotationNo = o.optString("quotationNo"), dateMillis = o.optLong("dateMillis"),
+        customerId = o.optLong("customerId"), customerName = o.optString("customerName"),
+        subTotal = o.optDouble("subTotal", 0.0), taxTotal = o.optDouble("taxTotal", 0.0),
+        additionalCharge = o.optDouble("additionalCharge", 0.0), discount = o.optDouble("discount", 0.0),
+        grandTotal = o.optDouble("grandTotal", 0.0), remarks = o.optString("remarks")
+    )
+
+    private fun qItemJson(l: QuotationItem) = JSONObject().put("id", l.id).put("quotationId", l.quotationId)
+        .put("name", l.name).put("qty", l.qty).put("price", l.price).put("taxPercent", l.taxPercent).put("lineTotal", l.lineTotal)
+
+    private fun readQItem(o: JSONObject) = QuotationItem(
+        id = o.optLong("id"), quotationId = o.optLong("quotationId"), name = o.optString("name"),
+        qty = o.optDouble("qty", 0.0), price = o.optDouble("price", 0.0),
+        taxPercent = o.optDouble("taxPercent", 0.0), lineTotal = o.optDouble("lineTotal", 0.0)
+    )
 
     private fun readSize(o: JSONObject) = ItemSize(
         id = o.optLong("id"), itemId = o.optLong("itemId"), name = o.optString("name"), price = o.optDouble("price", 0.0)
