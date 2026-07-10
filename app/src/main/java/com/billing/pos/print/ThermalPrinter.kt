@@ -26,8 +26,13 @@ import java.util.UUID
  */
 object ThermalPrinter {
 
-    private const val COLS = 32
+    private var COLS = 32
     private val SPP_UUID: UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
+
+    /** Sets the column count from the chosen receipt width before building output. */
+    private fun applyWidth(context: Context) {
+        COLS = AppPrefs.colsFor(AppPrefs(context).receiptWidth)
+    }
 
     class PrinterException(message: String) : Exception(message)
 
@@ -40,18 +45,21 @@ object ThermalPrinter {
 
     @SuppressLint("MissingPermission")
     fun printBill(context: Context, company: CompanyInfo, bill: Bill, lines: List<BillItem>) {
+        applyWidth(context)
         sendBytes(context, buildReceipt(company, bill, lines))
     }
 
     /** Prints a receipt voucher (money received) to give to the customer. */
     @SuppressLint("MissingPermission")
     fun printReceipt(context: Context, company: CompanyInfo, receipt: Receipt) {
+        applyWidth(context)
         sendBytes(context, buildReceiptVoucher(company, receipt))
     }
 
     /** Prints a purchase voucher. */
     @SuppressLint("MissingPermission")
     fun printPurchase(context: Context, company: CompanyInfo, purchase: Purchase, lines: List<PurchaseItem>) {
+        applyWidth(context)
         sendBytes(context, buildPurchase(company, purchase, lines))
     }
 
@@ -161,6 +169,7 @@ object ThermalPrinter {
     /** Prints a short test slip to confirm the connection works. */
     @SuppressLint("MissingPermission")
     fun testPrint(context: Context, company: CompanyInfo) {
+        applyWidth(context)
         sendBytes(context, buildTest(company))
     }
 
@@ -170,8 +179,8 @@ object ThermalPrinter {
         sb.append(center("PRINTER TEST")).append('\n')
         sb.append(line()).append('\n')
         sb.append("Connection OK!\n")
-        sb.append("32-column test:\n")
-        sb.append("1234567890123456789012345678901\n")
+        sb.append("$COLS-column test:\n")
+        sb.append("1".repeat(COLS)).append('\n')
         sb.append(Format.dateTime(System.currentTimeMillis())).append('\n')
         sb.append(line()).append('\n')
         sb.append("\n\n\n")

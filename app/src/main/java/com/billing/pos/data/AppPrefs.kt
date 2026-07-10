@@ -53,6 +53,19 @@ class AppPrefs(context: Context) {
         get() = p.getString("printer_name", "") ?: ""
         set(v) { p.edit().putString("printer_name", v).apply() }
 
+    /** Print/paper width for receipts & PDFs: "58mm", "80mm" or "A4". */
+    var receiptWidth: String
+        get() = p.getString("receipt_width", "58mm") ?: "58mm"
+        set(v) { p.edit().putString("receipt_width", v).apply() }
+
+    companion object {
+        val RECEIPT_WIDTHS = listOf("58mm", "80mm", "A4")
+        /** Monospace columns for a given width. */
+        fun colsFor(width: String): Int = when (width) { "80mm" -> 48; "A4" -> 64; else -> 32 }
+        /** PDF page width in points for a given width (58mm ≈ 165pt). */
+        fun pageWidthFor(width: String): Float = when (width) { "80mm" -> 227f; "A4" -> 560f; else -> 165f }
+    }
+
     // ---- item batch tracking (batch no + expiry) ----
     var requireItemBatch: Boolean
         get() = p.getBoolean("require_item_batch", false)

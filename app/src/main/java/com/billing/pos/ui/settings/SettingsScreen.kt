@@ -60,6 +60,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
     var gstin by remember { mutableStateOf(prefs.companyGstin) }
     var requireBatch by remember { mutableStateOf(prefs.requireItemBatch) }
     var businessType by remember { mutableStateOf(prefs.businessType) }
+    var receiptWidth by remember { mutableStateOf(prefs.receiptWidth) }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
@@ -136,7 +137,26 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
             ) { Text("Save") }
 
             Divider(Modifier.padding(vertical = 16.dp))
-            OutlinedButton(onClick = onOpenPrinter, modifier = Modifier.fillMaxWidth()) {
+            Text("Printer", style = MaterialTheme.typography.titleSmall)
+            Text(
+                "Receipt widths (58mm / 80mm) print on thermal receipt printers; A4 makes a full-page PDF for a normal printer.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline
+            )
+            var widthMenu by remember { mutableStateOf(false) }
+            ExposedDropdownMenuBox(expanded = widthMenu, onExpandedChange = { widthMenu = !widthMenu }) {
+                OutlinedTextField(
+                    readOnly = true, value = receiptWidth, onValueChange = {},
+                    label = { Text("Receipt / print width") },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(widthMenu) },
+                    modifier = Modifier.menuAnchor().fillMaxWidth().padding(top = 4.dp)
+                )
+                ExposedDropdownMenu(expanded = widthMenu, onDismissRequest = { widthMenu = false }) {
+                    AppPrefs.RECEIPT_WIDTHS.forEach { w ->
+                        DropdownMenuItem(text = { Text(w) }, onClick = { receiptWidth = w; prefs.receiptWidth = w; widthMenu = false })
+                    }
+                }
+            }
+            OutlinedButton(onClick = onOpenPrinter, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
                 Icon(Icons.Filled.Print, contentDescription = null)
                 Text("  Thermal printer setup & test")
             }

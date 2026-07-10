@@ -20,13 +20,21 @@ import java.io.File
  */
 object ThermalPdf {
 
-    private const val COLS = 32
-    private const val PAGE_W = 165f   // ~58mm in points
+    private var COLS = 32
+    private var PAGE_W = 165f   // ~58mm in points
     private const val MARGIN = 6f
+
+    /** Sizes the page/columns from the chosen receipt width. */
+    private fun applyWidth(context: Context) {
+        val w = com.billing.pos.data.AppPrefs(context).receiptWidth
+        COLS = com.billing.pos.data.AppPrefs.colsFor(w)
+        PAGE_W = com.billing.pos.data.AppPrefs.pageWidthFor(w)
+    }
 
     private data class Line(val text: String, val bold: Boolean = false)
 
     fun invoice(context: Context, company: CompanyInfo, bill: Bill, lines: List<BillItem>): Uri {
+        applyWidth(context)
         val out = ArrayList<Line>()
         fun add(text: String, bold: Boolean = false) { out.add(Line(text, bold)) }
         addHeader(out, company)
@@ -61,6 +69,7 @@ object ThermalPdf {
     }
 
     fun receipt(context: Context, company: CompanyInfo, r: Receipt): Uri {
+        applyWidth(context)
         val out = ArrayList<Line>()
         fun add(text: String, bold: Boolean = false) { out.add(Line(text, bold)) }
         addHeader(out, company)
