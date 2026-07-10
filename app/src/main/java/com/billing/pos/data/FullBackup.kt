@@ -64,6 +64,8 @@ object FullBackup {
         root.put("quotationItems", JSONArray().apply { db.quotationDao().allLines().forEach { put(qItemJson(it)) } })
         root.put("salesReturns", JSONArray().apply { db.salesReturnDao().all().forEach { put(salesReturnJson(it)) } })
         root.put("salesReturnItems", JSONArray().apply { db.salesReturnDao().allLines().forEach { put(srItemJson(it)) } })
+        root.put("purchaseReturns", JSONArray().apply { db.purchaseReturnDao().all().forEach { put(purchaseReturnJson(it)) } })
+        root.put("purchaseReturnItems", JSONArray().apply { db.purchaseReturnDao().allLines().forEach { put(prItemJson(it)) } })
         val billAtts = db.billAttachmentDao().all()
         root.put("billAttachments", JSONArray().apply { billAtts.forEach { put(billAttJson(it)) } })
 
@@ -214,6 +216,12 @@ object FullBackup {
             val ls = ArrayList<SalesReturnItem>()
             for (i in 0 until it.length()) ls.add(readSRItem(it.getJSONObject(i)))
             if (ls.isNotEmpty()) db.salesReturnDao().insertLines(ls)
+        }
+        root.optJSONArray("purchaseReturns")?.let { for (i in 0 until it.length()) db.purchaseReturnDao().insertHeader(readPurchaseReturn(it.getJSONObject(i))) }
+        root.optJSONArray("purchaseReturnItems")?.let {
+            val ls = ArrayList<PurchaseReturnItem>()
+            for (i in 0 until it.length()) ls.add(readPRItem(it.getJSONObject(i)))
+            if (ls.isNotEmpty()) db.purchaseReturnDao().insertLines(ls)
         }
         root.optJSONArray("billAttachments")?.let {
             for (i in 0 until it.length()) db.billAttachmentDao().insert(readBillAtt(context, it.getJSONObject(i)))
@@ -409,6 +417,19 @@ object FullBackup {
                 db.salesReturnDao().insertLines(listOf(l.copy(id = 0, returnId = nr)))
             }
         }
+        // Purchase returns
+        val prMap = HashMap<Long, Long>()
+        root.optJSONArray("purchaseReturns")?.let {
+            for (i in 0 until it.length()) {
+                val r = readPurchaseReturn(it.getJSONObject(i)); prMap[r.id] = db.purchaseReturnDao().insertHeader(r.copy(id = 0))
+            }
+        }
+        root.optJSONArray("purchaseReturnItems")?.let {
+            for (i in 0 until it.length()) {
+                val l = readPRItem(it.getJSONObject(i)); val nr = prMap[l.returnId] ?: continue
+                db.purchaseReturnDao().insertLines(listOf(l.copy(id = 0, returnId = nr)))
+            }
+        }
         // Bill attachments
         root.optJSONArray("billAttachments")?.let {
             for (i in 0 until it.length()) {
@@ -549,6 +570,30 @@ object FullBackup {
         .put("taxPercent", l.taxPercent).put("lineTotal", l.lineTotal).put("batchNo", l.batchNo)
 
     private fun readSRItem(o: JSONObject) = SalesReturnItem(
+        id = o.optLong("id"), returnId = o.optLong("returnId"), itemId = o.optLong("itemId"), name = o.optString("name"),
+        qty = o.optDouble("qty", 0.0), price = o.optDouble("price", 0.0),
+        taxPercent = o.optDouble("taxPercent", 0.0), lineTotal = o.optDouble("lineTotal", 0.0), batchNo = o.optString("batchNo")
+    )
+
+    private fun purchaseReturnJson(r: PurchaseReturn) = JSONObject().put("id", r.id).put("returnNo", r.returnNo)
+        .put("dateMillis", r.dateMillis).put("supplierId", r.supplierId).put("supplierName", r.supplierName)
+        .put("billNo", r.billNo).put("subTotal", r.subTotal).put("taxTotal", r.taxTotal)
+        .put("additionalCharge", r.additionalCharge).put("discount", r.discount).put("grandTotal", r.grandTotal)
+        .put("remarks", r.remarks)
+
+    private fun readPurchaseReturn(o: JSONObject) = PurchaseReturn(
+        id = o.optLong("id"), returnNo = o.optString("returnNo"), dateMillis = o.optLong("dateMillis"),
+        supplierId = o.optLong("supplierId"), supplierName = o.optString("supplierName"), billNo = o.optString("billNo"),
+        subTotal = o.optDouble("subTotal", 0.0), taxTotal = o.optDouble("taxTotal", 0.0),
+        additionalCharge = o.optDouble("additionalCharge", 0.0), discount = o.optDouble("discount", 0.0),
+        grandTotal = o.optDouble("grandTotal", 0.0), remarks = o.optString("remarks")
+    )
+
+    private fun prItemJson(l: PurchaseReturnItem) = JSONObject().put("id", l.id).put("returnId", l.returnId)
+        .put("itemId", l.itemId).put("name", l.name).put("qty", l.qty).put("price", l.price)
+        .put("taxPercent", l.taxPercent).put("lineTotal", l.lineTotal).put("batchNo", l.batchNo)
+
+    private fun readPRItem(o: JSONObject) = PurchaseReturnItem(
         id = o.optLong("id"), returnId = o.optLong("returnId"), itemId = o.optLong("itemId"), name = o.optString("name"),
         qty = o.optDouble("qty", 0.0), price = o.optDouble("price", 0.0),
         taxPercent = o.optDouble("taxPercent", 0.0), lineTotal = o.optDouble("lineTotal", 0.0), batchNo = o.optString("batchNo")

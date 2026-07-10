@@ -46,6 +46,8 @@ import com.billing.pos.ui.quotation.QuotationListScreen
 import com.billing.pos.ui.quotation.QuotationScreen
 import com.billing.pos.ui.salesreturn.SalesReturnListScreen
 import com.billing.pos.ui.salesreturn.SalesReturnScreen
+import com.billing.pos.ui.purchasereturn.PurchaseReturnListScreen
+import com.billing.pos.ui.purchasereturn.PurchaseReturnScreen
 import com.billing.pos.ui.purchase.PurchaseListScreen
 import com.billing.pos.ui.purchase.PurchaseScreen
 import com.billing.pos.ui.purchase.SuppliersScreen
@@ -160,6 +162,7 @@ private fun AppNav() {
                 onSuppliers = { nav.navigate("suppliers") },
                 onQuotations = { nav.navigate("quotations") },
                 onSalesReturns = { nav.navigate("salesreturns") },
+                onPurchaseReturns = { nav.navigate("purchasereturns") },
                 onVatReport = { nav.navigate("vat") },
                 onOutstanding = { nav.navigate("outstanding") },
                 onAccounts = { nav.navigate("accounts") },
@@ -256,6 +259,18 @@ private fun AppNav() {
             route = "salesreturn/edit/{id}",
             arguments = listOf(navArgument("id") { type = NavType.LongType })
         ) { entry -> SalesReturnScreen(editId = entry.arguments?.getLong("id"), onBack = { nav.popBackStack() }) }
+        composable("purchasereturns") {
+            PurchaseReturnListScreen(
+                onBack = { nav.popBackStack() },
+                onOpen = { id -> nav.navigate("purchasereturn/edit/$id") },
+                onNew = { nav.navigate("purchasereturn") }
+            )
+        }
+        composable("purchasereturn") { PurchaseReturnScreen(editId = null, onBack = { nav.popBackStack() }) }
+        composable(
+            route = "purchasereturn/edit/{id}",
+            arguments = listOf(navArgument("id") { type = NavType.LongType })
+        ) { entry -> PurchaseReturnScreen(editId = entry.arguments?.getLong("id"), onBack = { nav.popBackStack() }) }
         composable("items") {
             ItemsScreen(onBack = { nav.popBackStack() })
         }
