@@ -68,6 +68,9 @@ import com.billing.pos.ui.billing.CartLine
 import com.billing.pos.ui.billing.ItemPickerDialog
 import com.billing.pos.ui.billing.SaleBatchPickDialog
 import com.billing.pos.ui.billing.collectAsStateSafe
+import com.billing.pos.ui.common.DocumentPdfAction
+import com.billing.pos.pdf.PdfDoc
+import com.billing.pos.pdf.PdfLine
 import com.billing.pos.util.Format
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -196,7 +199,21 @@ fun PurchaseReturnScreen(editId: Long?, onBack: () -> Unit, vm: PurchaseReturnVi
             TopAppBar(
                 title = { Text(if (vm.editingId != null) "Edit Purchase Return" else "Purchase Return") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
-                actions = { IconButton(onClick = { vm.newReturn() }) { Icon(Icons.Filled.NoteAdd, "New") } },
+                actions = {
+                    DocumentPdfAction(onMessage = { vm.message.value = it }) {
+                        if (vm.cart.isEmpty()) { vm.message.value = "Add at least one item"; null }
+                        else PdfDoc(
+                            docTitle = "PURCHASE RETURN", docNo = vm.returnNo, dateMillis = vm.dateMillis,
+                            partyLabel = "Return To", partyName = vm.selectedSupplier?.name ?: "",
+                            extraMeta = if (vm.billNo.isNotBlank()) "Against: ${vm.billNo}" else "",
+                            lines = vm.cart.map { PdfLine(it.name, it.qty, it.price, it.total) },
+                            subTotal = vm.subTotal, taxTotal = vm.taxTotal, additionalCharge = vm.additionalCharge,
+                            discount = vm.discount, grandTotal = vm.grandTotal, grandLabel = "DEBIT TOTAL",
+                            remarks = vm.remarks, filePrefix = "purchase_return"
+                        )
+                    }
+                    IconButton(onClick = { vm.newReturn() }) { Icon(Icons.Filled.NoteAdd, "New") }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                     titleContentColor = MaterialTheme.colorScheme.onPrimary,

@@ -67,6 +67,9 @@ import com.billing.pos.data.Repository
 import com.billing.pos.ui.billing.CartLine
 import com.billing.pos.ui.billing.ItemPickerDialog
 import com.billing.pos.ui.billing.collectAsStateSafe
+import com.billing.pos.ui.common.DocumentPdfAction
+import com.billing.pos.pdf.PdfDoc
+import com.billing.pos.pdf.PdfLine
 import com.billing.pos.util.Format
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -187,7 +190,20 @@ fun QuotationScreen(editId: Long?, onBack: () -> Unit, vm: QuotationViewModel = 
             TopAppBar(
                 title = { Text(if (vm.editingId != null) "Edit Quotation" else "New Quotation") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
-                actions = { IconButton(onClick = { vm.newQuotation() }) { Icon(Icons.Filled.NoteAdd, "New") } },
+                actions = {
+                    DocumentPdfAction(onMessage = { vm.message.value = it }) {
+                        if (vm.cart.isEmpty()) { vm.message.value = "Add at least one item"; null }
+                        else PdfDoc(
+                            docTitle = "QUOTATION", docNo = vm.quotationNo, dateMillis = vm.dateMillis,
+                            partyLabel = "Quote To", partyName = vm.selectedCustomer?.name ?: "",
+                            lines = vm.cart.map { PdfLine(it.name, it.qty, it.price, it.total) },
+                            subTotal = vm.subTotal, taxTotal = vm.taxTotal, additionalCharge = vm.additionalCharge,
+                            discount = vm.discount, grandTotal = vm.grandTotal, grandLabel = "TOTAL",
+                            remarks = vm.remarks, filePrefix = "quotation"
+                        )
+                    }
+                    IconButton(onClick = { vm.newQuotation() }) { Icon(Icons.Filled.NoteAdd, "New") }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                     titleContentColor = MaterialTheme.colorScheme.onPrimary,
