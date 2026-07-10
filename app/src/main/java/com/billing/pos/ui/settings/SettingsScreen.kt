@@ -109,14 +109,14 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
                 .padding(16.dp)
                 .verticalScroll(rememberScrollState())
         ) {
-            // Registered install number (entered when the app was set up).
+            // Device ID (used for licensing / activation).
             Text(
-                "Registered mobile number",
+                "Device ID",
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.outline
             )
             Text(
-                prefs.mobileNumber.ifBlank { "Not registered" },
+                com.billing.pos.data.License.deviceId(context),
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.primary
             )

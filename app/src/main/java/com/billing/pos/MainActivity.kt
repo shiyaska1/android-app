@@ -38,7 +38,6 @@ import com.billing.pos.ui.items.ItemsScreen
 import com.billing.pos.ui.journal.JournalEntryScreen
 import com.billing.pos.ui.journal.JournalListScreen
 import com.billing.pos.ui.license.LicenseScreen
-import com.billing.pos.ui.license.RegisterScreen
 import com.billing.pos.ui.outstanding.OutstandingScreen
 import com.billing.pos.ui.pricesearch.PriceSearchScreen
 import com.billing.pos.ui.printer.PrinterSetupScreen
@@ -165,11 +164,6 @@ private fun AppNav() {
                 onBackup = { nav.navigate("backup") },
                 onLogout = logout
             )
-        }
-        composable("register") {
-            RegisterScreen(onDone = {
-                nav.navigate("login") { popUpTo(0) { inclusive = true } }
-            })
         }
         composable("license") {
             LicenseScreen(onActivated = {

@@ -569,7 +569,7 @@ fun BillingScreen(
 
     if (showBuy) {
         BuyDialog(
-            mobile = prefs.mobileNumber,
+            deviceId = com.billing.pos.data.License.deviceId(context),
             onDismiss = { showBuy = false },
             onActivated = { prefs.licensed = true; licensed = true; showBuy = false }
         )
@@ -798,11 +798,12 @@ private fun sendWhatsApp(
 
 @Composable
 private fun BuyDialog(
-    mobile: String,
+    deviceId: String,
     onDismiss: () -> Unit,
     onActivated: () -> Unit
 ) {
     val context = LocalContext.current
+    val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
     var key by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
     androidx.compose.material3.AlertDialog(
@@ -811,10 +812,13 @@ private fun BuyDialog(
         text = {
             Column {
                 Text(
-                    "Purchase to remove the trial limit. After buying, enter the license key to activate.",
+                    "Purchase to remove the trial limit. Send us your Device ID, then enter the activation key.",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.outline
                 )
+                Text("Device ID", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.outline, modifier = Modifier.padding(top = 6.dp))
+                Text(deviceId, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                OutlinedButton(onClick = { clipboard.setText(androidx.compose.ui.text.AnnotatedString(deviceId)) }) { Text("Copy") }
                 OutlinedButton(
                     onClick = {
                         runCatching {
@@ -835,8 +839,8 @@ private fun BuyDialog(
         },
         confirmButton = {
             Button(onClick = {
-                if (com.billing.pos.data.License.isValid(mobile, key)) onActivated()
-                else error = "Invalid license key"
+                if (com.billing.pos.data.License.isValid(deviceId, key)) onActivated()
+                else error = "Invalid activation key"
             }) { Text("Activate") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Close") } }

@@ -28,56 +28,13 @@ import androidx.compose.ui.unit.dp
 import com.billing.pos.data.AppPrefs
 import com.billing.pos.data.License
 
-/** First-run screen: capture the mobile number and start the trial. */
-@Composable
-fun RegisterScreen(onDone: () -> Unit) {
-    val context = LocalContext.current
-    val prefs = remember { AppPrefs(context) }
-    var mobile by remember { mutableStateOf("") }
-    var error by remember { mutableStateOf<String?>(null) }
-
-    Column(
-        Modifier.fillMaxSize().padding(24.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Text("Welcome to POS Billing", style = MaterialTheme.typography.headlineSmall)
-        Text(
-            "Enter your mobile number to start your ${License.TRIAL_DAYS}-day free trial.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.outline,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(vertical = 16.dp)
-        )
-        OutlinedTextField(
-            value = mobile,
-            onValueChange = { mobile = it.filter { c -> c.isDigit() || c == '+' }; error = null },
-            label = { Text("Mobile number") },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-            modifier = Modifier.fillMaxWidth()
-        )
-        error?.let {
-            Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 8.dp))
-        }
-        Button(
-            onClick = {
-                val m = mobile.trim()
-                if (m.length < 7) { error = "Enter a valid mobile number"; return@Button }
-                prefs.mobileNumber = m
-                prefs.installDateMillis = System.currentTimeMillis()
-                onDone()
-            },
-            modifier = Modifier.fillMaxWidth().padding(top = 16.dp)
-        ) { Text("Start Trial") }
-    }
-}
-
-/** Blocking screen shown after the trial ends until a valid license key is entered. */
+/** Blocking screen shown after the trial ends until a valid activation key is entered. */
 @Composable
 fun LicenseScreen(onActivated: () -> Unit) {
     val context = LocalContext.current
     val prefs = remember { AppPrefs(context) }
+    val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+    val deviceId = remember { License.deviceId(context) }
     var key by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
 
@@ -88,33 +45,35 @@ fun LicenseScreen(onActivated: () -> Unit) {
     ) {
         Text("Trial ended", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
         Text(
-            "Your ${License.TRIAL_DAYS}-day trial has finished. Enter your license key to continue.",
+            "Your ${License.TRIAL_DAYS}-day trial has finished. Send us your Device ID below to get an activation key, then enter it here.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.outline,
             textAlign = TextAlign.Center,
             modifier = Modifier.padding(vertical = 12.dp)
         )
-        Text(
-            "Registered mobile: ${prefs.mobileNumber}",
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.outline
-        )
+        Text("Your Device ID", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.outline)
+        Text(deviceId, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+        OutlinedButton(
+            onClick = { clipboard.setText(androidx.compose.ui.text.AnnotatedString(deviceId)) },
+            modifier = Modifier.padding(top = 4.dp)
+        ) { Text("Copy Device ID") }
+
         OutlinedTextField(
             value = key,
             onValueChange = { key = it; error = null },
-            label = { Text("License key") },
+            label = { Text("Activation key") },
             singleLine = true,
-            modifier = Modifier.fillMaxWidth().padding(top = 12.dp)
+            modifier = Modifier.fillMaxWidth().padding(top = 16.dp)
         )
         error?.let {
             Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 8.dp))
         }
         Button(
             onClick = {
-                if (License.isValid(prefs.mobileNumber, key)) {
+                if (License.isValid(deviceId, key)) {
                     prefs.licensed = true
                     onActivated()
-                } else error = "Invalid license key"
+                } else error = "Invalid activation key"
             },
             modifier = Modifier.fillMaxWidth().padding(top = 16.dp)
         ) { Text("Activate") }

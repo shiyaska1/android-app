@@ -21,12 +21,13 @@ class BootViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = Repository(app)
     private val prefs = AppPrefs(app)
 
-    /** Resolves the start route: "register", "license", "billing", or "login". */
+    /** Resolves the start route: "license", "dashboard" or "login". */
     fun resolve(onResolved: (route: String) -> Unit) {
         viewModelScope.launch {
             repo.ensureDefaults()
+            // Start the trial clock automatically on first launch (no registration needed).
+            if (prefs.installDateMillis <= 0L) prefs.installDateMillis = System.currentTimeMillis()
             when {
-                prefs.mobileNumber.isBlank() -> onResolved("register")
                 !prefs.licensed && License.trialExpired(prefs.installDateMillis) -> onResolved("license")
                 else -> {
                     val id = prefs.loggedInUserId
