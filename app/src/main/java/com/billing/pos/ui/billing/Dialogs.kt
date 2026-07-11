@@ -143,7 +143,9 @@ fun NewItemDialog(
             ) {
                 OutlinedTextField(
                     value = name, onValueChange = { name = it },
-                    label = { Text("Item name *") }, singleLine = true,
+                    label = { Text("Item name *") },
+                    // Tall + multiline so full OCR text is visible and easy to trim.
+                    singleLine = false, minLines = 3, maxLines = 6,
                     trailingIcon = {
                         IconButton(onClick = { scanName() }) {
                             Icon(Icons.Filled.PhotoCamera, contentDescription = "Scan item name", tint = MaterialTheme.colorScheme.primary)

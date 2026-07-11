@@ -1012,7 +1012,8 @@ internal fun EditLineNameDialog(
                     value = text, onValueChange = { text = it },
                     label = { Text("Name") },
                     placeholder = { if (initial.isNotBlank()) Text(initial) },
-                    singleLine = true, modifier = Modifier.fillMaxWidth()
+                    // Tall + multiline so full OCR text is visible and easy to trim.
+                    singleLine = false, minLines = 3, maxLines = 6, modifier = Modifier.fillMaxWidth()
                 )
                 Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = { scanName() }, modifier = Modifier.weight(1f)) {

@@ -757,7 +757,9 @@ private fun ItemDialog(
                 modifier = Modifier.verticalScroll(rememberScrollState())
             ) {
                 OutlinedTextField(
-                    value = name, onValueChange = { name = it }, label = { Text("Name *") }, singleLine = true,
+                    value = name, onValueChange = { name = it }, label = { Text("Name *") },
+                    // Tall + multiline so full OCR text is visible and easy to trim.
+                    singleLine = false, minLines = 3, maxLines = 6,
                     trailingIcon = {
                         Row {
                             IconButton(onClick = { scanName() }) {

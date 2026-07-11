@@ -363,8 +363,8 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
                 unit = match.unit, primaryPerUnit = 1.0, uid = CartLine.nextUid()
             )
         else
-            // A new (unknown) item: clear the price to zero, ready for entry; saved to master on save.
-            l.copy(name = trimmed, itemId = 0L, price = 0.0, uid = CartLine.nextUid())
+            // A new (unknown) item: keep the price the user already entered; saved to master on save.
+            l.copy(name = trimmed, itemId = 0L, uid = CartLine.nextUid())
         dirty = true
     }
 
