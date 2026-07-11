@@ -149,8 +149,9 @@ fun CashBookScreen(
 
     LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); vm.consumeMessage() } }
 
-    var fromMillis by remember { mutableStateOf<Long?>(null) }
-    var toMillis by remember { mutableStateOf<Long?>(null) }
+    // Default the range to today; the Clear button still lets you see all dates.
+    var fromMillis by remember { mutableStateOf<Long?>(System.currentTimeMillis()) }
+    var toMillis by remember { mutableStateOf<Long?>(System.currentTimeMillis()) }
     var modeFilter by remember { mutableStateOf("All") }   // All/Cash/UPI/Card/Cheque
     var typeFilter by remember { mutableStateOf("All") }   // All/Sale/Receipt/Payment/Purchase/Journal
     var searchQuery by remember { mutableStateOf("") }
