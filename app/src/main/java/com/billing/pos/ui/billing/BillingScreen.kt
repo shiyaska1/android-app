@@ -38,6 +38,7 @@ import androidx.compose.material.icons.filled.Dialpad
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Gesture
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
@@ -982,8 +983,21 @@ internal fun EditLineNameDialog(
     onDone: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     // Start cleared and ready for a new item; the current name shows as a placeholder.
     var text by remember { mutableStateOf("") }
+    // Camera → OCR → name.
+    val scanName = com.billing.pos.ocr.rememberNameScanner { if (it.isNotBlank()) text = it }
+    // Gallery image → OCR → name.
+    val galleryOcr = rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        if (uri != null) scope.launch {
+            val t = com.billing.pos.ocr.TextOcr.singleLine(context, uri)
+            if (t.isNotBlank()) text = t
+        }
+    }
     val suggestions = remember(text, allNames) {
         val q = text.trim()
         if (q.isBlank()) emptyList()
@@ -1000,6 +1014,21 @@ internal fun EditLineNameDialog(
                     placeholder = { if (initial.isNotBlank()) Text(initial) },
                     singleLine = true, modifier = Modifier.fillMaxWidth()
                 )
+                Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { scanName() }, modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Filled.PhotoCamera, null); Text(" Photo")
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            galleryOcr.launch(
+                                androidx.activity.result.PickVisualMediaRequest(
+                                    androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly
+                                )
+                            )
+                        },
+                        modifier = Modifier.weight(1f)
+                    ) { Icon(Icons.Filled.PhotoLibrary, null); Text(" Gallery") }
+                }
                 // Plain column (not lazy) — the list is capped at 6 and lazy keys can
                 // collide when the master has duplicate names.
                 suggestions.forEach { s ->
