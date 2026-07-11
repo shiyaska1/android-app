@@ -356,7 +356,15 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
         val trimmed = newName.trim()
         if (trimmed.isBlank()) return
         val match = items.value.firstOrNull { it.name.equals(trimmed, ignoreCase = true) }
-        cart[i] = l.copy(name = trimmed, itemId = match?.id ?: 0L)
+        // A fresh uid forces the row's price/qty text boxes to re-init from the new values.
+        cart[i] = if (match != null)
+            l.copy(
+                name = match.name, itemId = match.id, price = match.price, taxPercent = match.taxPercent,
+                unit = match.unit, primaryPerUnit = 1.0, uid = CartLine.nextUid()
+            )
+        else
+            // A new (unknown) item: clear the price to zero, ready for entry; saved to master on save.
+            l.copy(name = trimmed, itemId = 0L, price = 0.0, uid = CartLine.nextUid())
         dirty = true
     }
 

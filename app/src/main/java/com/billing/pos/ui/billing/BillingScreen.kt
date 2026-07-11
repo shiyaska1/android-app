@@ -9,6 +9,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -981,37 +982,37 @@ internal fun EditLineNameDialog(
     onDone: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
-    var text by remember { mutableStateOf(initial) }
+    // Start cleared and ready for a new item; the current name shows as a placeholder.
+    var text by remember { mutableStateOf("") }
     val suggestions = remember(text, allNames) {
         val q = text.trim()
         if (q.isBlank()) emptyList()
-        else allNames.filter { it.contains(q, ignoreCase = true) && !it.equals(q, ignoreCase = true) }.take(6)
+        else allNames.distinct().filter { it.contains(q, ignoreCase = true) && !it.equals(q, ignoreCase = true) }.take(6)
     }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Item name") },
         text = {
-            Column(Modifier.fillMaxWidth()) {
+            Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
                 OutlinedTextField(
                     value = text, onValueChange = { text = it },
-                    label = { Text("Name") }, singleLine = true, modifier = Modifier.fillMaxWidth()
+                    label = { Text("Name") },
+                    placeholder = { if (initial.isNotBlank()) Text(initial) },
+                    singleLine = true, modifier = Modifier.fillMaxWidth()
                 )
-                if (suggestions.isNotEmpty()) {
-                    Spacer(Modifier.height(6.dp))
-                    LazyColumn(Modifier.fillMaxWidth().heightIn(max = 220.dp)) {
-                        items(suggestions, key = { it }) { s ->
-                            Text(
-                                s,
-                                Modifier.fillMaxWidth().clickable { onDone(s) }.padding(vertical = 10.dp),
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                            Divider()
-                        }
-                    }
+                // Plain column (not lazy) — the list is capped at 6 and lazy keys can
+                // collide when the master has duplicate names.
+                suggestions.forEach { s ->
+                    Text(
+                        s,
+                        Modifier.fillMaxWidth().clickable { onDone(s) }.padding(vertical = 10.dp),
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Divider()
                 }
             }
         },
-        confirmButton = { TextButton(onClick = { onDone(text) }) { Text("OK") } },
+        confirmButton = { TextButton(onClick = { if (text.isNotBlank()) onDone(text) else onDismiss() }) { Text("OK") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
 }
