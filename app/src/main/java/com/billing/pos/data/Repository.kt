@@ -302,6 +302,7 @@ class Repository(context: Context) {
     private val hireReturnDao = db.hireReturnDao()
     val hireReturns: Flow<List<HireReturn>> = hireReturnDao.observeAll()
     val hireReturnedByItem: Flow<List<HireNameQty>> = hireReturnDao.observeReturnedByItem()
+    val hireReturnedByHire: Flow<List<HireIdQty>> = hireReturnDao.observeReturnedByHire()
     suspend fun nextHireReturnNo(): String = "HRR-" + (hireReturnDao.count() + 1).toString().padStart(4, '0')
     suspend fun saveHireReturn(r: HireReturn, lines: List<HireReturnItem>): Long = hireReturnDao.save(r, lines)
     suspend fun updateHireReturn(r: HireReturn, lines: List<HireReturnItem>) = hireReturnDao.update(r, lines)

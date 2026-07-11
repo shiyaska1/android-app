@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -87,12 +89,27 @@ fun NewCustomerDialog(
     )
 }
 
+/** All fields captured by the sales "New item" dialog (mirrors the item master form). */
+data class NewItemForm(
+    val name: String,
+    val price: Double,
+    val taxPercent: Double,
+    val barcode: String,
+    val category: String,
+    val hsn: String,
+    val openingStock: Double,
+    val unit: String,
+    val secondaryUnit: String,
+    val conversionFactor: Double,
+    val storeLocation: String
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NewItemDialog(
     onDismiss: () -> Unit,
     categories: List<String> = emptyList(),
-    onSave: (name: String, price: Double, taxPercent: Double, barcode: String, category: String, addToCart: Boolean) -> Unit
+    onSave: (NewItemForm) -> Unit
 ) {
     var name by remember { mutableStateOf("") }
     var price by remember { mutableStateOf("") }
@@ -101,6 +118,16 @@ fun NewItemDialog(
     var barcode by remember { mutableStateOf("") }
     var category by remember { mutableStateOf("") }
     var catMenu by remember { mutableStateOf(false) }
+    var hsn by remember { mutableStateOf("") }
+    var openingStock by remember { mutableStateOf("") }
+    var unit by remember { mutableStateOf("PCS") }
+    var unitMenu by remember { mutableStateOf(false) }
+    var secondaryUnit by remember { mutableStateOf("PCS") }
+    var secUnitMenu by remember { mutableStateOf(false) }
+    var factorText by remember { mutableStateOf("1") }
+    var storeLocation by remember { mutableStateOf("") }
+    val unitsDiffer = !secondaryUnit.trim().equals(unit.trim(), ignoreCase = true) &&
+        secondaryUnit.isNotBlank() && unit.isNotBlank()
     val scanLauncher = rememberLauncherForActivityResult(ScanContract()) { result ->
         result.contents?.let { barcode = it }
     }
@@ -110,7 +137,10 @@ fun NewItemDialog(
         onDismissRequest = onDismiss,
         title = { Text("New Item") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState())
+            ) {
                 OutlinedTextField(
                     value = name, onValueChange = { name = it },
                     label = { Text("Item name *") }, singleLine = true,
@@ -123,7 +153,7 @@ fun NewItemDialog(
                 )
                 OutlinedTextField(
                     value = price, onValueChange = { price = it.filter { c -> c.isDigit() || c == '.' } },
-                    label = { Text("Price *") }, singleLine = true,
+                    label = { Text("Selling price (incl. tax) *") }, singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -182,13 +212,65 @@ fun NewItemDialog(
                         modifier = Modifier.weight(1f)
                     ) { Text("Scan") }
                 }
+                OutlinedTextField(
+                    value = hsn, onValueChange = { hsn = it }, label = { Text("HSN / SAC (optional)") },
+                    singleLine = true, modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = openingStock, onValueChange = { openingStock = it.filter { c -> c.isDigit() || c == '.' } },
+                    label = { Text("Opening stock (optional)") }, singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth()
+                )
+                // Primary unit.
+                ExposedDropdownMenuBox(expanded = unitMenu, onExpandedChange = { unitMenu = !unitMenu }) {
+                    OutlinedTextField(
+                        value = unit, onValueChange = { unit = it }, label = { Text("Primary unit") }, singleLine = true,
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = unitMenu) },
+                        modifier = Modifier.menuAnchor().fillMaxWidth()
+                    )
+                    ExposedDropdownMenu(expanded = unitMenu, onDismissRequest = { unitMenu = false }) {
+                        com.billing.pos.ui.items.ITEM_UNITS.forEach { u ->
+                            DropdownMenuItem(text = { Text(u) }, onClick = { unit = u; unitMenu = false })
+                        }
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    androidx.compose.foundation.layout.Box(Modifier.weight(1f)) {
+                        ExposedDropdownMenuBox(expanded = secUnitMenu, onExpandedChange = { secUnitMenu = !secUnitMenu }) {
+                            OutlinedTextField(
+                                value = secondaryUnit, onValueChange = { secondaryUnit = it },
+                                label = { Text("Secondary unit") }, singleLine = true,
+                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = secUnitMenu) },
+                                modifier = Modifier.menuAnchor().fillMaxWidth()
+                            )
+                            ExposedDropdownMenu(expanded = secUnitMenu, onDismissRequest = { secUnitMenu = false }) {
+                                com.billing.pos.ui.items.ITEM_UNITS.forEach { u ->
+                                    DropdownMenuItem(text = { Text(u) }, onClick = { secondaryUnit = u; secUnitMenu = false })
+                                }
+                            }
+                        }
+                    }
+                    OutlinedTextField(
+                        value = factorText, onValueChange = { factorText = it.filter { c -> c.isDigit() || c == '.' } },
+                        label = { Text("Conv. factor") }, singleLine = true, enabled = unitsDiffer,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        modifier = Modifier.width(120.dp)
+                    )
+                }
+                OutlinedTextField(
+                    value = storeLocation, onValueChange = { storeLocation = it }, label = { Text("Store location (optional)") },
+                    singleLine = true, modifier = Modifier.fillMaxWidth()
+                )
             }
         },
         confirmButton = {
             TextButton(onClick = {
                 val p = price.toDoubleOrNull() ?: 0.0
                 val t = if (taxable) (taxPercent.toDoubleOrNull() ?: 0.0) else 0.0
-                onSave(name, p, t, barcode, category, true)
+                val os = openingStock.toDoubleOrNull() ?: 0.0
+                val sec = if (unitsDiffer) secondaryUnit.trim() else unit.trim()
+                val f = if (unitsDiffer) (factorText.toDoubleOrNull() ?: 1.0).coerceAtLeast(1.0) else 1.0
+                onSave(NewItemForm(name, p, t, barcode, category, hsn, os, unit.trim().ifBlank { "PCS" }, sec, f, storeLocation))
             }) { Text("Save & add") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }

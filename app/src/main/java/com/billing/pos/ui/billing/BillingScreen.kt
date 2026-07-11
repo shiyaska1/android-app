@@ -151,6 +151,8 @@ fun BillingScreen(
     var unitPickFor by remember { mutableStateOf<com.billing.pos.data.Item?>(null) }
     // Unit chosen for the item currently going through the batch picker.
     var pendingChoice by remember { mutableStateOf<com.billing.pos.data.UnitChoice?>(null) }
+    // Cart-line index whose name is being edited (tap the name to rename with autocomplete).
+    var editNameFor by remember { mutableStateOf<Int?>(null) }
 
     val prefs = remember { com.billing.pos.data.AppPrefs(context) }
     var licensed by remember { mutableStateOf(prefs.licensed) }
@@ -386,7 +388,11 @@ fun BillingScreen(
                             var qtyText by remember(line.uid, line.qty) { mutableStateOf(Format.qty(line.qty)) }
                             Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(line.name, Modifier.weight(1f), fontWeight = FontWeight.SemiBold, maxLines = 1)
+                                    Text(
+                                        line.name,
+                                        Modifier.weight(1f).clickable { editNameFor = index },
+                                        fontWeight = FontWeight.SemiBold, maxLines = 1
+                                    )
                                     if (line.batchNo.isNotBlank()) Text("B:${line.batchNo}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
                                     if (line.taxPercent > 0) Text("  +${Format.money(line.taxPercent)}%", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
                                     IconButton(onClick = { vm.removeLine(index) }) { Icon(Icons.Filled.Delete, "Remove", tint = MaterialTheme.colorScheme.error) }
@@ -608,7 +614,7 @@ fun BillingScreen(
         NewItemDialog(
             onDismiss = { showNewItem = false },
             categories = itemCategories,
-            onSave = { n, price, tax, barcode, cat, add -> vm.addItem(n, price, tax, barcode, cat, add) { showNewItem = false } }
+            onSave = { form -> vm.addItem(form, addToCart = true) { showNewItem = false } }
         )
     }
     if (showCustomLine) {
@@ -653,6 +659,15 @@ fun BillingScreen(
             onDismiss = { unitPickFor = null }
         )
     }
+    editNameFor?.let { idx ->
+        val current = vm.cart.getOrNull(idx)
+        if (current != null) EditLineNameDialog(
+            initial = current.name,
+            allNames = items.map { it.name },
+            onDone = { newName -> vm.setLineName(idx, newName); editNameFor = null },
+            onDismiss = { editNameFor = null }
+        ) else editNameFor = null
+    }
     sizePickFor?.let { item ->
         val allSizes by vm.allSizes.collectAsStateSafe()
         SaleSizePickDialog(
@@ -671,7 +686,11 @@ fun BillingScreen(
                 vm.addItemWithBatch(item, batch, pendingChoice ?: item.primaryChoice())
                 pendingChoice = null; batchPickFor = null
             },
-            onDismiss = { pendingChoice = null; batchPickFor = null }
+            onDismiss = { pendingChoice = null; batchPickFor = null },
+            onNoBatch = {
+                vm.addItemWithUnit(item, pendingChoice ?: item.primaryChoice())
+                pendingChoice = null; batchPickFor = null
+            }
         )
     }
     if (showHandwrite) {
@@ -952,6 +971,52 @@ internal fun SaleSizePickDialog(
 }
 
 /**
+ * Rename a cart line with type-ahead suggestions from the item master. Typing a name that
+ * isn't in the master keeps it as a new item (created on save).
+ */
+@Composable
+internal fun EditLineNameDialog(
+    initial: String,
+    allNames: List<String>,
+    onDone: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var text by remember { mutableStateOf(initial) }
+    val suggestions = remember(text, allNames) {
+        val q = text.trim()
+        if (q.isBlank()) emptyList()
+        else allNames.filter { it.contains(q, ignoreCase = true) && !it.equals(q, ignoreCase = true) }.take(6)
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Item name") },
+        text = {
+            Column(Modifier.fillMaxWidth()) {
+                OutlinedTextField(
+                    value = text, onValueChange = { text = it },
+                    label = { Text("Name") }, singleLine = true, modifier = Modifier.fillMaxWidth()
+                )
+                if (suggestions.isNotEmpty()) {
+                    Spacer(Modifier.height(6.dp))
+                    LazyColumn(Modifier.fillMaxWidth().heightIn(max = 220.dp)) {
+                        items(suggestions, key = { it }) { s ->
+                            Text(
+                                s,
+                                Modifier.fillMaxWidth().clickable { onDone(s) }.padding(vertical = 10.dp),
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Divider()
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = { onDone(text) }) { Text("OK") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
+/**
  * Pick which unit to bill an item in. Only shown when the item's primary and secondary
  * units differ; the secondary rate is the primary price / conversion factor, rounded to 2dp.
  */
@@ -996,7 +1061,8 @@ internal fun SaleBatchPickDialog(
     item: com.billing.pos.data.Item,
     batches: List<com.billing.pos.data.ItemBatch>,
     onPick: (com.billing.pos.data.ItemBatch) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onNoBatch: (() -> Unit)? = null
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1024,7 +1090,11 @@ internal fun SaleBatchPickDialog(
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } }
+        confirmButton = {
+            // Batch is optional: let the user add the item without picking one.
+            if (onNoBatch != null) TextButton(onClick = onNoBatch) { Text("Add without batch") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Close") } }
     )
 }
 

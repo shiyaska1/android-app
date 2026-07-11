@@ -42,9 +42,12 @@ data class CartLine(
     val primaryPerUnit: Double = 1.0,
     val uid: Long = nextUid()
 ) {
-    val base: Double get() = price * qty
-    val tax: Double get() = base * taxPercent / 100.0
-    val total: Double get() = base + tax
+    /** What the customer pays for this line — the selling price is tax-inclusive. */
+    val total: Double get() = price * qty
+    /** Tax portion extracted out of the inclusive [total]. */
+    val tax: Double get() = if (taxPercent > 0.0) total - total / (1.0 + taxPercent / 100.0) else 0.0
+    /** Taxable value (inclusive total minus the extracted tax). */
+    val base: Double get() = total - tax
 
     /** [qty] expressed in the item's primary unit, for stock math. */
     val primaryQty: Double get() = qty * primaryPerUnit
@@ -320,14 +323,41 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun addItem(name: String, price: Double, taxPercent: Double, barcode: String, category: String, addToCart: Boolean, onCreated: () -> Unit) {
-        if (name.isBlank()) { _message.value = "Enter item name"; return }
+    fun addItem(form: com.billing.pos.ui.billing.NewItemForm, addToCart: Boolean, onCreated: () -> Unit) {
+        if (form.name.isBlank()) { _message.value = "Enter item name"; return }
         viewModelScope.launch {
-            val id = repo.addItem(name, price, taxPercent, barcode, hsn = "", category = category)
-            if (addToCart) addItemToCart(Item(id, name.trim(), price, taxPercent, barcode.trim(), category = category.trim()))
+            val id = repo.addItem(
+                name = form.name, price = form.price, taxPercent = form.taxPercent,
+                barcode = form.barcode, hsn = form.hsn, category = form.category,
+                openingStock = form.openingStock, unit = form.unit, storeLocation = form.storeLocation,
+                secondaryUnit = form.secondaryUnit, conversionFactor = form.conversionFactor
+            )
+            if (addToCart) addItemToCart(
+                Item(
+                    id = id, name = form.name.trim(), price = form.price, taxPercent = form.taxPercent,
+                    barcode = form.barcode.trim(), hsn = form.hsn.trim(), category = form.category.trim(),
+                    openingStock = form.openingStock, unit = form.unit,
+                    secondaryUnit = form.secondaryUnit, conversionFactor = form.conversionFactor,
+                    storeLocation = form.storeLocation.trim()
+                )
+            )
             _message.value = "Item added"
             onCreated()
         }
+    }
+
+    /**
+     * Renames a cart line. If the new name matches an existing master item the line is
+     * re-linked to it; otherwise itemId is cleared and the item is created in the master
+     * on save. Optionally adopt the matched item's price/tax.
+     */
+    fun setLineName(i: Int, newName: String) {
+        val l = cart.getOrNull(i) ?: return
+        val trimmed = newName.trim()
+        if (trimmed.isBlank()) return
+        val match = items.value.firstOrNull { it.name.equals(trimmed, ignoreCase = true) }
+        cart[i] = l.copy(name = trimmed, itemId = match?.id ?: 0L)
+        dirty = true
     }
 
     /** Adds an item to the cart by its scanned barcode. */
@@ -347,6 +377,19 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
         if (cart.isEmpty() && !isManualTotal && !hasPhoto) { _message.value = "Add at least one item"; return null }
 
         if (!dirty && lastSaved != null) return lastSaved
+
+        // Any cart line whose name isn't in the master yet is created there now, so
+        // typed-in items become real items (with their price/tax/unit).
+        for (idx in cart.indices) {
+            val l = cart[idx]
+            if (l.itemId == 0L && l.name.isNotBlank()) {
+                val existing = items.value.firstOrNull { it.name.equals(l.name, ignoreCase = true) }
+                val id = existing?.id ?: repo.addItem(
+                    name = l.name, price = l.price, taxPercent = l.taxPercent, unit = l.unit.ifBlank { "PCS" }
+                )
+                cart[idx] = l.copy(itemId = id)
+            }
+        }
 
         val editId = editingBillId
         val paid = when {

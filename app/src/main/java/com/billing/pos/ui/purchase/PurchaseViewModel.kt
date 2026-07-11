@@ -147,11 +147,24 @@ class PurchaseViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun addItem(name: String, price: Double, taxPercent: Double, barcode: String, category: String, addToCart: Boolean, onCreated: () -> Unit) {
-        if (name.isBlank()) { _message.value = "Enter item name"; return }
+    fun addItem(form: com.billing.pos.ui.billing.NewItemForm, addToCart: Boolean, onCreated: () -> Unit) {
+        if (form.name.isBlank()) { _message.value = "Enter item name"; return }
         viewModelScope.launch {
-            val id = repo.addItem(name, price, taxPercent, barcode, hsn = "", category = category)
-            if (addToCart) addItemToCart(Item(id, name.trim(), price, taxPercent, barcode.trim(), category = category.trim()))
+            val id = repo.addItem(
+                name = form.name, price = form.price, taxPercent = form.taxPercent,
+                barcode = form.barcode, hsn = form.hsn, category = form.category,
+                openingStock = form.openingStock, unit = form.unit, storeLocation = form.storeLocation,
+                secondaryUnit = form.secondaryUnit, conversionFactor = form.conversionFactor
+            )
+            if (addToCart) addItemToCart(
+                Item(
+                    id = id, name = form.name.trim(), price = form.price, taxPercent = form.taxPercent,
+                    barcode = form.barcode.trim(), hsn = form.hsn.trim(), category = form.category.trim(),
+                    openingStock = form.openingStock, unit = form.unit,
+                    secondaryUnit = form.secondaryUnit, conversionFactor = form.conversionFactor,
+                    storeLocation = form.storeLocation.trim()
+                )
+            )
             _message.value = "Item added"
             onCreated()
         }

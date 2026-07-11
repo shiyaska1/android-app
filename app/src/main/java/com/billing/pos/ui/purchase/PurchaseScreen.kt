@@ -342,7 +342,7 @@ fun PurchaseScreen(
         NewItemDialog(
             onDismiss = { showNewItem = false },
             categories = items.map { it.category }.filter { it.isNotBlank() }.distinct().sortedBy { it.lowercase() },
-            onSave = { n, price, tax, barcode, cat, add -> vm.addItem(n, price, tax, barcode, cat, add) { showNewItem = false } }
+            onSave = { form -> vm.addItem(form, addToCart = true) { showNewItem = false } }
         )
     }
     if (showCustomLine) {

@@ -49,6 +49,9 @@ data class HireInvoiceWithItems(val hire: HireInvoice, val lines: List<HireInvoi
 /** name + summed qty, for the item-wise hire report. */
 data class HireNameQty(val name: String, val qty: Double)
 
+/** hire invoice id + summed qty, for the fully-returned check. */
+data class HireIdQty(val id: Long, val qty: Double)
+
 @Dao
 interface HireInvoiceDao {
     @Query("SELECT COUNT(*) FROM hire_invoices") suspend fun count(): Int
@@ -139,4 +142,11 @@ interface HireReturnDao {
     /** Total quantity returned per item name across all hire returns. */
     @Query("SELECT name AS name, SUM(qty) AS qty FROM hire_return_items GROUP BY name COLLATE NOCASE")
     fun observeReturnedByItem(): Flow<List<HireNameQty>>
+
+    /** Total quantity returned per hire invoice, for the "fully returned" check. */
+    @Query(
+        "SELECT r.hireId AS id, SUM(i.qty) AS qty FROM hire_return_items i " +
+            "JOIN hire_returns r ON i.returnId = r.id GROUP BY r.hireId"
+    )
+    fun observeReturnedByHire(): Flow<List<HireIdQty>>
 }

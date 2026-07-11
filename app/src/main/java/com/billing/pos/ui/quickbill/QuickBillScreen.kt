@@ -366,7 +366,11 @@ fun QuickBillScreen(
                 vm.addItemWithBatch(item, batch, pendingChoice ?: item.primaryChoice())
                 pendingChoice = null; batchPickFor = null
             },
-            onDismiss = { pendingChoice = null; batchPickFor = null }
+            onDismiss = { pendingChoice = null; batchPickFor = null },
+            onNoBatch = {
+                vm.addItemWithUnit(item, pendingChoice ?: item.primaryChoice())
+                pendingChoice = null; batchPickFor = null
+            }
         )
     }
     if (showCart) {

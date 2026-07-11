@@ -75,6 +75,14 @@ class HireReportViewModel(app: Application) : AndroidViewModel(app) {
 
     val hires: StateFlow<List<HireInvoice>> = repo.hireInvoices.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val hireLines: StateFlow<List<HireInvoiceItem>> = repo.hireLinesFlow.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** Hire invoices that still have items outstanding (not fully returned), by hire id. */
+    val openHires: StateFlow<List<HireInvoice>> =
+        combine(repo.hireInvoices, repo.hireLinesFlow, repo.hireReturnedByHire) { hires, lines, returned ->
+            val hiredById = lines.groupBy { it.hireId }.mapValues { (_, l) -> l.sumOf { it.qty } }
+            val retById = returned.associate { it.id to it.qty }
+            hires.filter { (hiredById[it.id] ?: 0.0) - (retById[it.id] ?: 0.0) > 0.0001 }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -185,10 +193,11 @@ private fun HireDrillDownDialog(
 @Composable
 fun HireExpiryReportScreen(onBack: () -> Unit, onOpenHire: (Long) -> Unit, vm: HireReportViewModel = viewModel()) {
     val context = LocalContext.current
-    val hires by vm.hires.collectAsStateSafe()
+    // Only hires with items still outstanding — fully-returned hires are excluded.
+    val openHires by vm.openHires.collectAsStateSafe()
     var asOf by remember { mutableStateOf(System.currentTimeMillis()) }
-    // Expired = hire whose end date is on or before the chosen date.
-    val expired = hires.filter { it.endDateMillis <= endOfDay(asOf) }.sortedBy { it.endDateMillis }
+    // Expired = still-open hire whose end date is on or before the chosen date.
+    val expired = openHires.filter { it.endDateMillis <= endOfDay(asOf) }.sortedBy { it.endDateMillis }
 
     Scaffold(
         topBar = {
