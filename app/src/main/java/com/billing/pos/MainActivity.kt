@@ -50,6 +50,12 @@ import com.billing.pos.ui.purchasereturn.PurchaseReturnListScreen
 import com.billing.pos.ui.purchasereturn.PurchaseReturnScreen
 import com.billing.pos.ui.lpo.PurchaseQuotationListScreen
 import com.billing.pos.ui.lpo.PurchaseQuotationScreen
+import com.billing.pos.ui.hire.HireInvoiceListScreen
+import com.billing.pos.ui.hire.HireInvoiceScreen
+import com.billing.pos.ui.hire.HireReturnListScreen
+import com.billing.pos.ui.hire.HireReturnScreen
+import com.billing.pos.ui.hire.HireItemReportScreen
+import com.billing.pos.ui.hire.HireExpiryReportScreen
 import com.billing.pos.ui.purchase.PurchaseListScreen
 import com.billing.pos.ui.purchase.PurchaseScreen
 import com.billing.pos.ui.purchase.SuppliersScreen
@@ -166,6 +172,10 @@ private fun AppNav() {
                 onSalesReturns = { nav.navigate("salesreturns") },
                 onPurchaseReturns = { nav.navigate("purchasereturns") },
                 onLpos = { nav.navigate("lpos") },
+                onHireInvoices = { nav.navigate("hires") },
+                onHireReturns = { nav.navigate("hirereturns") },
+                onHireItemReport = { nav.navigate("hireitemreport") },
+                onHireExpiryReport = { nav.navigate("hireexpiry") },
                 onVatReport = { nav.navigate("vat") },
                 onOutstanding = { nav.navigate("outstanding") },
                 onAccounts = { nav.navigate("accounts") },
@@ -286,6 +296,36 @@ private fun AppNav() {
             route = "lpo/edit/{id}",
             arguments = listOf(navArgument("id") { type = NavType.LongType })
         ) { entry -> PurchaseQuotationScreen(editId = entry.arguments?.getLong("id"), onBack = { nav.popBackStack() }) }
+        composable("hires") {
+            HireInvoiceListScreen(
+                onBack = { nav.popBackStack() },
+                onOpen = { id -> nav.navigate("hire/edit/$id") },
+                onNew = { nav.navigate("hire") }
+            )
+        }
+        composable("hire") { HireInvoiceScreen(editId = null, onBack = { nav.popBackStack() }) }
+        composable(
+            route = "hire/edit/{id}",
+            arguments = listOf(navArgument("id") { type = NavType.LongType })
+        ) { entry -> HireInvoiceScreen(editId = entry.arguments?.getLong("id"), onBack = { nav.popBackStack() }) }
+        composable("hirereturns") {
+            HireReturnListScreen(
+                onBack = { nav.popBackStack() },
+                onOpen = { id -> nav.navigate("hirereturn/edit/$id") },
+                onNew = { nav.navigate("hirereturn") }
+            )
+        }
+        composable("hirereturn") { HireReturnScreen(editId = null, onBack = { nav.popBackStack() }) }
+        composable(
+            route = "hirereturn/edit/{id}",
+            arguments = listOf(navArgument("id") { type = NavType.LongType })
+        ) { entry -> HireReturnScreen(editId = entry.arguments?.getLong("id"), onBack = { nav.popBackStack() }) }
+        composable("hireitemreport") {
+            HireItemReportScreen(onBack = { nav.popBackStack() }, onOpenHire = { id -> nav.navigate("hire/edit/$id") })
+        }
+        composable("hireexpiry") {
+            HireExpiryReportScreen(onBack = { nav.popBackStack() }, onOpenHire = { id -> nav.navigate("hire/edit/$id") })
+        }
         composable("items") {
             ItemsScreen(onBack = { nav.popBackStack() })
         }

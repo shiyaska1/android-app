@@ -22,6 +22,8 @@ import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.EventBusy
+import androidx.compose.material.icons.filled.Handshake
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.LocalShipping
 import androidx.compose.material.icons.filled.ManageAccounts
@@ -83,6 +85,10 @@ fun DashboardScreen(
     onSalesReturns: () -> Unit,
     onPurchaseReturns: () -> Unit,
     onLpos: () -> Unit,
+    onHireInvoices: () -> Unit,
+    onHireReturns: () -> Unit,
+    onHireItemReport: () -> Unit,
+    onHireExpiryReport: () -> Unit,
     onVatReport: () -> Unit,
     onOutstanding: () -> Unit,
     onAccounts: () -> Unit,
@@ -93,8 +99,16 @@ fun DashboardScreen(
     onBackup: () -> Unit,
     onLogout: () -> Unit
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val isRental = remember { com.billing.pos.data.AppPrefs(context).businessType == "Rental" }
     val tiles = buildList {
         add(Tile("New Bill", Icons.Filled.PointOfSale, onNewBill))
+        if (isRental) {
+            add(Tile("Hire Invoice", Icons.Filled.Handshake, onHireInvoices))
+            add(Tile("Hire Return", Icons.Filled.AssignmentReturn, onHireReturns))
+            add(Tile("Hire Item Report", Icons.Filled.Inventory2, onHireItemReport))
+            add(Tile("Hire Expiry", Icons.Filled.EventBusy, onHireExpiryReport))
+        }
         add(Tile("Quick Bill", Icons.Filled.Restaurant, onQuickBill))
         add(Tile("Price Search", Icons.Filled.PriceCheck, onPriceSearch))
         if (Session.canViewInvoice) add(Tile("Invoices", Icons.Filled.ReceiptLong, onInvoices))

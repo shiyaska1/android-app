@@ -68,6 +68,10 @@ object FullBackup {
         root.put("purchaseReturnItems", JSONArray().apply { db.purchaseReturnDao().allLines().forEach { put(prItemJson(it)) } })
         root.put("purchaseQuotations", JSONArray().apply { db.purchaseQuotationDao().all().forEach { put(lpoJson(it)) } })
         root.put("purchaseQuotationItems", JSONArray().apply { db.purchaseQuotationDao().allLines().forEach { put(lpoItemJson(it)) } })
+        root.put("hireInvoices", JSONArray().apply { db.hireInvoiceDao().all().forEach { put(hireJson(it)) } })
+        root.put("hireInvoiceItems", JSONArray().apply { db.hireInvoiceDao().allLines().forEach { put(hireItemJson(it)) } })
+        root.put("hireReturns", JSONArray().apply { db.hireReturnDao().all().forEach { put(hireRetJson(it)) } })
+        root.put("hireReturnItems", JSONArray().apply { db.hireReturnDao().allLines().forEach { put(hireRetItemJson(it)) } })
         val billAtts = db.billAttachmentDao().all()
         root.put("billAttachments", JSONArray().apply { billAtts.forEach { put(billAttJson(it)) } })
 
@@ -230,6 +234,18 @@ object FullBackup {
             val ls = ArrayList<PurchaseQuotationItem>()
             for (i in 0 until it.length()) ls.add(readLpoItem(it.getJSONObject(i)))
             if (ls.isNotEmpty()) db.purchaseQuotationDao().insertLines(ls)
+        }
+        root.optJSONArray("hireInvoices")?.let { for (i in 0 until it.length()) db.hireInvoiceDao().insertHeader(readHire(it.getJSONObject(i))) }
+        root.optJSONArray("hireInvoiceItems")?.let {
+            val ls = ArrayList<HireInvoiceItem>()
+            for (i in 0 until it.length()) ls.add(readHireItem(it.getJSONObject(i)))
+            if (ls.isNotEmpty()) db.hireInvoiceDao().insertLines(ls)
+        }
+        root.optJSONArray("hireReturns")?.let { for (i in 0 until it.length()) db.hireReturnDao().insertHeader(readHireRet(it.getJSONObject(i))) }
+        root.optJSONArray("hireReturnItems")?.let {
+            val ls = ArrayList<HireReturnItem>()
+            for (i in 0 until it.length()) ls.add(readHireRetItem(it.getJSONObject(i)))
+            if (ls.isNotEmpty()) db.hireReturnDao().insertLines(ls)
         }
         root.optJSONArray("billAttachments")?.let {
             for (i in 0 until it.length()) db.billAttachmentDao().insert(readBillAtt(context, it.getJSONObject(i)))
@@ -451,6 +467,33 @@ object FullBackup {
                 db.purchaseQuotationDao().insertLines(listOf(l.copy(id = 0, lpoId = nl)))
             }
         }
+        // Hire invoices
+        val hireMap = HashMap<Long, Long>()
+        root.optJSONArray("hireInvoices")?.let {
+            for (i in 0 until it.length()) {
+                val h = readHire(it.getJSONObject(i)); hireMap[h.id] = db.hireInvoiceDao().insertHeader(h.copy(id = 0))
+            }
+        }
+        root.optJSONArray("hireInvoiceItems")?.let {
+            for (i in 0 until it.length()) {
+                val l = readHireItem(it.getJSONObject(i)); val nh = hireMap[l.hireId] ?: continue
+                db.hireInvoiceDao().insertLines(listOf(l.copy(id = 0, hireId = nh)))
+            }
+        }
+        // Hire returns
+        val hireRetMap = HashMap<Long, Long>()
+        root.optJSONArray("hireReturns")?.let {
+            for (i in 0 until it.length()) {
+                val r = readHireRet(it.getJSONObject(i))
+                hireRetMap[r.id] = db.hireReturnDao().insertHeader(r.copy(id = 0, hireId = hireMap[r.hireId] ?: r.hireId))
+            }
+        }
+        root.optJSONArray("hireReturnItems")?.let {
+            for (i in 0 until it.length()) {
+                val l = readHireRetItem(it.getJSONObject(i)); val nr = hireRetMap[l.returnId] ?: continue
+                db.hireReturnDao().insertLines(listOf(l.copy(id = 0, returnId = nr)))
+            }
+        }
         // Bill attachments
         root.optJSONArray("billAttachments")?.let {
             for (i in 0 until it.length()) {
@@ -651,6 +694,50 @@ object FullBackup {
         qty = o.optDouble("qty", 0.0), price = o.optDouble("price", 0.0),
         taxPercent = o.optDouble("taxPercent", 0.0), lineTotal = o.optDouble("lineTotal", 0.0),
         unit = o.optString("unit")
+    )
+
+    private fun hireJson(h: HireInvoice) = JSONObject().put("id", h.id).put("hireNo", h.hireNo)
+        .put("dateMillis", h.dateMillis).put("startDateMillis", h.startDateMillis).put("endDateMillis", h.endDateMillis)
+        .put("customerId", h.customerId).put("customerName", h.customerName)
+        .put("subTotal", h.subTotal).put("taxTotal", h.taxTotal)
+        .put("additionalCharge", h.additionalCharge).put("discount", h.discount).put("grandTotal", h.grandTotal)
+        .put("remarks", h.remarks)
+
+    private fun readHire(o: JSONObject) = HireInvoice(
+        id = o.optLong("id"), hireNo = o.optString("hireNo"), dateMillis = o.optLong("dateMillis"),
+        startDateMillis = o.optLong("startDateMillis"), endDateMillis = o.optLong("endDateMillis"),
+        customerId = o.optLong("customerId"), customerName = o.optString("customerName"),
+        subTotal = o.optDouble("subTotal", 0.0), taxTotal = o.optDouble("taxTotal", 0.0),
+        additionalCharge = o.optDouble("additionalCharge", 0.0), discount = o.optDouble("discount", 0.0),
+        grandTotal = o.optDouble("grandTotal", 0.0), remarks = o.optString("remarks")
+    )
+
+    private fun hireItemJson(l: HireInvoiceItem) = JSONObject().put("id", l.id).put("hireId", l.hireId)
+        .put("itemId", l.itemId).put("name", l.name).put("qty", l.qty).put("price", l.price)
+        .put("taxPercent", l.taxPercent).put("lineTotal", l.lineTotal).put("unit", l.unit)
+
+    private fun readHireItem(o: JSONObject) = HireInvoiceItem(
+        id = o.optLong("id"), hireId = o.optLong("hireId"), itemId = o.optLong("itemId"), name = o.optString("name"),
+        qty = o.optDouble("qty", 0.0), price = o.optDouble("price", 0.0),
+        taxPercent = o.optDouble("taxPercent", 0.0), lineTotal = o.optDouble("lineTotal", 0.0), unit = o.optString("unit")
+    )
+
+    private fun hireRetJson(r: HireReturn) = JSONObject().put("id", r.id).put("returnNo", r.returnNo)
+        .put("dateMillis", r.dateMillis).put("hireId", r.hireId).put("hireNo", r.hireNo)
+        .put("customerId", r.customerId).put("customerName", r.customerName).put("remarks", r.remarks)
+
+    private fun readHireRet(o: JSONObject) = HireReturn(
+        id = o.optLong("id"), returnNo = o.optString("returnNo"), dateMillis = o.optLong("dateMillis"),
+        hireId = o.optLong("hireId"), hireNo = o.optString("hireNo"),
+        customerId = o.optLong("customerId"), customerName = o.optString("customerName"), remarks = o.optString("remarks")
+    )
+
+    private fun hireRetItemJson(l: HireReturnItem) = JSONObject().put("id", l.id).put("returnId", l.returnId)
+        .put("itemId", l.itemId).put("name", l.name).put("qty", l.qty).put("unit", l.unit)
+
+    private fun readHireRetItem(o: JSONObject) = HireReturnItem(
+        id = o.optLong("id"), returnId = o.optLong("returnId"), itemId = o.optLong("itemId"),
+        name = o.optString("name"), qty = o.optDouble("qty", 0.0), unit = o.optString("unit")
     )
 
     private fun readSize(o: JSONObject) = ItemSize(

@@ -53,7 +53,7 @@ import kotlinx.coroutines.launch
 
 val BUSINESS_TYPES = listOf(
     "General", "Textiles", "Mobile shop", "Electrical & plumbing",
-    "Automobiles", "Grocery", "Medical store", "Restaurant"
+    "Automobiles", "Grocery", "Medical store", "Restaurant", "Rental"
 )
 
 @OptIn(ExperimentalMaterial3Api::class)

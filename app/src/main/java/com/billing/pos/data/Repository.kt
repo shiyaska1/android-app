@@ -285,6 +285,31 @@ class Repository(context: Context) {
     suspend fun purchaseQuotationById(id: Long): PurchaseQuotation? = purchaseQuotationDao.byId(id)
     suspend fun purchaseQuotationLines(id: Long): List<PurchaseQuotationItem> = purchaseQuotationDao.linesFor(id)
 
+    // ---- hire (rental) invoices ----
+    private val hireInvoiceDao = db.hireInvoiceDao()
+    val hireInvoices: Flow<List<HireInvoice>> = hireInvoiceDao.observeAll()
+    val hireOutByItem: Flow<List<HireNameQty>> = hireInvoiceDao.observeOutByItem()
+    val hireLinesFlow: Flow<List<HireInvoiceItem>> = hireInvoiceDao.observeAllLines()
+    suspend fun nextHireNo(): String = "HR-" + (hireInvoiceDao.count() + 1).toString().padStart(4, '0')
+    suspend fun saveHireInvoice(h: HireInvoice, lines: List<HireInvoiceItem>): Long = hireInvoiceDao.save(h, lines)
+    suspend fun updateHireInvoice(h: HireInvoice, lines: List<HireInvoiceItem>) = hireInvoiceDao.update(h, lines)
+    suspend fun deleteHireInvoice(h: HireInvoice) = hireInvoiceDao.delete(h)
+    suspend fun hireInvoiceById(id: Long): HireInvoice? = hireInvoiceDao.byId(id)
+    suspend fun hireInvoiceLines(id: Long): List<HireInvoiceItem> = hireInvoiceDao.linesFor(id)
+    suspend fun allHireLines(): List<HireInvoiceItem> = hireInvoiceDao.allLines()
+
+    // ---- hire returns ----
+    private val hireReturnDao = db.hireReturnDao()
+    val hireReturns: Flow<List<HireReturn>> = hireReturnDao.observeAll()
+    val hireReturnedByItem: Flow<List<HireNameQty>> = hireReturnDao.observeReturnedByItem()
+    suspend fun nextHireReturnNo(): String = "HRR-" + (hireReturnDao.count() + 1).toString().padStart(4, '0')
+    suspend fun saveHireReturn(r: HireReturn, lines: List<HireReturnItem>): Long = hireReturnDao.save(r, lines)
+    suspend fun updateHireReturn(r: HireReturn, lines: List<HireReturnItem>) = hireReturnDao.update(r, lines)
+    suspend fun deleteHireReturn(r: HireReturn) = hireReturnDao.delete(r)
+    suspend fun hireReturnById(id: Long): HireReturn? = hireReturnDao.byId(id)
+    suspend fun hireReturnLines(id: Long): List<HireReturnItem> = hireReturnDao.linesFor(id)
+    suspend fun returnedQtyForHire(hireId: Long): Double = hireReturnDao.returnedQtyForHire(hireId) ?: 0.0
+
     // ---- item sizes (variants with their own price) ----
     private val itemSizeDao = db.itemSizeDao()
     val itemSizes: Flow<List<ItemSize>> = itemSizeDao.observeAll()
