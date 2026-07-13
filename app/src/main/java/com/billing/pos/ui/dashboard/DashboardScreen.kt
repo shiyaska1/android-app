@@ -31,6 +31,8 @@ import androidx.compose.material.icons.filled.LocalShipping
 import androidx.compose.material.icons.filled.ManageAccounts
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.MoneyOff
+import androidx.compose.material.icons.filled.MoveDown
+import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.PlaylistAddCheck
 import androidx.compose.material.icons.filled.People
@@ -94,6 +96,8 @@ fun DashboardScreen(
     onLabTests: () -> Unit,
     onPatients: () -> Unit,
     onLabBills: () -> Unit,
+    onMaterialOut: () -> Unit,
+    onItemMovement: () -> Unit,
     onVatReport: () -> Unit,
     onOutstanding: () -> Unit,
     onAccounts: () -> Unit,
@@ -113,6 +117,7 @@ fun DashboardScreen(
             add(Tile("Lab Bill", Icons.Filled.Science, onLabBills))
             add(Tile("Patients", Icons.Filled.People, onPatients))
             add(Tile("Lab Tests", Icons.Filled.Biotech, onLabTests))
+            add(Tile("Material Out", Icons.Filled.MoveDown, onMaterialOut))
         }
         add(Tile("New Bill", Icons.Filled.PointOfSale, onNewBill))
         if (isRental) {
@@ -132,6 +137,7 @@ fun DashboardScreen(
         if (Session.canViewInvoice) add(Tile("Sales Report", Icons.Filled.Assessment, onReports))
         add(Tile("Customers", Icons.Filled.People, onCustomers))
         add(Tile("Items", Icons.Filled.Category, onItems))
+        add(Tile("Item Movement", Icons.Filled.SwapVert, onItemMovement))
         add(Tile("New Purchase", Icons.Filled.ShoppingCart, onNewPurchase))
         if (Session.canViewInvoice) add(Tile("Purchases", Icons.Filled.Inventory2, onPurchases))
         if (Session.canViewInvoice) add(Tile("Purchase Return", Icons.Filled.AssignmentReturned, onPurchaseReturns))

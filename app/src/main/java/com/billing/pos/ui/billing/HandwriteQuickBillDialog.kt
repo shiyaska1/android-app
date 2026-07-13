@@ -55,7 +55,6 @@ private enum class ModelState { PREPARING, READY, ERROR }
  */
 @Composable
 fun HandwriteQuickBillDialog(
-    vm: BillingViewModel,
     onDismiss: () -> Unit,
     onReview: (List<com.billing.pos.ocr.ScannedItem>) -> Unit
 ) {

@@ -104,9 +104,10 @@ class PriceSearchViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = Repository(app)
 
     val rows: StateFlow<List<PriceRow>> =
-        combine(repo.items, repo.purchaseLines, repo.soldQty, repo.itemAttachments) { items, pLines, sold, atts ->
+        combine(repo.items, repo.purchaseLines, repo.soldQty, repo.itemAttachments, repo.materialOutByItem) { items, pLines, sold, atts, matOut ->
             val purchasedByName = pLines.groupBy { it.name.lowercase() }
             val soldByName = sold.associate { it.name.lowercase() to it.qty }
+            val outByName = matOut.associate { it.name.lowercase() to it.qty }
             val attByItem = atts.groupBy { it.itemId }
             items.map { item ->
                 val key = item.name.lowercase()
@@ -114,7 +115,7 @@ class PriceSearchViewModel(app: Application) : AndroidViewModel(app) {
                 val purchasedQty = lines.sumOf { it.qty }
                 val lastRate = lines.maxByOrNull { it.dateMillis }?.price ?: 0.0
                 val soldQty = soldByName[key] ?: 0.0
-                PriceRow(item, item.openingStock + purchasedQty - soldQty, lastRate, attByItem[item.id].orEmpty())
+                PriceRow(item, item.openingStock + purchasedQty - soldQty - (outByName[key] ?: 0.0), lastRate, attByItem[item.id].orEmpty())
             }.sortedBy { it.item.name.lowercase() }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 

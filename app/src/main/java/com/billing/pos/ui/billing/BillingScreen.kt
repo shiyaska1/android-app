@@ -697,7 +697,6 @@ fun BillingScreen(
     }
     if (showHandwrite) {
         HandwriteQuickBillDialog(
-            vm = vm,
             onDismiss = { showHandwrite = false },
             onReview = { list -> showHandwrite = false; ocrReview = list }
         )

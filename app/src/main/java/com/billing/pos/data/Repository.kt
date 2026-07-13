@@ -389,6 +389,22 @@ class Repository(context: Context) {
     suspend fun labBillOutstanding(bill: LabBill): Double =
         (bill.grandTotal - bill.paidAmount - labReceiptDao.sumForBill(bill.id)).coerceAtLeast(0.0)
 
+    // ---- material out (consumption / issue) ----
+    private val materialOutDao = db.materialOutDao()
+    val materialOuts: Flow<List<MaterialOut>> = materialOutDao.observeAll()
+    val materialOutByItem: Flow<List<NameQty>> = materialOutDao.observeOutByItem()
+    suspend fun nextMaterialOutNo(): String = "MAT-" + (materialOutDao.count() + 1).toString().padStart(4, '0')
+    suspend fun saveMaterialOut(m: MaterialOut, lines: List<MaterialOutItem>): Long = materialOutDao.save(m, lines)
+    suspend fun updateMaterialOut(m: MaterialOut, lines: List<MaterialOutItem>) = materialOutDao.update(m, lines)
+    suspend fun deleteMaterialOut(m: MaterialOut) = materialOutDao.delete(m)
+    suspend fun materialOutById(id: Long): MaterialOut? = materialOutDao.byId(id)
+    suspend fun materialOutLines(id: Long): List<MaterialOutItem> = materialOutDao.linesFor(id)
+
+    // ---- item movement report sources ----
+    val saleMovements: Flow<List<MoveRow>> = billDao.observeSaleMovements()
+    val purchaseMovements: Flow<List<MoveRow>> = purchaseDao.observePurchaseMovements()
+    val materialMovements: Flow<List<MoveRow>> = materialOutDao.observeMovements()
+
     // ---- item sizes (variants with their own price) ----
     private val itemSizeDao = db.itemSizeDao()
     val itemSizes: Flow<List<ItemSize>> = itemSizeDao.observeAll()

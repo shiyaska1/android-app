@@ -176,6 +176,14 @@ interface BillDao {
     )
     fun observeSoldQty(): Flow<List<NameQty>>
 
+    /** Per-line sale movements for the item-movement report (primary-unit quantity). */
+    @Query(
+        "SELECT bi.name AS name, (CASE WHEN bi.primaryQty > 0 THEN bi.primaryQty ELSE bi.qty END) AS qty, " +
+            "b.dateMillis AS dateMillis, b.id AS voucherId, b.billNo AS voucherNo " +
+            "FROM bill_items bi JOIN bills b ON bi.billId = b.id"
+    )
+    fun observeSaleMovements(): Flow<List<MoveRow>>
+
     @Query(
         "SELECT (bi.qty*bi.price) AS taxable, (bi.qty*bi.price*bi.taxPercent/100.0) AS tax, " +
             "bi.taxPercent AS rate, b.dateMillis AS dateMillis " +

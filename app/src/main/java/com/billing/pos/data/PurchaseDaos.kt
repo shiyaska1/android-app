@@ -119,6 +119,14 @@ interface PurchaseDao {
     )
     fun observePurchaseLines(): Flow<List<PurchaseLineInfo>>
 
+    /** Per-line purchase movements for the item-movement report (primary-unit quantity). */
+    @Query(
+        "SELECT pi.name AS name, (CASE WHEN pi.primaryQty > 0 THEN pi.primaryQty ELSE pi.qty END) AS qty, " +
+            "p.dateMillis AS dateMillis, p.id AS voucherId, p.purchaseNo AS voucherNo " +
+            "FROM purchase_items pi JOIN purchases p ON pi.purchaseId = p.id"
+    )
+    fun observePurchaseMovements(): Flow<List<MoveRow>>
+
     @Query(
         "SELECT pi.name AS name, p.dateMillis AS dateMillis, p.supplierName AS supplierName " +
             "FROM purchase_items pi JOIN purchases p ON pi.purchaseId = p.id"

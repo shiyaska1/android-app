@@ -83,6 +83,8 @@ object FullBackup {
         root.put("labHeadings", JSONArray().apply { db.labMasterDao().allHeadings().forEach { put(JSONObject().put("id", it.id).put("name", it.name)) } })
         root.put("labReceipts", JSONArray().apply { db.labReceiptDao().all().forEach { put(labReceiptJson(it)) } })
         root.put("labDoctors", JSONArray().apply { db.labMasterDao().allDoctors().forEach { put(JSONObject().put("id", it.id).put("name", it.name)) } })
+        root.put("materialOuts", JSONArray().apply { db.materialOutDao().all().forEach { put(matOutJson(it)) } })
+        root.put("materialOutItems", JSONArray().apply { db.materialOutDao().allLines().forEach { put(matOutItemJson(it)) } })
         val billAtts = db.billAttachmentDao().all()
         root.put("billAttachments", JSONArray().apply { billAtts.forEach { put(billAttJson(it)) } })
 
@@ -281,6 +283,12 @@ object FullBackup {
         root.optJSONArray("labHeadings")?.let { for (i in 0 until it.length()) { val o = it.getJSONObject(i); db.labMasterDao().insertHeading(LabHeading(o.optLong("id"), o.optString("name"))) } }
         root.optJSONArray("labReceipts")?.let { for (i in 0 until it.length()) db.labReceiptDao().insert(readLabReceipt(it.getJSONObject(i))) }
         root.optJSONArray("labDoctors")?.let { for (i in 0 until it.length()) { val o = it.getJSONObject(i); db.labMasterDao().insertDoctor(LabDoctor(o.optLong("id"), o.optString("name"))) } }
+        root.optJSONArray("materialOuts")?.let { for (i in 0 until it.length()) db.materialOutDao().insertHeader(readMatOut(it.getJSONObject(i))) }
+        root.optJSONArray("materialOutItems")?.let {
+            val ls = ArrayList<MaterialOutItem>()
+            for (i in 0 until it.length()) ls.add(readMatOutItem(it.getJSONObject(i)))
+            if (ls.isNotEmpty()) db.materialOutDao().insertLines(ls)
+        }
         root.optJSONArray("billAttachments")?.let {
             for (i in 0 until it.length()) db.billAttachmentDao().insert(readBillAtt(context, it.getJSONObject(i)))
         }
@@ -579,6 +587,14 @@ object FullBackup {
             }
         }
         root.optJSONArray("labDoctors")?.let { for (i in 0 until it.length()) db.labMasterDao().insertDoctor(LabDoctor(name = it.getJSONObject(i).optString("name"))) }
+        // Material out
+        val matOutMap = HashMap<Long, Long>()
+        root.optJSONArray("materialOuts")?.let {
+            for (i in 0 until it.length()) { val m = readMatOut(it.getJSONObject(i)); matOutMap[m.id] = db.materialOutDao().insertHeader(m.copy(id = 0)) }
+        }
+        root.optJSONArray("materialOutItems")?.let {
+            for (i in 0 until it.length()) { val l = readMatOutItem(it.getJSONObject(i)); val nm = matOutMap[l.outId] ?: continue; db.materialOutDao().insertLines(listOf(l.copy(id = 0, outId = nm))) }
+        }
         // Bill attachments
         root.optJSONArray("billAttachments")?.let {
             for (i in 0 until it.length()) {
@@ -903,6 +919,19 @@ object FullBackup {
         id = o.optLong("id"), labBillId = o.optLong("labBillId"), billNo = o.optString("billNo"),
         patientName = o.optString("patientName"), dateMillis = o.optLong("dateMillis"),
         amount = o.optDouble("amount", 0.0), mode = o.optString("mode", "Cash")
+    )
+
+    private fun matOutJson(m: MaterialOut) = JSONObject().put("id", m.id).put("voucherNo", m.voucherNo)
+        .put("dateMillis", m.dateMillis).put("resultRef", m.resultRef).put("resultTests", m.resultTests).put("remarks", m.remarks)
+    private fun readMatOut(o: JSONObject) = MaterialOut(
+        id = o.optLong("id"), voucherNo = o.optString("voucherNo"), dateMillis = o.optLong("dateMillis"),
+        resultRef = o.optString("resultRef"), resultTests = o.optString("resultTests"), remarks = o.optString("remarks")
+    )
+    private fun matOutItemJson(l: MaterialOutItem) = JSONObject().put("id", l.id).put("outId", l.outId)
+        .put("itemId", l.itemId).put("name", l.name).put("qty", l.qty).put("unit", l.unit)
+    private fun readMatOutItem(o: JSONObject) = MaterialOutItem(
+        id = o.optLong("id"), outId = o.optLong("outId"), itemId = o.optLong("itemId"),
+        name = o.optString("name"), qty = o.optDouble("qty", 0.0), unit = o.optString("unit")
     )
 
     private fun readSize(o: JSONObject) = ItemSize(

@@ -10,6 +10,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -63,6 +64,10 @@ import com.billing.pos.ui.lab.PatientListScreen
 import com.billing.pos.ui.lab.LabBillScreen
 import com.billing.pos.ui.lab.LabBillListScreen
 import com.billing.pos.ui.lab.LabResultScreen
+import com.billing.pos.ui.materialout.MaterialOutScreen
+import com.billing.pos.ui.materialout.MaterialOutListScreen
+import com.billing.pos.ui.materialout.MaterialOutLink
+import com.billing.pos.ui.materialout.ItemMovementScreen
 import com.billing.pos.ui.purchase.PurchaseListScreen
 import com.billing.pos.ui.purchase.PurchaseScreen
 import com.billing.pos.ui.purchase.SuppliersScreen
@@ -186,6 +191,8 @@ private fun AppNav() {
                 onLabTests = { nav.navigate("labtests") },
                 onPatients = { nav.navigate("patients") },
                 onLabBills = { nav.navigate("labbills") },
+                onMaterialOut = { nav.navigate("materialouts") },
+                onItemMovement = { nav.navigate("itemmovement") },
                 onVatReport = { nav.navigate("vat") },
                 onOutstanding = { nav.navigate("outstanding") },
                 onAccounts = { nav.navigate("accounts") },
@@ -356,7 +363,8 @@ private fun AppNav() {
                 onBack = { nav.popBackStack() },
                 onOpen = { id -> nav.navigate("labbill/edit/$id") },
                 onResult = { id -> nav.navigate("labresult/$id") },
-                onNew = { nav.navigate("labbill") }
+                onNew = { nav.navigate("labbill") },
+                onUsedMaterials = { nav.navigate("materialout") }
             )
         }
         composable("labbill") { LabBillScreen(editId = null, onBack = { nav.popBackStack() }) }
@@ -368,6 +376,33 @@ private fun AppNav() {
             route = "labresult/{id}",
             arguments = listOf(navArgument("id") { type = NavType.LongType })
         ) { entry -> LabResultScreen(billId = entry.arguments?.getLong("id") ?: 0L, onBack = { nav.popBackStack() }) }
+        composable("materialouts") {
+            MaterialOutListScreen(
+                onBack = { nav.popBackStack() },
+                onOpen = { id -> nav.navigate("materialout/edit/$id") },
+                onNew = { nav.navigate("materialout") }
+            )
+        }
+        composable("materialout") {
+            val (refs, tests) = remember { MaterialOutLink.take() }
+            MaterialOutScreen(editId = null, resultRefs = refs, resultTests = tests, onBack = { nav.popBackStack() })
+        }
+        composable(
+            route = "materialout/edit/{id}",
+            arguments = listOf(navArgument("id") { type = NavType.LongType })
+        ) { entry -> MaterialOutScreen(editId = entry.arguments?.getLong("id"), resultRefs = null, resultTests = null, onBack = { nav.popBackStack() }) }
+        composable("itemmovement") {
+            ItemMovementScreen(
+                onBack = { nav.popBackStack() },
+                onOpenVoucher = { kind, id ->
+                    when (kind) {
+                        "SALE" -> nav.navigate("billing/edit/$id")
+                        "PURCHASE" -> nav.navigate("purchase/edit/$id")
+                        "MATERIAL" -> nav.navigate("materialout/edit/$id")
+                    }
+                }
+            )
+        }
         composable("items") {
             ItemsScreen(onBack = { nav.popBackStack() })
         }

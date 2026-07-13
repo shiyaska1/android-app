@@ -66,6 +66,7 @@ import com.billing.pos.data.LabTest
 import com.billing.pos.data.Patient
 import com.billing.pos.data.Repository
 import com.billing.pos.ui.billing.collectAsStateSafe
+import com.billing.pos.ui.materialout.MaterialOutLink
 import com.billing.pos.util.Format
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -159,6 +160,16 @@ class LabBillViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun delete(b: LabBill) { viewModelScope.launch { repo.deleteLabBill(b); message.value = "Bill ${b.billNo} deleted" } }
+
+    /** Builds the result-invoice + test strings for the selected bills, for a material-out. */
+    fun prepareMaterialOut(ids: Set<Long>, onReady: (refs: String, tests: String) -> Unit) {
+        viewModelScope.launch {
+            val sel = bills.value.filter { it.id in ids }
+            val refs = sel.joinToString(", ") { it.billNo }
+            val tests = sel.flatMap { repo.labBillTests(it.id).map { t -> t.testName } }.distinct().joinToString(", ")
+            onReady(refs, tests)
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -283,7 +294,7 @@ fun LabBillScreen(editId: Long?, onBack: () -> Unit, vm: LabBillViewModel = view
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LabBillListScreen(onBack: () -> Unit, onOpen: (Long) -> Unit, onResult: (Long) -> Unit, onNew: () -> Unit, vm: LabBillViewModel = viewModel()) {
+fun LabBillListScreen(onBack: () -> Unit, onOpen: (Long) -> Unit, onResult: (Long) -> Unit, onNew: () -> Unit, onUsedMaterials: () -> Unit = {}, vm: LabBillViewModel = viewModel()) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val snackbar = remember { SnackbarHostState() }
     val bills by vm.bills.collectAsStateSafe()
@@ -291,6 +302,7 @@ fun LabBillListScreen(onBack: () -> Unit, onOpen: (Long) -> Unit, onResult: (Lon
     val message by vm.message.collectAsStateSafe()
     LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); vm.consumeMessage() } }
     var deleteFor by remember { mutableStateOf<LabBill?>(null) }
+    var selected by remember { mutableStateOf(setOf<Long>()) }
 
     // Filters: doctor, date range (default today), name/phone search.
     var docFilter by remember { mutableStateOf("") }
@@ -319,6 +331,13 @@ fun LabBillListScreen(onBack: () -> Unit, onOpen: (Long) -> Unit, onResult: (Lon
         floatingActionButton = { FloatingActionButton(onClick = onNew) { Icon(Icons.Filled.Add, "New") } }
     ) { pad ->
         Column(Modifier.fillMaxSize().padding(pad)) {
+            if (selected.isNotEmpty()) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("${selected.size} selected", Modifier.weight(1f))
+                    TextButton(onClick = { selected = emptySet() }) { Text("Clear") }
+                    Button(onClick = { vm.prepareMaterialOut(selected) { refs, tests -> MaterialOutLink.refs = refs; MaterialOutLink.tests = tests; selected = emptySet(); onUsedMaterials() } }) { Text("Used materials") }
+                }
+            }
             OutlinedTextField(
                 value = query, onValueChange = { query = it },
                 label = { Text("Search patient name or mobile") }, singleLine = true,
@@ -346,6 +365,10 @@ fun LabBillListScreen(onBack: () -> Unit, onOpen: (Long) -> Unit, onResult: (Lon
             else LazyColumn(Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
             items(filtered, key = { it.id }) { b ->
                 Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    androidx.compose.material3.Checkbox(
+                        checked = b.id in selected,
+                        onCheckedChange = { on -> selected = if (on) selected + b.id else selected - b.id }
+                    )
                     Column(Modifier.weight(1f).clickable { onOpen(b.id) }) {
                         Text(b.billNo + "  •  " + b.patientName, fontWeight = FontWeight.Bold)
                         Text(
