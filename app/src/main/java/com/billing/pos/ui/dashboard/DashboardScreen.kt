@@ -17,6 +17,8 @@ import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material.icons.filled.Assessment
 import androidx.compose.material.icons.filled.AssignmentReturn
+import androidx.compose.material.icons.filled.Biotech
+import androidx.compose.material.icons.filled.Science
 import androidx.compose.material.icons.filled.AssignmentReturned
 import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.Book
@@ -89,6 +91,9 @@ fun DashboardScreen(
     onHireReturns: () -> Unit,
     onHireItemReport: () -> Unit,
     onHireExpiryReport: () -> Unit,
+    onLabTests: () -> Unit,
+    onPatients: () -> Unit,
+    onLabBills: () -> Unit,
     onVatReport: () -> Unit,
     onOutstanding: () -> Unit,
     onAccounts: () -> Unit,
@@ -100,8 +105,15 @@ fun DashboardScreen(
     onLogout: () -> Unit
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
-    val isRental = remember { com.billing.pos.data.AppPrefs(context).businessType == "Rental" }
+    val businessType = remember { com.billing.pos.data.AppPrefs(context).businessType }
+    val isRental = businessType == "Rental"
+    val isLab = businessType == "Medical lab"
     val tiles = buildList {
+        if (isLab) {
+            add(Tile("Lab Bill", Icons.Filled.Science, onLabBills))
+            add(Tile("Patients", Icons.Filled.People, onPatients))
+            add(Tile("Lab Tests", Icons.Filled.Biotech, onLabTests))
+        }
         add(Tile("New Bill", Icons.Filled.PointOfSale, onNewBill))
         if (isRental) {
             add(Tile("Hire Invoice", Icons.Filled.Handshake, onHireInvoices))

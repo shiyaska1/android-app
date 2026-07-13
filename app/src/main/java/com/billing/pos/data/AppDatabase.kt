@@ -21,11 +21,13 @@ import androidx.room.TypeConverters
         PurchaseReturn::class, PurchaseReturnItem::class,
         PurchaseQuotation::class, PurchaseQuotationItem::class,
         HireInvoice::class, HireInvoiceItem::class,
-        HireReturn::class, HireReturnItem::class
+        HireReturn::class, HireReturnItem::class,
+        LabTest::class, LabEvaluation::class, Patient::class,
+        LabBill::class, LabBillTest::class, LabResultValue::class
     ],
     // v25 quotations; v26 sales returns; v27 purchase returns; v28 purchase quotations (LPO);
-    // v29 dual units; v30 rental (hire invoices + hire returns).
-    version = 30,
+    // v29 dual units; v30 rental; v31 medical lab (tests, patients, lab bills, results).
+    version = 31,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -51,6 +53,9 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun purchaseQuotationDao(): PurchaseQuotationDao
     abstract fun hireInvoiceDao(): HireInvoiceDao
     abstract fun hireReturnDao(): HireReturnDao
+    abstract fun labTestDao(): LabTestDao
+    abstract fun patientDao(): PatientDao
+    abstract fun labBillDao(): LabBillDao
 
     companion object {
         @Volatile private var INSTANCE: AppDatabase? = null

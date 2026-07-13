@@ -56,6 +56,12 @@ import com.billing.pos.ui.hire.HireReturnListScreen
 import com.billing.pos.ui.hire.HireReturnScreen
 import com.billing.pos.ui.hire.HireItemReportScreen
 import com.billing.pos.ui.hire.HireExpiryReportScreen
+import com.billing.pos.ui.lab.LabTestListScreen
+import com.billing.pos.ui.lab.LabTestEditScreen
+import com.billing.pos.ui.lab.PatientListScreen
+import com.billing.pos.ui.lab.LabBillScreen
+import com.billing.pos.ui.lab.LabBillListScreen
+import com.billing.pos.ui.lab.LabResultScreen
 import com.billing.pos.ui.purchase.PurchaseListScreen
 import com.billing.pos.ui.purchase.PurchaseScreen
 import com.billing.pos.ui.purchase.SuppliersScreen
@@ -176,6 +182,9 @@ private fun AppNav() {
                 onHireReturns = { nav.navigate("hirereturns") },
                 onHireItemReport = { nav.navigate("hireitemreport") },
                 onHireExpiryReport = { nav.navigate("hireexpiry") },
+                onLabTests = { nav.navigate("labtests") },
+                onPatients = { nav.navigate("patients") },
+                onLabBills = { nav.navigate("labbills") },
                 onVatReport = { nav.navigate("vat") },
                 onOutstanding = { nav.navigate("outstanding") },
                 onAccounts = { nav.navigate("accounts") },
@@ -326,6 +335,36 @@ private fun AppNav() {
         composable("hireexpiry") {
             HireExpiryReportScreen(onBack = { nav.popBackStack() }, onOpenHire = { id -> nav.navigate("hire/edit/$id") })
         }
+        composable("labtests") {
+            LabTestListScreen(
+                onBack = { nav.popBackStack() },
+                onOpen = { id -> nav.navigate("labtest/edit/$id") },
+                onNew = { nav.navigate("labtest") }
+            )
+        }
+        composable("labtest") { LabTestEditScreen(editId = null, onBack = { nav.popBackStack() }) }
+        composable(
+            route = "labtest/edit/{id}",
+            arguments = listOf(navArgument("id") { type = NavType.LongType })
+        ) { entry -> LabTestEditScreen(editId = entry.arguments?.getLong("id"), onBack = { nav.popBackStack() }) }
+        composable("patients") { PatientListScreen(onBack = { nav.popBackStack() }) }
+        composable("labbills") {
+            LabBillListScreen(
+                onBack = { nav.popBackStack() },
+                onOpen = { id -> nav.navigate("labbill/edit/$id") },
+                onResult = { id -> nav.navigate("labresult/$id") },
+                onNew = { nav.navigate("labbill") }
+            )
+        }
+        composable("labbill") { LabBillScreen(editId = null, onBack = { nav.popBackStack() }) }
+        composable(
+            route = "labbill/edit/{id}",
+            arguments = listOf(navArgument("id") { type = NavType.LongType })
+        ) { entry -> LabBillScreen(editId = entry.arguments?.getLong("id"), onBack = { nav.popBackStack() }) }
+        composable(
+            route = "labresult/{id}",
+            arguments = listOf(navArgument("id") { type = NavType.LongType })
+        ) { entry -> LabResultScreen(billId = entry.arguments?.getLong("id") ?: 0L, onBack = { nav.popBackStack() }) }
         composable("items") {
             ItemsScreen(onBack = { nav.popBackStack() })
         }

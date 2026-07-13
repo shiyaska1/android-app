@@ -72,6 +72,12 @@ object FullBackup {
         root.put("hireInvoiceItems", JSONArray().apply { db.hireInvoiceDao().allLines().forEach { put(hireItemJson(it)) } })
         root.put("hireReturns", JSONArray().apply { db.hireReturnDao().all().forEach { put(hireRetJson(it)) } })
         root.put("hireReturnItems", JSONArray().apply { db.hireReturnDao().allLines().forEach { put(hireRetItemJson(it)) } })
+        root.put("labTests", JSONArray().apply { db.labTestDao().allTests().forEach { put(labTestJson(it)) } })
+        root.put("labEvaluations", JSONArray().apply { db.labTestDao().allEvaluations().forEach { put(labEvalJson(it)) } })
+        root.put("patients", JSONArray().apply { db.patientDao().all().forEach { put(patientJson(it)) } })
+        root.put("labBills", JSONArray().apply { db.labBillDao().allBills().forEach { put(labBillJson(it)) } })
+        root.put("labBillTests", JSONArray().apply { db.labBillDao().allBillTests().forEach { put(labBillTestJson(it)) } })
+        root.put("labResults", JSONArray().apply { db.labBillDao().allResults().forEach { put(labResultJson(it)) } })
         val billAtts = db.billAttachmentDao().all()
         root.put("billAttachments", JSONArray().apply { billAtts.forEach { put(billAttJson(it)) } })
 
@@ -246,6 +252,24 @@ object FullBackup {
             val ls = ArrayList<HireReturnItem>()
             for (i in 0 until it.length()) ls.add(readHireRetItem(it.getJSONObject(i)))
             if (ls.isNotEmpty()) db.hireReturnDao().insertLines(ls)
+        }
+        root.optJSONArray("labTests")?.let { for (i in 0 until it.length()) db.labTestDao().insertTest(readLabTest(it.getJSONObject(i))) }
+        root.optJSONArray("labEvaluations")?.let {
+            val ls = ArrayList<LabEvaluation>()
+            for (i in 0 until it.length()) ls.add(readLabEval(it.getJSONObject(i)))
+            if (ls.isNotEmpty()) db.labTestDao().insertEvaluations(ls)
+        }
+        root.optJSONArray("patients")?.let { for (i in 0 until it.length()) db.patientDao().insert(readPatient(it.getJSONObject(i))) }
+        root.optJSONArray("labBills")?.let { for (i in 0 until it.length()) db.labBillDao().insertBill(readLabBill(it.getJSONObject(i))) }
+        root.optJSONArray("labBillTests")?.let {
+            val ls = ArrayList<LabBillTest>()
+            for (i in 0 until it.length()) ls.add(readLabBillTest(it.getJSONObject(i)))
+            if (ls.isNotEmpty()) db.labBillDao().insertTests(ls)
+        }
+        root.optJSONArray("labResults")?.let {
+            val ls = ArrayList<LabResultValue>()
+            for (i in 0 until it.length()) ls.add(readLabResult(it.getJSONObject(i)))
+            if (ls.isNotEmpty()) db.labBillDao().insertResults(ls)
         }
         root.optJSONArray("billAttachments")?.let {
             for (i in 0 until it.length()) db.billAttachmentDao().insert(readBillAtt(context, it.getJSONObject(i)))
@@ -494,6 +518,46 @@ object FullBackup {
                 db.hireReturnDao().insertLines(listOf(l.copy(id = 0, returnId = nr)))
             }
         }
+        // Lab tests + evaluations
+        val labTestMap = HashMap<Long, Long>()
+        root.optJSONArray("labTests")?.let {
+            for (i in 0 until it.length()) {
+                val t = readLabTest(it.getJSONObject(i)); labTestMap[t.id] = db.labTestDao().insertTest(t.copy(id = 0))
+            }
+        }
+        root.optJSONArray("labEvaluations")?.let {
+            for (i in 0 until it.length()) {
+                val e = readLabEval(it.getJSONObject(i)); val nt = labTestMap[e.testId] ?: continue
+                db.labTestDao().insertEvaluations(listOf(e.copy(id = 0, testId = nt)))
+            }
+        }
+        // Patients
+        val patientMap = HashMap<Long, Long>()
+        root.optJSONArray("patients")?.let {
+            for (i in 0 until it.length()) {
+                val p = readPatient(it.getJSONObject(i)); patientMap[p.id] = db.patientDao().insert(p.copy(id = 0))
+            }
+        }
+        // Lab bills + tests + results
+        val labBillMap = HashMap<Long, Long>()
+        root.optJSONArray("labBills")?.let {
+            for (i in 0 until it.length()) {
+                val b = readLabBill(it.getJSONObject(i))
+                labBillMap[b.id] = db.labBillDao().insertBill(b.copy(id = 0, patientId = patientMap[b.patientId] ?: b.patientId))
+            }
+        }
+        root.optJSONArray("labBillTests")?.let {
+            for (i in 0 until it.length()) {
+                val t = readLabBillTest(it.getJSONObject(i)); val nb = labBillMap[t.billId] ?: continue
+                db.labBillDao().insertTests(listOf(t.copy(id = 0, billId = nb, testId = labTestMap[t.testId] ?: t.testId)))
+            }
+        }
+        root.optJSONArray("labResults")?.let {
+            for (i in 0 until it.length()) {
+                val r = readLabResult(it.getJSONObject(i)); val nb = labBillMap[r.billId] ?: continue
+                db.labBillDao().insertResults(listOf(r.copy(id = 0, billId = nb, testId = labTestMap[r.testId] ?: r.testId)))
+            }
+        }
         // Bill attachments
         root.optJSONArray("billAttachments")?.let {
             for (i in 0 until it.length()) {
@@ -738,6 +802,64 @@ object FullBackup {
     private fun readHireRetItem(o: JSONObject) = HireReturnItem(
         id = o.optLong("id"), returnId = o.optLong("returnId"), itemId = o.optLong("itemId"),
         name = o.optString("name"), qty = o.optDouble("qty", 0.0), unit = o.optString("unit")
+    )
+
+    private fun labTestJson(t: LabTest) = JSONObject().put("id", t.id).put("name", t.name)
+        .put("price", t.price).put("sampleType", t.sampleType).put("category", t.category)
+    private fun readLabTest(o: JSONObject) = LabTest(
+        id = o.optLong("id"), name = o.optString("name"), price = o.optDouble("price", 0.0),
+        sampleType = o.optString("sampleType"), category = o.optString("category")
+    )
+
+    private fun labEvalJson(e: LabEvaluation) = JSONObject().put("id", e.id).put("testId", e.testId)
+        .put("name", e.name).put("unit", e.unit).put("normalValue", e.normalValue)
+        .put("groupName", e.groupName).put("sortOrder", e.sortOrder)
+    private fun readLabEval(o: JSONObject) = LabEvaluation(
+        id = o.optLong("id"), testId = o.optLong("testId"), name = o.optString("name"),
+        unit = o.optString("unit"), normalValue = o.optString("normalValue"),
+        groupName = o.optString("groupName"), sortOrder = o.optInt("sortOrder", 0)
+    )
+
+    private fun patientJson(p: Patient) = JSONObject().put("id", p.id).put("name", p.name)
+        .put("age", p.age).put("gender", p.gender).put("phone", p.phone)
+        .put("address", p.address).put("referredBy", p.referredBy)
+    private fun readPatient(o: JSONObject) = Patient(
+        id = o.optLong("id"), name = o.optString("name"), age = o.optString("age"),
+        gender = o.optString("gender"), phone = o.optString("phone"),
+        address = o.optString("address"), referredBy = o.optString("referredBy")
+    )
+
+    private fun labBillJson(b: LabBill) = JSONObject().put("id", b.id).put("billNo", b.billNo)
+        .put("dateMillis", b.dateMillis).put("patientId", b.patientId).put("patientName", b.patientName)
+        .put("age", b.age).put("gender", b.gender).put("referredBy", b.referredBy)
+        .put("subTotal", b.subTotal).put("discount", b.discount).put("grandTotal", b.grandTotal)
+        .put("remarks", b.remarks).put("resultEntered", b.resultEntered).put("resultDateMillis", b.resultDateMillis)
+    private fun readLabBill(o: JSONObject) = LabBill(
+        id = o.optLong("id"), billNo = o.optString("billNo"), dateMillis = o.optLong("dateMillis"),
+        patientId = o.optLong("patientId"), patientName = o.optString("patientName"),
+        age = o.optString("age"), gender = o.optString("gender"), referredBy = o.optString("referredBy"),
+        subTotal = o.optDouble("subTotal", 0.0), discount = o.optDouble("discount", 0.0),
+        grandTotal = o.optDouble("grandTotal", 0.0), remarks = o.optString("remarks"),
+        resultEntered = o.optBoolean("resultEntered", false), resultDateMillis = o.optLong("resultDateMillis")
+    )
+
+    private fun labBillTestJson(t: LabBillTest) = JSONObject().put("id", t.id).put("billId", t.billId)
+        .put("testId", t.testId).put("testName", t.testName).put("price", t.price)
+    private fun readLabBillTest(o: JSONObject) = LabBillTest(
+        id = o.optLong("id"), billId = o.optLong("billId"), testId = o.optLong("testId"),
+        testName = o.optString("testName"), price = o.optDouble("price", 0.0)
+    )
+
+    private fun labResultJson(r: LabResultValue) = JSONObject().put("id", r.id).put("billId", r.billId)
+        .put("testId", r.testId).put("testName", r.testName).put("evaluationId", r.evaluationId)
+        .put("evaluationName", r.evaluationName).put("groupName", r.groupName).put("unit", r.unit)
+        .put("normalValue", r.normalValue).put("result", r.result).put("sortOrder", r.sortOrder)
+    private fun readLabResult(o: JSONObject) = LabResultValue(
+        id = o.optLong("id"), billId = o.optLong("billId"), testId = o.optLong("testId"),
+        testName = o.optString("testName"), evaluationId = o.optLong("evaluationId"),
+        evaluationName = o.optString("evaluationName"), groupName = o.optString("groupName"),
+        unit = o.optString("unit"), normalValue = o.optString("normalValue"),
+        result = o.optString("result"), sortOrder = o.optInt("sortOrder", 0)
     )
 
     private fun readSize(o: JSONObject) = ItemSize(

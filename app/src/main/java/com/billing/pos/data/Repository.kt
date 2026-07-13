@@ -311,6 +311,45 @@ class Repository(context: Context) {
     suspend fun hireReturnLines(id: Long): List<HireReturnItem> = hireReturnDao.linesFor(id)
     suspend fun returnedQtyForHire(hireId: Long): Double = hireReturnDao.returnedQtyForHire(hireId) ?: 0.0
 
+    // ---- medical lab: tests + evaluations ----
+    private val labTestDao = db.labTestDao()
+    val labTests: Flow<List<LabTest>> = labTestDao.observeTests()
+    suspend fun labTestCount(): Int = labTestDao.count()
+    suspend fun saveLabTest(t: LabTest, evals: List<LabEvaluation>): Long = labTestDao.saveTest(t, evals)
+    suspend fun deleteLabTest(t: LabTest) = labTestDao.delete(t)
+    suspend fun labTestById(id: Long): LabTest? = labTestDao.testById(id)
+    suspend fun labEvaluationsFor(testId: Long): List<LabEvaluation> = labTestDao.evaluationsFor(testId)
+    suspend fun allLabTests(): List<LabTest> = labTestDao.allTests()
+    /** Seeds the built-in sample tests the first time (only when none exist). */
+    suspend fun seedSampleLabTests(): Int {
+        if (labTestDao.count() > 0) return 0
+        SampleLabData.tests.forEach { s ->
+            labTestDao.saveTest(
+                LabTest(name = s.name, price = s.price, sampleType = s.sampleType),
+                s.evaluations.map { LabEvaluation(testId = 0, name = it.name, unit = it.unit, normalValue = it.normal, groupName = it.group) }
+            )
+        }
+        return SampleLabData.tests.size
+    }
+
+    // ---- lab patients ----
+    private val patientDao = db.patientDao()
+    val patients: Flow<List<Patient>> = patientDao.observeAll()
+    suspend fun savePatient(p: Patient): Long = if (p.id == 0L) patientDao.insert(p) else { patientDao.update(p); p.id }
+    suspend fun deletePatient(p: Patient) = patientDao.delete(p)
+    suspend fun patientById(id: Long): Patient? = patientDao.byId(id)
+
+    // ---- lab bills + results ----
+    private val labBillDao = db.labBillDao()
+    val labBills: Flow<List<LabBill>> = labBillDao.observeBills()
+    suspend fun nextLabBillNo(): String = "LAB-" + (labBillDao.count() + 1).toString().padStart(4, '0')
+    suspend fun saveLabBill(b: LabBill, tests: List<LabBillTest>): Long = labBillDao.saveBill(b, tests)
+    suspend fun deleteLabBill(b: LabBill) = labBillDao.delete(b)
+    suspend fun labBillById(id: Long): LabBill? = labBillDao.billById(id)
+    suspend fun labBillTests(id: Long): List<LabBillTest> = labBillDao.testsFor(id)
+    suspend fun labResultsFor(id: Long): List<LabResultValue> = labBillDao.resultsFor(id)
+    suspend fun saveLabResults(bill: LabBill, results: List<LabResultValue>) = labBillDao.saveResults(bill, results)
+
     // ---- item sizes (variants with their own price) ----
     private val itemSizeDao = db.itemSizeDao()
     val itemSizes: Flow<List<ItemSize>> = itemSizeDao.observeAll()
