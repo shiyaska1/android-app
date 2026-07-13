@@ -375,7 +375,7 @@ private fun AppNav() {
         composable(
             route = "labbill/edit/{id}",
             arguments = listOf(navArgument("id") { type = NavType.LongType })
-        ) { entry -> LabBillScreen(editId = entry.arguments?.getLong("id"), onBack = { nav.popBackStack() }) }
+        ) { entry -> LabBillScreen(editId = entry.arguments?.getLong("id"), onBack = { nav.popBackStack() }, onNewMaterial = { nav.navigate("materialout") }) }
         composable(
             route = "labresult/{id}",
             arguments = listOf(navArgument("id") { type = NavType.LongType })

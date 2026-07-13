@@ -127,6 +127,15 @@ interface PurchaseDao {
     )
     fun observePurchaseMovements(): Flow<List<MoveRow>>
 
+    /** One-shot purchase lines (name, price, primary-unit qty, date), for last-rate lookups. */
+    @Query(
+        "SELECT pi.name AS name, pi.price AS price, " +
+            "CASE WHEN pi.primaryQty > 0 THEN pi.primaryQty ELSE pi.qty END AS qty, " +
+            "p.dateMillis AS dateMillis " +
+            "FROM purchase_items pi JOIN purchases p ON pi.purchaseId = p.id"
+    )
+    suspend fun purchaseLinesOnce(): List<PurchaseLineInfo>
+
     @Query(
         "SELECT pi.name AS name, p.dateMillis AS dateMillis, p.supplierName AS supplierName " +
             "FROM purchase_items pi JOIN purchases p ON pi.purchaseId = p.id"

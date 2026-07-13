@@ -74,6 +74,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
+/** An aggregated used-material line with its cost. */
+data class UsedMatRow(val name: String, val qty: Double, val unit: String, val cost: Double)
+
 /** A selected test line on a lab bill (amount is editable). */
 class BillTestRow(val testId: Long, val name: String, price: Double) {
     var priceText by mutableStateOf(Format.money(price))
@@ -161,6 +164,24 @@ class LabBillViewModel(app: Application) : AndroidViewModel(app) {
 
     fun delete(b: LabBill) { viewModelScope.launch { repo.deleteLabBill(b); message.value = "Bill ${b.billNo} deleted" } }
 
+    // ---- used materials for this bill ----
+    var usedMaterials by mutableStateOf<List<UsedMatRow>>(emptyList()); private set
+    var usedTotal by mutableStateOf(0.0); private set
+    fun loadUsedMaterials() {
+        val no = billNo
+        viewModelScope.launch {
+            val lines = repo.usedMaterialsForBill(no)
+            val rates = repo.lastPurchaseRates()
+            val rows = lines.groupBy { it.name.lowercase() }.map { (_, ls) ->
+                val qty = ls.sumOf { it.qty }
+                val rate = rates[ls.first().name.lowercase()] ?: 0.0
+                UsedMatRow(ls.first().name, qty, ls.first().unit, qty * rate)
+            }.sortedBy { it.name.lowercase() }
+            usedMaterials = rows
+            usedTotal = rows.sumOf { it.cost }
+        }
+    }
+
     /** Builds the result-invoice + test strings for the selected bills, for a material-out. */
     fun prepareMaterialOut(ids: Set<Long>, onReady: (refs: String, tests: String) -> Unit) {
         viewModelScope.launch {
@@ -174,7 +195,7 @@ class LabBillViewModel(app: Application) : AndroidViewModel(app) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LabBillScreen(editId: Long?, onBack: () -> Unit, vm: LabBillViewModel = viewModel()) {
+fun LabBillScreen(editId: Long?, onBack: () -> Unit, onNewMaterial: () -> Unit = {}, vm: LabBillViewModel = viewModel()) {
     val snackbar = remember { SnackbarHostState() }
     val patients by vm.patients.collectAsStateSafe()
     val tests by vm.tests.collectAsStateSafe()
@@ -182,6 +203,7 @@ fun LabBillScreen(editId: Long?, onBack: () -> Unit, vm: LabBillViewModel = view
     LaunchedEffect(Unit) { if (editId != null && editId > 0) vm.load(editId) }
     LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); vm.consumeMessage() } }
     var showTestPicker by remember { mutableStateOf(false) }
+    var showUsedMaterials by remember { mutableStateOf(false) }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
@@ -189,7 +211,12 @@ fun LabBillScreen(editId: Long?, onBack: () -> Unit, vm: LabBillViewModel = view
             TopAppBar(
                 title = { Text(if (vm.editingId != null) "Edit Lab Bill" else "Lab Bill") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
-                actions = { IconButton(onClick = { vm.newBill() }) { Icon(Icons.Filled.NoteAdd, "New") } },
+                actions = {
+                    if (vm.editingId != null) TextButton(onClick = { vm.loadUsedMaterials(); showUsedMaterials = true }) {
+                        Text("Used material", color = MaterialTheme.colorScheme.onPrimary)
+                    }
+                    IconButton(onClick = { vm.newBill() }) { Icon(Icons.Filled.NoteAdd, "New") }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                     titleContentColor = MaterialTheme.colorScheme.onPrimary,
@@ -288,6 +315,44 @@ fun LabBillScreen(editId: Long?, onBack: () -> Unit, vm: LabBillViewModel = view
                 }
             },
             confirmButton = { TextButton(onClick = { showTestPicker = false }) { Text("Close") } }
+        )
+    }
+    if (showUsedMaterials) {
+        AlertDialog(
+            onDismissRequest = { showUsedMaterials = false },
+            title = { Text("Used materials — ${vm.billNo}") },
+            text = {
+                Column(Modifier.fillMaxWidth()) {
+                    if (vm.usedMaterials.isEmpty()) Text("No materials recorded for this bill yet.", color = MaterialTheme.colorScheme.outline)
+                    else {
+                        LazyColumn(Modifier.fillMaxWidth().heightIn(max = 320.dp)) {
+                            items(vm.usedMaterials, key = { it.name }) { r ->
+                                Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Column(Modifier.weight(1f)) {
+                                        Text(r.name, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                                        Text("Qty ${Format.qty(r.qty)}" + (if (r.unit.isNotBlank()) " ${r.unit}" else ""), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                                    }
+                                    Text(Format.rupee(r.cost), fontWeight = FontWeight.SemiBold)
+                                }
+                                Divider()
+                            }
+                        }
+                        Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("Total cost", fontWeight = FontWeight.Bold)
+                            Text(Format.rupee(vm.usedTotal), fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    MaterialOutLink.refs = vm.billNo
+                    MaterialOutLink.tests = vm.cart.joinToString(", ") { it.name }
+                    showUsedMaterials = false
+                    onNewMaterial()
+                }) { Text("Add new material") }
+            },
+            dismissButton = { TextButton(onClick = { showUsedMaterials = false }) { Text("Close") } }
         )
     }
 }

@@ -400,6 +400,17 @@ class Repository(context: Context) {
     suspend fun materialOutById(id: Long): MaterialOut? = materialOutDao.byId(id)
     suspend fun materialOutLines(id: Long): List<MaterialOutItem> = materialOutDao.linesFor(id)
 
+    /** All material-out lines belonging to vouchers that reference [billNo]. */
+    suspend fun usedMaterialsForBill(billNo: String): List<MaterialOutItem> {
+        if (billNo.isBlank()) return emptyList()
+        return materialOutDao.all().filter { it.resultRef.contains(billNo, ignoreCase = true) }
+            .flatMap { materialOutDao.linesFor(it.id) }
+    }
+    /** Latest purchase rate per item name (primary unit) — cost basis. */
+    suspend fun lastPurchaseRates(): Map<String, Double> =
+        purchaseDao.purchaseLinesOnce().groupBy { it.name.lowercase() }
+            .mapValues { (_, l) -> l.maxByOrNull { it.dateMillis }?.price ?: 0.0 }
+
     // ---- item movement report sources ----
     val saleMovements: Flow<List<MoveRow>> = billDao.observeSaleMovements()
     val purchaseMovements: Flow<List<MoveRow>> = purchaseDao.observePurchaseMovements()

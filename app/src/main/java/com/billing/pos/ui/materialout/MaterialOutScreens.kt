@@ -28,7 +28,10 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Divider
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -95,6 +98,8 @@ class MaterialOutViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = Repository(app)
     val items: StateFlow<List<Item>> = repo.items.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val outs: StateFlow<List<MaterialOut>> = repo.materialOuts.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    /** material-out movements (voucher id + item name), for the item filter on the list. */
+    val movements: StateFlow<List<com.billing.pos.data.MoveRow>> = repo.materialMovements.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val stockByItem: StateFlow<Map<Long, Double>> =
         combine(repo.items, repo.purchaseLines, repo.soldQty, repo.materialOutByItem) { list, pLines, sold, matOut ->
             val pur = pLines.groupBy { it.name.lowercase() }
@@ -294,14 +299,24 @@ fun MaterialOutListScreen(onBack: () -> Unit, onOpen: (Long) -> Unit, onNew: () 
     val context = LocalContext.current
     val snackbar = remember { SnackbarHostState() }
     val outs by vm.outs.collectAsStateSafe()
+    val items by vm.items.collectAsStateSafe()
+    val movements by vm.movements.collectAsStateSafe()
     val message by vm.message.collectAsStateSafe()
     LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); vm.consumeMessage() } }
     var deleteFor by remember { mutableStateOf<MaterialOut?>(null) }
-    var query by remember { mutableStateOf("") }
+    var itemFilter by remember { mutableStateOf("") }
+    var resultFilter by remember { mutableStateOf("") }
     var fromMillis by remember { mutableStateOf(System.currentTimeMillis()) }
     var toMillis by remember { mutableStateOf(System.currentTimeMillis()) }
+    // voucher id -> set of item names it contains (for the item filter).
+    val vouchersWithItem = remember(movements, itemFilter) {
+        if (itemFilter.isBlank()) null
+        else movements.filter { it.name.equals(itemFilter, true) }.map { it.voucherId }.toSet()
+    }
+    val resultTokens = remember(outs) { outs.flatMap { it.resultRef.split(",") }.map { it.trim() }.filter { it.isNotBlank() }.distinct().sorted() }
     val filtered = outs.filter { m ->
-        (query.isBlank() || m.voucherNo.contains(query, true) || m.resultRef.contains(query, true) || m.resultTests.contains(query, true)) &&
+        (vouchersWithItem == null || m.id in vouchersWithItem) &&
+            (resultFilter.isBlank() || m.resultRef.contains(resultFilter, true)) &&
             m.dateMillis >= matStartOfDay(fromMillis) && m.dateMillis <= matEndOfDay(toMillis)
     }
 
@@ -321,12 +336,42 @@ fun MaterialOutListScreen(onBack: () -> Unit, onOpen: (Long) -> Unit, onNew: () 
         floatingActionButton = { FloatingActionButton(onClick = onNew) { Icon(Icons.Filled.Add, "New") } }
     ) { pad ->
         Column(Modifier.fillMaxSize().padding(pad)) {
-            OutlinedTextField(value = query, onValueChange = { query = it }, label = { Text("Search voucher / result invoice / test") }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp))
-            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            // Item filter — searchable dropdown.
+            var itemMenu by remember { mutableStateOf(false) }
+            var itemQuery by remember { mutableStateOf("") }
+            val itemMatches = remember(itemQuery, items) { if (itemQuery.isBlank()) items else items.filter { it.name.contains(itemQuery, true) } }
+            ExposedDropdownMenuBox(expanded = itemMenu, onExpandedChange = { itemMenu = !itemMenu }, modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
+                OutlinedTextField(
+                    value = if (itemFilter.isNotBlank()) itemFilter else itemQuery,
+                    onValueChange = { itemQuery = it; itemFilter = ""; itemMenu = true },
+                    label = { Text("Filter by item (search)") },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(itemMenu) },
+                    singleLine = true, modifier = Modifier.menuAnchor().fillMaxWidth()
+                )
+                ExposedDropdownMenu(expanded = itemMenu, onDismissRequest = { itemMenu = false }) {
+                    DropdownMenuItem(text = { Text("All items") }, onClick = { itemFilter = ""; itemQuery = ""; itemMenu = false })
+                    itemMatches.take(30).forEach { it2 -> DropdownMenuItem(text = { Text(it2.name) }, onClick = { itemFilter = it2.name; itemQuery = ""; itemMenu = false }) }
+                }
+            }
+            // Result-invoice filter — dropdown.
+            var resMenu by remember { mutableStateOf(false) }
+            ExposedDropdownMenuBox(expanded = resMenu, onExpandedChange = { resMenu = !resMenu }, modifier = Modifier.padding(horizontal = 12.dp)) {
+                OutlinedTextField(
+                    readOnly = true, value = resultFilter.ifBlank { "All result invoices" }, onValueChange = {},
+                    label = { Text("Filter by result invoice") },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(resMenu) },
+                    modifier = Modifier.menuAnchor().fillMaxWidth()
+                )
+                ExposedDropdownMenu(expanded = resMenu, onDismissRequest = { resMenu = false }) {
+                    DropdownMenuItem(text = { Text("All result invoices") }, onClick = { resultFilter = ""; resMenu = false })
+                    resultTokens.forEach { r -> DropdownMenuItem(text = { Text(r) }, onClick = { resultFilter = r; resMenu = false }) }
+                }
+            }
+            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = { matPickDate(context, fromMillis) { fromMillis = it } }, modifier = Modifier.weight(1f)) { Text("From ${Format.date(fromMillis)}", maxLines = 1) }
                 OutlinedButton(onClick = { matPickDate(context, toMillis) { toMillis = it } }, modifier = Modifier.weight(1f)) { Text("To ${Format.date(toMillis)}", maxLines = 1) }
             }
-            Divider(Modifier.padding(top = 6.dp))
+            Divider()
             if (filtered.isEmpty()) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("No material-out vouchers", color = MaterialTheme.colorScheme.outline) }
             else LazyColumn(Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
                 items(filtered, key = { it.id }) { m ->
