@@ -89,6 +89,8 @@ class LabBillViewModel(app: Application) : AndroidViewModel(app) {
     var referredBy by mutableStateOf("")
     var discountText by mutableStateOf("")
     var remarks by mutableStateOf("")
+    var paymentMethod by mutableStateOf("Cash")
+    var advanceText by mutableStateOf("")   // amount received now; blank = fully paid (non-credit)
     var billNo by mutableStateOf("LAB-0001"); private set
     var dateMillis by mutableStateOf(System.currentTimeMillis())
     val cart: SnapshotStateList<BillTestRow> = mutableStateListOf()
@@ -115,6 +117,8 @@ class LabBillViewModel(app: Application) : AndroidViewModel(app) {
             val b = repo.labBillById(id) ?: return@launch
             editingId = b.id; billNo = b.billNo; dateMillis = b.dateMillis
             referredBy = b.referredBy; discountText = if (b.discount != 0.0) b.discount.toString() else ""; remarks = b.remarks
+            paymentMethod = b.paymentMethod.ifBlank { "Cash" }
+            advanceText = com.billing.pos.util.Format.money(b.paidAmount)
             selectedPatient = repo.patientById(b.patientId) ?: Patient(b.patientId, b.patientName, b.age, b.gender, referredBy = b.referredBy)
             cart.clear()
             repo.labBillTests(id).forEach { cart.add(BillTestRow(it.testId, it.testName, it.price)) }
@@ -123,6 +127,7 @@ class LabBillViewModel(app: Application) : AndroidViewModel(app) {
 
     fun newBill() {
         selectedPatient = null; referredBy = ""; discountText = ""; remarks = ""; cart.clear()
+        paymentMethod = "Cash"; advanceText = ""
         dateMillis = System.currentTimeMillis(); editingId = null
         viewModelScope.launch { billNo = repo.nextLabBillNo() }
     }
@@ -138,9 +143,9 @@ class LabBillViewModel(app: Application) : AndroidViewModel(app) {
                 patientId = p.id, patientName = p.name, age = p.age, gender = p.gender, referredBy = referredBy.trim(),
                 subTotal = subTotal, discount = discount, grandTotal = grandTotal, remarks = remarks.trim(),
                 resultEntered = existing?.resultEntered ?: false, resultDateMillis = existing?.resultDateMillis ?: 0,
-                // Default to a paid cash bill; result entry can change method / amount received.
-                paymentMethod = existing?.paymentMethod ?: "Cash",
-                paidAmount = existing?.paidAmount ?: grandTotal
+                paymentMethod = paymentMethod,
+                // Advance received now; blank means fully paid unless it's a credit bill.
+                paidAmount = advanceText.toDoubleOrNull() ?: (if (paymentMethod == "Credit") 0.0 else grandTotal)
             )
             val id = repo.saveLabBill(b, cart.map { LabBillTest(0, b.id, it.testId, it.name, it.price) })
             editingId = id
@@ -219,6 +224,24 @@ fun LabBillScreen(editId: Long?, onBack: () -> Unit, vm: LabBillViewModel = view
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         Text("TOTAL", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
                         Text(Format.rupee(vm.grandTotal), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                    }
+                    Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        listOf("Cash", "UPI", "Card", "Credit").forEach { m ->
+                            androidx.compose.material3.FilterChip(selected = vm.paymentMethod == m, onClick = { vm.paymentMethod = m }, label = { Text(m) })
+                        }
+                    }
+                    OutlinedTextField(
+                        value = vm.advanceText,
+                        onValueChange = { vm.advanceText = it.filter { c -> c.isDigit() || c == '.' } },
+                        label = { Text("Amount received now (advance)") },
+                        placeholder = { Text(if (vm.paymentMethod == "Credit") "0" else Format.money(vm.grandTotal)) },
+                        singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        modifier = Modifier.fillMaxWidth().padding(top = 6.dp)
+                    )
+                    run {
+                        val paid = vm.advanceText.toDoubleOrNull() ?: (if (vm.paymentMethod == "Credit") 0.0 else vm.grandTotal)
+                        val bal = (vm.grandTotal - paid).coerceAtLeast(0.0)
+                        if (bal > 0.0) Text("Balance ${Format.rupee(bal)} — collect later from Cash Book or Receipts", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
                     }
                 }
             }

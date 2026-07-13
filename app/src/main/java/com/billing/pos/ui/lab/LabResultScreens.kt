@@ -70,8 +70,6 @@ class LabResultViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = Repository(app)
     var bill by mutableStateOf<LabBill?>(null); private set
     val rows: SnapshotStateList<ResultRow> = mutableStateListOf()
-    var paymentMethod by mutableStateOf("Cash")
-    var paidText by mutableStateOf("")
     private var loaded = false
     val message = MutableStateFlow<String?>(null)
     fun consumeMessage() { message.value = null }
@@ -82,8 +80,6 @@ class LabResultViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val b = repo.labBillById(billId) ?: return@launch
             bill = b
-            paymentMethod = b.paymentMethod.ifBlank { "Cash" }
-            paidText = if (b.paidAmount != 0.0) com.billing.pos.util.Format.money(b.paidAmount) else com.billing.pos.util.Format.money(b.grandTotal)
             val saved = repo.labResultsFor(billId)
             rows.clear()
             repo.labBillTests(billId).forEach { bt ->
@@ -104,9 +100,7 @@ class LabResultViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun LabBill.withResult() = copy(
-        resultEntered = true, resultDateMillis = System.currentTimeMillis(),
-        paymentMethod = this@LabResultViewModel.paymentMethod,
-        paidAmount = this@LabResultViewModel.paidText.toDoubleOrNull() ?: grandTotal
+        resultEntered = true, resultDateMillis = System.currentTimeMillis()
     )
 
     fun save(onDone: () -> Unit) {
@@ -172,18 +166,6 @@ fun LabResultScreen(billId: Long, onBack: () -> Unit, vm: LabResultViewModel = v
                         Text(
                             listOf(b.age.ifBlank { "-" }, b.gender.ifBlank { "-" }, "Ref: ${b.referredBy.ifBlank { "-" }}").joinToString("  •  "),
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline
-                        )
-                        // Payment method + amount collected — recorded on the bill, NOT printed on the report.
-                        Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                            listOf("Cash", "UPI", "Card", "Credit").forEach { m ->
-                                androidx.compose.material3.FilterChip(selected = vm.paymentMethod == m, onClick = { vm.paymentMethod = m }, label = { Text(m) })
-                            }
-                        }
-                        OutlinedTextField(
-                            value = vm.paidText,
-                            onValueChange = { vm.paidText = it.filter { ch -> ch.isDigit() || ch == '.' } },
-                            label = { Text("Amount received (of ${com.billing.pos.util.Format.rupee(b.grandTotal)})") },
-                            singleLine = true, modifier = Modifier.fillMaxWidth().padding(top = 6.dp)
                         )
                     }
                 }

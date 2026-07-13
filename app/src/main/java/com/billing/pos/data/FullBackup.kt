@@ -81,6 +81,7 @@ object FullBackup {
         root.put("labGroups", JSONArray().apply { db.labMasterDao().allGroups().forEach { put(JSONObject().put("id", it.id).put("name", it.name)) } })
         root.put("labEvalMasters", JSONArray().apply { db.labMasterDao().allEvals().forEach { put(labEvalMasterJson(it)) } })
         root.put("labHeadings", JSONArray().apply { db.labMasterDao().allHeadings().forEach { put(JSONObject().put("id", it.id).put("name", it.name)) } })
+        root.put("labReceipts", JSONArray().apply { db.labReceiptDao().all().forEach { put(labReceiptJson(it)) } })
         val billAtts = db.billAttachmentDao().all()
         root.put("billAttachments", JSONArray().apply { billAtts.forEach { put(billAttJson(it)) } })
 
@@ -277,6 +278,7 @@ object FullBackup {
         root.optJSONArray("labGroups")?.let { for (i in 0 until it.length()) { val o = it.getJSONObject(i); db.labMasterDao().insertGroup(LabGroup(o.optLong("id"), o.optString("name"))) } }
         root.optJSONArray("labEvalMasters")?.let { for (i in 0 until it.length()) db.labMasterDao().insertEval(readLabEvalMaster(it.getJSONObject(i))) }
         root.optJSONArray("labHeadings")?.let { for (i in 0 until it.length()) { val o = it.getJSONObject(i); db.labMasterDao().insertHeading(LabHeading(o.optLong("id"), o.optString("name"))) } }
+        root.optJSONArray("labReceipts")?.let { for (i in 0 until it.length()) db.labReceiptDao().insert(readLabReceipt(it.getJSONObject(i))) }
         root.optJSONArray("billAttachments")?.let {
             for (i in 0 until it.length()) db.billAttachmentDao().insert(readBillAtt(context, it.getJSONObject(i)))
         }
@@ -568,6 +570,12 @@ object FullBackup {
         root.optJSONArray("labGroups")?.let { for (i in 0 until it.length()) db.labMasterDao().insertGroup(LabGroup(name = it.getJSONObject(i).optString("name"))) }
         root.optJSONArray("labEvalMasters")?.let { for (i in 0 until it.length()) db.labMasterDao().insertEval(readLabEvalMaster(it.getJSONObject(i)).copy(id = 0)) }
         root.optJSONArray("labHeadings")?.let { for (i in 0 until it.length()) db.labMasterDao().insertHeading(LabHeading(name = it.getJSONObject(i).optString("name"))) }
+        root.optJSONArray("labReceipts")?.let {
+            for (i in 0 until it.length()) {
+                val r = readLabReceipt(it.getJSONObject(i)); val nb = labBillMap[r.labBillId] ?: continue
+                db.labReceiptDao().insert(r.copy(id = 0, labBillId = nb))
+            }
+        }
         // Bill attachments
         root.optJSONArray("billAttachments")?.let {
             for (i in 0 until it.length()) {
@@ -881,6 +889,15 @@ object FullBackup {
         unit = o.optString("unit"), normalValue = o.optString("normalValue"),
         result = o.optString("result"), sortOrder = o.optInt("sortOrder", 0),
         isHeading = o.optBoolean("isHeading", false), isPageBreak = o.optBoolean("isPageBreak", false)
+    )
+
+    private fun labReceiptJson(r: LabReceipt) = JSONObject().put("id", r.id).put("labBillId", r.labBillId)
+        .put("billNo", r.billNo).put("patientName", r.patientName).put("dateMillis", r.dateMillis)
+        .put("amount", r.amount).put("mode", r.mode)
+    private fun readLabReceipt(o: JSONObject) = LabReceipt(
+        id = o.optLong("id"), labBillId = o.optLong("labBillId"), billNo = o.optString("billNo"),
+        patientName = o.optString("patientName"), dateMillis = o.optLong("dateMillis"),
+        amount = o.optDouble("amount", 0.0), mode = o.optString("mode", "Cash")
     )
 
     private fun readSize(o: JSONObject) = ItemSize(

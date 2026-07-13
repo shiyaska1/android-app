@@ -92,6 +92,8 @@ class CashBookViewModel(app: Application) : AndroidViewModel(app) {
         repo.journalEntries.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val labBills: StateFlow<List<com.billing.pos.data.LabBill>> =
         repo.labBills.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val labReceipts: StateFlow<List<com.billing.pos.data.LabReceipt>> =
+        repo.labReceipts.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val message = MutableStateFlow<String?>(null)
     fun consumeMessage() { message.value = null }
@@ -148,6 +150,7 @@ fun CashBookScreen(
     val purchases by vm.purchases.collectAsStateSafe()
     val journals by vm.journals.collectAsStateSafe()
     val labBills by vm.labBills.collectAsStateSafe()
+    val labReceipts by vm.labReceipts.collectAsStateSafe()
     val message by vm.message.collectAsStateSafe()
 
     LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); vm.consumeMessage() } }
@@ -163,14 +166,18 @@ fun CashBookScreen(
     var editPaymentFor by remember { mutableStateOf<Expense?>(null) }
 
     // Build all cash-affecting transactions.
-    val allTxns = remember(bills, receipts, expenses, purchases, journals, labBills) {
+    val allTxns = remember(bills, receipts, expenses, purchases, journals, labBills, labReceipts) {
         buildList {
             bills.filter { it.paymentMethod != "Credit" }.forEach {
                 add(CashTxn(it.dateMillis, "SALE", "${it.billNo} • ${it.customerName}", it.paymentMethod, it.grandTotal, true, it, null, null))
             }
-            // Lab bills: money actually collected shows as received income.
+            // Lab bills: advance/collected at billing shows as received income.
             labBills.filter { it.paidAmount > 0.0 }.forEach {
                 add(CashTxn(it.dateMillis, "LAB", "${it.billNo} • ${it.patientName}", it.paymentMethod, it.paidAmount, true, null, null, null))
+            }
+            // Lab balance receipts collected later.
+            labReceipts.forEach {
+                add(CashTxn(it.dateMillis, "LAB", "${it.billNo} • ${it.patientName} (balance)", it.mode, it.amount, true, null, null, null))
             }
             receipts.forEach {
                 add(CashTxn(it.dateMillis, "RECEIPT", "${it.receiptNo} • ${it.payFrom.ifBlank { it.customerName }}", it.paymentMode, it.amount, true, null, it, null))
@@ -275,6 +282,10 @@ fun CashBookScreen(
                     actionIconContentColor = MaterialTheme.colorScheme.onPrimary
                 ),
                 actions = {
+                    // Collect an outstanding lab-bill balance (shows for Medical lab).
+                    if (remember { com.billing.pos.data.AppPrefs(context).businessType == "Medical lab" }) {
+                        com.billing.pos.ui.lab.LabCollectButton(onMessage = { scope.launch { snackbar.showSnackbar(it) } })
+                    }
                     if (Session.canViewCashbook) {
                         IconButton(onClick = { downloadPdf { buildCashBookPdf() } }) {
                             Icon(Icons.Filled.PictureAsPdf, contentDescription = "Download PDF")

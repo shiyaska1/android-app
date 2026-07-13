@@ -223,6 +223,10 @@ fun ReceiptsScreen(
                     actionIconContentColor = MaterialTheme.colorScheme.onPrimary
                 ),
                 actions = {
+                    // Receive against a lab bill's outstanding balance (Medical lab).
+                    if (Session.canCreateReceipt && remember { com.billing.pos.data.AppPrefs(context).businessType == "Medical lab" }) {
+                        com.billing.pos.ui.lab.LabCollectButton(onMessage = { scope.launch { snackbar.showSnackbar(it) } })
+                    }
                     if (Session.canCreateReceipt) {
                         IconButton(onClick = { showBulk = true }) {
                             Icon(Icons.Filled.LibraryAdd, contentDescription = "Bulk add receipts")

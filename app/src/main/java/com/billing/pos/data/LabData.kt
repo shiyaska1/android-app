@@ -192,6 +192,31 @@ data class LabResultValue(
 
 data class LabBillWithTests(val bill: LabBill, val tests: List<LabBillTest>)
 
+/** A payment collected against a lab bill after billing (balance / partial receipts). */
+@Entity(tableName = "lab_receipts")
+data class LabReceipt(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val labBillId: Long,
+    val billNo: String,
+    val patientName: String,
+    val dateMillis: Long,
+    val amount: Double,
+    val mode: String = "Cash"
+)
+
+data class BillIdSum(val id: Long, val total: Double)
+
+@Dao
+interface LabReceiptDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insert(r: LabReceipt): Long
+    @Delete suspend fun delete(r: LabReceipt)
+    @Query("SELECT * FROM lab_receipts ORDER BY dateMillis DESC") fun observeAll(): Flow<List<LabReceipt>>
+    @Query("SELECT * FROM lab_receipts") suspend fun all(): List<LabReceipt>
+    @Query("SELECT COALESCE(SUM(amount),0) FROM lab_receipts WHERE labBillId = :billId") suspend fun sumForBill(billId: Long): Double
+    @Query("SELECT labBillId AS id, COALESCE(SUM(amount),0) AS total FROM lab_receipts GROUP BY labBillId")
+    fun observeSumByBill(): Flow<List<BillIdSum>>
+}
+
 @Dao
 interface LabBillDao {
     @Query("SELECT COUNT(*) FROM lab_bills") suspend fun count(): Int

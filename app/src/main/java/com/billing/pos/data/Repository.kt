@@ -375,6 +375,16 @@ class Repository(context: Context) {
     suspend fun labResultsFor(id: Long): List<LabResultValue> = labBillDao.resultsFor(id)
     suspend fun saveLabResults(bill: LabBill, results: List<LabResultValue>) = labBillDao.saveResults(bill, results)
 
+    // ---- lab balance receipts ----
+    private val labReceiptDao = db.labReceiptDao()
+    val labReceipts: Flow<List<LabReceipt>> = labReceiptDao.observeAll()
+    val labReceiptSumByBill: Flow<List<BillIdSum>> = labReceiptDao.observeSumByBill()
+    suspend fun addLabReceipt(r: LabReceipt): Long = labReceiptDao.insert(r)
+    suspend fun deleteLabReceipt(r: LabReceipt) = labReceiptDao.delete(r)
+    /** Outstanding for a lab bill = grand total − advance paid − later receipts. */
+    suspend fun labBillOutstanding(bill: LabBill): Double =
+        (bill.grandTotal - bill.paidAmount - labReceiptDao.sumForBill(bill.id)).coerceAtLeast(0.0)
+
     // ---- item sizes (variants with their own price) ----
     private val itemSizeDao = db.itemSizeDao()
     val itemSizes: Flow<List<ItemSize>> = itemSizeDao.observeAll()
