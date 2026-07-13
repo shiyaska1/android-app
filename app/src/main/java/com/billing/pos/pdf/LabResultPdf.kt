@@ -92,30 +92,42 @@ object LabResultPdf {
         val byTest = LinkedHashMap<String, MutableList<LabResultValue>>()
         results.forEach { byTest.getOrPut(it.testName) { mutableListOf() }.add(it) }
 
-        byTest.forEach { (testName, rows) ->
+        fun newPage() {
+            doc.finishPage(page)
+            page = doc.startPage(PdfDocument.PageInfo.Builder(PW.toInt(), PH.toInt(), doc.pages.size + 1).create())
+            c = page.canvas; y = M
+        }
+        fun testTitle(name: String) {
             ensureSpace(64f)
-            c.drawText(testName.uppercase(), x0 + 2f, y + 11f, cellBold); y += 16f
+            c.drawText(name.uppercase(), x0 + 2f, y + 11f, cellBold); y += 16f
             c.drawLine(x0, y, xEnd, y, faint); y += 4f
             columnHeader()
-            val byGroup = LinkedHashMap<String, MutableList<LabResultValue>>()
-            rows.forEach { byGroup.getOrPut(it.groupName) { mutableListOf() }.add(it) }
-            byGroup.forEach { (group, gr) ->
-                if (group.isNotBlank()) { ensureSpace(18f); c.drawText(group, x0 + 6f, y + 11f, cellBold); y += 18f }
-                gr.forEach { r ->
-                    ensureSpace(18f)
-                    if (r.isHeading) {
-                        // Manual bold heading row (no result).
-                        c.drawText(r.evaluationName, x0 + 6f, y + 11f, cellBold)
-                    } else {
-                        val indent = if (group.isNotBlank()) 12f else 2f
-                        c.drawText(clip(r.evaluationName, 34), x0 + indent, y + 11f, cell)
-                        c.drawText(r.result.ifBlank { "-" }, cResult, y + 11f, if (isOutOfRange(r)) abn else cellBold)
-                        c.drawText(clip(r.unit, 12), cUnit, y + 11f, cell)
-                        c.drawText(clip(r.normalValue, 16), cRef, y + 11f, small)
-                    }
-                    y += 18f
-                    c.drawLine(x0, y, xEnd, y, faint)   // separator at the row's bottom edge
+        }
+
+        byTest.forEach { (testName, rows) ->
+            testTitle(testName)
+            var lastGroup: String? = null
+            rows.forEach { r ->
+                if (r.isPageBreak) {
+                    // Manual page break: continue on a fresh A4 page.
+                    newPage(); testTitle(testName); lastGroup = null; return@forEach
                 }
+                if (r.groupName.isNotBlank() && r.groupName != lastGroup) {
+                    ensureSpace(18f); c.drawText(r.groupName, x0 + 6f, y + 11f, cellBold); y += 18f
+                }
+                lastGroup = r.groupName
+                ensureSpace(18f)
+                if (r.isHeading) {
+                    c.drawText(r.evaluationName, x0 + 6f, y + 11f, cellBold)
+                } else {
+                    val indent = if (r.groupName.isNotBlank()) 12f else 2f
+                    c.drawText(clip(r.evaluationName, 34), x0 + indent, y + 11f, cell)
+                    c.drawText(r.result.ifBlank { "-" }, cResult, y + 11f, if (isOutOfRange(r)) abn else cellBold)
+                    c.drawText(clip(r.unit, 12), cUnit, y + 11f, cell)
+                    c.drawText(clip(r.normalValue, 16), cRef, y + 11f, small)
+                }
+                y += 18f
+                c.drawLine(x0, y, xEnd, y, faint)   // separator at the row's bottom edge
             }
             y += 10f
         }

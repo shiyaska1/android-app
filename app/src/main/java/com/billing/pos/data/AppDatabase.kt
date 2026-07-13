@@ -24,11 +24,12 @@ import androidx.room.TypeConverters
         HireReturn::class, HireReturnItem::class,
         LabTest::class, LabEvaluation::class, Patient::class,
         LabBill::class, LabBillTest::class, LabResultValue::class,
-        LabGroup::class, LabEvalMaster::class
+        LabGroup::class, LabEvalMaster::class, LabHeading::class
     ],
     // v25 quotations; v26 sales returns; v27 purchase returns; v28 purchase quotations (LPO);
-    // v29 dual units; v30 rental; v31 medical lab; v32 lab masters + heading rows.
-    version = 32,
+    // v29 dual units; v30 rental; v31 medical lab; v32 lab masters + heading rows;
+    // v33 page breaks, heading master, lab-bill payment method/paid amount.
+    version = 33,
     exportSchema = false
 )
 @TypeConverters(Converters::class)

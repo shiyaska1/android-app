@@ -90,6 +90,8 @@ class CashBookViewModel(app: Application) : AndroidViewModel(app) {
         repo.allPurchases.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val journals: StateFlow<List<com.billing.pos.data.JournalEntry>> =
         repo.journalEntries.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val labBills: StateFlow<List<com.billing.pos.data.LabBill>> =
+        repo.labBills.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val message = MutableStateFlow<String?>(null)
     fun consumeMessage() { message.value = null }
@@ -145,6 +147,7 @@ fun CashBookScreen(
     val expenses by vm.expenses.collectAsStateSafe()
     val purchases by vm.purchases.collectAsStateSafe()
     val journals by vm.journals.collectAsStateSafe()
+    val labBills by vm.labBills.collectAsStateSafe()
     val message by vm.message.collectAsStateSafe()
 
     LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); vm.consumeMessage() } }
@@ -160,10 +163,14 @@ fun CashBookScreen(
     var editPaymentFor by remember { mutableStateOf<Expense?>(null) }
 
     // Build all cash-affecting transactions.
-    val allTxns = remember(bills, receipts, expenses, purchases, journals) {
+    val allTxns = remember(bills, receipts, expenses, purchases, journals, labBills) {
         buildList {
             bills.filter { it.paymentMethod != "Credit" }.forEach {
                 add(CashTxn(it.dateMillis, "SALE", "${it.billNo} • ${it.customerName}", it.paymentMethod, it.grandTotal, true, it, null, null))
+            }
+            // Lab bills: money actually collected shows as received income.
+            labBills.filter { it.paidAmount > 0.0 }.forEach {
+                add(CashTxn(it.dateMillis, "LAB", "${it.billNo} • ${it.patientName}", it.paymentMethod, it.paidAmount, true, null, null, null))
             }
             receipts.forEach {
                 add(CashTxn(it.dateMillis, "RECEIPT", "${it.receiptNo} • ${it.payFrom.ifBlank { it.customerName }}", it.paymentMode, it.amount, true, null, it, null))
@@ -310,7 +317,7 @@ fun CashBookScreen(
 
             // Voucher type filter
             Row(Modifier.horizontalScroll(rememberScrollState()).padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf("All", "Sale", "Receipt", "Payment", "Purchase", "Journal").forEach { t ->
+                listOf("All", "Sale", "Lab", "Receipt", "Payment", "Purchase", "Journal").forEach { t ->
                     FilterChip(selected = typeFilter == t, onClick = { typeFilter = t }, label = { Text(t) })
                 }
             }

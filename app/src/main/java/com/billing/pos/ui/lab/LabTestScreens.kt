@@ -65,7 +65,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 /** One editable evaluation row in the test editor. */
-class EvalRow(name: String = "", unit: String = "", normal: String = "", group: String = "", isHeading: Boolean = false) {
+class EvalRow(name: String = "", unit: String = "", normal: String = "", group: String = "", isHeading: Boolean = false, val isPageBreak: Boolean = false) {
     var name by mutableStateOf(name)
     var unit by mutableStateOf(unit)
     var normal by mutableStateOf(normal)
@@ -80,6 +80,7 @@ class LabTestViewModel(app: Application) : AndroidViewModel(app) {
     val tests: StateFlow<List<LabTest>> = repo.labTests.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val groups: StateFlow<List<com.billing.pos.data.LabGroup>> = repo.labGroups.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val evalMasters: StateFlow<List<com.billing.pos.data.LabEvalMaster>> = repo.labEvalMasters.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val headings: StateFlow<List<com.billing.pos.data.LabHeading>> = repo.labHeadings.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     fun addFromMaster(e: com.billing.pos.data.LabEvalMaster) {
         if (evals.none { it.name.equals(e.name, true) && !it.isHeading }) evals.add(EvalRow(e.name, e.unit, e.normalValue, e.groupName))
@@ -88,6 +89,8 @@ class LabTestViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { repo.labEvalsInGroup(groupName).forEach { addFromMaster(it) } }
     }
     fun addHeading() { evals.add(EvalRow(isHeading = true)) }
+    fun addHeadingFromMaster(name: String) { evals.add(EvalRow(name = name, isHeading = true)) }
+    fun addPageBreak() { evals.add(EvalRow(isPageBreak = true)) }
 
     var name by mutableStateOf("")
     var priceText by mutableStateOf("")
@@ -116,7 +119,7 @@ class LabTestViewModel(app: Application) : AndroidViewModel(app) {
             val t = repo.labTestById(id) ?: return@launch
             editingId = t.id; name = t.name; priceText = Format.money(t.price); sampleType = t.sampleType
             evals.clear()
-            repo.labEvaluationsFor(id).forEach { evals.add(EvalRow(it.name, it.unit, it.normalValue, it.groupName, it.isHeading)) }
+            repo.labEvaluationsFor(id).forEach { evals.add(EvalRow(it.name, it.unit, it.normalValue, it.groupName, it.isHeading, it.isPageBreak)) }
             if (evals.isEmpty()) evals.add(EvalRow())
         }
     }
@@ -125,12 +128,13 @@ class LabTestViewModel(app: Application) : AndroidViewModel(app) {
         if (name.isBlank()) { message.value = "Enter a test name"; return }
         viewModelScope.launch {
             val t = LabTest(id = editingId ?: 0, name = name.trim(), price = priceText.toDoubleOrNull() ?: 0.0, sampleType = sampleType.trim())
-            val list = evals.filter { it.name.isNotBlank() }.map {
-                LabEvaluation(testId = 0, name = it.name.trim(), unit = it.unit.trim(), normalValue = it.normal.trim(), groupName = it.group.trim(), isHeading = it.isHeading)
+            val list = evals.filter { it.name.isNotBlank() || it.isPageBreak }.map {
+                LabEvaluation(testId = 0, name = it.name.trim(), unit = it.unit.trim(), normalValue = it.normal.trim(), groupName = it.group.trim(), isHeading = it.isHeading, isPageBreak = it.isPageBreak)
             }
             repo.saveLabTest(t, list)
-            // New (typed-in) evaluations and their groups are saved to the master.
-            evals.filter { it.name.isNotBlank() && !it.isHeading }.forEach { repo.addEvalToMaster(it.name, it.unit, it.normal, it.group) }
+            // New (typed-in) evaluations, groups and headings are saved to their masters.
+            evals.filter { it.name.isNotBlank() && !it.isHeading && !it.isPageBreak }.forEach { repo.addEvalToMaster(it.name, it.unit, it.normal, it.group) }
+            evals.filter { it.name.isNotBlank() && it.isHeading }.forEach { repo.addHeadingToMaster(it.name) }
             message.value = "Test saved"
             onDone()
         }
@@ -224,10 +228,18 @@ fun LabTestEditScreen(editId: Long?, onBack: () -> Unit, vm: LabTestViewModel = 
                 Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(onClick = { showPicker = true }, modifier = Modifier.weight(1f)) { Icon(Icons.Filled.Add, null); Text(" From master") }
                     OutlinedButton(onClick = { vm.addHeading() }, modifier = Modifier.weight(1f)) { Text("+ Heading") }
+                    OutlinedButton(onClick = { vm.addPageBreak() }, modifier = Modifier.weight(1f)) { Text("+ Break") }
                 }
             }
             itemsIndexed(vm.evals, key = { _, e -> e.uid }) { i, e ->
-                Card(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+                if (e.isPageBreak) {
+                    Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Divider(Modifier.weight(1f))
+                        Text("  PAGE BREAK  ", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                        Divider(Modifier.weight(1f))
+                        IconButton(onClick = { vm.removeEval(i) }) { Icon(Icons.Filled.Delete, "Remove", tint = MaterialTheme.colorScheme.error) }
+                    }
+                } else Card(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                     Column(Modifier.padding(8.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             OutlinedTextField(
@@ -257,10 +269,12 @@ fun LabTestEditScreen(editId: Long?, onBack: () -> Unit, vm: LabTestViewModel = 
     if (showPicker) {
         val groups by vm.groups.collectAsStateSafe()
         val masters by vm.evalMasters.collectAsStateSafe()
+        val headings by vm.headings.collectAsStateSafe()
         LabMasterPickDialog(
-            groups = groups, evals = masters,
+            groups = groups, evals = masters, headings = headings,
             onPickGroup = { vm.addGroupEvals(it); showPicker = false },
             onPickEval = { vm.addFromMaster(it) },
+            onPickHeading = { vm.addHeadingFromMaster(it) },
             onDismiss = { showPicker = false }
         )
     }
@@ -271,13 +285,16 @@ fun LabTestEditScreen(editId: Long?, onBack: () -> Unit, vm: LabTestViewModel = 
 private fun LabMasterPickDialog(
     groups: List<com.billing.pos.data.LabGroup>,
     evals: List<com.billing.pos.data.LabEvalMaster>,
+    headings: List<com.billing.pos.data.LabHeading>,
     onPickGroup: (String) -> Unit,
     onPickEval: (com.billing.pos.data.LabEvalMaster) -> Unit,
+    onPickHeading: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
     var q by remember { mutableStateOf("") }
     val shownGroups = if (q.isBlank()) groups else groups.filter { it.name.contains(q, true) }
     val shownEvals = if (q.isBlank()) evals else evals.filter { it.name.contains(q, true) || it.groupName.contains(q, true) }
+    val shownHeadings = if (q.isBlank()) headings else headings.filter { it.name.contains(q, true) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Pick from master") },
@@ -288,6 +305,11 @@ private fun LabMasterPickDialog(
                     if (shownGroups.isNotEmpty()) item { Text("Groups (adds all its evaluations)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline, modifier = Modifier.padding(vertical = 4.dp)) }
                     items(shownGroups, key = { "g" + it.id }) { g ->
                         Text("▸ ${g.name}", Modifier.fillMaxWidth().clickable { onPickGroup(g.name) }.padding(vertical = 10.dp), fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+                        Divider()
+                    }
+                    if (shownHeadings.isNotEmpty()) item { Text("Headings (adds a bold heading)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline, modifier = Modifier.padding(vertical = 4.dp)) }
+                    items(shownHeadings, key = { "h" + it.id }) { h ->
+                        Text(h.name, Modifier.fillMaxWidth().clickable { onPickHeading(h.name) }.padding(vertical = 10.dp), fontWeight = FontWeight.Bold)
                         Divider()
                     }
                     if (shownEvals.isNotEmpty()) item { Text("Evaluations (tap to add)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline, modifier = Modifier.padding(vertical = 4.dp)) }

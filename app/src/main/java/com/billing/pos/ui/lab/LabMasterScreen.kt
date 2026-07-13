@@ -56,10 +56,13 @@ class LabMasterViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = Repository(app)
     val groups: StateFlow<List<LabGroup>> = repo.labGroups.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val evals: StateFlow<List<LabEvalMaster>> = repo.labEvalMasters.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val headings: StateFlow<List<com.billing.pos.data.LabHeading>> = repo.labHeadings.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     fun addGroup(name: String) { if (name.isNotBlank()) viewModelScope.launch { repo.ensureLabGroup(name) } }
     fun deleteGroup(g: LabGroup) { viewModelScope.launch { repo.deleteLabGroup(g) } }
     fun saveEval(e: LabEvalMaster) { viewModelScope.launch { repo.saveLabEvalMaster(e); if (e.groupName.isNotBlank()) repo.ensureLabGroup(e.groupName) } }
     fun deleteEval(e: LabEvalMaster) { viewModelScope.launch { repo.deleteLabEvalMaster(e) } }
+    fun addHeading(name: String) { if (name.isNotBlank()) viewModelScope.launch { repo.addHeadingToMaster(name) } }
+    fun deleteHeading(h: com.billing.pos.data.LabHeading) { viewModelScope.launch { repo.deleteLabHeading(h) } }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -67,7 +70,9 @@ class LabMasterViewModel(app: Application) : AndroidViewModel(app) {
 fun LabMasterScreen(onBack: () -> Unit, vm: LabMasterViewModel = viewModel()) {
     val groups by vm.groups.collectAsStateSafe()
     val evals by vm.evals.collectAsStateSafe()
+    val headings by vm.headings.collectAsStateSafe()
     var newGroup by remember { mutableStateOf("") }
+    var newHeading by remember { mutableStateOf("") }
     var editEval by remember { mutableStateOf<LabEvalMaster?>(null) }
     var showNewEval by remember { mutableStateOf(false) }
 
@@ -96,6 +101,20 @@ fun LabMasterScreen(onBack: () -> Unit, vm: LabMasterViewModel = viewModel()) {
                 Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("▸ ${g.name}", Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
                     IconButton(onClick = { vm.deleteGroup(g) }) { Icon(Icons.Filled.Delete, "Delete", tint = MaterialTheme.colorScheme.error) }
+                }
+                Divider()
+            }
+            item {
+                Text("Headings", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 16.dp))
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(value = newHeading, onValueChange = { newHeading = it }, label = { Text("New heading") }, singleLine = true, modifier = Modifier.weight(1f))
+                    OutlinedButton(onClick = { vm.addHeading(newHeading); newHeading = "" }) { Text("Add") }
+                }
+            }
+            items(headings, key = { "h" + it.id }) { h ->
+                Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(h.name, Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
+                    IconButton(onClick = { vm.deleteHeading(h) }) { Icon(Icons.Filled.Delete, "Delete", tint = MaterialTheme.colorScheme.error) }
                 }
                 Divider()
             }

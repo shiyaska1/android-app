@@ -137,7 +137,10 @@ class LabBillViewModel(app: Application) : AndroidViewModel(app) {
                 id = editingId ?: 0, billNo = billNo, dateMillis = dateMillis,
                 patientId = p.id, patientName = p.name, age = p.age, gender = p.gender, referredBy = referredBy.trim(),
                 subTotal = subTotal, discount = discount, grandTotal = grandTotal, remarks = remarks.trim(),
-                resultEntered = existing?.resultEntered ?: false, resultDateMillis = existing?.resultDateMillis ?: 0
+                resultEntered = existing?.resultEntered ?: false, resultDateMillis = existing?.resultDateMillis ?: 0,
+                // Default to a paid cash bill; result entry can change method / amount received.
+                paymentMethod = existing?.paymentMethod ?: "Cash",
+                paidAmount = existing?.paidAmount ?: grandTotal
             )
             val id = repo.saveLabBill(b, cart.map { LabBillTest(0, b.id, it.testId, it.name, it.price) })
             editingId = id

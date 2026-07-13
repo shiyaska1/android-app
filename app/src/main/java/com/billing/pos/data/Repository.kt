@@ -352,6 +352,10 @@ class Repository(context: Context) {
         if (labMasterDao.evalByName(name) == null)
             labMasterDao.insertEval(LabEvalMaster(name = name.trim(), unit = unit.trim(), normalValue = normal.trim(), groupName = group.trim()))
     }
+    val labHeadings: Flow<List<LabHeading>> = labMasterDao.observeHeadings()
+    suspend fun deleteLabHeading(h: LabHeading) = labMasterDao.deleteHeading(h)
+    suspend fun addHeadingToMaster(name: String) { if (name.isNotBlank() && labMasterDao.headingByName(name) == null) labMasterDao.insertHeading(LabHeading(name = name.trim())) }
+    suspend fun allLabHeadings(): List<LabHeading> = labMasterDao.allHeadings()
 
     // ---- lab patients ----
     private val patientDao = db.patientDao()

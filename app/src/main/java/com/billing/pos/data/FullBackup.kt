@@ -80,6 +80,7 @@ object FullBackup {
         root.put("labResults", JSONArray().apply { db.labBillDao().allResults().forEach { put(labResultJson(it)) } })
         root.put("labGroups", JSONArray().apply { db.labMasterDao().allGroups().forEach { put(JSONObject().put("id", it.id).put("name", it.name)) } })
         root.put("labEvalMasters", JSONArray().apply { db.labMasterDao().allEvals().forEach { put(labEvalMasterJson(it)) } })
+        root.put("labHeadings", JSONArray().apply { db.labMasterDao().allHeadings().forEach { put(JSONObject().put("id", it.id).put("name", it.name)) } })
         val billAtts = db.billAttachmentDao().all()
         root.put("billAttachments", JSONArray().apply { billAtts.forEach { put(billAttJson(it)) } })
 
@@ -275,6 +276,7 @@ object FullBackup {
         }
         root.optJSONArray("labGroups")?.let { for (i in 0 until it.length()) { val o = it.getJSONObject(i); db.labMasterDao().insertGroup(LabGroup(o.optLong("id"), o.optString("name"))) } }
         root.optJSONArray("labEvalMasters")?.let { for (i in 0 until it.length()) db.labMasterDao().insertEval(readLabEvalMaster(it.getJSONObject(i))) }
+        root.optJSONArray("labHeadings")?.let { for (i in 0 until it.length()) { val o = it.getJSONObject(i); db.labMasterDao().insertHeading(LabHeading(o.optLong("id"), o.optString("name"))) } }
         root.optJSONArray("billAttachments")?.let {
             for (i in 0 until it.length()) db.billAttachmentDao().insert(readBillAtt(context, it.getJSONObject(i)))
         }
@@ -565,6 +567,7 @@ object FullBackup {
         // Lab masters (deduped by name)
         root.optJSONArray("labGroups")?.let { for (i in 0 until it.length()) db.labMasterDao().insertGroup(LabGroup(name = it.getJSONObject(i).optString("name"))) }
         root.optJSONArray("labEvalMasters")?.let { for (i in 0 until it.length()) db.labMasterDao().insertEval(readLabEvalMaster(it.getJSONObject(i)).copy(id = 0)) }
+        root.optJSONArray("labHeadings")?.let { for (i in 0 until it.length()) db.labMasterDao().insertHeading(LabHeading(name = it.getJSONObject(i).optString("name"))) }
         // Bill attachments
         root.optJSONArray("billAttachments")?.let {
             for (i in 0 until it.length()) {
@@ -820,11 +823,12 @@ object FullBackup {
 
     private fun labEvalJson(e: LabEvaluation) = JSONObject().put("id", e.id).put("testId", e.testId)
         .put("name", e.name).put("unit", e.unit).put("normalValue", e.normalValue)
-        .put("groupName", e.groupName).put("sortOrder", e.sortOrder).put("isHeading", e.isHeading)
+        .put("groupName", e.groupName).put("sortOrder", e.sortOrder).put("isHeading", e.isHeading).put("isPageBreak", e.isPageBreak)
     private fun readLabEval(o: JSONObject) = LabEvaluation(
         id = o.optLong("id"), testId = o.optLong("testId"), name = o.optString("name"),
         unit = o.optString("unit"), normalValue = o.optString("normalValue"),
-        groupName = o.optString("groupName"), sortOrder = o.optInt("sortOrder", 0), isHeading = o.optBoolean("isHeading", false)
+        groupName = o.optString("groupName"), sortOrder = o.optInt("sortOrder", 0),
+        isHeading = o.optBoolean("isHeading", false), isPageBreak = o.optBoolean("isPageBreak", false)
     )
 
     private fun labEvalMasterJson(e: LabEvalMaster) = JSONObject().put("id", e.id).put("name", e.name)
@@ -848,13 +852,15 @@ object FullBackup {
         .put("age", b.age).put("gender", b.gender).put("referredBy", b.referredBy)
         .put("subTotal", b.subTotal).put("discount", b.discount).put("grandTotal", b.grandTotal)
         .put("remarks", b.remarks).put("resultEntered", b.resultEntered).put("resultDateMillis", b.resultDateMillis)
+        .put("paymentMethod", b.paymentMethod).put("paidAmount", b.paidAmount)
     private fun readLabBill(o: JSONObject) = LabBill(
         id = o.optLong("id"), billNo = o.optString("billNo"), dateMillis = o.optLong("dateMillis"),
         patientId = o.optLong("patientId"), patientName = o.optString("patientName"),
         age = o.optString("age"), gender = o.optString("gender"), referredBy = o.optString("referredBy"),
         subTotal = o.optDouble("subTotal", 0.0), discount = o.optDouble("discount", 0.0),
         grandTotal = o.optDouble("grandTotal", 0.0), remarks = o.optString("remarks"),
-        resultEntered = o.optBoolean("resultEntered", false), resultDateMillis = o.optLong("resultDateMillis")
+        resultEntered = o.optBoolean("resultEntered", false), resultDateMillis = o.optLong("resultDateMillis"),
+        paymentMethod = o.optString("paymentMethod", "Cash"), paidAmount = o.optDouble("paidAmount", 0.0)
     )
 
     private fun labBillTestJson(t: LabBillTest) = JSONObject().put("id", t.id).put("billId", t.billId)
@@ -867,13 +873,14 @@ object FullBackup {
     private fun labResultJson(r: LabResultValue) = JSONObject().put("id", r.id).put("billId", r.billId)
         .put("testId", r.testId).put("testName", r.testName).put("evaluationId", r.evaluationId)
         .put("evaluationName", r.evaluationName).put("groupName", r.groupName).put("unit", r.unit)
-        .put("normalValue", r.normalValue).put("result", r.result).put("sortOrder", r.sortOrder).put("isHeading", r.isHeading)
+        .put("normalValue", r.normalValue).put("result", r.result).put("sortOrder", r.sortOrder).put("isHeading", r.isHeading).put("isPageBreak", r.isPageBreak)
     private fun readLabResult(o: JSONObject) = LabResultValue(
         id = o.optLong("id"), billId = o.optLong("billId"), testId = o.optLong("testId"),
         testName = o.optString("testName"), evaluationId = o.optLong("evaluationId"),
         evaluationName = o.optString("evaluationName"), groupName = o.optString("groupName"),
         unit = o.optString("unit"), normalValue = o.optString("normalValue"),
-        result = o.optString("result"), sortOrder = o.optInt("sortOrder", 0), isHeading = o.optBoolean("isHeading", false)
+        result = o.optString("result"), sortOrder = o.optInt("sortOrder", 0),
+        isHeading = o.optBoolean("isHeading", false), isPageBreak = o.optBoolean("isPageBreak", false)
     )
 
     private fun readSize(o: JSONObject) = ItemSize(

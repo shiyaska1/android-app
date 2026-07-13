@@ -59,7 +59,7 @@ class ResultRow(
     val testId: Long, val testName: String,
     val evaluationId: Long, val evaluationName: String,
     val groupName: String, val unit: String, val normalValue: String,
-    result: String, val isHeading: Boolean = false
+    result: String, val isHeading: Boolean = false, val isPageBreak: Boolean = false
 ) {
     var result by mutableStateOf(result)
     val uid = next()
@@ -70,6 +70,8 @@ class LabResultViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = Repository(app)
     var bill by mutableStateOf<LabBill?>(null); private set
     val rows: SnapshotStateList<ResultRow> = mutableStateListOf()
+    var paymentMethod by mutableStateOf("Cash")
+    var paidText by mutableStateOf("")
     private var loaded = false
     val message = MutableStateFlow<String?>(null)
     fun consumeMessage() { message.value = null }
@@ -80,6 +82,8 @@ class LabResultViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val b = repo.labBillById(billId) ?: return@launch
             bill = b
+            paymentMethod = b.paymentMethod.ifBlank { "Cash" }
+            paidText = if (b.paidAmount != 0.0) com.billing.pos.util.Format.money(b.paidAmount) else com.billing.pos.util.Format.money(b.grandTotal)
             val saved = repo.labResultsFor(billId)
             rows.clear()
             repo.labBillTests(billId).forEach { bt ->
@@ -89,20 +93,26 @@ class LabResultViewModel(app: Application) : AndroidViewModel(app) {
                     rows.add(ResultRow(bt.testId, bt.testName, 0, bt.testName, "", "", "", prev?.result ?: ""))
                 } else evals.forEach { ev ->
                     val prev = saved.firstOrNull { it.testId == bt.testId && (it.evaluationId == ev.id || it.evaluationName.equals(ev.name, true)) }
-                    rows.add(ResultRow(bt.testId, bt.testName, ev.id, ev.name, ev.groupName, ev.unit, ev.normalValue, prev?.result ?: "", ev.isHeading))
+                    rows.add(ResultRow(bt.testId, bt.testName, ev.id, ev.name, ev.groupName, ev.unit, ev.normalValue, prev?.result ?: "", ev.isHeading, ev.isPageBreak))
                 }
             }
         }
     }
 
     private fun currentResults(billId: Long) = rows.mapIndexed { i, r ->
-        LabResultValue(0, billId, r.testId, r.testName, r.evaluationId, r.evaluationName, r.groupName, r.unit, r.normalValue, r.result.trim(), i, r.isHeading)
+        LabResultValue(0, billId, r.testId, r.testName, r.evaluationId, r.evaluationName, r.groupName, r.unit, r.normalValue, r.result.trim(), i, r.isHeading, r.isPageBreak)
     }
+
+    private fun LabBill.withResult() = copy(
+        resultEntered = true, resultDateMillis = System.currentTimeMillis(),
+        paymentMethod = this@LabResultViewModel.paymentMethod,
+        paidAmount = this@LabResultViewModel.paidText.toDoubleOrNull() ?: grandTotal
+    )
 
     fun save(onDone: () -> Unit) {
         val b = bill ?: return
         viewModelScope.launch {
-            val updated = b.copy(resultEntered = true, resultDateMillis = System.currentTimeMillis())
+            val updated = b.withResult()
             repo.saveLabResults(updated, currentResults(b.id))
             bill = updated
             message.value = "Results saved"
@@ -114,7 +124,7 @@ class LabResultViewModel(app: Application) : AndroidViewModel(app) {
     fun printReport(context: android.content.Context) {
         val b = bill ?: return
         viewModelScope.launch {
-            val updated = b.copy(resultEntered = true, resultDateMillis = System.currentTimeMillis())
+            val updated = b.withResult()
             repo.saveLabResults(updated, currentResults(b.id))
             bill = updated
             val company = AppPrefs(context).company
@@ -163,12 +173,32 @@ fun LabResultScreen(billId: Long, onBack: () -> Unit, vm: LabResultViewModel = v
                             listOf(b.age.ifBlank { "-" }, b.gender.ifBlank { "-" }, "Ref: ${b.referredBy.ifBlank { "-" }}").joinToString("  •  "),
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline
                         )
+                        // Payment method + amount collected — recorded on the bill, NOT printed on the report.
+                        Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                            listOf("Cash", "UPI", "Card", "Credit").forEach { m ->
+                                androidx.compose.material3.FilterChip(selected = vm.paymentMethod == m, onClick = { vm.paymentMethod = m }, label = { Text(m) })
+                            }
+                        }
+                        OutlinedTextField(
+                            value = vm.paidText,
+                            onValueChange = { vm.paidText = it.filter { ch -> ch.isDigit() || ch == '.' } },
+                            label = { Text("Amount received (of ${com.billing.pos.util.Format.rupee(b.grandTotal)})") },
+                            singleLine = true, modifier = Modifier.fillMaxWidth().padding(top = 6.dp)
+                        )
                     }
                 }
             }
             if (vm.rows.isEmpty()) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("This bill's tests have no evaluations", color = MaterialTheme.colorScheme.outline) }
             else LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 12.dp)) {
                 itemsIndexed(vm.rows, key = { _, r -> r.uid }) { i, r ->
+                    if (r.isPageBreak) {
+                        Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Divider(Modifier.weight(1f))
+                            Text("  PAGE BREAK  ", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                            Divider(Modifier.weight(1f))
+                        }
+                        return@itemsIndexed
+                    }
                     val showTestHeader = i == 0 || vm.rows[i - 1].testName != r.testName
                     val showGroupHeader = r.groupName.isNotBlank() &&
                         (i == 0 || vm.rows[i - 1].testName != r.testName || vm.rows[i - 1].groupName != r.groupName)

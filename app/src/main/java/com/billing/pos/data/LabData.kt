@@ -35,7 +35,9 @@ data class LabEvaluation(
     val groupName: String = "",
     val sortOrder: Int = 0,
     /** A bold section heading row (no result entered/printed). */
-    val isHeading: Boolean = false
+    val isHeading: Boolean = false,
+    /** A page-break marker: everything after it prints on a new A4 page. */
+    val isPageBreak: Boolean = false
 )
 
 /* ---- Reusable masters: groups + evaluations ---- */
@@ -56,6 +58,13 @@ data class LabEvalMaster(
     val groupName: String = ""
 )
 
+/** A reusable bold heading. */
+@Entity(tableName = "lab_headings")
+data class LabHeading(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String
+)
+
 @Dao
 interface LabMasterDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertGroup(g: LabGroup): Long
@@ -71,6 +80,12 @@ interface LabMasterDao {
     @Query("SELECT * FROM lab_eval_master") suspend fun allEvals(): List<LabEvalMaster>
     @Query("SELECT * FROM lab_eval_master WHERE name = :name COLLATE NOCASE LIMIT 1") suspend fun evalByName(name: String): LabEvalMaster?
     @Query("SELECT * FROM lab_eval_master WHERE groupName = :group COLLATE NOCASE ORDER BY name COLLATE NOCASE") suspend fun evalsInGroup(group: String): List<LabEvalMaster>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertHeading(h: LabHeading): Long
+    @Delete suspend fun deleteHeading(h: LabHeading)
+    @Query("SELECT * FROM lab_headings ORDER BY name COLLATE NOCASE") fun observeHeadings(): Flow<List<LabHeading>>
+    @Query("SELECT * FROM lab_headings") suspend fun allHeadings(): List<LabHeading>
+    @Query("SELECT * FROM lab_headings WHERE name = :name COLLATE NOCASE LIMIT 1") suspend fun headingByName(name: String): LabHeading?
 }
 
 data class LabTestWithEvaluations(val test: LabTest, val evaluations: List<LabEvaluation>)
@@ -141,7 +156,11 @@ data class LabBill(
     val grandTotal: Double,
     val remarks: String = "",
     val resultEntered: Boolean = false,
-    val resultDateMillis: Long = 0
+    val resultDateMillis: Long = 0,
+    /** Cash / UPI / Card / Credit. Not printed on the result. */
+    val paymentMethod: String = "Cash",
+    /** Amount actually collected (equals grandTotal for non-credit). */
+    val paidAmount: Double = 0.0
 )
 
 @Entity(tableName = "lab_bill_tests")
@@ -167,7 +186,8 @@ data class LabResultValue(
     val normalValue: String = "",
     val result: String = "",
     val sortOrder: Int = 0,
-    val isHeading: Boolean = false
+    val isHeading: Boolean = false,
+    val isPageBreak: Boolean = false
 )
 
 data class LabBillWithTests(val bill: LabBill, val tests: List<LabBillTest>)
