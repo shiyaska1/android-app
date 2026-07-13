@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -114,6 +115,28 @@ class LabResultViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Save results, then send the A4 report to the patient's WhatsApp (auto +91 for 10-digit numbers). */
+    fun shareWhatsApp(context: android.content.Context) {
+        val b = bill ?: return
+        viewModelScope.launch {
+            val updated = b.withResult()
+            repo.saveLabResults(updated, currentResults(b.id)); bill = updated
+            val company = AppPrefs(context).company
+            val uri = LabResultPdf.make(context, company, updated, currentResults(b.id))
+            val raw = b.patientPhone.filter { it.isDigit() }
+            val digits = if (raw.length == 10) "91$raw" else raw
+            val base = Intent(Intent.ACTION_SEND).apply {
+                type = "application/pdf"; putExtra(Intent.EXTRA_STREAM, uri)
+                if (digits.isNotEmpty()) putExtra("jid", "$digits@s.whatsapp.net")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            fun tryPkg(pkg: String) = runCatching { context.startActivity(Intent(base).apply { setPackage(pkg) }) }.isSuccess
+            if (tryPkg("com.whatsapp") || tryPkg("com.whatsapp.w4b")) return@launch
+            runCatching { context.startActivity(Intent.createChooser(base, "Share report").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+            message.value = "WhatsApp not found — shared via chooser"
+        }
+    }
+
     /** Save first, then build and share the A4 report. */
     fun printReport(context: android.content.Context) {
         val b = bill ?: return
@@ -148,7 +171,10 @@ fun LabResultScreen(billId: Long, onBack: () -> Unit, vm: LabResultViewModel = v
             TopAppBar(
                 title = { Text("Enter Result") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
-                actions = { IconButton(onClick = { vm.printReport(context) }) { Icon(Icons.Filled.PictureAsPdf, "Print A4") } },
+                actions = {
+                    IconButton(onClick = { vm.shareWhatsApp(context) }) { Icon(Icons.AutoMirrored.Filled.Send, "WhatsApp") }
+                    IconButton(onClick = { vm.printReport(context) }) { Icon(Icons.Filled.PictureAsPdf, "Print A4") }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                     titleContentColor = MaterialTheme.colorScheme.onPrimary,

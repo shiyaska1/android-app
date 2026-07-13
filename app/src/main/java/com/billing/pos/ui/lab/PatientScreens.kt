@@ -56,9 +56,16 @@ import kotlinx.coroutines.launch
 class PatientViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = Repository(app)
     val patients: StateFlow<List<Patient>> = repo.patients.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val doctors: StateFlow<List<com.billing.pos.data.LabDoctor>> = repo.labDoctors.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val message = MutableStateFlow<String?>(null)
     fun consumeMessage() { message.value = null }
-    fun save(p: Patient) { viewModelScope.launch { repo.savePatient(p); message.value = "Patient saved" } }
+    fun save(p: Patient) {
+        viewModelScope.launch {
+            repo.savePatient(p)
+            if (p.referredBy.isNotBlank()) repo.addDoctorToMaster(p.referredBy)   // new doctor → master
+            message.value = "Patient saved"
+        }
+    }
     fun delete(p: Patient) { viewModelScope.launch { repo.deletePatient(p); message.value = "Patient deleted" } }
 }
 
@@ -110,12 +117,14 @@ fun PatientListScreen(onBack: () -> Unit, vm: PatientViewModel = viewModel()) {
         }
     }
 
-    if (showNew) PatientDialog(null, onDismiss = { showNew = false }, onSave = { vm.save(it); showNew = false })
-    editFor?.let { p -> PatientDialog(p, onDismiss = { editFor = null }, onSave = { vm.save(it); editFor = null }) }
+    val doctors by vm.doctors.collectAsStateSafe()
+    if (showNew) PatientDialog(null, doctors.map { it.name }, onDismiss = { showNew = false }, onSave = { vm.save(it); showNew = false })
+    editFor?.let { p -> PatientDialog(p, doctors.map { it.name }, onDismiss = { editFor = null }, onSave = { vm.save(it); editFor = null }) }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PatientDialog(existing: Patient?, onDismiss: () -> Unit, onSave: (Patient) -> Unit) {
+fun PatientDialog(existing: Patient?, doctorNames: List<String>, onDismiss: () -> Unit, onSave: (Patient) -> Unit) {
     var name by remember { mutableStateOf(existing?.name ?: "") }
     var age by remember { mutableStateOf(existing?.age ?: "") }
     var gender by remember { mutableStateOf(existing?.gender ?: "") }
@@ -139,7 +148,23 @@ fun PatientDialog(existing: Patient?, onDismiss: () -> Unit, onSave: (Patient) -
                         FilterChip(selected = gender == g, onClick = { gender = g }, label = { Text(g) })
                     }
                 }
-                OutlinedTextField(value = referredBy, onValueChange = { referredBy = it }, label = { Text("Referred by (doctor)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                var docMenu by remember { mutableStateOf(false) }
+                val docMatches = remember(referredBy, doctorNames) {
+                    val q = referredBy.trim()
+                    if (q.isBlank()) doctorNames.take(8) else doctorNames.filter { it.contains(q, true) && !it.equals(q, true) }.take(8)
+                }
+                androidx.compose.material3.ExposedDropdownMenuBox(expanded = docMenu && docMatches.isNotEmpty(), onExpandedChange = { docMenu = it }) {
+                    OutlinedTextField(
+                        value = referredBy, onValueChange = { referredBy = it; docMenu = true },
+                        label = { Text("Referred by (doctor)") }, singleLine = true,
+                        modifier = Modifier.menuAnchor().fillMaxWidth()
+                    )
+                    androidx.compose.material3.ExposedDropdownMenu(expanded = docMenu && docMatches.isNotEmpty(), onDismissRequest = { docMenu = false }) {
+                        docMatches.forEach { d ->
+                            androidx.compose.material3.DropdownMenuItem(text = { Text(d) }, onClick = { referredBy = d; docMenu = false })
+                        }
+                    }
+                }
                 OutlinedTextField(value = address, onValueChange = { address = it }, label = { Text("Address") }, modifier = Modifier.fillMaxWidth())
             }
         },

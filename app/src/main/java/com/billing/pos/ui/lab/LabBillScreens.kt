@@ -1,6 +1,8 @@
 package com.billing.pos.ui.lab
 
 import android.app.Application
+import android.app.DatePickerDialog
+import java.util.Calendar
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -84,6 +86,7 @@ class LabBillViewModel(app: Application) : AndroidViewModel(app) {
     val patients: StateFlow<List<Patient>> = repo.patients.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val tests: StateFlow<List<LabTest>> = repo.labTests.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val bills: StateFlow<List<LabBill>> = repo.labBills.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val doctors: StateFlow<List<com.billing.pos.data.LabDoctor>> = repo.labDoctors.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     var selectedPatient by mutableStateOf<Patient?>(null)
     var referredBy by mutableStateOf("")
@@ -119,7 +122,7 @@ class LabBillViewModel(app: Application) : AndroidViewModel(app) {
             referredBy = b.referredBy; discountText = if (b.discount != 0.0) b.discount.toString() else ""; remarks = b.remarks
             paymentMethod = b.paymentMethod.ifBlank { "Cash" }
             advanceText = com.billing.pos.util.Format.money(b.paidAmount)
-            selectedPatient = repo.patientById(b.patientId) ?: Patient(b.patientId, b.patientName, b.age, b.gender, referredBy = b.referredBy)
+            selectedPatient = repo.patientById(b.patientId) ?: Patient(b.patientId, b.patientName, b.age, b.gender, b.patientPhone, referredBy = b.referredBy)
             cart.clear()
             repo.labBillTests(id).forEach { cart.add(BillTestRow(it.testId, it.testName, it.price)) }
         }
@@ -140,7 +143,7 @@ class LabBillViewModel(app: Application) : AndroidViewModel(app) {
             val existing = editingId?.let { repo.labBillById(it) }
             val b = LabBill(
                 id = editingId ?: 0, billNo = billNo, dateMillis = dateMillis,
-                patientId = p.id, patientName = p.name, age = p.age, gender = p.gender, referredBy = referredBy.trim(),
+                patientId = p.id, patientName = p.name, patientPhone = p.phone, age = p.age, gender = p.gender, referredBy = referredBy.trim(),
                 subTotal = subTotal, discount = discount, grandTotal = grandTotal, remarks = remarks.trim(),
                 resultEntered = existing?.resultEntered ?: false, resultDateMillis = existing?.resultDateMillis ?: 0,
                 paymentMethod = paymentMethod,
@@ -148,6 +151,7 @@ class LabBillViewModel(app: Application) : AndroidViewModel(app) {
                 paidAmount = advanceText.toDoubleOrNull() ?: (if (paymentMethod == "Credit") 0.0 else grandTotal)
             )
             val id = repo.saveLabBill(b, cart.map { LabBillTest(0, b.id, it.testId, it.name, it.price) })
+            if (referredBy.isNotBlank()) repo.addDoctorToMaster(referredBy)   // new doctor → master
             editingId = id
             message.value = "Bill $billNo saved"
             onDone()
@@ -280,11 +284,24 @@ fun LabBillScreen(editId: Long?, onBack: () -> Unit, vm: LabBillViewModel = view
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LabBillListScreen(onBack: () -> Unit, onOpen: (Long) -> Unit, onResult: (Long) -> Unit, onNew: () -> Unit, vm: LabBillViewModel = viewModel()) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val snackbar = remember { SnackbarHostState() }
     val bills by vm.bills.collectAsStateSafe()
+    val doctors by vm.doctors.collectAsStateSafe()
     val message by vm.message.collectAsStateSafe()
     LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); vm.consumeMessage() } }
     var deleteFor by remember { mutableStateOf<LabBill?>(null) }
+
+    // Filters: doctor, date range (default today), name/phone search.
+    var docFilter by remember { mutableStateOf("") }
+    var fromMillis by remember { mutableStateOf(System.currentTimeMillis()) }
+    var toMillis by remember { mutableStateOf(System.currentTimeMillis()) }
+    var query by remember { mutableStateOf("") }
+    val filtered = bills.filter { b ->
+        (docFilter.isBlank() || b.referredBy.equals(docFilter, ignoreCase = true)) &&
+            (query.isBlank() || b.patientName.contains(query, true) || b.patientPhone.contains(query)) &&
+            b.dateMillis >= labStartOfDay(fromMillis) && b.dateMillis <= labEndOfDay(toMillis)
+    }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
@@ -301,14 +318,39 @@ fun LabBillListScreen(onBack: () -> Unit, onOpen: (Long) -> Unit, onResult: (Lon
         },
         floatingActionButton = { FloatingActionButton(onClick = onNew) { Icon(Icons.Filled.Add, "New") } }
     ) { pad ->
-        if (bills.isEmpty()) Box(Modifier.fillMaxSize().padding(pad), contentAlignment = Alignment.Center) { Text("No lab bills yet", color = MaterialTheme.colorScheme.outline) }
-        else LazyColumn(Modifier.fillMaxSize().padding(pad).padding(horizontal = 12.dp)) {
-            items(bills, key = { it.id }) { b ->
+        Column(Modifier.fillMaxSize().padding(pad)) {
+            OutlinedTextField(
+                value = query, onValueChange = { query = it },
+                label = { Text("Search patient name or mobile") }, singleLine = true,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)
+            )
+            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                OutlinedButton(onClick = { labPickDate(context, fromMillis) { fromMillis = it } }, modifier = Modifier.weight(1f)) { Text("From ${Format.date(fromMillis)}", maxLines = 1) }
+                OutlinedButton(onClick = { labPickDate(context, toMillis) { toMillis = it } }, modifier = Modifier.weight(1f)) { Text("To ${Format.date(toMillis)}", maxLines = 1) }
+            }
+            var docMenu by remember { mutableStateOf(false) }
+            ExposedDropdownMenuBox(expanded = docMenu, onExpandedChange = { docMenu = !docMenu }, modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
+                OutlinedTextField(
+                    readOnly = true, value = docFilter.ifBlank { "All doctors" }, onValueChange = {},
+                    label = { Text("Referred doctor") },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(docMenu) },
+                    modifier = Modifier.menuAnchor().fillMaxWidth()
+                )
+                ExposedDropdownMenu(expanded = docMenu, onDismissRequest = { docMenu = false }) {
+                    DropdownMenuItem(text = { Text("All doctors") }, onClick = { docFilter = ""; docMenu = false })
+                    doctors.forEach { d -> DropdownMenuItem(text = { Text(d.name) }, onClick = { docFilter = d.name; docMenu = false }) }
+                }
+            }
+            Divider()
+            if (filtered.isEmpty()) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("No matching lab bills", color = MaterialTheme.colorScheme.outline) }
+            else LazyColumn(Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
+            items(filtered, key = { it.id }) { b ->
                 Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f).clickable { onOpen(b.id) }) {
                         Text(b.billNo + "  •  " + b.patientName, fontWeight = FontWeight.Bold)
                         Text(
-                            Format.date(b.dateMillis) + (if (b.resultEntered) "  •  result ready" else "  •  result pending"),
+                            Format.date(b.dateMillis) + (if (b.referredBy.isNotBlank()) "  •  Dr. ${b.referredBy}" else "") +
+                                (if (b.resultEntered) "  •  result ready" else "  •  result pending"),
                             style = MaterialTheme.typography.bodySmall,
                             color = if (b.resultEntered) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
                         )
@@ -318,6 +360,7 @@ fun LabBillListScreen(onBack: () -> Unit, onOpen: (Long) -> Unit, onResult: (Lon
                     IconButton(onClick = { deleteFor = b }) { Icon(Icons.Filled.Delete, "Delete", tint = MaterialTheme.colorScheme.error) }
                 }
                 Divider()
+            }
             }
         }
     }
@@ -330,3 +373,18 @@ fun LabBillListScreen(onBack: () -> Unit, onOpen: (Long) -> Unit, onResult: (Lon
         )
     }
 }
+
+private fun labPickDate(context: android.content.Context, current: Long, onPicked: (Long) -> Unit) {
+    val c = Calendar.getInstance().apply { timeInMillis = current }
+    DatePickerDialog(context, { _, y, m, d ->
+        onPicked(Calendar.getInstance().apply { set(y, m, d, 0, 0, 0); set(Calendar.MILLISECOND, 0) }.timeInMillis)
+    }, c.get(Calendar.YEAR), c.get(Calendar.MONTH), c.get(Calendar.DAY_OF_MONTH)).show()
+}
+
+private fun labStartOfDay(millis: Long): Long = Calendar.getInstance().apply {
+    timeInMillis = millis; set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+}.timeInMillis
+
+private fun labEndOfDay(millis: Long): Long = Calendar.getInstance().apply {
+    timeInMillis = millis; set(Calendar.HOUR_OF_DAY, 23); set(Calendar.MINUTE, 59); set(Calendar.SECOND, 59); set(Calendar.MILLISECOND, 999)
+}.timeInMillis

@@ -65,6 +65,13 @@ data class LabHeading(
     val name: String
 )
 
+/** A reusable referring doctor. */
+@Entity(tableName = "lab_doctors")
+data class LabDoctor(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String
+)
+
 @Dao
 interface LabMasterDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertGroup(g: LabGroup): Long
@@ -86,6 +93,12 @@ interface LabMasterDao {
     @Query("SELECT * FROM lab_headings ORDER BY name COLLATE NOCASE") fun observeHeadings(): Flow<List<LabHeading>>
     @Query("SELECT * FROM lab_headings") suspend fun allHeadings(): List<LabHeading>
     @Query("SELECT * FROM lab_headings WHERE name = :name COLLATE NOCASE LIMIT 1") suspend fun headingByName(name: String): LabHeading?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertDoctor(d: LabDoctor): Long
+    @Delete suspend fun deleteDoctor(d: LabDoctor)
+    @Query("SELECT * FROM lab_doctors ORDER BY name COLLATE NOCASE") fun observeDoctors(): Flow<List<LabDoctor>>
+    @Query("SELECT * FROM lab_doctors") suspend fun allDoctors(): List<LabDoctor>
+    @Query("SELECT * FROM lab_doctors WHERE name = :name COLLATE NOCASE LIMIT 1") suspend fun doctorByName(name: String): LabDoctor?
 }
 
 data class LabTestWithEvaluations(val test: LabTest, val evaluations: List<LabEvaluation>)
@@ -148,6 +161,7 @@ data class LabBill(
     val dateMillis: Long,
     val patientId: Long,
     val patientName: String,
+    val patientPhone: String = "",
     val age: String = "",
     val gender: String = "",
     val referredBy: String = "",

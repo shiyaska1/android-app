@@ -356,6 +356,10 @@ class Repository(context: Context) {
     suspend fun deleteLabHeading(h: LabHeading) = labMasterDao.deleteHeading(h)
     suspend fun addHeadingToMaster(name: String) { if (name.isNotBlank() && labMasterDao.headingByName(name) == null) labMasterDao.insertHeading(LabHeading(name = name.trim())) }
     suspend fun allLabHeadings(): List<LabHeading> = labMasterDao.allHeadings()
+    val labDoctors: Flow<List<LabDoctor>> = labMasterDao.observeDoctors()
+    suspend fun deleteLabDoctor(d: LabDoctor) = labMasterDao.deleteDoctor(d)
+    suspend fun addDoctorToMaster(name: String) { if (name.isNotBlank() && labMasterDao.doctorByName(name) == null) labMasterDao.insertDoctor(LabDoctor(name = name.trim())) }
+    suspend fun allLabDoctors(): List<LabDoctor> = labMasterDao.allDoctors()
 
     // ---- lab patients ----
     private val patientDao = db.patientDao()
