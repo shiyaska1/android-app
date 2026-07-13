@@ -58,6 +58,7 @@ import com.billing.pos.ui.hire.HireItemReportScreen
 import com.billing.pos.ui.hire.HireExpiryReportScreen
 import com.billing.pos.ui.lab.LabTestListScreen
 import com.billing.pos.ui.lab.LabTestEditScreen
+import com.billing.pos.ui.lab.LabMasterScreen
 import com.billing.pos.ui.lab.PatientListScreen
 import com.billing.pos.ui.lab.LabBillScreen
 import com.billing.pos.ui.lab.LabBillListScreen
@@ -339,9 +340,11 @@ private fun AppNav() {
             LabTestListScreen(
                 onBack = { nav.popBackStack() },
                 onOpen = { id -> nav.navigate("labtest/edit/$id") },
-                onNew = { nav.navigate("labtest") }
+                onNew = { nav.navigate("labtest") },
+                onMasters = { nav.navigate("labmasters") }
             )
         }
+        composable("labmasters") { LabMasterScreen(onBack = { nav.popBackStack() }) }
         composable("labtest") { LabTestEditScreen(editId = null, onBack = { nav.popBackStack() }) }
         composable(
             route = "labtest/edit/{id}",

@@ -59,7 +59,7 @@ class ResultRow(
     val testId: Long, val testName: String,
     val evaluationId: Long, val evaluationName: String,
     val groupName: String, val unit: String, val normalValue: String,
-    result: String
+    result: String, val isHeading: Boolean = false
 ) {
     var result by mutableStateOf(result)
     val uid = next()
@@ -89,14 +89,14 @@ class LabResultViewModel(app: Application) : AndroidViewModel(app) {
                     rows.add(ResultRow(bt.testId, bt.testName, 0, bt.testName, "", "", "", prev?.result ?: ""))
                 } else evals.forEach { ev ->
                     val prev = saved.firstOrNull { it.testId == bt.testId && (it.evaluationId == ev.id || it.evaluationName.equals(ev.name, true)) }
-                    rows.add(ResultRow(bt.testId, bt.testName, ev.id, ev.name, ev.groupName, ev.unit, ev.normalValue, prev?.result ?: ""))
+                    rows.add(ResultRow(bt.testId, bt.testName, ev.id, ev.name, ev.groupName, ev.unit, ev.normalValue, prev?.result ?: "", ev.isHeading))
                 }
             }
         }
     }
 
     private fun currentResults(billId: Long) = rows.mapIndexed { i, r ->
-        LabResultValue(0, billId, r.testId, r.testName, r.evaluationId, r.evaluationName, r.groupName, r.unit, r.normalValue, r.result.trim(), i)
+        LabResultValue(0, billId, r.testId, r.testName, r.evaluationId, r.evaluationName, r.groupName, r.unit, r.normalValue, r.result.trim(), i, r.isHeading)
     }
 
     fun save(onDone: () -> Unit) {
@@ -177,7 +177,9 @@ fun LabResultScreen(billId: Long, onBack: () -> Unit, vm: LabResultViewModel = v
                         Divider()
                     }
                     if (showGroupHeader) Text(r.groupName, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 6.dp))
-                    Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    if (r.isHeading) {
+                        Text(r.evaluationName, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 6.dp))
+                    } else Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text(r.evaluationName)
                             Text(

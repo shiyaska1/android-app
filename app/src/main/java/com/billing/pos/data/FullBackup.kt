@@ -78,6 +78,8 @@ object FullBackup {
         root.put("labBills", JSONArray().apply { db.labBillDao().allBills().forEach { put(labBillJson(it)) } })
         root.put("labBillTests", JSONArray().apply { db.labBillDao().allBillTests().forEach { put(labBillTestJson(it)) } })
         root.put("labResults", JSONArray().apply { db.labBillDao().allResults().forEach { put(labResultJson(it)) } })
+        root.put("labGroups", JSONArray().apply { db.labMasterDao().allGroups().forEach { put(JSONObject().put("id", it.id).put("name", it.name)) } })
+        root.put("labEvalMasters", JSONArray().apply { db.labMasterDao().allEvals().forEach { put(labEvalMasterJson(it)) } })
         val billAtts = db.billAttachmentDao().all()
         root.put("billAttachments", JSONArray().apply { billAtts.forEach { put(billAttJson(it)) } })
 
@@ -271,6 +273,8 @@ object FullBackup {
             for (i in 0 until it.length()) ls.add(readLabResult(it.getJSONObject(i)))
             if (ls.isNotEmpty()) db.labBillDao().insertResults(ls)
         }
+        root.optJSONArray("labGroups")?.let { for (i in 0 until it.length()) { val o = it.getJSONObject(i); db.labMasterDao().insertGroup(LabGroup(o.optLong("id"), o.optString("name"))) } }
+        root.optJSONArray("labEvalMasters")?.let { for (i in 0 until it.length()) db.labMasterDao().insertEval(readLabEvalMaster(it.getJSONObject(i))) }
         root.optJSONArray("billAttachments")?.let {
             for (i in 0 until it.length()) db.billAttachmentDao().insert(readBillAtt(context, it.getJSONObject(i)))
         }
@@ -558,6 +562,9 @@ object FullBackup {
                 db.labBillDao().insertResults(listOf(r.copy(id = 0, billId = nb, testId = labTestMap[r.testId] ?: r.testId)))
             }
         }
+        // Lab masters (deduped by name)
+        root.optJSONArray("labGroups")?.let { for (i in 0 until it.length()) db.labMasterDao().insertGroup(LabGroup(name = it.getJSONObject(i).optString("name"))) }
+        root.optJSONArray("labEvalMasters")?.let { for (i in 0 until it.length()) db.labMasterDao().insertEval(readLabEvalMaster(it.getJSONObject(i)).copy(id = 0)) }
         // Bill attachments
         root.optJSONArray("billAttachments")?.let {
             for (i in 0 until it.length()) {
@@ -813,11 +820,18 @@ object FullBackup {
 
     private fun labEvalJson(e: LabEvaluation) = JSONObject().put("id", e.id).put("testId", e.testId)
         .put("name", e.name).put("unit", e.unit).put("normalValue", e.normalValue)
-        .put("groupName", e.groupName).put("sortOrder", e.sortOrder)
+        .put("groupName", e.groupName).put("sortOrder", e.sortOrder).put("isHeading", e.isHeading)
     private fun readLabEval(o: JSONObject) = LabEvaluation(
         id = o.optLong("id"), testId = o.optLong("testId"), name = o.optString("name"),
         unit = o.optString("unit"), normalValue = o.optString("normalValue"),
-        groupName = o.optString("groupName"), sortOrder = o.optInt("sortOrder", 0)
+        groupName = o.optString("groupName"), sortOrder = o.optInt("sortOrder", 0), isHeading = o.optBoolean("isHeading", false)
+    )
+
+    private fun labEvalMasterJson(e: LabEvalMaster) = JSONObject().put("id", e.id).put("name", e.name)
+        .put("unit", e.unit).put("normalValue", e.normalValue).put("groupName", e.groupName)
+    private fun readLabEvalMaster(o: JSONObject) = LabEvalMaster(
+        id = o.optLong("id"), name = o.optString("name"), unit = o.optString("unit"),
+        normalValue = o.optString("normalValue"), groupName = o.optString("groupName")
     )
 
     private fun patientJson(p: Patient) = JSONObject().put("id", p.id).put("name", p.name)
@@ -853,13 +867,13 @@ object FullBackup {
     private fun labResultJson(r: LabResultValue) = JSONObject().put("id", r.id).put("billId", r.billId)
         .put("testId", r.testId).put("testName", r.testName).put("evaluationId", r.evaluationId)
         .put("evaluationName", r.evaluationName).put("groupName", r.groupName).put("unit", r.unit)
-        .put("normalValue", r.normalValue).put("result", r.result).put("sortOrder", r.sortOrder)
+        .put("normalValue", r.normalValue).put("result", r.result).put("sortOrder", r.sortOrder).put("isHeading", r.isHeading)
     private fun readLabResult(o: JSONObject) = LabResultValue(
         id = o.optLong("id"), billId = o.optLong("billId"), testId = o.optLong("testId"),
         testName = o.optString("testName"), evaluationId = o.optLong("evaluationId"),
         evaluationName = o.optString("evaluationName"), groupName = o.optString("groupName"),
         unit = o.optString("unit"), normalValue = o.optString("normalValue"),
-        result = o.optString("result"), sortOrder = o.optInt("sortOrder", 0)
+        result = o.optString("result"), sortOrder = o.optInt("sortOrder", 0), isHeading = o.optBoolean("isHeading", false)
     )
 
     private fun readSize(o: JSONObject) = ItemSize(

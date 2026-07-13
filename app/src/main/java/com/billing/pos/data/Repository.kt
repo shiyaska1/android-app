@@ -320,7 +320,7 @@ class Repository(context: Context) {
     suspend fun labTestById(id: Long): LabTest? = labTestDao.testById(id)
     suspend fun labEvaluationsFor(testId: Long): List<LabEvaluation> = labTestDao.evaluationsFor(testId)
     suspend fun allLabTests(): List<LabTest> = labTestDao.allTests()
-    /** Seeds the built-in sample tests the first time (only when none exist). */
+    /** Seeds the built-in sample tests the first time (only when none exist). Also fills the masters. */
     suspend fun seedSampleLabTests(): Int {
         if (labTestDao.count() > 0) return 0
         SampleLabData.tests.forEach { s ->
@@ -328,8 +328,29 @@ class Repository(context: Context) {
                 LabTest(name = s.name, price = s.price, sampleType = s.sampleType),
                 s.evaluations.map { LabEvaluation(testId = 0, name = it.name, unit = it.unit, normalValue = it.normal, groupName = it.group) }
             )
+            s.evaluations.forEach { addEvalToMaster(it.name, it.unit, it.normal, it.group) }
         }
         return SampleLabData.tests.size
+    }
+
+    // ---- lab masters: groups + evaluations ----
+    private val labMasterDao = db.labMasterDao()
+    val labGroups: Flow<List<LabGroup>> = labMasterDao.observeGroups()
+    val labEvalMasters: Flow<List<LabEvalMaster>> = labMasterDao.observeEvals()
+    suspend fun saveLabGroup(g: LabGroup): Long = labMasterDao.insertGroup(g)
+    suspend fun deleteLabGroup(g: LabGroup) = labMasterDao.deleteGroup(g)
+    suspend fun ensureLabGroup(name: String) { if (name.isNotBlank() && labMasterDao.groupByName(name) == null) labMasterDao.insertGroup(LabGroup(name = name.trim())) }
+    suspend fun saveLabEvalMaster(e: LabEvalMaster): Long = if (e.id == 0L) labMasterDao.insertEval(e) else { labMasterDao.updateEval(e); e.id }
+    suspend fun deleteLabEvalMaster(e: LabEvalMaster) = labMasterDao.deleteEval(e)
+    suspend fun labEvalsInGroup(group: String): List<LabEvalMaster> = labMasterDao.evalsInGroup(group)
+    suspend fun allLabGroups(): List<LabGroup> = labMasterDao.allGroups()
+    suspend fun allLabEvalMasters(): List<LabEvalMaster> = labMasterDao.allEvals()
+    /** Adds an evaluation to the master if a same-named one doesn't already exist (and its group). */
+    suspend fun addEvalToMaster(name: String, unit: String, normal: String, group: String) {
+        if (name.isBlank()) return
+        ensureLabGroup(group)
+        if (labMasterDao.evalByName(name) == null)
+            labMasterDao.insertEval(LabEvalMaster(name = name.trim(), unit = unit.trim(), normalValue = normal.trim(), groupName = group.trim()))
     }
 
     // ---- lab patients ----

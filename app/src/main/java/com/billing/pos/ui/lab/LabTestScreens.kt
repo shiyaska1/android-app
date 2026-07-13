@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -22,6 +23,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Divider
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -63,11 +65,12 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 /** One editable evaluation row in the test editor. */
-class EvalRow(name: String = "", unit: String = "", normal: String = "", group: String = "") {
+class EvalRow(name: String = "", unit: String = "", normal: String = "", group: String = "", isHeading: Boolean = false) {
     var name by mutableStateOf(name)
     var unit by mutableStateOf(unit)
     var normal by mutableStateOf(normal)
     var group by mutableStateOf(group)
+    var isHeading by mutableStateOf(isHeading)
     val uid = next()
     companion object { private var c = 0L; fun next() = ++c }
 }
@@ -75,6 +78,16 @@ class EvalRow(name: String = "", unit: String = "", normal: String = "", group: 
 class LabTestViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = Repository(app)
     val tests: StateFlow<List<LabTest>> = repo.labTests.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val groups: StateFlow<List<com.billing.pos.data.LabGroup>> = repo.labGroups.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val evalMasters: StateFlow<List<com.billing.pos.data.LabEvalMaster>> = repo.labEvalMasters.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun addFromMaster(e: com.billing.pos.data.LabEvalMaster) {
+        if (evals.none { it.name.equals(e.name, true) && !it.isHeading }) evals.add(EvalRow(e.name, e.unit, e.normalValue, e.groupName))
+    }
+    fun addGroupEvals(groupName: String) {
+        viewModelScope.launch { repo.labEvalsInGroup(groupName).forEach { addFromMaster(it) } }
+    }
+    fun addHeading() { evals.add(EvalRow(isHeading = true)) }
 
     var name by mutableStateOf("")
     var priceText by mutableStateOf("")
@@ -103,7 +116,7 @@ class LabTestViewModel(app: Application) : AndroidViewModel(app) {
             val t = repo.labTestById(id) ?: return@launch
             editingId = t.id; name = t.name; priceText = Format.money(t.price); sampleType = t.sampleType
             evals.clear()
-            repo.labEvaluationsFor(id).forEach { evals.add(EvalRow(it.name, it.unit, it.normalValue, it.groupName)) }
+            repo.labEvaluationsFor(id).forEach { evals.add(EvalRow(it.name, it.unit, it.normalValue, it.groupName, it.isHeading)) }
             if (evals.isEmpty()) evals.add(EvalRow())
         }
     }
@@ -113,9 +126,11 @@ class LabTestViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val t = LabTest(id = editingId ?: 0, name = name.trim(), price = priceText.toDoubleOrNull() ?: 0.0, sampleType = sampleType.trim())
             val list = evals.filter { it.name.isNotBlank() }.map {
-                LabEvaluation(testId = 0, name = it.name.trim(), unit = it.unit.trim(), normalValue = it.normal.trim(), groupName = it.group.trim())
+                LabEvaluation(testId = 0, name = it.name.trim(), unit = it.unit.trim(), normalValue = it.normal.trim(), groupName = it.group.trim(), isHeading = it.isHeading)
             }
             repo.saveLabTest(t, list)
+            // New (typed-in) evaluations and their groups are saved to the master.
+            evals.filter { it.name.isNotBlank() && !it.isHeading }.forEach { repo.addEvalToMaster(it.name, it.unit, it.normal, it.group) }
             message.value = "Test saved"
             onDone()
         }
@@ -126,7 +141,7 @@ class LabTestViewModel(app: Application) : AndroidViewModel(app) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LabTestListScreen(onBack: () -> Unit, onOpen: (Long) -> Unit, onNew: () -> Unit, vm: LabTestViewModel = viewModel()) {
+fun LabTestListScreen(onBack: () -> Unit, onOpen: (Long) -> Unit, onNew: () -> Unit, onMasters: () -> Unit = {}, vm: LabTestViewModel = viewModel()) {
     val snackbar = remember { SnackbarHostState() }
     val tests by vm.tests.collectAsStateSafe()
     val message by vm.message.collectAsStateSafe()
@@ -139,6 +154,7 @@ fun LabTestListScreen(onBack: () -> Unit, onOpen: (Long) -> Unit, onNew: () -> U
             TopAppBar(
                 title = { Text("Lab Tests") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
+                actions = { TextButton(onClick = onMasters) { Text("Masters", color = MaterialTheme.colorScheme.onPrimary) } },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                     titleContentColor = MaterialTheme.colorScheme.onPrimary,
@@ -178,6 +194,7 @@ fun LabTestListScreen(onBack: () -> Unit, onOpen: (Long) -> Unit, onNew: () -> U
 fun LabTestEditScreen(editId: Long?, onBack: () -> Unit, vm: LabTestViewModel = viewModel()) {
     val snackbar = remember { SnackbarHostState() }
     val message by vm.message.collectAsStateSafe()
+    var showPicker by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { if (editId != null && editId > 0) vm.load(editId) else if (vm.evals.isEmpty()) vm.newTest() }
     LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); vm.consumeMessage() } }
 
@@ -203,27 +220,87 @@ fun LabTestEditScreen(editId: Long?, onBack: () -> Unit, vm: LabTestViewModel = 
                     OutlinedTextField(value = vm.sampleType, onValueChange = { vm.sampleType = it }, label = { Text("Sample type") }, singleLine = true, modifier = Modifier.weight(1f))
                 }
                 Text("Evaluations (parameters)", style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 12.dp, bottom = 4.dp))
-                Text("Group name is optional — evaluations sharing a group print under that heading.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                Text("Pick from the master, or type new ones (saved to the master on save). A heading row prints bold with no result.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { showPicker = true }, modifier = Modifier.weight(1f)) { Icon(Icons.Filled.Add, null); Text(" From master") }
+                    OutlinedButton(onClick = { vm.addHeading() }, modifier = Modifier.weight(1f)) { Text("+ Heading") }
+                }
             }
             itemsIndexed(vm.evals, key = { _, e -> e.uid }) { i, e ->
                 Card(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                     Column(Modifier.padding(8.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            OutlinedTextField(value = e.name, onValueChange = { e.name = it }, label = { Text("Parameter") }, singleLine = true, modifier = Modifier.weight(1f))
+                            OutlinedTextField(
+                                value = e.name, onValueChange = { e.name = it },
+                                label = { Text(if (e.isHeading) "Heading text" else "Parameter") }, singleLine = true, modifier = Modifier.weight(1f)
+                            )
                             IconButton(onClick = { vm.removeEval(i) }) { Icon(Icons.Filled.Delete, "Remove", tint = MaterialTheme.colorScheme.error) }
                         }
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedTextField(value = e.unit, onValueChange = { e.unit = it }, label = { Text("Unit") }, singleLine = true, modifier = Modifier.weight(1f))
-                            OutlinedTextField(value = e.normal, onValueChange = { e.normal = it }, label = { Text("Normal value") }, singleLine = true, modifier = Modifier.weight(1.4f))
+                        FilterChip(selected = e.isHeading, onClick = { e.isHeading = !e.isHeading }, label = { Text("Bold heading") })
+                        if (!e.isHeading) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
+                                OutlinedTextField(value = e.unit, onValueChange = { e.unit = it }, label = { Text("Unit") }, singleLine = true, modifier = Modifier.weight(1f))
+                                OutlinedTextField(value = e.normal, onValueChange = { e.normal = it }, label = { Text("Normal value") }, singleLine = true, modifier = Modifier.weight(1.4f))
+                            }
+                            OutlinedTextField(value = e.group, onValueChange = { e.group = it }, label = { Text("Group (optional)") }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(top = 6.dp))
                         }
-                        OutlinedTextField(value = e.group, onValueChange = { e.group = it }, label = { Text("Group (optional)") }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(top = 6.dp))
                     }
                 }
             }
             item {
-                OutlinedButton(onClick = { vm.addEval() }, modifier = Modifier.fillMaxWidth().padding(top = 6.dp)) { Icon(Icons.Filled.Add, null); Text("  Add evaluation") }
+                OutlinedButton(onClick = { vm.addEval() }, modifier = Modifier.fillMaxWidth().padding(top = 6.dp)) { Icon(Icons.Filled.Add, null); Text("  Add blank evaluation") }
                 Button(onClick = { vm.save { onBack() } }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) { Text("Save test") }
             }
         }
     }
+
+    if (showPicker) {
+        val groups by vm.groups.collectAsStateSafe()
+        val masters by vm.evalMasters.collectAsStateSafe()
+        LabMasterPickDialog(
+            groups = groups, evals = masters,
+            onPickGroup = { vm.addGroupEvals(it); showPicker = false },
+            onPickEval = { vm.addFromMaster(it) },
+            onDismiss = { showPicker = false }
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun LabMasterPickDialog(
+    groups: List<com.billing.pos.data.LabGroup>,
+    evals: List<com.billing.pos.data.LabEvalMaster>,
+    onPickGroup: (String) -> Unit,
+    onPickEval: (com.billing.pos.data.LabEvalMaster) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var q by remember { mutableStateOf("") }
+    val shownGroups = if (q.isBlank()) groups else groups.filter { it.name.contains(q, true) }
+    val shownEvals = if (q.isBlank()) evals else evals.filter { it.name.contains(q, true) || it.groupName.contains(q, true) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Pick from master") },
+        text = {
+            Column(Modifier.fillMaxWidth()) {
+                OutlinedTextField(value = q, onValueChange = { q = it }, label = { Text("Search") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                LazyColumn(Modifier.fillMaxWidth().heightIn(max = 380.dp)) {
+                    if (shownGroups.isNotEmpty()) item { Text("Groups (adds all its evaluations)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline, modifier = Modifier.padding(vertical = 4.dp)) }
+                    items(shownGroups, key = { "g" + it.id }) { g ->
+                        Text("▸ ${g.name}", Modifier.fillMaxWidth().clickable { onPickGroup(g.name) }.padding(vertical = 10.dp), fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+                        Divider()
+                    }
+                    if (shownEvals.isNotEmpty()) item { Text("Evaluations (tap to add)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline, modifier = Modifier.padding(vertical = 4.dp)) }
+                    items(shownEvals, key = { "e" + it.id }) { e ->
+                        Column(Modifier.fillMaxWidth().clickable { onPickEval(e) }.padding(vertical = 8.dp)) {
+                            Text(e.name)
+                            Text(listOfNotNull(e.unit.ifBlank { null }, e.normalValue.ifBlank { null }, e.groupName.ifBlank { null }).joinToString("  •  "), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                        }
+                        Divider()
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } }
+    )
 }

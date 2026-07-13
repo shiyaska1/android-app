@@ -33,8 +33,45 @@ data class LabEvaluation(
     val normalValue: String = "",
     /** Optional heading these evaluations are grouped under on the result print. */
     val groupName: String = "",
-    val sortOrder: Int = 0
+    val sortOrder: Int = 0,
+    /** A bold section heading row (no result entered/printed). */
+    val isHeading: Boolean = false
 )
+
+/* ---- Reusable masters: groups + evaluations ---- */
+
+@Entity(tableName = "lab_groups")
+data class LabGroup(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String
+)
+
+/** A reusable evaluation in the master; may belong to a group. */
+@Entity(tableName = "lab_eval_master")
+data class LabEvalMaster(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val unit: String = "",
+    val normalValue: String = "",
+    val groupName: String = ""
+)
+
+@Dao
+interface LabMasterDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertGroup(g: LabGroup): Long
+    @Delete suspend fun deleteGroup(g: LabGroup)
+    @Query("SELECT * FROM lab_groups ORDER BY name COLLATE NOCASE") fun observeGroups(): Flow<List<LabGroup>>
+    @Query("SELECT * FROM lab_groups") suspend fun allGroups(): List<LabGroup>
+    @Query("SELECT * FROM lab_groups WHERE name = :name COLLATE NOCASE LIMIT 1") suspend fun groupByName(name: String): LabGroup?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertEval(e: LabEvalMaster): Long
+    @Delete suspend fun deleteEval(e: LabEvalMaster)
+    @Update suspend fun updateEval(e: LabEvalMaster)
+    @Query("SELECT * FROM lab_eval_master ORDER BY name COLLATE NOCASE") fun observeEvals(): Flow<List<LabEvalMaster>>
+    @Query("SELECT * FROM lab_eval_master") suspend fun allEvals(): List<LabEvalMaster>
+    @Query("SELECT * FROM lab_eval_master WHERE name = :name COLLATE NOCASE LIMIT 1") suspend fun evalByName(name: String): LabEvalMaster?
+    @Query("SELECT * FROM lab_eval_master WHERE groupName = :group COLLATE NOCASE ORDER BY name COLLATE NOCASE") suspend fun evalsInGroup(group: String): List<LabEvalMaster>
+}
 
 data class LabTestWithEvaluations(val test: LabTest, val evaluations: List<LabEvaluation>)
 
@@ -129,7 +166,8 @@ data class LabResultValue(
     val unit: String = "",
     val normalValue: String = "",
     val result: String = "",
-    val sortOrder: Int = 0
+    val sortOrder: Int = 0,
+    val isHeading: Boolean = false
 )
 
 data class LabBillWithTests(val bill: LabBill, val tests: List<LabBillTest>)

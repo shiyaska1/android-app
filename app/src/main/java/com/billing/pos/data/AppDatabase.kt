@@ -23,11 +23,12 @@ import androidx.room.TypeConverters
         HireInvoice::class, HireInvoiceItem::class,
         HireReturn::class, HireReturnItem::class,
         LabTest::class, LabEvaluation::class, Patient::class,
-        LabBill::class, LabBillTest::class, LabResultValue::class
+        LabBill::class, LabBillTest::class, LabResultValue::class,
+        LabGroup::class, LabEvalMaster::class
     ],
     // v25 quotations; v26 sales returns; v27 purchase returns; v28 purchase quotations (LPO);
-    // v29 dual units; v30 rental; v31 medical lab (tests, patients, lab bills, results).
-    version = 31,
+    // v29 dual units; v30 rental; v31 medical lab; v32 lab masters + heading rows.
+    version = 32,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -56,6 +57,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun labTestDao(): LabTestDao
     abstract fun patientDao(): PatientDao
     abstract fun labBillDao(): LabBillDao
+    abstract fun labMasterDao(): LabMasterDao
 
     companion object {
         @Volatile private var INSTANCE: AppDatabase? = null

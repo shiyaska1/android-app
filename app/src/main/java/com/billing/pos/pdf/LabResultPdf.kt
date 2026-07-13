@@ -73,12 +73,12 @@ object LabResultPdf {
         y = boxTop + 56f + 16f
 
         fun columnHeader() {
-            c.drawText("INVESTIGATION", x0 + 2f, y, cellBold)
-            c.drawText("RESULT", cResult, y, cellBold)
-            c.drawText("UNIT", cUnit, y, cellBold)
-            c.drawText("REFERENCE", cRef, y, cellBold)
-            y += 4f
-            c.drawLine(x0, y, xEnd, y, line); y += 14f
+            c.drawText("INVESTIGATION", x0 + 2f, y + 11f, cellBold)
+            c.drawText("RESULT", cResult, y + 11f, cellBold)
+            c.drawText("UNIT", cUnit, y + 11f, cellBold)
+            c.drawText("REFERENCE", cRef, y + 11f, cellBold)
+            y += 16f
+            c.drawLine(x0, y, xEnd, y, line); y += 6f
         }
         fun ensureSpace(need: Float) {
             if (y + need > PH - 90f) {
@@ -93,22 +93,28 @@ object LabResultPdf {
         results.forEach { byTest.getOrPut(it.testName) { mutableListOf() }.add(it) }
 
         byTest.forEach { (testName, rows) ->
-            ensureSpace(60f)
-            c.drawText(testName.uppercase(), x0 + 2f, y, cellBold); y += 6f
-            c.drawLine(x0, y, xEnd, y, faint); y += 14f
+            ensureSpace(64f)
+            c.drawText(testName.uppercase(), x0 + 2f, y + 11f, cellBold); y += 16f
+            c.drawLine(x0, y, xEnd, y, faint); y += 4f
             columnHeader()
             val byGroup = LinkedHashMap<String, MutableList<LabResultValue>>()
             rows.forEach { byGroup.getOrPut(it.groupName) { mutableListOf() }.add(it) }
             byGroup.forEach { (group, gr) ->
-                if (group.isNotBlank()) { ensureSpace(18f); c.drawText(group, x0 + 6f, y, cellBold); y += 15f }
+                if (group.isNotBlank()) { ensureSpace(18f); c.drawText(group, x0 + 6f, y + 11f, cellBold); y += 18f }
                 gr.forEach { r ->
-                    ensureSpace(16f)
-                    c.drawText(clip(r.evaluationName, 34), x0 + (if (group.isNotBlank()) 12f else 2f), y, cell)
-                    c.drawText(r.result.ifBlank { "-" }, cResult, y, if (isOutOfRange(r)) abn else cellBold)
-                    c.drawText(clip(r.unit, 12), cUnit, y, cell)
-                    c.drawText(clip(r.normalValue, 16), cRef, y, small)
-                    y += 15f
-                    c.drawLine(x0, y - 4f, xEnd, y - 4f, faint)
+                    ensureSpace(18f)
+                    if (r.isHeading) {
+                        // Manual bold heading row (no result).
+                        c.drawText(r.evaluationName, x0 + 6f, y + 11f, cellBold)
+                    } else {
+                        val indent = if (group.isNotBlank()) 12f else 2f
+                        c.drawText(clip(r.evaluationName, 34), x0 + indent, y + 11f, cell)
+                        c.drawText(r.result.ifBlank { "-" }, cResult, y + 11f, if (isOutOfRange(r)) abn else cellBold)
+                        c.drawText(clip(r.unit, 12), cUnit, y + 11f, cell)
+                        c.drawText(clip(r.normalValue, 16), cRef, y + 11f, small)
+                    }
+                    y += 18f
+                    c.drawLine(x0, y, xEnd, y, faint)   // separator at the row's bottom edge
                 }
             }
             y += 10f
