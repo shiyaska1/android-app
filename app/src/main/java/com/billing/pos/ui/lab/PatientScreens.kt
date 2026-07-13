@@ -17,7 +17,9 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Divider
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -153,15 +155,15 @@ fun PatientDialog(existing: Patient?, doctorNames: List<String>, onDismiss: () -
                     val q = referredBy.trim()
                     if (q.isBlank()) doctorNames.take(8) else doctorNames.filter { it.contains(q, true) && !it.equals(q, true) }.take(8)
                 }
-                androidx.compose.material3.ExposedDropdownMenuBox(expanded = docMenu && docMatches.isNotEmpty(), onExpandedChange = { docMenu = it }) {
+                ExposedDropdownMenuBox(expanded = docMenu && docMatches.isNotEmpty(), onExpandedChange = { docMenu = it }) {
                     OutlinedTextField(
                         value = referredBy, onValueChange = { referredBy = it; docMenu = true },
                         label = { Text("Referred by (doctor)") }, singleLine = true,
                         modifier = Modifier.menuAnchor().fillMaxWidth()
                     )
-                    androidx.compose.material3.ExposedDropdownMenu(expanded = docMenu && docMatches.isNotEmpty(), onDismissRequest = { docMenu = false }) {
+                    ExposedDropdownMenu(expanded = docMenu && docMatches.isNotEmpty(), onDismissRequest = { docMenu = false }) {
                         docMatches.forEach { d ->
-                            androidx.compose.material3.DropdownMenuItem(text = { Text(d) }, onClick = { referredBy = d; docMenu = false })
+                            DropdownMenuItem(text = { Text(d) }, onClick = { referredBy = d; docMenu = false })
                         }
                     }
                 }
