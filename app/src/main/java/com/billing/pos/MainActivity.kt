@@ -68,6 +68,8 @@ import com.billing.pos.ui.materialout.MaterialOutScreen
 import com.billing.pos.ui.materialout.MaterialOutListScreen
 import com.billing.pos.ui.materialout.MaterialOutLink
 import com.billing.pos.ui.materialout.ItemMovementScreen
+import com.billing.pos.ui.reports.StockReportScreen
+import com.billing.pos.ui.reports.SalesProfitScreen
 import com.billing.pos.ui.purchase.PurchaseListScreen
 import com.billing.pos.ui.purchase.PurchaseScreen
 import com.billing.pos.ui.purchase.SuppliersScreen
@@ -193,6 +195,8 @@ private fun AppNav() {
                 onLabBills = { nav.navigate("labbills") },
                 onMaterialOut = { nav.navigate("materialouts") },
                 onItemMovement = { nav.navigate("itemmovement") },
+                onStockReport = { nav.navigate("stockreport") },
+                onSalesProfit = { nav.navigate("salesprofit") },
                 onVatReport = { nav.navigate("vat") },
                 onOutstanding = { nav.navigate("outstanding") },
                 onAccounts = { nav.navigate("accounts") },
@@ -391,6 +395,10 @@ private fun AppNav() {
             route = "materialout/edit/{id}",
             arguments = listOf(navArgument("id") { type = NavType.LongType })
         ) { entry -> MaterialOutScreen(editId = entry.arguments?.getLong("id"), resultRefs = null, resultTests = null, onBack = { nav.popBackStack() }) }
+        composable("stockreport") { StockReportScreen(onBack = { nav.popBackStack() }) }
+        composable("salesprofit") {
+            SalesProfitScreen(onBack = { nav.popBackStack() }, onOpenInvoice = { id -> nav.navigate("billing/edit/$id") })
+        }
         composable("itemmovement") {
             ItemMovementScreen(
                 onBack = { nav.popBackStack() },

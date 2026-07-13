@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
@@ -26,7 +27,9 @@ import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.EventBusy
 import androidx.compose.material.icons.filled.Handshake
+import androidx.compose.material.icons.filled.Inventory
 import androidx.compose.material.icons.filled.Inventory2
+import androidx.compose.material.icons.filled.TrendingUp
 import androidx.compose.material.icons.filled.LocalShipping
 import androidx.compose.material.icons.filled.ManageAccounts
 import androidx.compose.material.icons.filled.MenuBook
@@ -67,7 +70,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.billing.pos.auth.Session
 
-private data class Tile(val label: String, val icon: ImageVector, val onClick: () -> Unit)
+private data class Tile(val label: String, val icon: ImageVector, val onClick: () -> Unit, val section: String = "Transactions")
+
+private val SECTION_ORDER = listOf("Transactions", "Masters", "Accounts", "Reports")
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -98,6 +103,8 @@ fun DashboardScreen(
     onLabBills: () -> Unit,
     onMaterialOut: () -> Unit,
     onItemMovement: () -> Unit,
+    onStockReport: () -> Unit,
+    onSalesProfit: () -> Unit,
     onVatReport: () -> Unit,
     onOutstanding: () -> Unit,
     onAccounts: () -> Unit,
@@ -113,44 +120,57 @@ fun DashboardScreen(
     val isRental = businessType == "Rental"
     val isLab = businessType == "Medical lab"
     val tiles = buildList {
+        // ---- Transactions ----
+        add(Tile("New Bill", Icons.Filled.PointOfSale, onNewBill, "Transactions"))
+        add(Tile("Quick Bill", Icons.Filled.Restaurant, onQuickBill, "Transactions"))
+        if (Session.canViewInvoice) add(Tile("Invoices", Icons.Filled.ReceiptLong, onInvoices, "Transactions"))
+        add(Tile("Quotations", Icons.Filled.Description, onQuotations, "Transactions"))
+        if (Session.canViewInvoice) add(Tile("Sales Return", Icons.Filled.AssignmentReturn, onSalesReturns, "Transactions"))
+        add(Tile("New Purchase", Icons.Filled.ShoppingCart, onNewPurchase, "Transactions"))
+        if (Session.canViewInvoice) add(Tile("Purchases", Icons.Filled.Inventory2, onPurchases, "Transactions"))
+        if (Session.canViewInvoice) add(Tile("Purchase Return", Icons.Filled.AssignmentReturned, onPurchaseReturns, "Transactions"))
+        add(Tile("Purchase Order", Icons.Filled.PlaylistAddCheck, onLpos, "Transactions"))
         if (isLab) {
-            add(Tile("Lab Bill", Icons.Filled.Science, onLabBills))
-            add(Tile("Patients", Icons.Filled.People, onPatients))
-            add(Tile("Lab Tests", Icons.Filled.Biotech, onLabTests))
-            add(Tile("Material Out", Icons.Filled.MoveDown, onMaterialOut))
+            add(Tile("Lab Bill", Icons.Filled.Science, onLabBills, "Transactions"))
+            add(Tile("Material Out", Icons.Filled.MoveDown, onMaterialOut, "Transactions"))
         }
-        add(Tile("New Bill", Icons.Filled.PointOfSale, onNewBill))
         if (isRental) {
-            add(Tile("Hire Invoice", Icons.Filled.Handshake, onHireInvoices))
-            add(Tile("Hire Return", Icons.Filled.AssignmentReturn, onHireReturns))
-            add(Tile("Hire Item Report", Icons.Filled.Inventory2, onHireItemReport))
-            add(Tile("Hire Expiry", Icons.Filled.EventBusy, onHireExpiryReport))
+            add(Tile("Hire Invoice", Icons.Filled.Handshake, onHireInvoices, "Transactions"))
+            add(Tile("Hire Return", Icons.Filled.AssignmentReturn, onHireReturns, "Transactions"))
         }
-        add(Tile("Quick Bill", Icons.Filled.Restaurant, onQuickBill))
-        add(Tile("Price Search", Icons.Filled.PriceCheck, onPriceSearch))
-        if (Session.canViewInvoice) add(Tile("Invoices", Icons.Filled.ReceiptLong, onInvoices))
-        add(Tile("Quotations", Icons.Filled.Description, onQuotations))
-        if (Session.canViewInvoice) add(Tile("Sales Return", Icons.Filled.AssignmentReturn, onSalesReturns))
-        if (Session.canViewReceipt) add(Tile("Receipts", Icons.Filled.Payments, onReceipts))
-        if (Session.canViewPayment) add(Tile("Payments", Icons.Filled.MoneyOff, onExpenses))
-        if (Session.canViewCashbook) add(Tile("Cash Book", Icons.Filled.AccountBalanceWallet, onCashbook))
-        if (Session.canViewInvoice) add(Tile("Sales Report", Icons.Filled.Assessment, onReports))
-        add(Tile("Customers", Icons.Filled.People, onCustomers))
-        add(Tile("Items", Icons.Filled.Category, onItems))
-        add(Tile("Item Movement", Icons.Filled.SwapVert, onItemMovement))
-        add(Tile("New Purchase", Icons.Filled.ShoppingCart, onNewPurchase))
-        if (Session.canViewInvoice) add(Tile("Purchases", Icons.Filled.Inventory2, onPurchases))
-        if (Session.canViewInvoice) add(Tile("Purchase Return", Icons.Filled.AssignmentReturned, onPurchaseReturns))
-        add(Tile("Purchase Order", Icons.Filled.PlaylistAddCheck, onLpos))
-        add(Tile("Suppliers", Icons.Filled.LocalShipping, onSuppliers))
-        if (Session.canViewInvoice) add(Tile("VAT Report", Icons.Filled.Description, onVatReport))
-        if (Session.canViewInvoice) add(Tile("Outstanding", Icons.Filled.AccountBalance, onOutstanding))
-        if (Session.canManageUsers) add(Tile("Accounts", Icons.Filled.AccountTree, onAccounts))
-        if (Session.canManageUsers) add(Tile("Journal", Icons.Filled.Book, onJournal))
-        add(Tile("My Diary", Icons.Filled.MenuBook, onDiary))
-        if (Session.canManageUsers) add(Tile("Users", Icons.Filled.ManageAccounts, onUsers))
-        if (Session.canManageUsers) add(Tile("Settings", Icons.Filled.Settings, onSettings))
-        if (Session.canExport || Session.canImport) add(Tile("Backup", Icons.Filled.Backup, onBackup))
+
+        // ---- Masters ----
+        add(Tile("Customers", Icons.Filled.People, onCustomers, "Masters"))
+        add(Tile("Items", Icons.Filled.Category, onItems, "Masters"))
+        add(Tile("Suppliers", Icons.Filled.LocalShipping, onSuppliers, "Masters"))
+        if (isLab) {
+            add(Tile("Patients", Icons.Filled.People, onPatients, "Masters"))
+            add(Tile("Lab Tests", Icons.Filled.Biotech, onLabTests, "Masters"))
+        }
+        add(Tile("My Diary", Icons.Filled.MenuBook, onDiary, "Masters"))
+        if (Session.canManageUsers) add(Tile("Users", Icons.Filled.ManageAccounts, onUsers, "Masters"))
+        if (Session.canManageUsers) add(Tile("Settings", Icons.Filled.Settings, onSettings, "Masters"))
+        if (Session.canExport || Session.canImport) add(Tile("Backup", Icons.Filled.Backup, onBackup, "Masters"))
+
+        // ---- Accounts ----
+        if (Session.canViewReceipt) add(Tile("Receipts", Icons.Filled.Payments, onReceipts, "Accounts"))
+        if (Session.canViewPayment) add(Tile("Payments", Icons.Filled.MoneyOff, onExpenses, "Accounts"))
+        if (Session.canViewCashbook) add(Tile("Cash Book", Icons.Filled.AccountBalanceWallet, onCashbook, "Accounts"))
+        if (Session.canViewInvoice) add(Tile("Outstanding", Icons.Filled.AccountBalance, onOutstanding, "Accounts"))
+        if (Session.canManageUsers) add(Tile("Accounts", Icons.Filled.AccountTree, onAccounts, "Accounts"))
+        if (Session.canManageUsers) add(Tile("Journal", Icons.Filled.Book, onJournal, "Accounts"))
+
+        // ---- Reports ----
+        if (Session.canViewInvoice) add(Tile("Sales Report", Icons.Filled.Assessment, onReports, "Reports"))
+        if (Session.canViewInvoice) add(Tile("Sales Profit", Icons.Filled.TrendingUp, onSalesProfit, "Reports"))
+        add(Tile("Stock on Date", Icons.Filled.Inventory, onStockReport, "Reports"))
+        add(Tile("Item Movement", Icons.Filled.SwapVert, onItemMovement, "Reports"))
+        add(Tile("Price Search", Icons.Filled.PriceCheck, onPriceSearch, "Reports"))
+        if (Session.canViewInvoice) add(Tile("VAT Report", Icons.Filled.Description, onVatReport, "Reports"))
+        if (isRental) {
+            add(Tile("Hire Item Report", Icons.Filled.Inventory2, onHireItemReport, "Reports"))
+            add(Tile("Hire Expiry", Icons.Filled.EventBusy, onHireExpiryReport, "Reports"))
+        }
     }
 
     Scaffold(
@@ -185,34 +205,40 @@ fun DashboardScreen(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                items(shown) { tile ->
-                Card(
-                    Modifier
-                        .fillMaxWidth()
-                        .height(120.dp)
-                        .clickable { tile.onClick() }
-                ) {
-                    Column(
-                        Modifier.fillMaxSize().padding(12.dp),
-                        verticalArrangement = Arrangement.Center,
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Icon(
-                            tile.icon,
-                            contentDescription = tile.label,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(40.dp)
-                        )
-                        Text(
-                            tile.label,
-                            fontWeight = FontWeight.SemiBold,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(top = 8.dp)
-                        )
+                if (query.isNotBlank()) {
+                    items(shown) { tile -> TileCard(tile) }
+                } else {
+                    SECTION_ORDER.forEach { section ->
+                        val secTiles = tiles.filter { it.section == section }
+                        if (secTiles.isNotEmpty()) {
+                            item(span = { GridItemSpan(maxLineSpan) }) {
+                                Text(
+                                    section.uppercase(),
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.padding(top = 12.dp, bottom = 2.dp)
+                                )
+                            }
+                            items(secTiles) { tile -> TileCard(tile) }
+                        }
                     }
                 }
             }
-            }
+        }
+    }
+}
+
+@Composable
+private fun TileCard(tile: Tile) {
+    Card(Modifier.fillMaxWidth().height(120.dp).clickable { tile.onClick() }) {
+        Column(
+            Modifier.fillMaxSize().padding(12.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Icon(tile.icon, contentDescription = tile.label, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(40.dp))
+            Text(tile.label, fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 8.dp))
         }
     }
 }
