@@ -1,12 +1,16 @@
 package com.billing.pos.pdf
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.Typeface
 import android.graphics.pdf.PdfDocument
+import android.graphics.pdf.PdfRenderer
 import android.net.Uri
+import android.os.ParcelFileDescriptor
 import androidx.core.content.FileProvider
 import com.billing.pos.data.AppPrefs
 import com.billing.pos.data.CompanyInfo
@@ -41,24 +45,40 @@ object LabResultPdf {
         val cUnit = xEnd - 130f
         val cRef = xEnd - 60f
 
+        // Optional pre-printed letterhead (image or PDF) drawn as the page background.
+        val letterhead = loadLetterhead(prefs.labLetterheadPath)
+        val seal = prefs.labSealPath.takeIf { it.isNotBlank() }?.let { runCatching { BitmapFactory.decodeFile(it) }.getOrNull() }
+        val sign = prefs.labSignaturePath.takeIf { it.isNotBlank() }?.let { runCatching { BitmapFactory.decodeFile(it) }.getOrNull() }
+        val lineH = 15f
+        val topSkip = if (letterhead != null) prefs.labTopSkipLines * lineH else 0f
+        val bottomLimit = if (letterhead != null) PH - (prefs.labBottomSkipLines * lineH) else PH - 90f
+
         var page = doc.startPage(PdfDocument.PageInfo.Builder(PW.toInt(), PH.toInt(), 1).create())
         var c = page.canvas
         var y: Float
 
-        val logo = prefs.logoPath.takeIf { it.isNotBlank() }?.let { runCatching { BitmapFactory.decodeFile(it) }.getOrNull() }
-        var textX = x0
-        if (logo != null) {
-            val h = 56f; val w = h * logo.width / logo.height
-            c.drawBitmap(logo, null, Rect(x0.toInt(), M.toInt(), (x0 + w).toInt(), (M + h).toInt()), null)
-            textX = x0 + w + 12f
-        }
-        c.drawText(company.name.ifBlank { "Laboratory" }, textX, M + 20f, title)
-        var hy = M + 36f
-        if (company.address.isNotBlank()) { c.drawText(company.address, textX, hy, sub); hy += 13f }
-        if (company.phone.isNotBlank()) { c.drawText("Phone: ${company.phone}", textX, hy, sub); hy += 13f }
-        y = maxOf(hy, M + 60f) + 6f
+        fun drawBackground() { letterhead?.let { c.drawBitmap(it, null, Rect(0, 0, PW.toInt(), PH.toInt()), null) } }
+        drawBackground()
 
-        c.drawLine(x0, y, xEnd, y, line); y += 18f
+        if (letterhead != null) {
+            // Letterhead already carries the lab name/address — skip the app header entirely.
+            y = M + topSkip
+        } else {
+            val logo = prefs.logoPath.takeIf { it.isNotBlank() }?.let { runCatching { BitmapFactory.decodeFile(it) }.getOrNull() }
+            var textX = x0
+            if (logo != null) {
+                val h = 56f; val w = h * logo.width / logo.height
+                c.drawBitmap(logo, null, Rect(x0.toInt(), M.toInt(), (x0 + w).toInt(), (M + h).toInt()), null)
+                textX = x0 + w + 12f
+            }
+            c.drawText(company.name.ifBlank { "Laboratory" }, textX, M + 20f, title)
+            var hy = M + 36f
+            if (company.address.isNotBlank()) { c.drawText(company.address, textX, hy, sub); hy += 13f }
+            if (company.phone.isNotBlank()) { c.drawText("Phone: ${company.phone}", textX, hy, sub); hy += 13f }
+            y = maxOf(hy, M + 60f) + 6f
+            c.drawLine(x0, y, xEnd, y, line); y += 18f
+        }
+
         val tp = Paint(cellBold).apply { textSize = 13f; textAlign = Paint.Align.CENTER }
         c.drawText("LABORATORY REPORT", (x0 + xEnd) / 2f, y, tp); y += 16f
 
@@ -80,23 +100,17 @@ object LabResultPdf {
             y += 16f
             c.drawLine(x0, y, xEnd, y, line); y += 6f
         }
-        fun ensureSpace(need: Float) {
-            if (y + need > PH - 90f) {
-                doc.finishPage(page)
-                page = doc.startPage(PdfDocument.PageInfo.Builder(PW.toInt(), PH.toInt(), doc.pages.size + 1).create())
-                c = page.canvas; y = M
-            }
+        fun newPage() {
+            doc.finishPage(page)
+            page = doc.startPage(PdfDocument.PageInfo.Builder(PW.toInt(), PH.toInt(), doc.pages.size + 1).create())
+            c = page.canvas; drawBackground(); y = M + topSkip
         }
+        fun ensureSpace(need: Float) { if (y + need > bottomLimit) newPage() }
 
         // Group by test (preserve first-seen order), then by evaluation group within the test.
         val byTest = LinkedHashMap<String, MutableList<LabResultValue>>()
         results.forEach { byTest.getOrPut(it.testName) { mutableListOf() }.add(it) }
 
-        fun newPage() {
-            doc.finishPage(page)
-            page = doc.startPage(PdfDocument.PageInfo.Builder(PW.toInt(), PH.toInt(), doc.pages.size + 1).create())
-            c = page.canvas; y = M
-        }
         fun testTitle(name: String) {
             ensureSpace(64f)
             c.drawText(name.uppercase(), x0 + 2f, y + 11f, cellBold); y += 16f
@@ -132,13 +146,20 @@ object LabResultPdf {
             y += 10f
         }
 
-        // Sign-off
-        ensureSpace(70f)
-        y = maxOf(y, PH - 90f)
-        c.drawText("Verified by", xEnd - 140f, y, small)
-        c.drawLine(xEnd - 150f, y + 26f, xEnd - 20f, y + 26f, line)
-        c.drawText("Lab Technician", xEnd - 140f, y + 40f, small)
-        c.drawText("** End of report **", (x0 + xEnd) / 2f, PH - M, Paint(small).apply { textAlign = Paint.Align.CENTER })
+        // Sign-off with optional seal + signature above the technician line.
+        ensureSpace(80f)
+        val signBaseY = if (letterhead != null) (bottomLimit - 14f).coerceAtLeast(y + 30f) else maxOf(y + 30f, PH - 80f)
+        seal?.let {
+            val h = 58f; val w = h * it.width / it.height
+            c.drawBitmap(it, null, Rect((xEnd - 250f).toInt(), (signBaseY - 54f).toInt(), (xEnd - 250f + w).toInt(), (signBaseY + 4f).toInt()), null)
+        }
+        sign?.let {
+            val h = 40f; val w = h * it.width / it.height
+            c.drawBitmap(it, null, Rect((xEnd - 150f).toInt(), (signBaseY - 42f).toInt(), (xEnd - 150f + w).toInt(), (signBaseY - 2f).toInt()), null)
+        }
+        c.drawLine(xEnd - 150f, signBaseY + 2f, xEnd - 20f, signBaseY + 2f, line)
+        c.drawText("Lab Technician", xEnd - 140f, signBaseY + 16f, small)
+        if (letterhead == null) c.drawText("** End of report **", (x0 + xEnd) / 2f, PH - M, Paint(small).apply { textAlign = Paint.Align.CENTER })
 
         doc.finishPage(page)
         val dir = File(context.cacheDir, "shared").apply { mkdirs() }
@@ -147,6 +168,26 @@ object LabResultPdf {
         file.outputStream().use { doc.writeTo(it) }
         doc.close()
         return FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
+    }
+
+    /** Loads the letterhead as an A4-sized bitmap: renders page 0 of a PDF, or decodes an image. */
+    private fun loadLetterhead(path: String): Bitmap? {
+        if (path.isBlank()) return null
+        val f = File(path)
+        if (!f.exists()) return null
+        return if (path.endsWith(".pdf", ignoreCase = true)) runCatching {
+            ParcelFileDescriptor.open(f, ParcelFileDescriptor.MODE_READ_ONLY).use { pfd ->
+                val r = PdfRenderer(pfd)
+                try {
+                    val pg = r.openPage(0)
+                    val bmp = Bitmap.createBitmap((PW * 2).toInt(), (PH * 2).toInt(), Bitmap.Config.ARGB_8888)
+                    Canvas(bmp).drawColor(0xFFFFFFFF.toInt())
+                    pg.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_PRINT)
+                    pg.close()
+                    bmp
+                } finally { r.close() }
+            }
+        }.getOrNull() else runCatching { BitmapFactory.decodeFile(path) }.getOrNull()
     }
 
     /** Best-effort abnormal flag: numeric result outside a "lo - hi" numeric reference range. */

@@ -86,5 +86,31 @@ class AppPrefs(context: Context) {
         get() = p.getString("business_type", "") ?: ""
         set(v) { p.edit().putString("business_type", v).apply() }
 
+    // ---- medical lab print assets ----
+    /** Seal/stamp image path shown above the technician sign-off ("" = none). */
+    var labSealPath: String
+        get() = p.getString("lab_seal_path", "") ?: ""
+        set(v) { p.edit().putString("lab_seal_path", v).apply() }
+
+    /** Technician signature image path ("" = none). */
+    var labSignaturePath: String
+        get() = p.getString("lab_sign_path", "") ?: ""
+        set(v) { p.edit().putString("lab_sign_path", v).apply() }
+
+    /** Pre-printed letterhead (JPG/PNG/PDF) drawn as the page background ("" = none). */
+    var labLetterheadPath: String
+        get() = p.getString("lab_letterhead_path", "") ?: ""
+        set(v) { p.edit().putString("lab_letterhead_path", v).apply() }
+
+    /** Blank lines to skip at the TOP of a letterhead page before results start. */
+    var labTopSkipLines: Int
+        get() = p.getInt("lab_top_skip", 6)
+        set(v) { p.edit().putInt("lab_top_skip", v).apply() }
+
+    /** Blank lines to leave at the BOTTOM (above the printed footer) on a letterhead page. */
+    var labBottomSkipLines: Int
+        get() = p.getInt("lab_bottom_skip", 5)
+        set(v) { p.edit().putInt("lab_bottom_skip", v).apply() }
+
     fun clearSession() { loggedInUserId = -1L }
 }

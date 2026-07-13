@@ -5,8 +5,11 @@ import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -51,6 +54,19 @@ import androidx.compose.ui.unit.dp
 import com.billing.pos.data.AppPrefs
 import kotlinx.coroutines.launch
 
+/** Copies a picked file (image or PDF) into app storage, keeping a sensible extension. */
+private fun copyToAppFiles(context: android.content.Context, uri: android.net.Uri, baseName: String): String? {
+    val type = context.contentResolver.getType(uri) ?: ""
+    val ext = when { type.contains("pdf") -> "pdf"; type.contains("png") -> "png"; else -> "jpg" }
+    val dest = java.io.File(context.filesDir, "$baseName.$ext")
+    // Remove any older copy of this asset with a different extension.
+    listOf("pdf", "png", "jpg").forEach { e -> if (e != ext) java.io.File(context.filesDir, "$baseName.$e").delete() }
+    return runCatching {
+        context.contentResolver.openInputStream(uri)?.use { input -> dest.outputStream().use { input.copyTo(it) } }
+        dest.absolutePath
+    }.getOrNull()
+}
+
 val BUSINESS_TYPES = listOf(
     "General", "Textiles", "Mobile shop", "Electrical & plumbing",
     "Automobiles", "Grocery", "Medical store", "Restaurant", "Rental", "Medical lab"
@@ -81,6 +97,31 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
             }
             if (ok) { prefs.logoPath = dest.absolutePath; logoPath = dest.absolutePath; snackbar.showSnackbar("Logo saved") }
             else snackbar.showSnackbar("Could not read image")
+        }
+    }
+
+    // ---- medical lab print assets ----
+    var sealPath by remember { mutableStateOf(prefs.labSealPath) }
+    var signPath by remember { mutableStateOf(prefs.labSignaturePath) }
+    var letterheadPath by remember { mutableStateOf(prefs.labLetterheadPath) }
+    var topSkip by remember { mutableStateOf(prefs.labTopSkipLines.toString()) }
+    var bottomSkip by remember { mutableStateOf(prefs.labBottomSkipLines.toString()) }
+    val sealPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) scope.launch {
+            val path = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { copyToAppFiles(context, uri, "lab_seal") }
+            if (path != null) { prefs.labSealPath = path; sealPath = path; snackbar.showSnackbar("Seal saved") } else snackbar.showSnackbar("Could not read image")
+        }
+    }
+    val signPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) scope.launch {
+            val path = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { copyToAppFiles(context, uri, "lab_sign") }
+            if (path != null) { prefs.labSignaturePath = path; signPath = path; snackbar.showSnackbar("Signature saved") } else snackbar.showSnackbar("Could not read image")
+        }
+    }
+    val letterheadPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) scope.launch {
+            val path = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { copyToAppFiles(context, uri, "lab_letterhead") }
+            if (path != null) { prefs.labLetterheadPath = path; letterheadPath = path; snackbar.showSnackbar("Letterhead saved") } else snackbar.showSnackbar("Could not read file")
         }
     }
 
@@ -248,6 +289,48 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
                     },
                     modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
                 ) { Text("Load sample items for $businessType") }
+            }
+
+            if (businessType == "Medical lab") {
+                Divider(Modifier.padding(vertical = 16.dp))
+                Text("Lab result print", style = MaterialTheme.typography.titleSmall)
+                Text(
+                    "Seal + signature print above the technician line. A letterhead (JPG/PNG/PDF) prints as the page background and hides the app header — set how many blank lines to skip below the printed header and above the printed footer.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline
+                )
+                Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { sealPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }, modifier = Modifier.weight(1f)) {
+                        Text(if (sealPath.isBlank()) "Upload seal" else "Change seal")
+                    }
+                    if (sealPath.isNotBlank()) OutlinedButton(onClick = { prefs.labSealPath = ""; sealPath = "" }) { Text("Remove") }
+                }
+                Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { signPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }, modifier = Modifier.weight(1f)) {
+                        Text(if (signPath.isBlank()) "Upload signature" else "Change signature")
+                    }
+                    if (signPath.isNotBlank()) OutlinedButton(onClick = { prefs.labSignaturePath = ""; signPath = "" }) { Text("Remove") }
+                }
+                Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { letterheadPicker.launch(arrayOf("application/pdf", "image/*")) }, modifier = Modifier.weight(1f)) {
+                        Text(if (letterheadPath.isBlank()) "Upload letter pad" else "Change letter pad")
+                    }
+                    if (letterheadPath.isNotBlank()) OutlinedButton(onClick = { prefs.labLetterheadPath = ""; letterheadPath = "" }) { Text("Remove") }
+                }
+                if (letterheadPath.isNotBlank()) {
+                    Text("Letter pad set: ${java.io.File(letterheadPath).name}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 4.dp))
+                    Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = topSkip, onValueChange = { topSkip = it.filter { c -> c.isDigit() }; prefs.labTopSkipLines = topSkip.toIntOrNull() ?: 0 },
+                            label = { Text("Top lines to skip") }, singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.weight(1f)
+                        )
+                        OutlinedTextField(
+                            value = bottomSkip, onValueChange = { bottomSkip = it.filter { c -> c.isDigit() }; prefs.labBottomSkipLines = bottomSkip.toIntOrNull() ?: 0 },
+                            label = { Text("Bottom lines to skip") }, singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
             }
 
             Divider(Modifier.padding(vertical = 16.dp))
