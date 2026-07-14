@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.EventBusy
 import androidx.compose.material.icons.filled.Handshake
 import androidx.compose.material.icons.filled.Inventory
@@ -77,6 +78,7 @@ private val SECTION_ORDER = listOf("Transactions", "Masters", "Accounts", "Repor
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DashboardScreen(
+    onStickyNote: () -> Unit,
     onNewBill: () -> Unit,
     onQuickBill: () -> Unit,
     onPriceSearch: () -> Unit,
@@ -121,6 +123,7 @@ fun DashboardScreen(
     val isLab = businessType == "Medical lab"
     val tiles = buildList {
         // ---- Transactions ----
+        add(Tile("Sticky Note", Icons.Filled.EditNote, onStickyNote, "Transactions"))
         add(Tile("New Bill", Icons.Filled.PointOfSale, onNewBill, "Transactions"))
         add(Tile("Quick Bill", Icons.Filled.Restaurant, onQuickBill, "Transactions"))
         if (Session.canViewInvoice) add(Tile("Invoices", Icons.Filled.ReceiptLong, onInvoices, "Transactions"))

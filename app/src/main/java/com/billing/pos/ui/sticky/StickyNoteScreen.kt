@@ -285,7 +285,11 @@ fun StickyNoteScreen(onClose: () -> Unit, vm: StickyNoteViewModel = viewModel())
             OutlinedButton(onClick = { gallery.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }, modifier = Modifier.weight(1f)) { Icon(Icons.Filled.PhotoLibrary, null) }
             OutlinedButton(onClick = { toggleRecord() }, modifier = Modifier.weight(1f)) { Icon(if (vm.recording) Icons.Filled.Stop else Icons.Filled.Mic, null) }
             OutlinedButton(onClick = { startVideo() }, modifier = Modifier.weight(1f)) { Icon(Icons.Filled.Videocam, null) }
-            OutlinedButton(onClick = { shareCurrent() }, modifier = Modifier.weight(1f)) { Icon(Icons.Filled.Share, null) }
+            OutlinedButton(onClick = {
+                // Share the current page, then auto-save the whole note to My Diary.
+                shareCurrent()
+                vm.save(pages.map { PageData(it.strokes.toList(), it.bg) }, canvasSize.width, canvasSize.height, images.toList(), audios.toList(), videos.toList()) { onClose() }
+            }, modifier = Modifier.weight(1f)) { Icon(Icons.Filled.Share, null) }
         }
         // Row 3: close / save
         Row(Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {

@@ -176,6 +176,7 @@ private fun AppNav() {
                 }
             }
             DashboardScreen(
+                onStickyNote = { nav.navigate("stickynote") },
                 onNewBill = { nav.navigate("billing") },
                 onQuickBill = { nav.navigate("quickbill") },
                 onPriceSearch = { nav.navigate("pricesearch") },
