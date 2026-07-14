@@ -403,7 +403,12 @@ private fun AppNav() {
             route = "materialout/edit/{id}",
             arguments = listOf(navArgument("id") { type = NavType.LongType })
         ) { entry -> MaterialOutScreen(editId = entry.arguments?.getLong("id"), resultRefs = null, resultTests = null, onBack = { nav.popBackStack() }) }
-        composable("stickynote") { com.billing.pos.ui.sticky.StickyNoteScreen(onClose = { nav.popBackStack() }) }
+        composable("stickynote") {
+            com.billing.pos.ui.sticky.StickyNoteScreen(
+                onClose = { nav.popBackStack() },
+                onOcrToSales = { nav.popBackStack(); nav.navigate("billing") }
+            )
+        }
         composable("stockreport") { StockReportScreen(onBack = { nav.popBackStack() }) }
         composable("salesprofit") {
             SalesProfitScreen(onBack = { nav.popBackStack() }, onOpenInvoice = { id -> nav.navigate("billing/edit/$id") })

@@ -147,6 +147,8 @@ fun BillingScreen(
     var showPhotoOptions by remember { mutableStateOf(false) }
     var showSetTotal by remember { mutableStateOf(false) }
     var ocrReview by remember { mutableStateOf<List<com.billing.pos.ocr.ScannedItem>?>(null) }
+    // Items handed over from the sticky-note OCR open the review dialog automatically.
+    LaunchedEffect(Unit) { com.billing.pos.ui.sticky.StickyOcrLink.take()?.let { if (it.isNotEmpty()) ocrReview = it } }
     val requireBatch = remember { com.billing.pos.data.AppPrefs(context).requireItemBatch }
     var batchPickFor by remember { mutableStateOf<com.billing.pos.data.Item?>(null) }
     var sizePickFor by remember { mutableStateOf<com.billing.pos.data.Item?>(null) }

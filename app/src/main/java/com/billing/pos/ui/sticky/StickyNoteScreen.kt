@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
@@ -81,6 +82,12 @@ import java.io.File
 /** Session flag so the launch sticky-note shows only once per app start. */
 object StickyGate { var shown = false }
 
+/** One-shot hand-off of OCR'd items from the sticky note to the sales entry. */
+object StickyOcrLink {
+    var items: List<com.billing.pos.ocr.ScannedItem>? = null
+    fun take(): List<com.billing.pos.ocr.ScannedItem>? { val i = items; items = null; return i }
+}
+
 private typealias StrokePts = List<Offset>
 
 /** A page of the note: handwriting strokes over an optional background image. */
@@ -100,6 +107,11 @@ class StickyNoteViewModel(app: Application) : AndroidViewModel(app) {
     var recording by mutableStateOf(false); private set
     private var recorder: MediaRecorder? = null
     private var recordFile: File? = null
+
+    // Re-use one diary entry across repeated saves (e.g. Save-on-share).
+    private var savedEntryId: Long = 0
+    private var savedCreatedAt: Long = 0
+    private var lastPagePaths: List<String> = emptyList()
 
     fun startRecording() {
         if (recording) return
@@ -140,16 +152,55 @@ class StickyNoteViewModel(app: Application) : AndroidViewModel(app) {
                 out
             }
             if (pagePaths.isEmpty() && images.isEmpty() && audios.isEmpty() && videos.isEmpty()) { message.value = "Nothing to save"; return@launch }
+            // Remove page images rendered by a previous save of this same note.
+            withContext(Dispatchers.IO) { lastPagePaths.forEach { runCatching { File(it).delete() } } }
             val now = System.currentTimeMillis()
-            val id = repo.upsert(DiaryEntry(title = "Sticky note - ${Format.dateTime(now)}", remarks = "", createdAt = now, updatedAt = now))
+            if (savedCreatedAt == 0L) savedCreatedAt = now
+            val id = repo.upsert(DiaryEntry(id = savedEntryId, title = "Sticky note - ${Format.dateTime(savedCreatedAt)}", remarks = "", createdAt = savedCreatedAt, updatedAt = now))
+            savedEntryId = id
             val blocks = ArrayList<DiaryBlock>()
             pagePaths.forEach { blocks.add(DiaryBlock(entryId = id, position = 0, type = BlockType.IMAGE, path = it, name = "Sticky note.jpg", mime = "image/jpeg")) }
             images.forEach { blocks.add(DiaryBlock(entryId = id, position = 0, type = BlockType.IMAGE, path = it, name = "Photo.jpg", mime = "image/jpeg")) }
             audios.forEach { blocks.add(DiaryBlock(entryId = id, position = 0, type = BlockType.AUDIO, path = it, name = "Voice note.m4a", mime = "audio/mp4")) }
             videos.forEach { blocks.add(DiaryBlock(entryId = id, position = 0, type = BlockType.VIDEO, path = it, name = "Video.mp4", mime = "video/mp4")) }
             repo.replaceBlocks(id, blocks)
+            lastPagePaths = pagePaths
             message.value = "Saved to My Diary"
             onDone()
+        }
+    }
+
+    /** OCRs EVERY page (each page can be one item written large) into name+price items. */
+    fun ocrAllPages(pages: List<PageData>, w: Int, h: Int, onResult: (List<com.billing.pos.ocr.ScannedItem>) -> Unit) {
+        val ctx = getApplication<Application>()
+        if (w <= 0 || h <= 0) { message.value = "Nothing to read"; return }
+        message.value = "Reading pages…"
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                val out = ArrayList<com.billing.pos.ocr.ScannedItem>()
+                pages.filter { it.strokes.isNotEmpty() || it.bg != null }.forEach { p ->
+                    val bmp = renderPage(p, w, h)
+                    val f = File(ctx.cacheDir, "ocr_${System.nanoTime()}.jpg")
+                    f.outputStream().use { bmp.compress(Bitmap.CompressFormat.JPEG, 92, it) }
+                    bmp.recycle()
+                    val lines = com.billing.pos.ocr.TextOcr.lines(ctx, android.net.Uri.fromFile(f))
+                    f.delete()
+                    // Numeric lines -> price; text lines -> item name. Each page = one item.
+                    val nameParts = ArrayList<String>(); var price = 0.0
+                    lines.forEach { raw ->
+                        val line = raw.trim()
+                        if (line.isBlank()) return@forEach
+                        val isNumeric = line.any { it.isDigit() } && line.none { it.isLetter() }
+                        if (isNumeric) { if (price == 0.0) line.replace(Regex("[^0-9.]"), "").toDoubleOrNull()?.let { price = it } }
+                        else nameParts.add(line)
+                    }
+                    val name = nameParts.joinToString(" ").trim()
+                    if (name.isNotBlank() || price > 0.0) out.add(com.billing.pos.ocr.ScannedItem(name, price))
+                }
+                out
+            }
+            message.value = if (result.isEmpty()) "No text recognised" else null
+            if (result.isNotEmpty()) onResult(result)
         }
     }
 
@@ -168,7 +219,7 @@ class StickyNoteViewModel(app: Application) : AndroidViewModel(app) {
 }
 
 @Composable
-fun StickyNoteScreen(onClose: () -> Unit, vm: StickyNoteViewModel = viewModel()) {
+fun StickyNoteScreen(onClose: () -> Unit, onOcrToSales: () -> Unit = {}, vm: StickyNoteViewModel = viewModel()) {
     val context = LocalContext.current
     val message by vm.message.collectAsState()
 
@@ -286,10 +337,15 @@ fun StickyNoteScreen(onClose: () -> Unit, vm: StickyNoteViewModel = viewModel())
             OutlinedButton(onClick = { toggleRecord() }, modifier = Modifier.weight(1f)) { Icon(if (vm.recording) Icons.Filled.Stop else Icons.Filled.Mic, null) }
             OutlinedButton(onClick = { startVideo() }, modifier = Modifier.weight(1f)) { Icon(Icons.Filled.Videocam, null) }
             OutlinedButton(onClick = {
-                // Share the current page, then auto-save the whole note to My Diary.
+                // Share the current page and save the note to My Diary — but keep the window open.
                 shareCurrent()
-                vm.save(pages.map { PageData(it.strokes.toList(), it.bg) }, canvasSize.width, canvasSize.height, images.toList(), audios.toList(), videos.toList()) { onClose() }
+                vm.save(pages.map { PageData(it.strokes.toList(), it.bg) }, canvasSize.width, canvasSize.height, images.toList(), audios.toList(), videos.toList()) { }
             }, modifier = Modifier.weight(1f)) { Icon(Icons.Filled.Share, null) }
+            OutlinedButton(onClick = {
+                vm.ocrAllPages(pages.map { PageData(it.strokes.toList(), it.bg) }, canvasSize.width, canvasSize.height) { items ->
+                    StickyOcrLink.items = items; onOcrToSales()
+                }
+            }, modifier = Modifier.weight(1f)) { Icon(Icons.Filled.TextFields, null) }
         }
         // Row 3: close / save
         Row(Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {

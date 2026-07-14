@@ -274,7 +274,11 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
             var added = 0
             scanned.forEach { s ->
                 val name = s.name.trim()
-                if (name.isBlank()) return@forEach
+                if (name.isBlank() && s.price <= 0.0) return@forEach
+                if (name.isBlank()) {
+                    // Price-only line (no description) — allowed; name can be set later in the cart.
+                    cart.add(CartLine(0, "", s.price, 0.0, 1.0)); added++; return@forEach
+                }
                 val match = items.value.firstOrNull { it.name.equals(name, ignoreCase = true) }
                     ?: repo.itemByName(name)
                 if (match != null) {
