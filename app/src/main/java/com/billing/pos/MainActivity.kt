@@ -406,7 +406,7 @@ private fun AppNav() {
         composable("stickynote") {
             com.billing.pos.ui.sticky.StickyNoteScreen(
                 onClose = { nav.popBackStack() },
-                onOcrToSales = { nav.popBackStack(); nav.navigate("billing") }
+                onOcrToSales = { nav.navigate("billing") }
             )
         }
         composable("stockreport") { StockReportScreen(onBack = { nav.popBackStack() }) }

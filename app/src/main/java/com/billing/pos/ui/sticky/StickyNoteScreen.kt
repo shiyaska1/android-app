@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.material.icons.Icons
@@ -237,6 +238,7 @@ fun StickyNoteScreen(onClose: () -> Unit, onOcrToSales: () -> Unit = {}, vm: Sti
     val audios = remember { mutableStateListOf<String>() }
     val videos = remember { mutableStateListOf<String>() }
     var bgMode by remember { mutableStateOf(false) }
+    var ocrResult by remember { mutableStateOf<List<com.billing.pos.ocr.ScannedItem>?>(null) }
 
     LaunchedEffect(message) { message?.let { android.widget.Toast.makeText(context, it, android.widget.Toast.LENGTH_SHORT).show(); vm.consumeMessage() } }
 
@@ -348,9 +350,7 @@ fun StickyNoteScreen(onClose: () -> Unit, onOcrToSales: () -> Unit = {}, vm: Sti
                 vm.save(pages.map { PageData(it.strokes.toList(), it.bg) }, canvasSize.width, canvasSize.height, images.toList(), audios.toList(), videos.toList()) { }
             }, modifier = Modifier.weight(1f)) { Icon(Icons.Filled.Share, null) }
             OutlinedButton(onClick = {
-                vm.ocrAllPages(pages.map { PageData(it.strokes.toList(), it.bg) }, canvasSize.width, canvasSize.height) { items ->
-                    StickyOcrLink.items = items; onOcrToSales()
-                }
+                vm.ocrAllPages(pages.map { PageData(it.strokes.toList(), it.bg) }, canvasSize.width, canvasSize.height) { items -> ocrResult = items }
             }, modifier = Modifier.weight(1f)) { Icon(Icons.Filled.TextFields, null) }
         }
         // Row 3: close / save
@@ -358,5 +358,40 @@ fun StickyNoteScreen(onClose: () -> Unit, onOcrToSales: () -> Unit = {}, vm: Sti
             OutlinedButton(onClick = onClose, modifier = Modifier.weight(1f)) { Text("Close") }
             Button(onClick = { vm.save(pages.map { PageData(it.strokes.toList(), it.bg) }, canvasSize.width, canvasSize.height, images.toList(), audios.toList(), videos.toList()) { onClose() } }, modifier = Modifier.weight(1f)) { Icon(Icons.Filled.Save, null); Text("Save") }
         }
+    }
+
+    // OCR result — a list of scanned amounts with a big total, shareable, addable to a sale.
+    ocrResult?.let { list ->
+        val total = list.sumOf { it.price }
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { ocrResult = null },
+            title = { Text("Scanned amounts (${list.size})") },
+            text = {
+                Column(Modifier.fillMaxWidth()) {
+                    androidx.compose.foundation.lazy.LazyColumn(Modifier.fillMaxWidth().heightIn(max = 300.dp)) {
+                        androidx.compose.foundation.lazy.items(list.size) { i ->
+                            Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("${i + 1}.")
+                                Text(Format.money(list[i].price), style = MaterialTheme.typography.titleMedium)
+                            }
+                            androidx.compose.material3.Divider()
+                        }
+                    }
+                    Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Text("TOTAL", style = MaterialTheme.typography.titleMedium, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold)
+                        Text(Format.money(total), style = MaterialTheme.typography.headlineSmall, fontWeight = androidx.compose.ui.text.font.FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                    }
+                    Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = {
+                            val text = list.joinToString("\n") { Format.money(it.price) } + "\n\nTotal: ${Format.money(total)}"
+                            val intent = Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, text); addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
+                            runCatching { context.startActivity(Intent.createChooser(intent, "Share amounts").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+                        }, modifier = Modifier.weight(1f)) { Icon(Icons.Filled.Share, null); Text(" Share") }
+                        Button(onClick = { StickyOcrLink.items = list; ocrResult = null; onOcrToSales() }, modifier = Modifier.weight(1f)) { Text("Add to Sale") }
+                    }
+                }
+            },
+            confirmButton = { androidx.compose.material3.TextButton(onClick = { ocrResult = null }) { Text("Close") } }
+        )
     }
 }
