@@ -186,17 +186,14 @@ class StickyNoteViewModel(app: Application) : AndroidViewModel(app) {
                     bmp.recycle()
                     val lines = com.billing.pos.ocr.TextOcr.lines(ctx, android.net.Uri.fromFile(f))
                     f.delete()
-                    // Numeric lines -> price; text lines -> item name. Each page = one item.
-                    val nameParts = ArrayList<String>(); var price = 0.0
+                    // Read NUMBERS ONLY — each page's number becomes a price (no description).
+                    var price = 0.0
                     lines.forEach { raw ->
-                        val line = raw.trim()
-                        if (line.isBlank()) return@forEach
-                        val isNumeric = line.any { it.isDigit() } && line.none { it.isLetter() }
-                        if (isNumeric) { if (price == 0.0) line.replace(Regex("[^0-9.]"), "").toDoubleOrNull()?.let { price = it } }
-                        else nameParts.add(line)
+                        if (price > 0.0) return@forEach
+                        val digits = raw.filter { it.isDigit() || it == '.' }
+                        digits.toDoubleOrNull()?.let { if (it > 0.0) price = it }
                     }
-                    val name = nameParts.joinToString(" ").trim()
-                    if (name.isNotBlank() || price > 0.0) out.add(com.billing.pos.ocr.ScannedItem(name, price))
+                    if (price > 0.0) out.add(com.billing.pos.ocr.ScannedItem("", price))
                 }
                 out
             }
