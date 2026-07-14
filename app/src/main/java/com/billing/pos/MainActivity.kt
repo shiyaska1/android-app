@@ -168,6 +168,13 @@ private fun AppNav() {
             })
         }
         composable("dashboard") {
+            // Sticky note on launch (once per app start).
+            androidx.compose.runtime.LaunchedEffect(Unit) {
+                if (!com.billing.pos.ui.sticky.StickyGate.shown && com.billing.pos.data.AppPrefs(context).stickyNoteOnLaunch) {
+                    com.billing.pos.ui.sticky.StickyGate.shown = true
+                    nav.navigate("stickynote")
+                }
+            }
             DashboardScreen(
                 onNewBill = { nav.navigate("billing") },
                 onQuickBill = { nav.navigate("quickbill") },
@@ -395,6 +402,7 @@ private fun AppNav() {
             route = "materialout/edit/{id}",
             arguments = listOf(navArgument("id") { type = NavType.LongType })
         ) { entry -> MaterialOutScreen(editId = entry.arguments?.getLong("id"), resultRefs = null, resultTests = null, onBack = { nav.popBackStack() }) }
+        composable("stickynote") { com.billing.pos.ui.sticky.StickyNoteScreen(onClose = { nav.popBackStack() }) }
         composable("stockreport") { StockReportScreen(onBack = { nav.popBackStack() }) }
         composable("salesprofit") {
             SalesProfitScreen(onBack = { nav.popBackStack() }, onOpenInvoice = { id -> nav.navigate("billing/edit/$id") })

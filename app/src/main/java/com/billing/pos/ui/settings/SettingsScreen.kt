@@ -106,6 +106,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
     var letterheadPath by remember { mutableStateOf(prefs.labLetterheadPath) }
     var topSkip by remember { mutableStateOf(prefs.labTopSkipLines.toString()) }
     var bottomSkip by remember { mutableStateOf(prefs.labBottomSkipLines.toString()) }
+    var stickyNote by remember { mutableStateOf(prefs.stickyNoteOnLaunch) }
     val sealPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) scope.launch {
             val path = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { copyToAppFiles(context, uri, "lab_seal") }
@@ -224,6 +225,15 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
                     Text("Turn on if your logo image already includes name, address & phone.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
                 }
                 Checkbox(checked = logoFull, onCheckedChange = { logoFull = it; prefs.logoFullWidth = it })
+            }
+
+            Divider(Modifier.padding(vertical = 16.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Sticky note on launch", style = MaterialTheme.typography.titleSmall)
+                    Text("Open a full-screen handwriting canvas each time the app starts; Save stores each page as a picture in My Diary.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                }
+                Checkbox(checked = stickyNote, onCheckedChange = { stickyNote = it; prefs.stickyNoteOnLaunch = it })
             }
 
             Divider(Modifier.padding(vertical = 16.dp))

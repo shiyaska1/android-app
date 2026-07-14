@@ -86,6 +86,11 @@ class AppPrefs(context: Context) {
         get() = p.getString("business_type", "") ?: ""
         set(v) { p.edit().putString("business_type", v).apply() }
 
+    /** When on, a full-screen handwriting sticky-note canvas opens on launch (before the dashboard). */
+    var stickyNoteOnLaunch: Boolean
+        get() = p.getBoolean("sticky_note", false)
+        set(v) { p.edit().putBoolean("sticky_note", v).apply() }
+
     // ---- medical lab print assets ----
     /** Seal/stamp image path shown above the technician sign-off ("" = none). */
     var labSealPath: String
