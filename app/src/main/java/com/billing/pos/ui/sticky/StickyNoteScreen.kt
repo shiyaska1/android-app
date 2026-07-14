@@ -171,33 +171,41 @@ class StickyNoteViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** OCRs EVERY page (each page can be one item written large) into name+price items. */
+    /**
+     * Reads NUMBERS ONLY from every page. Handwriting is recognised with ML Kit Digital Ink
+     * (built for handwriting) directly from the strokes; a photo background falls back to
+     * image OCR. Each page's number becomes a price (no description).
+     */
     fun ocrAllPages(pages: List<PageData>, w: Int, h: Int, onResult: (List<com.billing.pos.ocr.ScannedItem>) -> Unit) {
         val ctx = getApplication<Application>()
-        if (w <= 0 || h <= 0) { message.value = "Nothing to read"; return }
-        message.value = "Reading pages…"
+        message.value = "Reading numbers…"
         viewModelScope.launch {
+            val ink = com.billing.pos.ink.InkRecognizer()
+            val ready = ink.ensureReady()
+            val numRegex = Regex("[0-9]+(?:[.,][0-9]+)?")
             val result = withContext(Dispatchers.IO) {
                 val out = ArrayList<com.billing.pos.ocr.ScannedItem>()
-                pages.filter { it.strokes.isNotEmpty() || it.bg != null }.forEach { p ->
-                    val bmp = renderPage(p, w, h)
-                    val f = File(ctx.cacheDir, "ocr_${System.nanoTime()}.jpg")
-                    f.outputStream().use { bmp.compress(Bitmap.CompressFormat.JPEG, 92, it) }
-                    bmp.recycle()
-                    val lines = com.billing.pos.ocr.TextOcr.lines(ctx, android.net.Uri.fromFile(f))
-                    f.delete()
-                    // Read NUMBERS ONLY — each page's number becomes a price (no description).
-                    var price = 0.0
-                    lines.forEach { raw ->
-                        if (price > 0.0) return@forEach
-                        val digits = raw.filter { it.isDigit() || it == '.' }
-                        digits.toDoubleOrNull()?.let { if (it > 0.0) price = it }
+                pages.forEach { p ->
+                    var text = ""
+                    if (ready && p.strokes.isNotEmpty()) text = ink.recognize(p.strokes)
+                    if (text.isBlank() && p.bg != null && w > 0 && h > 0) {
+                        val bmp = renderPage(p, w, h)
+                        val f = File(ctx.cacheDir, "ocr_${System.nanoTime()}.jpg")
+                        f.outputStream().use { bmp.compress(Bitmap.CompressFormat.JPEG, 92, it) }
+                        bmp.recycle()
+                        text = com.billing.pos.ocr.TextOcr.lines(ctx, android.net.Uri.fromFile(f)).joinToString(" ")
+                        f.delete()
                     }
-                    if (price > 0.0) out.add(com.billing.pos.ocr.ScannedItem("", price))
+                    numRegex.find(text)?.value?.replace(",", ".")?.toDoubleOrNull()?.let { if (it > 0.0) out.add(com.billing.pos.ocr.ScannedItem("", it)) }
                 }
                 out
             }
-            message.value = if (result.isEmpty()) "No text recognised" else null
+            ink.close()
+            message.value = when {
+                result.isNotEmpty() -> null
+                !ready -> "Handwriting model still downloading — connect to the internet once and retry"
+                else -> "No number recognised — write the price larger"
+            }
             if (result.isNotEmpty()) onResult(result)
         }
     }
