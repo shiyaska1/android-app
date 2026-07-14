@@ -369,7 +369,7 @@ fun StickyNoteScreen(onClose: () -> Unit, onOcrToSales: () -> Unit = {}, vm: Sti
             text = {
                 Column(Modifier.fillMaxWidth()) {
                     androidx.compose.foundation.lazy.LazyColumn(Modifier.fillMaxWidth().heightIn(max = 300.dp)) {
-                        androidx.compose.foundation.lazy.items(list.size) { i ->
+                        items(list.size) { i ->
                             Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), horizontalArrangement = Arrangement.SpaceBetween) {
                                 Text("${i + 1}.")
                                 Text(Format.money(list[i].price), style = MaterialTheme.typography.titleMedium)
