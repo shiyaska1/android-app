@@ -24,8 +24,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
@@ -42,6 +44,7 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -87,7 +90,9 @@ object StickyGate { var shown = false }
 /** One-shot hand-off of OCR'd items from the sticky note to the sales entry. */
 object StickyOcrLink {
     var items: List<com.billing.pos.ocr.ScannedItem>? = null
-    fun take(): List<com.billing.pos.ocr.ScannedItem>? { val i = items; items = null; return i }
+    /** true = open the review popup (text mode, edit names/prices); false = add straight to cart. */
+    var review: Boolean = false
+    fun take(): Pair<List<com.billing.pos.ocr.ScannedItem>?, Boolean> { val i = items to review; items = null; review = false; return i }
 }
 
 private typealias StrokePts = List<Offset>
@@ -211,6 +216,41 @@ class StickyNoteViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Recognises the handwriting TEXT of every page; each page becomes one paragraph. */
+    fun ocrTextAllPages(pages: List<PageData>, w: Int, h: Int, onResult: (String) -> Unit) {
+        val ctx = getApplication<Application>()
+        message.value = "Reading text…"
+        viewModelScope.launch {
+            val ink = com.billing.pos.ink.InkRecognizer()
+            val ready = ink.ensureReady()
+            val paragraphs = withContext(Dispatchers.IO) {
+                val out = ArrayList<String>()
+                pages.forEach { p ->
+                    var text = ""
+                    if (ready && p.strokes.isNotEmpty()) text = ink.recognize(p.strokes)
+                    if (text.isBlank() && p.bg != null && w > 0 && h > 0) {
+                        val bmp = renderPage(p, w, h)
+                        val f = File(ctx.cacheDir, "ocr_${System.nanoTime()}.jpg")
+                        f.outputStream().use { bmp.compress(Bitmap.CompressFormat.JPEG, 92, it) }
+                        bmp.recycle()
+                        text = com.billing.pos.ocr.TextOcr.lines(ctx, android.net.Uri.fromFile(f)).joinToString("\n")
+                        f.delete()
+                    }
+                    if (text.isNotBlank()) out.add(text.trim())
+                }
+                out
+            }
+            ink.close()
+            val combined = paragraphs.joinToString("\n\n")
+            message.value = when {
+                combined.isNotBlank() -> null
+                !ready -> "Handwriting model still downloading — connect to the internet once and retry"
+                else -> "No text recognised"
+            }
+            if (combined.isNotBlank()) onResult(combined)
+        }
+    }
+
     private fun renderPage(p: PageData, w: Int, h: Int): Bitmap {
         val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
         val c = AndroidCanvas(bmp)
@@ -239,6 +279,8 @@ fun StickyNoteScreen(onClose: () -> Unit, onOcrToSales: () -> Unit = {}, vm: Sti
     val videos = remember { mutableStateListOf<String>() }
     var bgMode by remember { mutableStateOf(false) }
     var ocrResult by remember { mutableStateOf<List<com.billing.pos.ocr.ScannedItem>?>(null) }
+    var ocrModeAsk by remember { mutableStateOf(false) }
+    var ocrText by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(message) { message?.let { android.widget.Toast.makeText(context, it, android.widget.Toast.LENGTH_SHORT).show(); vm.consumeMessage() } }
 
@@ -338,20 +380,20 @@ fun StickyNoteScreen(onClose: () -> Unit, onOcrToSales: () -> Unit = {}, vm: Sti
             OutlinedButton(onClick = { if (pageIndex == pages.lastIndex) pages.add(NotePage()); pageIndex++ }, modifier = Modifier.weight(1f)) { Text("Next") }
             OutlinedButton(onClick = { pages.getOrNull(pageIndex)?.let { it.strokes.clear(); it.bg = null } }, modifier = Modifier.weight(1f)) { Icon(Icons.Filled.Clear, null); Text("Clear") }
         }
-        // Row 2: attachments
+        // Row 2: attachments (bigger icons so they're easy to see)
+        val bigIcon = Modifier.size(30.dp)
+        val actBtn = Modifier.weight(1f).height(56.dp)
+        val noPad = androidx.compose.foundation.layout.PaddingValues(2.dp)
         Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            OutlinedButton(onClick = { camera() }, modifier = Modifier.weight(1f)) { Icon(Icons.Filled.PhotoCamera, null) }
-            OutlinedButton(onClick = { gallery.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }, modifier = Modifier.weight(1f)) { Icon(Icons.Filled.PhotoLibrary, null) }
-            OutlinedButton(onClick = { toggleRecord() }, modifier = Modifier.weight(1f)) { Icon(if (vm.recording) Icons.Filled.Stop else Icons.Filled.Mic, null) }
-            OutlinedButton(onClick = { startVideo() }, modifier = Modifier.weight(1f)) { Icon(Icons.Filled.Videocam, null) }
+            OutlinedButton(onClick = { camera() }, modifier = actBtn, contentPadding = noPad) { Icon(Icons.Filled.PhotoCamera, "Camera", modifier = bigIcon) }
+            OutlinedButton(onClick = { gallery.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }, modifier = actBtn, contentPadding = noPad) { Icon(Icons.Filled.PhotoLibrary, "Gallery", modifier = bigIcon) }
+            OutlinedButton(onClick = { toggleRecord() }, modifier = actBtn, contentPadding = noPad) { Icon(if (vm.recording) Icons.Filled.Stop else Icons.Filled.Mic, "Voice", modifier = bigIcon) }
+            OutlinedButton(onClick = { startVideo() }, modifier = actBtn, contentPadding = noPad) { Icon(Icons.Filled.Videocam, "Video", modifier = bigIcon) }
             OutlinedButton(onClick = {
-                // Share the current page and save the note to My Diary — but keep the window open.
                 shareCurrent()
                 vm.save(pages.map { PageData(it.strokes.toList(), it.bg) }, canvasSize.width, canvasSize.height, images.toList(), audios.toList(), videos.toList()) { }
-            }, modifier = Modifier.weight(1f)) { Icon(Icons.Filled.Share, null) }
-            OutlinedButton(onClick = {
-                vm.ocrAllPages(pages.map { PageData(it.strokes.toList(), it.bg) }, canvasSize.width, canvasSize.height) { items -> ocrResult = items }
-            }, modifier = Modifier.weight(1f)) { Icon(Icons.Filled.TextFields, null) }
+            }, modifier = actBtn, contentPadding = noPad) { Icon(Icons.Filled.Share, "Share", modifier = bigIcon) }
+            OutlinedButton(onClick = { ocrModeAsk = true }, modifier = actBtn, contentPadding = noPad) { Icon(Icons.Filled.TextFields, "Read", modifier = bigIcon) }
         }
         // Row 3: close / save
         Row(Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -387,11 +429,60 @@ fun StickyNoteScreen(onClose: () -> Unit, onOcrToSales: () -> Unit = {}, vm: Sti
                             val intent = Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, text); addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
                             runCatching { context.startActivity(Intent.createChooser(intent, "Share amounts").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
                         }, modifier = Modifier.weight(1f)) { Icon(Icons.Filled.Share, null); Text(" Share") }
-                        Button(onClick = { StickyOcrLink.items = list; ocrResult = null; onOcrToSales() }, modifier = Modifier.weight(1f)) { Text("Add to Sale") }
+                        Button(onClick = { StickyOcrLink.items = list; StickyOcrLink.review = false; ocrResult = null; onOcrToSales() }, modifier = Modifier.weight(1f)) { Text("Add to Sale") }
                     }
                 }
             },
             confirmButton = { androidx.compose.material3.TextButton(onClick = { ocrResult = null }) { Text("Close") } }
+        )
+    }
+
+    // Ask: read as numbers or text?
+    if (ocrModeAsk) {
+        val pageData = pages.map { PageData(it.strokes.toList(), it.bg) }
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { ocrModeAsk = false },
+            title = { Text("Read handwriting as") },
+            text = { Text("Numbers — each page's amount for a sale. Text — combine all pages into editable text.") },
+            confirmButton = {
+                Button(onClick = { ocrModeAsk = false; vm.ocrAllPages(pageData, canvasSize.width, canvasSize.height) { items -> ocrResult = items } }) { Text("Numbers") }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = { ocrModeAsk = false; vm.ocrTextAllPages(pageData, canvasSize.width, canvasSize.height) { t -> ocrText = t } }) { Text("Text") }
+            }
+        )
+    }
+
+    // Text result — big editable box, share to WhatsApp, add to invoice as item names.
+    ocrText?.let { initial ->
+        var text by remember(initial) { mutableStateOf(initial) }
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { ocrText = null },
+            title = { Text("Recognised text") },
+            text = {
+                Column(Modifier.fillMaxWidth()) {
+                    OutlinedTextField(
+                        value = text, onValueChange = { text = it },
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 180.dp, max = 360.dp),
+                        minLines = 6
+                    )
+                    Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = {
+                            val send = Intent(Intent.ACTION_SEND).apply { type = "text/plain"; putExtra(Intent.EXTRA_TEXT, text); addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
+                            val ok = runCatching { context.startActivity(Intent(send).apply { setPackage("com.whatsapp") }) }.isSuccess ||
+                                runCatching { context.startActivity(Intent(send).apply { setPackage("com.whatsapp.w4b") }) }.isSuccess
+                            if (!ok) android.widget.Toast.makeText(context, "WhatsApp not found", android.widget.Toast.LENGTH_SHORT).show()
+                        }, modifier = Modifier.weight(1f)) { Icon(Icons.Filled.Share, null); Text(" WhatsApp") }
+                        Button(onClick = {
+                            // Each paragraph -> an item name (price blank), reviewed in the sale.
+                            val items = text.split(Regex("\\n\\s*\\n")).map { it.trim().replace("\n", " ") }.filter { it.isNotBlank() }
+                                .map { com.billing.pos.ocr.ScannedItem(it, 0.0) }
+                            if (items.isNotEmpty()) { StickyOcrLink.items = items; StickyOcrLink.review = true; ocrText = null; onOcrToSales() }
+                        }, modifier = Modifier.weight(1f)) { Text("Add to invoice") }
+                    }
+                }
+            },
+            confirmButton = { androidx.compose.material3.TextButton(onClick = { ocrText = null }) { Text("Close") } }
         )
     }
 }

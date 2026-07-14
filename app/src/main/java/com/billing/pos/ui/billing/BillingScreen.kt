@@ -147,9 +147,12 @@ fun BillingScreen(
     var showPhotoOptions by remember { mutableStateOf(false) }
     var showSetTotal by remember { mutableStateOf(false) }
     var ocrReview by remember { mutableStateOf<List<com.billing.pos.ocr.ScannedItem>?>(null) }
-    // Amounts handed over from the sticky-note OCR (already reviewed there) are added
-    // directly to the cart — including price-only lines with no name.
-    LaunchedEffect(Unit) { com.billing.pos.ui.sticky.StickyOcrLink.take()?.let { if (it.isNotEmpty()) vm.addOcrItemsToCart(it) } }
+    // Items handed over from the sticky-note OCR. Numbers were reviewed in the note, so they
+    // go straight to the cart; text-mode items open the review popup to fill in prices.
+    LaunchedEffect(Unit) {
+        val (items, review) = com.billing.pos.ui.sticky.StickyOcrLink.take()
+        if (!items.isNullOrEmpty()) { if (review) ocrReview = items else vm.addOcrItemsToCart(items) }
+    }
     val requireBatch = remember { com.billing.pos.data.AppPrefs(context).requireItemBatch }
     var batchPickFor by remember { mutableStateOf<com.billing.pos.data.Item?>(null) }
     var sizePickFor by remember { mutableStateOf<com.billing.pos.data.Item?>(null) }
