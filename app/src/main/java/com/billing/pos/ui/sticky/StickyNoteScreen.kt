@@ -1,11 +1,20 @@
 package com.billing.pos.ui.sticky
 
+import android.Manifest
 import android.app.Application
 import android.content.Intent
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Canvas as AndroidCanvas
 import android.graphics.Paint as AndroidPaint
 import android.graphics.Path as AndroidPath
+import android.graphics.Rect
+import android.media.MediaRecorder
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -18,10 +27,15 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -34,16 +48,19 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshots.SnapshotStateList
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.AndroidViewModel
@@ -59,54 +76,91 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 
 /** Session flag so the launch sticky-note shows only once per app start. */
 object StickyGate { var shown = false }
 
 private typealias StrokePts = List<Offset>
 
+/** A page of the note: handwriting strokes over an optional background image. */
+class NotePage {
+    val strokes = mutableStateListOf<StrokePts>()
+    var bg by mutableStateOf<String?>(null)
+}
+
+/** Immutable snapshot passed to the VM for rendering. */
+data class PageData(val strokes: List<StrokePts>, val bg: String?)
+
 class StickyNoteViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = DiaryRepository(app)
     val message = MutableStateFlow<String?>(null)
     fun consumeMessage() { message.value = null }
 
-    /** Renders each non-empty page to an image, plus any camera photos, into a new diary entry. */
-    fun save(pages: List<List<StrokePts>>, w: Int, h: Int, photoPaths: List<String>, onDone: () -> Unit) {
+    var recording by mutableStateOf(false); private set
+    private var recorder: MediaRecorder? = null
+    private var recordFile: File? = null
+
+    fun startRecording() {
+        if (recording) return
+        val ctx = getApplication<Application>()
+        val file = File(AttachmentStore.dir(ctx), "note_voice_${System.nanoTime()}.m4a")
+        val rec = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) MediaRecorder(ctx) else @Suppress("DEPRECATION") MediaRecorder()
+        try {
+            rec.setAudioSource(MediaRecorder.AudioSource.MIC)
+            rec.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+            rec.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+            rec.setOutputFile(file.absolutePath)
+            rec.prepare(); rec.start()
+            recorder = rec; recordFile = file; recording = true
+        } catch (e: Exception) { runCatching { rec.release() }; file.delete(); message.value = "Could not start recording" }
+    }
+
+    fun stopRecording(onSaved: (String) -> Unit) {
+        val rec = recorder ?: return
+        runCatching { rec.stop() }; runCatching { rec.release() }
+        recorder = null; recording = false
+        recordFile?.let { if (it.exists() && it.length() > 0) onSaved(it.absolutePath) }
+    }
+
+    override fun onCleared() { runCatching { recorder?.release() }; recorder = null }
+
+    /** Renders each page (background + strokes) to a picture and creates a diary entry with all attachments. */
+    fun save(pages: List<PageData>, w: Int, h: Int, images: List<String>, audios: List<String>, videos: List<String>, onDone: () -> Unit) {
         val ctx = getApplication<Application>()
         viewModelScope.launch {
-            val paths = withContext(Dispatchers.IO) {
+            val pagePaths = withContext(Dispatchers.IO) {
                 val out = ArrayList<String>()
-                if (w > 0 && h > 0) pages.filter { it.isNotEmpty() }.forEach { strokes ->
-                    val bmp = renderPage(strokes, w, h)
+                if (w > 0 && h > 0) pages.filter { it.strokes.isNotEmpty() || it.bg != null }.forEach { p ->
+                    val bmp = renderPage(p, w, h)
                     val f = AttachmentStore.newFile(ctx, "jpg")
                     f.outputStream().use { bmp.compress(Bitmap.CompressFormat.JPEG, 90, it) }
-                    bmp.recycle()
-                    out.add(f.absolutePath)
+                    bmp.recycle(); out.add(f.absolutePath)
                 }
-                out.addAll(photoPaths)
                 out
             }
-            if (paths.isEmpty()) { message.value = "Nothing written to save"; return@launch }
+            if (pagePaths.isEmpty() && images.isEmpty() && audios.isEmpty() && videos.isEmpty()) { message.value = "Nothing to save"; return@launch }
             val now = System.currentTimeMillis()
             val id = repo.upsert(DiaryEntry(title = "Sticky note - ${Format.dateTime(now)}", remarks = "", createdAt = now, updatedAt = now))
-            repo.replaceBlocks(id, paths.map { DiaryBlock(entryId = id, position = 0, type = BlockType.IMAGE, path = it, name = "Sticky note.jpg", mime = "image/jpeg") })
+            val blocks = ArrayList<DiaryBlock>()
+            pagePaths.forEach { blocks.add(DiaryBlock(entryId = id, position = 0, type = BlockType.IMAGE, path = it, name = "Sticky note.jpg", mime = "image/jpeg")) }
+            images.forEach { blocks.add(DiaryBlock(entryId = id, position = 0, type = BlockType.IMAGE, path = it, name = "Photo.jpg", mime = "image/jpeg")) }
+            audios.forEach { blocks.add(DiaryBlock(entryId = id, position = 0, type = BlockType.AUDIO, path = it, name = "Voice note.m4a", mime = "audio/mp4")) }
+            videos.forEach { blocks.add(DiaryBlock(entryId = id, position = 0, type = BlockType.VIDEO, path = it, name = "Video.mp4", mime = "video/mp4")) }
+            repo.replaceBlocks(id, blocks)
             message.value = "Saved to My Diary"
             onDone()
         }
     }
 
-    private fun renderPage(strokes: List<StrokePts>, w: Int, h: Int): Bitmap {
+    private fun renderPage(p: PageData, w: Int, h: Int): Bitmap {
         val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
         val c = AndroidCanvas(bmp)
         c.drawColor(0xFFFFFFFF.toInt())
-        val paint = AndroidPaint().apply {
-            color = 0xFF111111.toInt(); isAntiAlias = true; style = AndroidPaint.Style.STROKE
-            strokeWidth = 4f; strokeCap = AndroidPaint.Cap.ROUND; strokeJoin = AndroidPaint.Join.ROUND
-        }
-        strokes.forEach { pts ->
-            if (pts.size == 1) { c.drawPoint(pts[0].x, pts[0].y, paint); return@forEach }
-            val path = AndroidPath()
-            pts.forEachIndexed { i, p -> if (i == 0) path.moveTo(p.x, p.y) else path.lineTo(p.x, p.y) }
+        p.bg?.let { path -> runCatching { BitmapFactory.decodeFile(path) }.getOrNull()?.let { c.drawBitmap(it, null, Rect(0, 0, w, h), null); it.recycle() } }
+        val paint = AndroidPaint().apply { color = 0xFF111111.toInt(); isAntiAlias = true; style = AndroidPaint.Style.STROKE; strokeWidth = 4f; strokeCap = AndroidPaint.Cap.ROUND; strokeJoin = AndroidPaint.Join.ROUND }
+        p.strokes.forEach { pts ->
+            val path = AndroidPath(); pts.forEachIndexed { i, pt -> if (i == 0) path.moveTo(pt.x, pt.y) else path.lineTo(pt.x, pt.y) }
             c.drawPath(path, paint)
         }
         return bmp
@@ -118,45 +172,81 @@ fun StickyNoteScreen(onClose: () -> Unit, vm: StickyNoteViewModel = viewModel())
     val context = LocalContext.current
     val message by vm.message.collectAsState()
 
-    // pages: each page is a list of committed strokes (each stroke = list of points, in px).
-    val pages = remember { mutableStateListOf<SnapshotStateList<StrokePts>>(mutableStateListOf<StrokePts>()) }
+    val pages = remember { mutableStateListOf(NotePage()) }
     var pageIndex by remember { mutableStateOf(0) }
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
     val current = remember { mutableStateListOf<Offset>() }
-    val photoPaths = remember { mutableStateListOf<String>() }
+    val images = remember { mutableStateListOf<String>() }   // non-background photos
+    val audios = remember { mutableStateListOf<String>() }
+    val videos = remember { mutableStateListOf<String>() }
+    var bgMode by remember { mutableStateOf(false) }
 
     LaunchedEffect(message) { message?.let { android.widget.Toast.makeText(context, it, android.widget.Toast.LENGTH_SHORT).show(); vm.consumeMessage() } }
 
-    val camera = com.billing.pos.ocr.rememberImageCamera { uri ->
+    // Route a picked image either to the page background or to attachments.
+    fun handleImage(uri: android.net.Uri) {
         val dest = AttachmentStore.newFile(context, "jpg")
         val ok = runCatching { AttachmentStore.compressImageTo(context, uri, dest) }.getOrDefault(false)
-        if (ok) photoPaths.add(dest.absolutePath)
+        if (!ok) return
+        if (bgMode) pages.getOrNull(pageIndex)?.bg = dest.absolutePath else images.add(dest.absolutePath)
+    }
+    val camera = com.billing.pos.ocr.rememberImageCamera { uri -> handleImage(uri) }
+    val gallery = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri -> if (uri != null) handleImage(uri) }
+
+    // Video capture.
+    var pendingVideo by remember { mutableStateOf<File?>(null) }
+    val takeVideo = rememberLauncherForActivityResult(ActivityResultContracts.CaptureVideo()) { ok ->
+        val f = pendingVideo; pendingVideo = null
+        if (ok == true && f != null && f.exists() && f.length() > 0) videos.add(f.absolutePath) else f?.delete()
+    }
+    fun launchVideo() {
+        val f = File(AttachmentStore.dir(context), "note_vid_${System.nanoTime()}.mp4"); pendingVideo = f
+        val uri = FileProvider.getUriForFile(context, "${context.packageName}.provider", f)
+        runCatching { takeVideo.launch(uri) }.onFailure { pendingVideo = null }
+    }
+    val camPermForVideo = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted -> if (granted) launchVideo() }
+    fun startVideo() {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == android.content.pm.PackageManager.PERMISSION_GRANTED) launchVideo()
+        else camPermForVideo.launch(Manifest.permission.CAMERA)
+    }
+    val micPerm = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted -> if (granted) vm.startRecording() }
+    fun toggleRecord() {
+        if (vm.recording) vm.stopRecording { audios.add(it) }
+        else if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED) vm.startRecording()
+        else micPerm.launch(Manifest.permission.RECORD_AUDIO)
     }
 
     fun shareCurrent() {
         if (canvasSize.width <= 0) return
-        val strokes = pages.getOrNull(pageIndex)?.toList() ?: emptyList()
+        val page = pages.getOrNull(pageIndex) ?: return
         val bmp = Bitmap.createBitmap(canvasSize.width, canvasSize.height, Bitmap.Config.ARGB_8888)
         AndroidCanvas(bmp).apply {
             drawColor(0xFFFFFFFF.toInt())
+            page.bg?.let { p -> runCatching { BitmapFactory.decodeFile(p) }.getOrNull()?.let { drawBitmap(it, null, Rect(0, 0, canvasSize.width, canvasSize.height), null) } }
             val paint = AndroidPaint().apply { color = 0xFF111111.toInt(); isAntiAlias = true; style = AndroidPaint.Style.STROKE; strokeWidth = 4f; strokeCap = AndroidPaint.Cap.ROUND }
-            strokes.forEach { pts -> val p = AndroidPath(); pts.forEachIndexed { i, pt -> if (i == 0) p.moveTo(pt.x, pt.y) else p.lineTo(pt.x, pt.y) }; drawPath(p, paint) }
+            page.strokes.forEach { pts -> val pa = AndroidPath(); pts.forEachIndexed { i, pt -> if (i == 0) pa.moveTo(pt.x, pt.y) else pa.lineTo(pt.x, pt.y) }; drawPath(pa, paint) }
         }
-        val dir = java.io.File(context.cacheDir, "shared").apply { mkdirs() }
-        val f = java.io.File(dir, "stickynote_${System.nanoTime()}.jpg")
+        val dir = File(context.cacheDir, "shared").apply { mkdirs() }
+        val f = File(dir, "stickynote_${System.nanoTime()}.jpg")
         f.outputStream().use { bmp.compress(Bitmap.CompressFormat.JPEG, 90, it) }
         val uri = FileProvider.getUriForFile(context, "${context.packageName}.provider", f)
         val intent = Intent(Intent.ACTION_SEND).apply { type = "image/jpeg"; putExtra(Intent.EXTRA_STREAM, uri); addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION) }
         runCatching { context.startActivity(Intent.createChooser(intent, "Share note").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
     }
 
+    // Background image of the current page (loaded for the canvas).
+    val curBgPath = pages.getOrNull(pageIndex)?.bg
+    val bgImage: ImageBitmap? = remember(curBgPath) { curBgPath?.let { runCatching { BitmapFactory.decodeFile(it)?.asImageBitmap() }.getOrNull() } }
+
     Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             Text("Sticky note", style = MaterialTheme.typography.titleMedium)
             Text("   Page ${pageIndex + 1}/${pages.size}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
-            Row(Modifier.weight(1f), horizontalArrangement = Arrangement.End) {
-                if (photoPaths.isNotEmpty()) Text("${photoPaths.size} photo(s)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+            Row(Modifier.padding(start = 12.dp).weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(checked = bgMode, onCheckedChange = { bgMode = it })
+                Text("Photo as background", style = MaterialTheme.typography.labelSmall)
             }
+            if (vm.recording) Text("● REC", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall)
         }
         Canvas(
             Modifier.weight(1f).fillMaxWidth().background(Color.White)
@@ -166,14 +256,15 @@ fun StickyNoteScreen(onClose: () -> Unit, vm: StickyNoteViewModel = viewModel())
                         onDragStart = { off -> current.clear(); current.add(off) },
                         onDrag = { change, _ -> current.add(change.position); change.consume() },
                         onDragEnd = {
-                            if (current.isNotEmpty()) { while (pages.size <= pageIndex) pages.add(mutableStateListOf()); pages[pageIndex].add(current.toList()) }
+                            if (current.isNotEmpty()) { while (pages.size <= pageIndex) pages.add(NotePage()); pages[pageIndex].strokes.add(current.toList()) }
                             current.clear()
                         }
                     )
                 }
         ) {
+            bgImage?.let { drawImage(it, srcOffset = IntOffset.Zero, srcSize = IntSize(it.width, it.height), dstOffset = IntOffset.Zero, dstSize = IntSize(size.width.toInt(), size.height.toInt())) }
             val ink = Color.Black
-            pages.getOrNull(pageIndex)?.forEach { pts ->
+            pages.getOrNull(pageIndex)?.strokes?.forEach { pts ->
                 val path = Path().apply { pts.forEachIndexed { i, p -> if (i == 0) moveTo(p.x, p.y) else lineTo(p.x, p.y) } }
                 drawPath(path, ink, style = Stroke(width = 4f, cap = StrokeCap.Round))
             }
@@ -182,18 +273,24 @@ fun StickyNoteScreen(onClose: () -> Unit, vm: StickyNoteViewModel = viewModel())
                 drawPath(path, ink, style = Stroke(width = 4f, cap = StrokeCap.Round))
             }
         }
-        // Bottom controls
+        // Row 1: page nav + clear
         Row(Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             OutlinedButton(onClick = { if (pageIndex > 0) pageIndex-- }, enabled = pageIndex > 0, modifier = Modifier.weight(1f)) { Text("Prev") }
-            OutlinedButton(onClick = { if (pageIndex == pages.lastIndex) pages.add(mutableStateListOf()); pageIndex++ }, modifier = Modifier.weight(1f)) { Text("Next") }
-            OutlinedButton(onClick = { pages.getOrNull(pageIndex)?.clear() }, modifier = Modifier.weight(1f)) { Icon(Icons.Filled.Clear, null); Text("Clear") }
+            OutlinedButton(onClick = { if (pageIndex == pages.lastIndex) pages.add(NotePage()); pageIndex++ }, modifier = Modifier.weight(1f)) { Text("Next") }
+            OutlinedButton(onClick = { pages.getOrNull(pageIndex)?.let { it.strokes.clear(); it.bg = null } }, modifier = Modifier.weight(1f)) { Icon(Icons.Filled.Clear, null); Text("Clear") }
         }
-        Row(Modifier.fillMaxWidth().padding(start = 8.dp, end = 8.dp, bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            OutlinedButton(onClick = { camera() }, modifier = Modifier.weight(1f)) { Icon(Icons.Filled.PhotoCamera, null); Text("Photo") }
-            OutlinedButton(onClick = { shareCurrent() }, modifier = Modifier.weight(1f)) { Icon(Icons.Filled.Share, null); Text("Share") }
+        // Row 2: attachments
+        Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            OutlinedButton(onClick = { camera() }, modifier = Modifier.weight(1f)) { Icon(Icons.Filled.PhotoCamera, null) }
+            OutlinedButton(onClick = { gallery.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) }, modifier = Modifier.weight(1f)) { Icon(Icons.Filled.PhotoLibrary, null) }
+            OutlinedButton(onClick = { toggleRecord() }, modifier = Modifier.weight(1f)) { Icon(if (vm.recording) Icons.Filled.Stop else Icons.Filled.Mic, null) }
+            OutlinedButton(onClick = { startVideo() }, modifier = Modifier.weight(1f)) { Icon(Icons.Filled.Videocam, null) }
+            OutlinedButton(onClick = { shareCurrent() }, modifier = Modifier.weight(1f)) { Icon(Icons.Filled.Share, null) }
+        }
+        // Row 3: close / save
+        Row(Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             OutlinedButton(onClick = onClose, modifier = Modifier.weight(1f)) { Text("Close") }
-            Button(onClick = { vm.save(pages.map { it.toList() }, canvasSize.width, canvasSize.height, photoPaths.toList()) { onClose() } }, modifier = Modifier.weight(1f)) { Icon(Icons.Filled.Save, null); Text("Save") }
+            Button(onClick = { vm.save(pages.map { PageData(it.strokes.toList(), it.bg) }, canvasSize.width, canvasSize.height, images.toList(), audios.toList(), videos.toList()) { onClose() } }, modifier = Modifier.weight(1f)) { Icon(Icons.Filled.Save, null); Text("Save") }
         }
     }
 }
-
