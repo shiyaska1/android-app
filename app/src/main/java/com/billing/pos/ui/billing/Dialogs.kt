@@ -17,6 +17,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material3.AlertDialog
@@ -392,9 +393,11 @@ fun ItemPickerDialog(
     onDismiss: () -> Unit,
     onPick: (Item) -> Unit,
     onNewItem: () -> Unit,
-    stockByItem: Map<Long, Double> = emptyMap()
+    stockByItem: Map<Long, Double> = emptyMap(),
+    photosByItem: Map<Long, List<String>> = emptyMap()
 ) {
     var query by remember { mutableStateOf("") }
+    var viewImages by remember { mutableStateOf<List<String>?>(null) }
     val filtered = remember(query, items) {
         if (query.isBlank()) items
         else items.filter { it.name.contains(query, ignoreCase = true) || it.chemicalContent.contains(query, ignoreCase = true) }
@@ -430,13 +433,20 @@ fun ItemPickerDialog(
                                     .clickable { onPick(item) }
                                     .padding(vertical = 10.dp)
                             ) {
-                                // Item name — larger, bold.
-                                Text(
-                                    item.name,
-                                    style = androidx.compose.material3.MaterialTheme.typography.titleMedium,
-                                    fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
-                                    color = androidx.compose.material3.MaterialTheme.colorScheme.onSurface
-                                )
+                                // Item name — larger, bold — with a photo-viewer icon if it has images.
+                                Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                                    Text(
+                                        item.name,
+                                        modifier = Modifier.weight(1f),
+                                        style = androidx.compose.material3.MaterialTheme.typography.titleMedium,
+                                        fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                                        color = androidx.compose.material3.MaterialTheme.colorScheme.onSurface
+                                    )
+                                    val imgs = photosByItem[item.id].orEmpty()
+                                    if (imgs.isNotEmpty()) IconButton(onClick = { viewImages = imgs }) {
+                                        Icon(Icons.Filled.Image, contentDescription = "View photos", tint = MaterialTheme.colorScheme.primary)
+                                    }
+                                }
                                 // Price / stock / location — each a distinct colour.
                                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                     Text(
@@ -475,4 +485,6 @@ fun ItemPickerDialog(
         confirmButton = { TextButton(onClick = onNewItem) { Text("New item") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Close") } }
     )
+    // Full-screen image viewer for the tapped item's photos (share doesn't close it).
+    viewImages?.let { com.billing.pos.ui.common.ImageViewerDialog(paths = it, onDismiss = { viewImages = null }) }
 }

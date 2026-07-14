@@ -635,6 +635,7 @@ fun BillingScreen(
         val stockByItem by vm.stockByItem.collectAsStateSafe()
         val allSizes by vm.allSizes.collectAsStateSafe()
         val allBatches by vm.allBatches.collectAsStateSafe()
+        val photosByItem by vm.imagesByItem.collectAsStateSafe()
         ItemPickerDialog(
             items = items,
             onDismiss = { showItemPicker = false },
@@ -651,7 +652,8 @@ fun BillingScreen(
                 }
             },
             onNewItem = { showItemPicker = false; showNewItem = true },
-            stockByItem = stockByItem
+            stockByItem = stockByItem,
+            photosByItem = photosByItem
         )
     }
     unitPickFor?.let { item ->
@@ -992,16 +994,18 @@ internal fun EditLineNameDialog(
     val scope = rememberCoroutineScope()
     // Start cleared and ready for a new item; the current name shows as a placeholder.
     var text by remember { mutableStateOf("") }
-    // Camera → OCR → name.
-    val scanName = com.billing.pos.ocr.rememberNameScanner { if (it.isNotBlank()) text = it }
-    // Gallery image → OCR → name.
-    val galleryOcr = rememberLauncherForActivityResult(
+    // Capture/pick an image, then draw a box over just the item name to OCR.
+    var regionUri by remember { mutableStateOf<android.net.Uri?>(null) }
+    val camera = com.billing.pos.ocr.rememberImageCamera { uri -> regionUri = uri }
+    val galleryPick = rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia()
-    ) { uri ->
-        if (uri != null) scope.launch {
-            val t = com.billing.pos.ocr.TextOcr.singleLine(context, uri)
-            if (t.isNotBlank()) text = t
-        }
+    ) { uri -> if (uri != null) regionUri = uri }
+    regionUri?.let { u ->
+        com.billing.pos.ui.common.RegionOcrDialog(
+            uri = u,
+            onResult = { if (it.isNotBlank()) text = it; regionUri = null },
+            onDismiss = { regionUri = null }
+        )
     }
     val suggestions = remember(text, allNames) {
         val q = text.trim()
@@ -1021,12 +1025,12 @@ internal fun EditLineNameDialog(
                     singleLine = false, minLines = 3, maxLines = 6, modifier = Modifier.fillMaxWidth()
                 )
                 Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = { scanName() }, modifier = Modifier.weight(1f)) {
+                    OutlinedButton(onClick = { camera() }, modifier = Modifier.weight(1f)) {
                         Icon(Icons.Filled.PhotoCamera, null); Text(" Photo")
                     }
                     OutlinedButton(
                         onClick = {
-                            galleryOcr.launch(
+                            galleryPick.launch(
                                 androidx.activity.result.PickVisualMediaRequest(
                                     androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly
                                 )

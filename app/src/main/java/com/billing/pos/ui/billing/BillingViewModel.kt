@@ -96,6 +96,12 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
                 .mapValues { (_, l) -> (l.firstOrNull { it.kind == "PHOTO" } ?: l.first()).path }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
+    /** itemId -> all product image paths, for the item-picker image viewer. */
+    val imagesByItem: StateFlow<Map<Long, List<String>>> =
+        repo.itemAttachments.map { atts ->
+            atts.filter { it.mime.startsWith("image/") }.groupBy { it.itemId }.mapValues { (_, l) -> l.map { it.path } }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
     // ---- editable bill state ----
     var selectedCustomer by mutableStateOf<Customer?>(null); private set
     val cart: SnapshotStateList<CartLine> = mutableStateListOf()
