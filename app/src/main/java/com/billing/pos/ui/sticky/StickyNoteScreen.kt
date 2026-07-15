@@ -261,7 +261,7 @@ class StickyNoteViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Renders the page, crops to the selection box (if any), OCRs it, and returns the joined text. */
-    private fun ocrPageBitmap(ctx: android.content.Context, p: PageData, w: Int, h: Int, sep: String): String {
+    private suspend fun ocrPageBitmap(ctx: android.content.Context, p: PageData, w: Int, h: Int, sep: String): String {
         var bmp = renderPage(p, w, h)
         p.region?.let { r ->
             val left = r.left.toInt().coerceIn(0, w - 1)
