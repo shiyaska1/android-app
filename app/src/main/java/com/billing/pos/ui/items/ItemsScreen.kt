@@ -705,9 +705,13 @@ private fun ItemDialog(
     onDismiss: () -> Unit,
     onSave: (String, Double, Double, String, String, String, Double, String, String, String, String, Double) -> Unit
 ) {
+    val context = LocalContext.current
     var showBatchInput by remember { mutableStateOf(false) }
     var editBatchIndex by remember { mutableStateOf(-1) }
     var showSizeInput by remember { mutableStateOf(false) }
+    // Full-screen image viewer for attachment photos.
+    var viewImages by remember { mutableStateOf<List<String>?>(null) }
+    var viewStart by remember { mutableStateOf(0) }
     var chemical by remember { mutableStateOf(existing?.chemicalContent ?: "") }
     val isMedical = businessType == "Medical store"
     val isRestaurant = businessType == "Restaurant"
@@ -1054,13 +1058,33 @@ private fun ItemDialog(
                     }
                 }
 
-                // Thumbnails / chips of staged attachments.
+                // Thumbnails / chips of staged attachments. Tap a photo to view full screen
+                // (swipe between photos); tap a PDF to open it.
                 if (attachments.isNotEmpty()) {
+                    val imagePaths = attachments.filter { it.mime.startsWith("image/") }.map { it.path }
                     Row(
                         Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        attachments.forEach { att -> AttachmentThumb(att, onRemove = { onRemoveAttachment(att) }) }
+                        attachments.forEach { att ->
+                            AttachmentThumb(
+                                att,
+                                onRemove = { onRemoveAttachment(att) },
+                                onOpen = {
+                                    if (att.mime.startsWith("image/")) {
+                                        viewStart = imagePaths.indexOf(att.path).coerceAtLeast(0)
+                                        viewImages = imagePaths
+                                    } else {
+                                        val uri = ItemAttachmentStore.uriFor(context, att)
+                                        val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+                                            setDataAndType(uri, att.mime)
+                                            addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                        }
+                                        runCatching { context.startActivity(intent) }
+                                    }
+                                }
+                            )
+                        }
                     }
                 }
             }
@@ -1092,6 +1116,10 @@ private fun ItemDialog(
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
+
+    viewImages?.let { paths ->
+        com.billing.pos.ui.common.ImageViewerDialog(paths = paths, startIndex = viewStart, onDismiss = { viewImages = null })
+    }
 
     if (showBatchInput) {
         BatchInputDialog(
@@ -1232,13 +1260,14 @@ private fun pickDate(context: android.content.Context, current: Long, onPicked: 
 
 /** A small square thumbnail (image) or PDF tile for one staged attachment, with a remove badge. */
 @Composable
-private fun AttachmentThumb(att: ItemAttachment, onRemove: () -> Unit) {
+private fun AttachmentThumb(att: ItemAttachment, onRemove: () -> Unit, onOpen: () -> Unit = {}) {
     Box(Modifier.size(72.dp)) {
         val isImage = att.mime.startsWith("image/")
         val bmp = if (isImage) rememberThumbnail(att.path, 200) else null
         Box(
             Modifier.size(72.dp).clip(RoundedCornerShape(8.dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant),
+                .background(MaterialTheme.colorScheme.surfaceVariant)
+                .clickable { onOpen() },
             contentAlignment = Alignment.Center
         ) {
             if (bmp != null) {

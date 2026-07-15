@@ -39,10 +39,10 @@ import java.io.File
  * current one and does NOT close (the user closes with the X). Dismiss returns to the caller.
  */
 @Composable
-fun ImageViewerDialog(paths: List<String>, onDismiss: () -> Unit) {
+fun ImageViewerDialog(paths: List<String>, onDismiss: () -> Unit, startIndex: Int = 0) {
     if (paths.isEmpty()) { onDismiss(); return }
     val context = LocalContext.current
-    val pager = rememberPagerState(pageCount = { paths.size })
+    val pager = rememberPagerState(initialPage = startIndex.coerceIn(0, paths.size - 1), pageCount = { paths.size })
 
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Column(Modifier.fillMaxSize().background(Color(0xFF000000))) {
