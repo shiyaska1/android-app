@@ -19,10 +19,10 @@ object InvoicePdf {
     private const val MARGIN = 24f
 
     /** Builds the invoice PDF per the width setting: rich A4 layout, else the thermal receipt. */
-    fun make(context: Context, company: CompanyInfo, bill: Bill, lines: List<BillItem>): Uri =
+    fun make(context: Context, company: CompanyInfo, bill: Bill, lines: List<BillItem>, imagePaths: List<String> = emptyList()): Uri =
         if (com.billing.pos.data.AppPrefs(context).receiptWidth == "A4")
-            A4InvoicePdf.invoice(context, company, bill, lines)
-        else ThermalPdf.invoice(context, company, bill, lines)
+            A4InvoicePdf.invoice(context, company, bill, lines, imagePaths)
+        else ThermalPdf.invoice(context, company, bill, lines, imagePaths)
 
     fun generate(context: Context, company: CompanyInfo, bill: Bill, lines: List<BillItem>): Uri {
         val doc = PdfDocument()

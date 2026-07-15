@@ -23,7 +23,7 @@ object A4InvoicePdf {
     private const val PH = 842f      // A4 height
     private const val M = 36f        // margin
 
-    fun invoice(context: Context, company: CompanyInfo, bill: Bill, lines: List<BillItem>): Uri {
+    fun invoice(context: Context, company: CompanyInfo, bill: Bill, lines: List<BillItem>, imagePaths: List<String> = emptyList()): Uri {
         val prefs = AppPrefs(context)
         val doc = PdfDocument()
 
@@ -159,6 +159,23 @@ object A4InvoicePdf {
         c.drawText("Thank you for your business!", x0, PH - M, small)
 
         doc.finishPage(page)
+
+        // Attached photos come after the thank-you line, one per page.
+        var pageNo = 2
+        imagePaths.forEach { path ->
+            val bmp = runCatching { BitmapFactory.decodeFile(path) }.getOrNull() ?: return@forEach
+            val p2 = doc.startPage(PdfDocument.PageInfo.Builder(PW.toInt(), PH.toInt(), pageNo++).create())
+            val cc = p2.canvas
+            cc.drawText("Attached", M, M + 12f, cellBold)
+            val availW = PW - 2 * M
+            val availH = PH - 2 * M - 24f
+            val scale = minOf(availW / bmp.width, availH / bmp.height)
+            val w = bmp.width * scale; val h = bmp.height * scale
+            val left = (PW - w) / 2f; val top = M + 24f
+            cc.drawBitmap(bmp, null, android.graphics.RectF(left, top, left + w, top + h), null)
+            bmp.recycle()
+            doc.finishPage(p2)
+        }
 
         val dir = File(context.cacheDir, "shared").apply { mkdirs() }
         val file = File(dir, "invoice_${bill.billNo}.pdf")

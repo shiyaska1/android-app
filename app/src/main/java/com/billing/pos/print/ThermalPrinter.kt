@@ -44,9 +44,9 @@ object ThermalPrinter {
     }
 
     @SuppressLint("MissingPermission")
-    fun printBill(context: Context, company: CompanyInfo, bill: Bill, lines: List<BillItem>) {
+    fun printBill(context: Context, company: CompanyInfo, bill: Bill, lines: List<BillItem>, imagePaths: List<String> = emptyList()) {
         applyWidth(context)
-        sendBytes(context, buildReceipt(company, bill, lines))
+        sendBytes(context, buildReceipt(company, bill, lines, imagePaths))
     }
 
     /** Prints a receipt voucher (money received) to give to the customer. */
@@ -208,7 +208,7 @@ object ThermalPrinter {
         ESC.toByte(), 'G'.code.toByte(), 1
     )
 
-    private fun buildReceipt(company: CompanyInfo, bill: Bill, lines: List<BillItem>): ByteArray {
+    private fun buildReceipt(company: CompanyInfo, bill: Bill, lines: List<BillItem>, imagePaths: List<String> = emptyList()): ByteArray {
         val sb = StringBuilder()
         sb.append(center(company.name)).append('\n')
         if (company.address.isNotBlank()) sb.append(center(company.address)).append('\n')
@@ -243,12 +243,54 @@ object ThermalPrinter {
             sb.append(line()).append('\n')
         }
         sb.append(center("Thank you! Visit again.")).append('\n')
-        sb.append("\n\n\n")
 
         val text = sb.toString().toByteArray(Charsets.US_ASCII)
+        // Attached photos, printed as raster after the thank-you line.
+        val maxDots = COLS * 12
+        val imgBytes = imagePaths.fold(ByteArray(0)) { acc, p -> acc + escposImage(p, maxDots) }
+        val feed = "\n\n\n".toByteArray(Charsets.US_ASCII)
         val init = byteArrayOf(ESC.toByte(), '@'.code.toByte())          // initialize
         val cut = byteArrayOf(GS.toByte(), 'V'.code.toByte(), 66, 0)      // partial cut (ignored if unsupported)
-        return init + BOLD_ON + text + cut
+        return init + BOLD_ON + text + imgBytes + feed + cut
+    }
+
+    /** Converts an image file to a centred ESC/POS raster (GS v 0), banded so cheap printers cope. */
+    private fun escposImage(path: String, maxDots: Int): ByteArray {
+        val src = runCatching { android.graphics.BitmapFactory.decodeFile(path) }.getOrNull() ?: return ByteArray(0)
+        val w = maxDots.coerceAtLeast(8)
+        val h = (src.height.toFloat() * w / src.width).toInt().coerceAtLeast(1)
+        val bmp = android.graphics.Bitmap.createScaledBitmap(src, w, h, true)
+        src.recycle()
+        val pixels = IntArray(w * h); bmp.getPixels(pixels, 0, w, 0, 0, w, h); bmp.recycle()
+        val bytesPerRow = (w + 7) / 8
+        val out = java.io.ByteArrayOutputStream()
+        out.write(byteArrayOf(ESC.toByte(), 'a'.code.toByte(), 1))       // centre
+        var yStart = 0
+        val band = 128
+        while (yStart < h) {
+            val rows = minOf(band, h - yStart)
+            out.write(byteArrayOf(GS.toByte(), 'v'.code.toByte(), '0'.code.toByte(), 0,
+                (bytesPerRow and 0xFF).toByte(), ((bytesPerRow shr 8) and 0xFF).toByte(),
+                (rows and 0xFF).toByte(), ((rows shr 8) and 0xFF).toByte()))
+            val data = ByteArray(bytesPerRow * rows)
+            for (ry in 0 until rows) {
+                val yy = yStart + ry
+                for (xx in 0 until w) {
+                    val px = pixels[yy * w + xx]
+                    val a = (px ushr 24) and 0xFF
+                    val r = (px shr 16) and 0xFF; val g = (px shr 8) and 0xFF; val b = px and 0xFF
+                    val lum = (r * 299 + g * 587 + b * 114) / 1000
+                    if (a > 128 && lum < 140) {
+                        val bi = ry * bytesPerRow + (xx / 8)
+                        data[bi] = (data[bi].toInt() or (0x80 shr (xx % 8))).toByte()
+                    }
+                }
+            }
+            out.write(data)
+            yStart += rows
+        }
+        out.write(byteArrayOf(ESC.toByte(), 'a'.code.toByte(), 0))       // left
+        return out.toByteArray()
     }
 
     private fun buildPurchase(company: CompanyInfo, pur: Purchase, lines: List<PurchaseItem>): ByteArray {

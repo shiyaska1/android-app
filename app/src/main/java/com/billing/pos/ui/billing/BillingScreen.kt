@@ -598,7 +598,7 @@ fun BillingScreen(
                     modifier = Modifier.weight(1f)
                 ) { Text("Save") }
                 OutlinedButton(
-                    onClick = { scope.launch { vm.saveCurrent()?.let { sharePdf(context, it) } } },
+                    onClick = { scope.launch { vm.saveCurrent()?.let { sharePdf(context, it, vm.editAttachments.filter { a -> a.mime.startsWith("image/") }.map { a -> a.path }) } } },
                     contentPadding = PaddingValues(horizontal = 8.dp),
                     modifier = Modifier.weight(1f)
                 ) { Text("PDF") }
@@ -608,7 +608,7 @@ fun BillingScreen(
                             if (vm.needsWhatsAppInfo()) showWhatsApp = true
                             else {
                                 val saved = vm.saveCurrent() ?: return@launch
-                                sendWhatsApp(context, vm.selectedCustomer?.phone ?: "", saved) { scope.launch { snackbar.showSnackbar(it) } }
+                                sendWhatsApp(context, vm.selectedCustomer?.phone ?: "", saved, vm.editAttachments.filter { a -> a.mime.startsWith("image/") }.map { a -> a.path }) { scope.launch { snackbar.showSnackbar(it) } }
                             }
                         }
                     },
@@ -643,7 +643,7 @@ fun BillingScreen(
                 showWhatsApp = false
                 scope.launch {
                     val saved = vm.prepareWhatsApp(name, number) ?: return@launch
-                    sendWhatsApp(context, vm.selectedCustomer?.phone ?: number, saved) {
+                    sendWhatsApp(context, vm.selectedCustomer?.phone ?: number, saved, vm.editAttachments.filter { a -> a.mime.startsWith("image/") }.map { a -> a.path }) {
                         scope.launch { snackbar.showSnackbar(it) }
                     }
                 }
@@ -845,8 +845,9 @@ private suspend fun doPrint(
 ) {
     val saved = vm.saveCurrent() ?: return
     val company = com.billing.pos.data.AppPrefs(context).company
+    val imgs = vm.editAttachments.filter { it.mime.startsWith("image/") }.map { it.path }
     val result = withContext(Dispatchers.IO) {
-        runCatching { ThermalPrinter.printBill(context, company, saved.bill, saved.lines) }
+        runCatching { ThermalPrinter.printBill(context, company, saved.bill, saved.lines, imgs) }
     }
     result.onSuccess { snackbar.showSnackbar("Sent to printer") }
         .onFailure { snackbar.showSnackbar(it.message ?: "Print failed") }
@@ -864,9 +865,9 @@ private fun pickBillDate(context: android.content.Context, current: Long, onPick
     ).show()
 }
 
-private fun sharePdf(context: android.content.Context, saved: BillWithItems) {
+private fun sharePdf(context: android.content.Context, saved: BillWithItems, imagePaths: List<String> = emptyList()) {
     val company = com.billing.pos.data.AppPrefs(context).company
-    val uri = InvoicePdf.make(context, company, saved.bill, saved.lines)
+    val uri = InvoicePdf.make(context, company, saved.bill, saved.lines, imagePaths)
     val intent = Intent(Intent.ACTION_SEND).apply {
         type = "application/pdf"
         putExtra(Intent.EXTRA_STREAM, uri)
@@ -882,10 +883,11 @@ private fun sendWhatsApp(
     context: android.content.Context,
     phone: String,
     saved: BillWithItems,
+    imagePaths: List<String> = emptyList(),
     onInfo: (String) -> Unit
 ) {
     val company = com.billing.pos.data.AppPrefs(context).company
-    val uri = InvoicePdf.make(context, company, saved.bill, saved.lines)
+    val uri = InvoicePdf.make(context, company, saved.bill, saved.lines, imagePaths)
     val digits = phone.filter { it.isDigit() }
 
     fun tryPackage(pkg: String?): Boolean {

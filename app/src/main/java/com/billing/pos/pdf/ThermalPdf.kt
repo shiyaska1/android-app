@@ -33,7 +33,7 @@ object ThermalPdf {
 
     private data class Line(val text: String, val bold: Boolean = false)
 
-    fun invoice(context: Context, company: CompanyInfo, bill: Bill, lines: List<BillItem>): Uri {
+    fun invoice(context: Context, company: CompanyInfo, bill: Bill, lines: List<BillItem>, imagePaths: List<String> = emptyList()): Uri {
         applyWidth(context)
         val out = ArrayList<Line>()
         fun add(text: String, bold: Boolean = false) { out.add(Line(text, bold)) }
@@ -65,7 +65,7 @@ object ThermalPdf {
             add(rule())
         }
         add(center("Thank you! Visit again."))
-        return write(context, "invoice_${bill.billNo}", out)
+        return write(context, "invoice_${bill.billNo}", out, imagePaths)
     }
 
     fun receipt(context: Context, company: CompanyInfo, r: Receipt): Uri {
@@ -93,14 +93,20 @@ object ThermalPdf {
         if (company.phone.isNotBlank()) out.add(Line(center(clip("Ph: ${company.phone}"))))
     }
 
-    private fun write(context: Context, name: String, lines: List<Line>): Uri {
+    private fun write(context: Context, name: String, lines: List<Line>, imagePaths: List<String> = emptyList()): Uri {
         val body = Paint().apply { typeface = Typeface.MONOSPACE; isAntiAlias = true; color = Color.BLACK; textSize = 10f }
         val content = PAGE_W - 2 * MARGIN
         val measured = body.measureText("0".repeat(COLS)).coerceAtLeast(1f)
         body.textSize = 10f * (content / measured)
         val boldP = Paint(body).apply { typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD) }
         val lineH = body.textSize * 1.35f
-        val height = (MARGIN * 2 + lines.size * lineH + lineH).toInt().coerceAtLeast(40)
+
+        // Decode attached photos and size each to the receipt width.
+        val bitmaps = imagePaths.mapNotNull { runCatching { android.graphics.BitmapFactory.decodeFile(it) }.getOrNull() }
+        val imgHeights = bitmaps.map { content * it.height / it.width }
+        val imagesBlock = if (bitmaps.isEmpty()) 0f else imgHeights.sum() + lineH * bitmaps.size
+
+        val height = (MARGIN * 2 + lines.size * lineH + lineH + imagesBlock).toInt().coerceAtLeast(40)
 
         val doc = PdfDocument()
         val page = doc.startPage(PdfDocument.PageInfo.Builder(PAGE_W.toInt(), height, 1).create())
@@ -109,6 +115,13 @@ object ThermalPdf {
         for (l in lines) {
             c.drawText(l.text, MARGIN, y, if (l.bold) boldP else body)
             y += lineH
+        }
+        // Photos below the thank-you line.
+        bitmaps.forEachIndexed { i, bmp ->
+            val h = imgHeights[i]
+            c.drawBitmap(bmp, null, android.graphics.RectF(MARGIN, y, MARGIN + content, y + h), null)
+            y += h + lineH
+            bmp.recycle()
         }
         doc.finishPage(page)
 
