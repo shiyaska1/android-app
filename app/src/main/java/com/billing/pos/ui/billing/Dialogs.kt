@@ -530,6 +530,7 @@ fun CustomLineDialog(
     )
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ItemPickerDialog(
     items: List<Item>,
