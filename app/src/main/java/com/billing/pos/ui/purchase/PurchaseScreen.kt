@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Dialpad
 import androidx.compose.material.icons.filled.NoteAdd
+import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.QrCodeScanner
@@ -116,6 +117,10 @@ fun PurchaseScreen(
     val requireBatch = remember { AppPrefs(context).requireItemBatch }
     var batchFor by remember { mutableStateOf<com.billing.pos.data.Item?>(null) }
     var showCustomLine by remember { mutableStateOf(false) }
+    // Photo → draw a box → OCR only that area → review before adding (like sales entry).
+    var regionOcrUri by remember { mutableStateOf<android.net.Uri?>(null) }
+    var ocrReview by remember { mutableStateOf<List<com.billing.pos.ocr.ScannedItem>?>(null) }
+    val photoCapture = com.billing.pos.ocr.rememberImageCamera { uri -> regionOcrUri = uri }
 
     val readOnly = vm.editingId != null && !Session.canEdit
 
@@ -231,6 +236,7 @@ fun PurchaseScreen(
                 ToolAction(Icons.Filled.Add, "Item") { showItemPicker = true }
                 ToolAction(Icons.Filled.Dialpad, "Price") { showCustomLine = true }
                 ToolAction(Icons.Filled.NoteAdd, "New") { showNewItem = true }
+                ToolAction(Icons.Filled.PhotoCamera, "Photo") { photoCapture() }
                 ToolAction(Icons.Filled.QrCodeScanner, "Scan") {
                     scanLauncher.launch(ScanOptions().setPrompt("Scan item barcode").setBeepEnabled(true).setOrientationLocked(false))
                 }
@@ -361,6 +367,23 @@ fun PurchaseScreen(
                 }
             },
             onNewItem = { showItemPicker = false; showNewItem = true }
+        )
+    }
+    // Photo → draw a rectangle over the items → OCR only that area.
+    regionOcrUri?.let { u ->
+        com.billing.pos.ui.common.RegionLinesOcrDialog(
+            uri = u,
+            onResult = { lines -> regionOcrUri = null; ocrReview = com.billing.pos.ocr.ItemListParser.parse(lines) },
+            onDismiss = { regionOcrUri = null }
+        )
+    }
+    // Review + edit the OCR-read items before adding them to the purchase.
+    ocrReview?.let { parsed ->
+        com.billing.pos.ui.billing.BillOcrReviewDialog(
+            initial = parsed,
+            masterItems = items,
+            onDismiss = { ocrReview = null },
+            onConfirm = { edited -> vm.addOcrItemsToCart(edited); ocrReview = null }
         )
     }
     unitPickFor?.let { item ->

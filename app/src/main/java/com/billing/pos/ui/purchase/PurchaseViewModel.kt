@@ -122,6 +122,30 @@ class PurchaseViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Adds items read from a photo (region OCR → review) to the purchase cart. */
+    fun addOcrItemsToCart(scanned: List<com.billing.pos.ocr.ScannedItem>) {
+        if (scanned.isEmpty()) { _message.value = "No items found in the photo"; return }
+        viewModelScope.launch {
+            var added = 0
+            scanned.forEach { s ->
+                val name = s.name.trim()
+                if (name.isBlank() && s.price <= 0.0) return@forEach
+                if (name.isBlank()) { cart.add(CartLine(0, "", s.price, 0.0, 1.0)); added++; return@forEach }
+                val match = items.value.firstOrNull { it.name.equals(name, ignoreCase = true) } ?: repo.itemByName(name)
+                if (match != null) {
+                    val rate = if (s.price > 0.0) s.price else match.price
+                    cart.add(CartLine(match.id, match.name, rate, match.taxPercent, 1.0))
+                } else {
+                    val id = repo.addItem(name, s.price, 0.0)
+                    cart.add(CartLine(id, name, s.price, 0.0, 1.0))
+                }
+                added++
+            }
+            dirty = true
+            _message.value = "Added $added item(s) from photo"
+        }
+    }
+
     fun changeQty(index: Int, delta: Double) {
         val line = cart.getOrNull(index) ?: return
         val q = line.qty + delta

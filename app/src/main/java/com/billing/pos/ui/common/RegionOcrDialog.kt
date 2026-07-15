@@ -125,6 +125,84 @@ fun RegionOcrDialog(uri: Uri, onResult: (String) -> Unit, onDismiss: () -> Unit)
     }
 }
 
+/**
+ * Like [RegionOcrDialog] but returns every text line inside the box (for reading a list of
+ * items). Falls back to the whole image if no box is drawn.
+ */
+@Composable
+fun RegionLinesOcrDialog(uri: Uri, onResult: (List<String>) -> Unit, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val bitmap = remember(uri) {
+        runCatching {
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                val bytes = input.readBytes()
+                val opt = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opt)
+                var s = 1
+                while (opt.outWidth / s > 1600 || opt.outHeight / s > 1600) s *= 2
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = s })
+            }
+        }.getOrNull()
+    }
+    var canvasSize by remember { mutableStateOf(IntSize.Zero) }
+    var start by remember { mutableStateOf<Offset?>(null) }
+    var end by remember { mutableStateOf<Offset?>(null) }
+    var busy by remember { mutableStateOf(false) }
+
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface).padding(8.dp)) {
+            Text("Drag a box around the items, then tap OK", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(8.dp))
+            Box(Modifier.weight(1f).fillMaxWidth().background(Color.Black)) {
+                if (bitmap == null) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("Could not open image", color = Color.White) }
+                else Canvas(
+                    Modifier.fillMaxSize()
+                        .onSizeChanged { canvasSize = it }
+                        .pointerInput(Unit) {
+                            detectDragGestures(
+                                onDragStart = { start = it; end = it },
+                                onDrag = { change, _ -> end = change.position; change.consume() }
+                            )
+                        }
+                ) {
+                    val bw = bitmap.width.toFloat(); val bh = bitmap.height.toFloat()
+                    val scale = min(size.width / bw, size.height / bh)
+                    val dw = bw * scale; val dh = bh * scale
+                    val ox = (size.width - dw) / 2f; val oy = (size.height - dh) / 2f
+                    drawImage(bitmap.asImageBitmap(), srcOffset = IntOffset.Zero, srcSize = IntSize(bitmap.width, bitmap.height),
+                        dstOffset = IntOffset(ox.toInt(), oy.toInt()), dstSize = IntSize(dw.toInt(), dh.toInt()))
+                    val s = start; val e = end
+                    if (s != null && e != null) {
+                        val l = min(s.x, e.x); val t = min(s.y, e.y); val r = max(s.x, e.x); val b = max(s.y, e.y)
+                        drawRect(Color(0xFF00E5FF), topLeft = Offset(l, t), size = Size(r - l, b - t), style = Stroke(width = 4f))
+                    }
+                }
+            }
+            Row(Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = onDismiss, enabled = !busy, modifier = Modifier.weight(1f)) { Text("Cancel") }
+                Button(
+                    onClick = {
+                        val bmp = bitmap ?: run { onDismiss(); return@Button }
+                        busy = true
+                        scope.launch {
+                            val lines = withContext(Dispatchers.IO) {
+                                val cropped = cropToSelection(bmp, start, end, canvasSize)
+                                val f = File(context.cacheDir, "region_ocr_lines.jpg")
+                                f.outputStream().use { cropped.compress(Bitmap.CompressFormat.JPEG, 92, it) }
+                                if (cropped !== bmp) cropped.recycle()
+                                TextOcr.lines(context, Uri.fromFile(f)).also { f.delete() }
+                            }
+                            busy = false
+                            onResult(lines)
+                        }
+                    },
+                    enabled = !busy, modifier = Modifier.weight(1f)
+                ) { Text(if (busy) "Reading…" else "OK") }
+            }
+        }
+    }
+}
+
 /** Maps the on-screen selection rectangle back to bitmap pixels and crops; whole image if none. */
 private fun cropToSelection(bmp: Bitmap, start: Offset?, end: Offset?, canvas: IntSize): Bitmap {
     if (start == null || end == null || canvas.width == 0) return bmp
