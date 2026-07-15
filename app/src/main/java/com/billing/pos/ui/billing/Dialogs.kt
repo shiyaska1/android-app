@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Divider
@@ -133,6 +134,19 @@ fun NewItemDialog(
         result.contents?.let { barcode = it }
     }
     val scanName = com.billing.pos.ocr.rememberNameScanner { if (it.isNotBlank()) name = it }
+    // Draw-a-box OCR (same as the item master): camera/gallery → drag a box → read only inside it.
+    var regionUri by remember { mutableStateOf<android.net.Uri?>(null) }
+    val regionCamera = com.billing.pos.ocr.rememberImageCamera { uri -> regionUri = uri }
+    val regionGallery = rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia()
+    ) { uri -> if (uri != null) regionUri = uri }
+    regionUri?.let { u ->
+        com.billing.pos.ui.common.RegionOcrDialog(
+            uri = u,
+            onResult = { if (it.isNotBlank()) name = it; regionUri = null },
+            onDismiss = { regionUri = null }
+        )
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -148,8 +162,19 @@ fun NewItemDialog(
                     // Tall + multiline so full OCR text is visible and easy to trim.
                     singleLine = false, minLines = 3, maxLines = 6,
                     trailingIcon = {
-                        IconButton(onClick = { scanName() }) {
-                            Icon(Icons.Filled.PhotoCamera, contentDescription = "Scan item name", tint = MaterialTheme.colorScheme.primary)
+                        Row {
+                            IconButton(onClick = { regionCamera() }) {
+                                Icon(Icons.Filled.PhotoCamera, contentDescription = "Photo — draw a box to read the name", tint = MaterialTheme.colorScheme.primary)
+                            }
+                            IconButton(onClick = {
+                                regionGallery.launch(
+                                    androidx.activity.result.PickVisualMediaRequest(
+                                        androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly
+                                    )
+                                )
+                            }) {
+                                Icon(Icons.Filled.PhotoLibrary, contentDescription = "Gallery — draw a box to read the name", tint = MaterialTheme.colorScheme.primary)
+                            }
                         }
                     },
                     modifier = Modifier.fillMaxWidth()
