@@ -60,8 +60,8 @@ object ThermalPdf {
         add(kv("GRAND TOTAL", Format.money(bill.grandTotal)), true)
         add(rule())
         if (bill.remarks.isNotBlank()) {
-            add("Note:")
-            bill.remarks.chunked(COLS).forEach { add(it) }
+            add("Note:", true)
+            bill.remarks.chunked(COLS).forEach { add(it, true) }
             add(rule())
         }
         add(center("Thank you! Visit again."))

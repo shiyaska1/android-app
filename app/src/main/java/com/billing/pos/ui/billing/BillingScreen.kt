@@ -142,6 +142,7 @@ fun BillingScreen(
     var showWhatsApp by remember { mutableStateOf(false) }
     var showBillInfo by remember { mutableStateOf(false) }
     var showNotes by remember { mutableStateOf(false) }
+    var showRemarkPopup by remember { mutableStateOf(false) }
     var showHandwrite by remember { mutableStateOf(false) }
     var capturedPhotoUri by remember { mutableStateOf<android.net.Uri?>(null) }
     var showPhotoOptions by remember { mutableStateOf(false) }
@@ -513,13 +514,25 @@ fun BillingScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    OutlinedTextField(
-                        value = vm.remarks,
-                        onValueChange = { vm.updateRemarks(it) },
-                        label = { Text("Remarks (prints only if filled)") },
-                        singleLine = true,
-                        modifier = Modifier.weight(1f)
-                    )
+                    Box(Modifier.weight(1f)) {
+                        OutlinedTextField(
+                            value = vm.remarks,
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("Remarks (tap to edit)") },
+                            // Bold + a little bigger, matching how it prints.
+                            textStyle = MaterialTheme.typography.titleMedium.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold),
+                            singleLine = true,
+                            trailingIcon = {
+                                if (vm.remarks.isNotBlank()) IconButton(onClick = { vm.updateRemarks("") }) {
+                                    Icon(Icons.Filled.Close, contentDescription = "Clear remark")
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        // Transparent overlay so a tap opens the popup editor (above the keypad).
+                        Box(Modifier.matchParentSize().clickable { showRemarkPopup = true })
+                    }
                     IconButton(onClick = { runCatching { attachPicker.launch(arrayOf("*/*")) } }) {
                         Icon(Icons.Filled.AttachFile, contentDescription = "Attach document")
                     }
@@ -538,6 +551,26 @@ fun BillingScreen(
                         }
                     }
                 }
+            }
+
+            if (showRemarkPopup) {
+                var draft by remember(vm.remarks) { mutableStateOf(vm.remarks) }
+                AlertDialog(
+                    onDismissRequest = { showRemarkPopup = false },
+                    title = { Text("Remark") },
+                    text = {
+                        OutlinedTextField(
+                            value = draft, onValueChange = { draft = it },
+                            placeholder = { Text("Type the remark…") },
+                            // Bold + a little bigger, the way it prints.
+                            textStyle = MaterialTheme.typography.titleMedium.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold),
+                            minLines = 2, maxLines = 6,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    },
+                    confirmButton = { TextButton(onClick = { vm.updateRemarks(draft.trim()); showRemarkPopup = false }) { Text("Save") } },
+                    dismissButton = { TextButton(onClick = { showRemarkPopup = false }) { Text("Close") } }
+                )
             }
 
             if (readOnly) {

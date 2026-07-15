@@ -153,7 +153,8 @@ object A4InvoicePdf {
         y += 30f
 
         if (bill.remarks.isNotBlank()) {
-            c.drawText("Note: ${clip(bill.remarks, 90)}", x0, y, small); y += 16f
+            val note = Paint(cellBold).apply { textSize = 12f; color = 0xFF000000.toInt() }
+            c.drawText("Note: ${clip(bill.remarks, 80)}", x0, y, note); y += 18f
         }
         c.drawText("Thank you for your business!", x0, PH - M, small)
 

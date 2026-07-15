@@ -184,7 +184,8 @@ object DocumentPdf {
         y += 30f
 
         if (doc.remarks.isNotBlank()) {
-            c.drawText("Note: ${clip(doc.remarks, 90)}", x0, y, small); y += 16f
+            val note = Paint(cellBold).apply { textSize = 12f; color = 0xFF000000.toInt() }
+            c.drawText("Note: ${clip(doc.remarks, 80)}", x0, y, note); y += 18f
         }
         c.drawText("This is a computer-generated document.", x0, PH - M, small)
 
