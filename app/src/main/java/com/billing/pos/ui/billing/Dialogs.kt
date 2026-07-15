@@ -540,10 +540,27 @@ fun ItemPickerDialog(
     photosByItem: Map<Long, List<String>> = emptyMap()
 ) {
     var query by remember { mutableStateOf("") }
+    var category by remember { mutableStateOf("All") }   // defaults to All on every open
+    var catMenu by remember { mutableStateOf(false) }
     var viewImages by remember { mutableStateOf<List<String>?>(null) }
-    val filtered = remember(query, items) {
-        if (query.isBlank()) items
-        else items.filter { it.name.contains(query, ignoreCase = true) || it.chemicalContent.contains(query, ignoreCase = true) }
+    val categories = remember(items) {
+        listOf("All") + items.map { it.category }.filter { it.isNotBlank() }.distinct().sortedBy { it.lowercase() }
+    }
+    val filtered = remember(query, items, category) {
+        items.filter {
+            (category == "All" || it.category.equals(category, ignoreCase = true)) &&
+                (query.isBlank() || it.name.contains(query, ignoreCase = true) || it.chemicalContent.contains(query, ignoreCase = true))
+        }
+    }
+    // Load 50 at a time; grow as the user scrolls near the end.
+    val pageSize = 50
+    var visibleCount by remember { mutableStateOf(pageSize) }
+    LaunchedEffect(query, category, items) { visibleCount = pageSize }
+    val shown = filtered.take(visibleCount)
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    LaunchedEffect(listState, filtered) {
+        androidx.compose.runtime.snapshotFlow { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0 }
+            .collect { last -> if (visibleCount < filtered.size && last >= visibleCount - 8) visibleCount = (visibleCount + pageSize).coerceAtMost(filtered.size) }
     }
     val startVoice = rememberVoiceInput { query = it }
 
@@ -562,14 +579,30 @@ fun ItemPickerDialog(
                     },
                     modifier = Modifier.fillMaxWidth()
                 )
+                // Category filter (defaults to All).
+                if (categories.size > 1) {
+                    ExposedDropdownMenuBox(expanded = catMenu, onExpandedChange = { catMenu = !catMenu }, modifier = Modifier.padding(top = 6.dp)) {
+                        OutlinedTextField(
+                            readOnly = true, value = category, onValueChange = {},
+                            label = { Text("Category") }, singleLine = true,
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = catMenu) },
+                            modifier = Modifier.menuAnchor().fillMaxWidth()
+                        )
+                        ExposedDropdownMenu(expanded = catMenu, onDismissRequest = { catMenu = false }) {
+                            categories.forEach { c ->
+                                DropdownMenuItem(text = { Text(c) }, onClick = { category = c; catMenu = false })
+                            }
+                        }
+                    }
+                }
                 if (items.isEmpty()) {
                     Text(
                         "No items yet. Tap \"New item\" to create one.",
                         modifier = Modifier.padding(vertical = 12.dp)
                     )
                 } else {
-                    LazyColumn(modifier = Modifier.heightIn(max = 320.dp)) {
-                        items(filtered, key = { it.id }) { item ->
+                    LazyColumn(state = listState, modifier = Modifier.heightIn(max = 320.dp)) {
+                        items(shown, key = { it.id }) { item ->
                             Column(
                                 Modifier
                                     .fillMaxWidth()
