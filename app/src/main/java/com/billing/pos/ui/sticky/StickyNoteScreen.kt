@@ -101,10 +101,21 @@ private typealias StrokePts = List<Offset>
 class NotePage {
     val strokes = mutableStateListOf<StrokePts>()
     var bg by mutableStateOf<String?>(null)
+    // Optional OCR selection box (canvas coords): when set, only content inside is read.
+    var selStart by mutableStateOf<Offset?>(null)
+    var selEnd by mutableStateOf<Offset?>(null)
+    fun clearSelection() { selStart = null; selEnd = null }
+    fun regionRect(): androidx.compose.ui.geometry.Rect? {
+        val s = selStart; val e = selEnd ?: return null
+        if (s == null) return null
+        val l = minOf(s.x, e.x); val t = minOf(s.y, e.y); val r = maxOf(s.x, e.x); val b = maxOf(s.y, e.y)
+        if (r - l < 8f || b - t < 8f) return null
+        return androidx.compose.ui.geometry.Rect(l, t, r, b)
+    }
 }
 
 /** Immutable snapshot passed to the VM for rendering. */
-data class PageData(val strokes: List<StrokePts>, val bg: String?)
+data class PageData(val strokes: List<StrokePts>, val bg: String?, val region: androidx.compose.ui.geometry.Rect? = null)
 
 class StickyNoteViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = DiaryRepository(app)
@@ -192,15 +203,11 @@ class StickyNoteViewModel(app: Application) : AndroidViewModel(app) {
             val result = withContext(Dispatchers.IO) {
                 val out = ArrayList<com.billing.pos.ocr.ScannedItem>()
                 pages.forEach { p ->
+                    val strokes = strokesInRegion(p.strokes, p.region)
                     var text = ""
-                    if (ready && p.strokes.isNotEmpty()) text = ink.recognize(p.strokes)
+                    if (ready && strokes.isNotEmpty()) text = ink.recognize(strokes)
                     if (text.isBlank() && p.bg != null && w > 0 && h > 0) {
-                        val bmp = renderPage(p, w, h)
-                        val f = File(ctx.cacheDir, "ocr_${System.nanoTime()}.jpg")
-                        f.outputStream().use { bmp.compress(Bitmap.CompressFormat.JPEG, 92, it) }
-                        bmp.recycle()
-                        text = com.billing.pos.ocr.TextOcr.lines(ctx, android.net.Uri.fromFile(f)).joinToString(" ")
-                        f.delete()
+                        text = ocrPageBitmap(ctx, p, w, h, " ")
                     }
                     numRegex.find(text)?.value?.replace(",", ".")?.toDoubleOrNull()?.let { if (it > 0.0) out.add(com.billing.pos.ocr.ScannedItem("", it)) }
                 }
@@ -226,15 +233,11 @@ class StickyNoteViewModel(app: Application) : AndroidViewModel(app) {
             val paragraphs = withContext(Dispatchers.IO) {
                 val out = ArrayList<String>()
                 pages.forEach { p ->
+                    val strokes = strokesInRegion(p.strokes, p.region)
                     var text = ""
-                    if (ready && p.strokes.isNotEmpty()) text = ink.recognize(p.strokes)
+                    if (ready && strokes.isNotEmpty()) text = ink.recognize(strokes)
                     if (text.isBlank() && p.bg != null && w > 0 && h > 0) {
-                        val bmp = renderPage(p, w, h)
-                        val f = File(ctx.cacheDir, "ocr_${System.nanoTime()}.jpg")
-                        f.outputStream().use { bmp.compress(Bitmap.CompressFormat.JPEG, 92, it) }
-                        bmp.recycle()
-                        text = com.billing.pos.ocr.TextOcr.lines(ctx, android.net.Uri.fromFile(f)).joinToString("\n")
-                        f.delete()
+                        text = ocrPageBitmap(ctx, p, w, h, "\n")
                     }
                     if (text.isNotBlank()) out.add(text.trim())
                 }
@@ -249,6 +252,32 @@ class StickyNoteViewModel(app: Application) : AndroidViewModel(app) {
             }
             if (combined.isNotBlank()) onResult(combined)
         }
+    }
+
+    /** Keeps only strokes whose majority of points fall inside the selection box (all strokes if none). */
+    private fun strokesInRegion(strokes: List<StrokePts>, region: androidx.compose.ui.geometry.Rect?): List<StrokePts> {
+        if (region == null) return strokes
+        return strokes.filter { st -> st.isNotEmpty() && st.count { region.contains(it) } * 2 >= st.size }
+    }
+
+    /** Renders the page, crops to the selection box (if any), OCRs it, and returns the joined text. */
+    private fun ocrPageBitmap(ctx: android.content.Context, p: PageData, w: Int, h: Int, sep: String): String {
+        var bmp = renderPage(p, w, h)
+        p.region?.let { r ->
+            val left = r.left.toInt().coerceIn(0, w - 1)
+            val top = r.top.toInt().coerceIn(0, h - 1)
+            val right = r.right.toInt().coerceIn(left + 1, w)
+            val bottom = r.bottom.toInt().coerceIn(top + 1, h)
+            val cropped = Bitmap.createBitmap(bmp, left, top, right - left, bottom - top)
+            if (cropped !== bmp) bmp.recycle()
+            bmp = cropped
+        }
+        val f = File(ctx.cacheDir, "ocr_${System.nanoTime()}.jpg")
+        f.outputStream().use { bmp.compress(Bitmap.CompressFormat.JPEG, 92, it) }
+        bmp.recycle()
+        val text = com.billing.pos.ocr.TextOcr.lines(ctx, android.net.Uri.fromFile(f)).joinToString(sep)
+        f.delete()
+        return text
     }
 
     private fun renderPage(p: PageData, w: Int, h: Int): Bitmap {
@@ -278,6 +307,8 @@ fun StickyNoteScreen(onClose: () -> Unit, onOcrToSales: () -> Unit = {}, vm: Sti
     val audios = remember { mutableStateListOf<String>() }
     val videos = remember { mutableStateListOf<String>() }
     var bgMode by remember { mutableStateOf(false) }
+    // When on, dragging draws an OCR selection box (instead of ink); Read reads only inside it.
+    var regionMode by remember { mutableStateOf(false) }
     var ocrResult by remember { mutableStateOf<List<com.billing.pos.ocr.ScannedItem>?>(null) }
     var ocrModeAsk by remember { mutableStateOf(false) }
     var ocrText by remember { mutableStateOf<String?>(null) }
@@ -344,20 +375,29 @@ fun StickyNoteScreen(onClose: () -> Unit, onOcrToSales: () -> Unit = {}, vm: Sti
             Text("Sticky note", style = MaterialTheme.typography.titleMedium)
             Text("   Page ${pageIndex + 1}/${pages.size}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
             Row(Modifier.padding(start = 12.dp).weight(1f), verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(checked = bgMode, onCheckedChange = { bgMode = it })
-                Text("Photo as background", style = MaterialTheme.typography.labelSmall)
+                Checkbox(checked = bgMode, onCheckedChange = { bgMode = it; if (it) regionMode = false })
+                Text("Photo bg", style = MaterialTheme.typography.labelSmall)
+                Checkbox(checked = regionMode, onCheckedChange = { regionMode = it; if (it) bgMode = false })
+                Text("Read in box", style = MaterialTheme.typography.labelSmall)
             }
             if (vm.recording) Text("● REC", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall)
         }
         Canvas(
             Modifier.weight(1f).fillMaxWidth().background(Color.White)
                 .onSizeChanged { canvasSize = it }
-                .pointerInput(pageIndex) {
+                .pointerInput(pageIndex, regionMode) {
                     detectDragGestures(
-                        onDragStart = { off -> current.clear(); current.add(off) },
-                        onDrag = { change, _ -> current.add(change.position); change.consume() },
+                        onDragStart = { off ->
+                            if (regionMode) { pages.getOrNull(pageIndex)?.let { it.selStart = off; it.selEnd = off } }
+                            else { current.clear(); current.add(off) }
+                        },
+                        onDrag = { change, _ ->
+                            if (regionMode) { pages.getOrNull(pageIndex)?.selEnd = change.position }
+                            else current.add(change.position)
+                            change.consume()
+                        },
                         onDragEnd = {
-                            if (current.isNotEmpty()) { while (pages.size <= pageIndex) pages.add(NotePage()); pages[pageIndex].strokes.add(current.toList()) }
+                            if (!regionMode && current.isNotEmpty()) { while (pages.size <= pageIndex) pages.add(NotePage()); pages[pageIndex].strokes.add(current.toList()) }
                             current.clear()
                         }
                     )
@@ -373,12 +413,20 @@ fun StickyNoteScreen(onClose: () -> Unit, onOcrToSales: () -> Unit = {}, vm: Sti
                 val path = Path().apply { current.forEachIndexed { i, p -> if (i == 0) moveTo(p.x, p.y) else lineTo(p.x, p.y) } }
                 drawPath(path, ink, style = Stroke(width = 4f, cap = StrokeCap.Round))
             }
+            // Selection box overlay for region OCR.
+            pages.getOrNull(pageIndex)?.let { pg ->
+                val s = pg.selStart; val e = pg.selEnd
+                if (s != null && e != null) {
+                    val l = minOf(s.x, e.x); val t = minOf(s.y, e.y)
+                    drawRect(Color(0xFF00B0FF), topLeft = Offset(l, t), size = androidx.compose.ui.geometry.Size(maxOf(s.x, e.x) - l, maxOf(s.y, e.y) - t), style = Stroke(width = 3f))
+                }
+            }
         }
         // Row 1: page nav + clear
         Row(Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             OutlinedButton(onClick = { if (pageIndex > 0) pageIndex-- }, enabled = pageIndex > 0, modifier = Modifier.weight(1f)) { Text("Prev") }
             OutlinedButton(onClick = { if (pageIndex == pages.lastIndex) pages.add(NotePage()); pageIndex++ }, modifier = Modifier.weight(1f)) { Text("Next") }
-            OutlinedButton(onClick = { pages.getOrNull(pageIndex)?.let { it.strokes.clear(); it.bg = null } }, modifier = Modifier.weight(1f)) { Icon(Icons.Filled.Clear, null); Text("Clear") }
+            OutlinedButton(onClick = { pages.getOrNull(pageIndex)?.let { it.strokes.clear(); it.bg = null; it.clearSelection() } }, modifier = Modifier.weight(1f)) { Icon(Icons.Filled.Clear, null); Text("Clear") }
         }
         // Row 2: attachments (bigger icons so they're easy to see)
         val bigIcon = Modifier.size(30.dp)
@@ -439,7 +487,7 @@ fun StickyNoteScreen(onClose: () -> Unit, onOcrToSales: () -> Unit = {}, vm: Sti
 
     // Ask: read as numbers or text?
     if (ocrModeAsk) {
-        val pageData = pages.map { PageData(it.strokes.toList(), it.bg) }
+        val pageData = pages.map { PageData(it.strokes.toList(), it.bg, it.regionRect()) }
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { ocrModeAsk = false },
             title = { Text("Read handwriting as") },
