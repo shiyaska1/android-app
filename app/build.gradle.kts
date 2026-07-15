@@ -24,12 +24,28 @@ android {
         }
     }
 
+    // Play Store upload key — provided by CI via env vars (kept out of git). Falls back to the
+    // committed "stable" key for local/debug builds so a plain ./gradlew still works.
+    val uploadStoreFile = System.getenv("UPLOAD_STORE_FILE")
+    val uploadStorePassword = System.getenv("UPLOAD_STORE_PASSWORD")
+    val uploadKeyAlias = System.getenv("UPLOAD_KEY_ALIAS")
+    val uploadKeyPassword = System.getenv("UPLOAD_KEY_PASSWORD")
+    val hasUploadKey = !uploadStoreFile.isNullOrBlank() && !uploadStorePassword.isNullOrBlank()
+
     signingConfigs {
         create("stable") {
             storeFile = file("keystore.jks")
             storePassword = "poskey123"
             keyAlias = "posbilling"
             keyPassword = "poskey123"
+        }
+        if (hasUploadKey) {
+            create("upload") {
+                storeFile = file(uploadStoreFile!!)
+                storePassword = uploadStorePassword
+                keyAlias = uploadKeyAlias
+                keyPassword = uploadKeyPassword
+            }
         }
     }
 
@@ -49,7 +65,8 @@ android {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
-            signingConfig = signingConfigs.getByName("stable")
+            // Use the Play upload key when CI provides it, else the local stable key.
+            signingConfig = signingConfigs.getByName(if (hasUploadKey) "upload" else "stable")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
