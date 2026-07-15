@@ -33,6 +33,7 @@ jobs:
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
+        continue-on-error: true   # artifact storage quota can fill up; Release below is the reliable path
         with:
           name: pos-billing-debug-apk
           path: app/build/outputs/apk/debug/*.apk
