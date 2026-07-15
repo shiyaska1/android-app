@@ -156,6 +156,7 @@ class PurchaseViewModel(app: Application) : AndroidViewModel(app) {
                 openingStock = form.openingStock, unit = form.unit, storeLocation = form.storeLocation,
                 secondaryUnit = form.secondaryUnit, conversionFactor = form.conversionFactor
             )
+            form.attachments.forEach { repo.addItemAttachment(it.copy(itemId = id)) }
             if (addToCart) addItemToCart(
                 Item(
                     id = id, name = form.name.trim(), price = form.price, taxPercent = form.taxPercent,

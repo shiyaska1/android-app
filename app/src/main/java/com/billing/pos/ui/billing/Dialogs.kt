@@ -1,18 +1,42 @@
 package com.billing.pos.ui.billing
 
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.PictureAsPdf
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import com.billing.pos.data.ItemAttachment
+import com.billing.pos.items.ItemAttachmentStore
+import com.billing.pos.ui.common.rememberThumbnail
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -103,7 +127,8 @@ data class NewItemForm(
     val unit: String,
     val secondaryUnit: String,
     val conversionFactor: Double,
-    val storeLocation: String
+    val storeLocation: String,
+    val attachments: List<ItemAttachment> = emptyList()
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -148,8 +173,53 @@ fun NewItemDialog(
         )
     }
 
+    // Attachments (photos / camera / document) — same as the item master's add screen.
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val staged = remember { mutableStateListOf<ItemAttachment>() }
+    fun addStaged(uris: List<android.net.Uri>, kind: String) {
+        if (uris.isEmpty()) return
+        scope.launch {
+            val added = withContext(Dispatchers.IO) { uris.mapNotNull { ItemAttachmentStore.copyIn(context, it, kind) } }
+            staged.addAll(added)
+        }
+    }
+    fun removeStaged(att: ItemAttachment) { staged.remove(att); scope.launch(Dispatchers.IO) { ItemAttachmentStore.delete(att) } }
+    val photoPicker = rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.PickMultipleVisualMedia()
+    ) { uris -> addStaged(uris, "PHOTO") }
+    val docPicker = rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris -> addStaged(uris, "CATALOGUE") }
+    var pendingCapture by remember { mutableStateOf<java.io.File?>(null) }
+    val takePhoto = rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.TakePicture()
+    ) { ok ->
+        val f = pendingCapture; pendingCapture = null
+        if (ok == true && f != null && f.exists() && f.length() > 0) staged.add(ItemAttachmentStore.fromFile(f, "Photo_${f.name}", "image/jpeg", "PHOTO")) else f?.delete()
+    }
+    fun launchCamera() {
+        val file = java.io.File(ItemAttachmentStore.dir(context), "cam_${System.nanoTime()}.jpg")
+        pendingCapture = file
+        val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
+        runCatching { takePhoto.launch(uri) }.onFailure { pendingCapture?.delete(); pendingCapture = null }
+    }
+    val camPerm = rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { granted -> if (granted) launchCamera() }
+    fun withCamera() {
+        if (androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.CAMERA) == android.content.pm.PackageManager.PERMISSION_GRANTED) launchCamera()
+        else camPerm.launch(android.Manifest.permission.CAMERA)
+    }
+    // Discard un-saved copied files if the dialog is cancelled.
+    fun discardAndDismiss() {
+        val copies = staged.toList(); staged.clear()
+        if (copies.isNotEmpty()) scope.launch(Dispatchers.IO) { copies.forEach { ItemAttachmentStore.delete(it) } }
+        onDismiss()
+    }
+
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { discardAndDismiss() },
         title = { Text("New Item") },
         text = {
             Column(
@@ -289,6 +359,28 @@ fun NewItemDialog(
                     value = storeLocation, onValueChange = { storeLocation = it }, label = { Text("Store location (optional)") },
                     singleLine = true, modifier = Modifier.fillMaxWidth()
                 )
+                // Attachments: photo / camera / document (PDF).
+                Text("Photos & documents", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.outline)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    OutlinedButton(onClick = {
+                        photoPicker.launch(androidx.activity.result.PickVisualMediaRequest(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly))
+                    }, contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp), modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Filled.PhotoLibrary, null, modifier = Modifier.size(18.dp)); Text(" Photos", maxLines = 1)
+                    }
+                    OutlinedButton(onClick = { withCamera() }, contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp), modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Filled.PhotoCamera, null, modifier = Modifier.size(18.dp)); Text(" Camera", maxLines = 1)
+                    }
+                    OutlinedButton(onClick = {
+                        runCatching { docPicker.launch(arrayOf("application/pdf", "image/*")) }
+                    }, contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp), modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Filled.Description, null, modifier = Modifier.size(18.dp)); Text(" Doc", maxLines = 1)
+                    }
+                }
+                if (staged.isNotEmpty()) {
+                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        staged.forEach { att -> NewItemAttachThumb(att, onRemove = { removeStaged(att) }) }
+                    }
+                }
             }
         },
         confirmButton = {
@@ -298,11 +390,37 @@ fun NewItemDialog(
                 val os = openingStock.toDoubleOrNull() ?: 0.0
                 val sec = if (unitsDiffer) secondaryUnit.trim() else unit.trim()
                 val f = if (unitsDiffer) (factorText.toDoubleOrNull() ?: 1.0).coerceAtLeast(1.0) else 1.0
-                onSave(NewItemForm(name, p, t, barcode, category, hsn, os, unit.trim().ifBlank { "PCS" }, sec, f, storeLocation))
+                onSave(NewItemForm(name, p, t, barcode, category, hsn, os, unit.trim().ifBlank { "PCS" }, sec, f, storeLocation, staged.toList()))
             }) { Text("Save & add") }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+        dismissButton = { TextButton(onClick = { discardAndDismiss() }) { Text("Cancel") } }
     )
+}
+
+/** A small square thumbnail (image) or document tile for one staged new-item attachment. */
+@Composable
+private fun NewItemAttachThumb(att: ItemAttachment, onRemove: () -> Unit) {
+    Box(Modifier.size(64.dp)) {
+        val isImage = att.mime.startsWith("image/")
+        val bmp = if (isImage) rememberThumbnail(att.path, 200) else null
+        Box(
+            Modifier.size(64.dp).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceVariant),
+            contentAlignment = Alignment.Center
+        ) {
+            if (bmp != null) Image(bmp, contentDescription = att.name, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+            else Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(Icons.Filled.PictureAsPdf, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                Text("DOC", style = MaterialTheme.typography.labelSmall)
+            }
+        }
+        Box(
+            Modifier.align(Alignment.TopEnd).padding(2.dp).size(20.dp).clip(RoundedCornerShape(10.dp))
+                .background(Color(0xAA000000)).clickable { onRemove() },
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(Icons.Filled.Close, contentDescription = "Remove", tint = Color.White, modifier = Modifier.size(14.dp))
+        }
+    }
 }
 
 /**

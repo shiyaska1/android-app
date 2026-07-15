@@ -151,6 +151,7 @@ class MaterialOutViewModel(app: Application) : AndroidViewModel(app) {
         if (form.name.isBlank()) { message.value = "Enter item name"; return }
         viewModelScope.launch {
             val id = repo.addItem(form.name, form.price, form.taxPercent, form.barcode, form.hsn, form.category, form.openingStock, form.unit, form.storeLocation, secondaryUnit = form.secondaryUnit, conversionFactor = form.conversionFactor)
+            form.attachments.forEach { repo.addItemAttachment(it.copy(itemId = id)) }
             cart.add(CartLine(id, form.name.trim(), 0.0, 0.0, 1.0, unit = form.unit))
         }
     }
