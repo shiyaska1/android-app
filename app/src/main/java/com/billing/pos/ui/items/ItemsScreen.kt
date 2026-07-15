@@ -748,6 +748,20 @@ private fun ItemDialog(
         runCatching { speechLauncher.launch(intent) }
     }
     val scanName = com.billing.pos.ocr.rememberNameScanner { if (it.isNotBlank()) name = it }
+    // Draw-a-box OCR: pick from camera or gallery, drag a rectangle over just the
+    // item name, and only the text inside the box is read into the name field.
+    var regionUri by remember { mutableStateOf<android.net.Uri?>(null) }
+    val regionCamera = com.billing.pos.ocr.rememberImageCamera { uri -> regionUri = uri }
+    val regionGallery = rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia()
+    ) { uri -> if (uri != null) regionUri = uri }
+    regionUri?.let { u ->
+        com.billing.pos.ui.common.RegionOcrDialog(
+            uri = u,
+            onResult = { if (it.isNotBlank()) name = it; regionUri = null },
+            onDismiss = { regionUri = null }
+        )
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -763,8 +777,17 @@ private fun ItemDialog(
                     singleLine = false, minLines = 3, maxLines = 6,
                     trailingIcon = {
                         Row {
-                            IconButton(onClick = { scanName() }) {
-                                Icon(Icons.Filled.PhotoCamera, contentDescription = "Scan item name", tint = MaterialTheme.colorScheme.primary)
+                            IconButton(onClick = { regionCamera() }) {
+                                Icon(Icons.Filled.PhotoCamera, contentDescription = "Photo — draw a box to read the name", tint = MaterialTheme.colorScheme.primary)
+                            }
+                            IconButton(onClick = {
+                                regionGallery.launch(
+                                    androidx.activity.result.PickVisualMediaRequest(
+                                        androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly
+                                    )
+                                )
+                            }) {
+                                Icon(Icons.Filled.PhotoLibrary, contentDescription = "Gallery — draw a box to read the name", tint = MaterialTheme.colorScheme.primary)
                             }
                             IconButton(onClick = { speakName() }) {
                                 Icon(Icons.Filled.Mic, contentDescription = "Speak item name", tint = MaterialTheme.colorScheme.primary)
