@@ -70,6 +70,7 @@ import com.billing.pos.ui.materialout.MaterialOutLink
 import com.billing.pos.ui.materialout.ItemMovementScreen
 import com.billing.pos.ui.reports.StockReportScreen
 import com.billing.pos.ui.reports.SalesProfitScreen
+import com.billing.pos.ui.reports.SalesItemReportScreen
 import com.billing.pos.ui.purchase.PurchaseListScreen
 import com.billing.pos.ui.purchase.PurchaseScreen
 import com.billing.pos.ui.purchase.SuppliersScreen
@@ -205,6 +206,7 @@ private fun AppNav() {
                 onItemMovement = { nav.navigate("itemmovement") },
                 onStockReport = { nav.navigate("stockreport") },
                 onSalesProfit = { nav.navigate("salesprofit") },
+                onSalesItemReport = { nav.navigate("salesitemreport") },
                 onVatReport = { nav.navigate("vat") },
                 onOutstanding = { nav.navigate("outstanding") },
                 onAccounts = { nav.navigate("accounts") },
@@ -413,6 +415,13 @@ private fun AppNav() {
         composable("salesprofit") {
             SalesProfitScreen(onBack = { nav.popBackStack() }, onOpenInvoice = { id -> nav.navigate("billing/edit/$id") })
         }
+        composable("salesitemreport") {
+            SalesItemReportScreen(
+                onBack = { nav.popBackStack() },
+                onOpenItem = { id -> nav.navigate("items/edit/$id") },
+                onOpenInvoice = { id -> nav.navigate("billing/edit/$id") }
+            )
+        }
         composable("itemmovement") {
             ItemMovementScreen(
                 onBack = { nav.popBackStack() },
@@ -427,6 +436,12 @@ private fun AppNav() {
         }
         composable("items") {
             ItemsScreen(onBack = { nav.popBackStack() })
+        }
+        composable(
+            route = "items/edit/{id}",
+            arguments = listOf(navArgument("id") { type = NavType.LongType })
+        ) { entry ->
+            ItemsScreen(onBack = { nav.popBackStack() }, initialEditItemId = entry.arguments?.getLong("id"))
         }
         composable("pricesearch") {
             PriceSearchScreen(onBack = { nav.popBackStack() })

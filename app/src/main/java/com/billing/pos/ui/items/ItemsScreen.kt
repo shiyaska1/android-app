@@ -331,6 +331,7 @@ class ItemsViewModel(app: Application) : AndroidViewModel(app) {
 @Composable
 fun ItemsScreen(
     onBack: () -> Unit,
+    initialEditItemId: Long? = null,
     vm: ItemsViewModel = viewModel()
 ) {
     val context = LocalContext.current
@@ -381,6 +382,15 @@ fun ItemsScreen(
     var showDialog by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<Item?>(null) }
     var deleteFor by remember { mutableStateOf<Item?>(null) }
+    // Deep link (from the item-wise sales report): open this item in edit mode once loaded.
+    var editLinkDone by remember { mutableStateOf(false) }
+    LaunchedEffect(rows, initialEditItemId) {
+        if (!editLinkDone && initialEditItemId != null && initialEditItemId > 0) {
+            rows.firstOrNull { it.item.id == initialEditItemId }?.let { r ->
+                editing = r.item; vm.beginEdit(r.item); showDialog = true; editLinkDone = true
+            }
+        }
+    }
     var printFor by remember { mutableStateOf<Item?>(null) }
 
     // Import items: Excel/CSV file, camera scan, or gallery photo (OCR → review).

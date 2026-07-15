@@ -107,6 +107,7 @@ fun DashboardScreen(
     onItemMovement: () -> Unit,
     onStockReport: () -> Unit,
     onSalesProfit: () -> Unit,
+    onSalesItemReport: () -> Unit,
     onVatReport: () -> Unit,
     onOutstanding: () -> Unit,
     onAccounts: () -> Unit,
@@ -166,6 +167,7 @@ fun DashboardScreen(
         // ---- Reports ----
         if (Session.canViewInvoice) add(Tile("Sales Report", Icons.Filled.Assessment, onReports, "Reports"))
         if (Session.canViewInvoice) add(Tile("Sales Profit", Icons.Filled.TrendingUp, onSalesProfit, "Reports"))
+        if (Session.canViewInvoice) add(Tile("Sales (item-wise)", Icons.Filled.Inventory2, onSalesItemReport, "Reports"))
         add(Tile("Stock on Date", Icons.Filled.Inventory, onStockReport, "Reports"))
         add(Tile("Item Movement", Icons.Filled.SwapVert, onItemMovement, "Reports"))
         add(Tile("Price Search", Icons.Filled.PriceCheck, onPriceSearch, "Reports"))
