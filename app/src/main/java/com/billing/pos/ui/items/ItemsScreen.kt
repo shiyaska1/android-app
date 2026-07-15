@@ -732,6 +732,20 @@ private fun ItemDialog(
     val scanLauncher = rememberLauncherForActivityResult(ScanContract()) { result ->
         result.contents?.let { barcode = it }
     }
+    // Photo barcode: take/pick an image, draw a box on the barcode, decode only inside it.
+    // More reliable than a fast live scan for worn or curved labels.
+    var barcodeUri by remember { mutableStateOf<android.net.Uri?>(null) }
+    val barcodeCamera = com.billing.pos.ocr.rememberImageCamera { uri -> barcodeUri = uri }
+    val barcodeGallery = rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia()
+    ) { uri -> if (uri != null) barcodeUri = uri }
+    barcodeUri?.let { u ->
+        com.billing.pos.ui.common.RegionBarcodeDialog(
+            uri = u,
+            onResult = { if (it.isNotBlank()) barcode = it; barcodeUri = null },
+            onDismiss = { barcodeUri = null }
+        )
+    }
     val speechLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
@@ -985,6 +999,18 @@ private fun ItemDialog(
                         onClick = { scanLauncher.launch(ScanOptions().setPrompt("Scan barcode").setBeepEnabled(true).setOrientationLocked(false)) },
                         modifier = Modifier.weight(1f)
                     ) { Text("Scan") }
+                    OutlinedButton(onClick = { barcodeCamera() }, modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Filled.PhotoCamera, null, modifier = Modifier.size(18.dp)); Text(" Photo")
+                    }
+                    OutlinedButton(onClick = {
+                        barcodeGallery.launch(
+                            androidx.activity.result.PickVisualMediaRequest(
+                                androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly
+                            )
+                        )
+                    }, modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Filled.PhotoLibrary, null, modifier = Modifier.size(18.dp))
+                    }
                 }
                 OutlinedTextField(
                     value = hsn, onValueChange = { hsn = it },
