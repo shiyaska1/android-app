@@ -204,6 +204,13 @@ fun BillingScreen(
     val photoCapture = com.billing.pos.ocr.rememberImageCamera { uri ->
         capturedPhotoUri = uri; showPhotoOptions = true
     }
+    // Photo → ask Camera/Gallery → draw a box over the items → OCR only that area → review.
+    var showPhotoSourceAsk by remember { mutableStateOf(false) }
+    var regionOcrUri by remember { mutableStateOf<android.net.Uri?>(null) }
+    val regionCamera = com.billing.pos.ocr.rememberImageCamera { uri -> regionOcrUri = uri }
+    val regionGallery = rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia()
+    ) { uri -> if (uri != null) regionOcrUri = uri }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
@@ -362,7 +369,7 @@ fun BillingScreen(
                 ToolAction(Icons.Filled.Dialpad, "Price") { showCustomLine = true }
                 ToolAction(Icons.Filled.NoteAdd, "New") { showNewItem = true }
                 ToolAction(Icons.Filled.Gesture, "Write") { showHandwrite = true }
-                ToolAction(Icons.Filled.PhotoCamera, "Photo") { photoCapture() }
+                ToolAction(Icons.Filled.PhotoCamera, "Photo") { showPhotoSourceAsk = true }
                 ToolAction(Icons.Filled.QrCodeScanner, "Scan") {
                     scanLauncher.launch(ScanOptions().setPrompt("Scan item barcode").setBeepEnabled(true).setOrientationLocked(false))
                 }
@@ -740,6 +747,30 @@ fun BillingScreen(
         HandwriteQuickBillDialog(
             onDismiss = { showHandwrite = false },
             onReview = { list -> showHandwrite = false; ocrReview = list }
+        )
+    }
+
+    // Photo → ask Camera or Gallery.
+    if (showPhotoSourceAsk) {
+        AlertDialog(
+            onDismissRequest = { showPhotoSourceAsk = false },
+            title = { Text("Add photo from") },
+            text = { Text("Take a photo or pick from the gallery, then draw a box over the items to read.") },
+            confirmButton = { TextButton(onClick = { showPhotoSourceAsk = false; regionCamera() }) { Text("Camera") } },
+            dismissButton = {
+                TextButton(onClick = {
+                    showPhotoSourceAsk = false
+                    regionGallery.launch(androidx.activity.result.PickVisualMediaRequest(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly))
+                }) { Text("Gallery") }
+            }
+        )
+    }
+    // Draw a rectangle over the items → OCR only that area.
+    regionOcrUri?.let { u ->
+        com.billing.pos.ui.common.RegionLinesOcrDialog(
+            uri = u,
+            onResult = { lines -> regionOcrUri = null; ocrReview = com.billing.pos.ocr.ItemListParser.parse(lines) },
+            onDismiss = { regionOcrUri = null }
         )
     }
 

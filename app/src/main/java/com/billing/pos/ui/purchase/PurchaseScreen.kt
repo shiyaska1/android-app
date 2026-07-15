@@ -117,10 +117,14 @@ fun PurchaseScreen(
     val requireBatch = remember { AppPrefs(context).requireItemBatch }
     var batchFor by remember { mutableStateOf<com.billing.pos.data.Item?>(null) }
     var showCustomLine by remember { mutableStateOf(false) }
-    // Photo → draw a box → OCR only that area → review before adding (like sales entry).
+    // Photo → ask Camera/Gallery → draw a box → OCR only that area → review before adding (like sales entry).
+    var showPhotoSourceAsk by remember { mutableStateOf(false) }
     var regionOcrUri by remember { mutableStateOf<android.net.Uri?>(null) }
     var ocrReview by remember { mutableStateOf<List<com.billing.pos.ocr.ScannedItem>?>(null) }
     val photoCapture = com.billing.pos.ocr.rememberImageCamera { uri -> regionOcrUri = uri }
+    val regionGallery = rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia()
+    ) { uri -> if (uri != null) regionOcrUri = uri }
 
     val readOnly = vm.editingId != null && !Session.canEdit
 
@@ -236,7 +240,7 @@ fun PurchaseScreen(
                 ToolAction(Icons.Filled.Add, "Item") { showItemPicker = true }
                 ToolAction(Icons.Filled.Dialpad, "Price") { showCustomLine = true }
                 ToolAction(Icons.Filled.NoteAdd, "New") { showNewItem = true }
-                ToolAction(Icons.Filled.PhotoCamera, "Photo") { photoCapture() }
+                ToolAction(Icons.Filled.PhotoCamera, "Photo") { showPhotoSourceAsk = true }
                 ToolAction(Icons.Filled.QrCodeScanner, "Scan") {
                     scanLauncher.launch(ScanOptions().setPrompt("Scan item barcode").setBeepEnabled(true).setOrientationLocked(false))
                 }
@@ -367,6 +371,21 @@ fun PurchaseScreen(
                 }
             },
             onNewItem = { showItemPicker = false; showNewItem = true }
+        )
+    }
+    // Photo → ask Camera or Gallery.
+    if (showPhotoSourceAsk) {
+        AlertDialog(
+            onDismissRequest = { showPhotoSourceAsk = false },
+            title = { Text("Add photo from") },
+            text = { Text("Take a photo or pick from the gallery, then draw a box over the items to read.") },
+            confirmButton = { TextButton(onClick = { showPhotoSourceAsk = false; photoCapture() }) { Text("Camera") } },
+            dismissButton = {
+                TextButton(onClick = {
+                    showPhotoSourceAsk = false
+                    regionGallery.launch(androidx.activity.result.PickVisualMediaRequest(androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly))
+                }) { Text("Gallery") }
+            }
         )
     }
     // Photo → draw a rectangle over the items → OCR only that area.
