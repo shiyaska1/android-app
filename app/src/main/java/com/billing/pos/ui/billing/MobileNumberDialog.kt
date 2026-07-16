@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
@@ -66,6 +68,7 @@ fun MobileNumberDialog(
             Modifier.fillMaxSize()
                 .background(MaterialTheme.colorScheme.surface)
                 .safeDrawingPadding()
+                .imePadding()
         ) {
             // ---- TOP BAR: actions always reachable (never under the navigation bar) ----
             Row(
@@ -91,8 +94,9 @@ fun MobileNumberDialog(
             Divider()
 
             // ---- Customer side: upside-down so it reads correctly from the opposite seat ----
+            // Capped at 70% of the height so the entry box below is always on screen.
             Box(
-                Modifier.weight(1f).fillMaxWidth().background(MaterialTheme.colorScheme.primaryContainer),
+                Modifier.fillMaxWidth().fillMaxHeight(0.70f).background(MaterialTheme.colorScheme.primaryContainer),
                 contentAlignment = Alignment.Center
             ) {
                 Column(
