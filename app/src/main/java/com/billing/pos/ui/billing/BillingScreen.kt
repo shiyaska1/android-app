@@ -44,6 +44,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.NoteAdd
 import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Remove
@@ -143,6 +144,7 @@ fun BillingScreen(
     var showBillInfo by remember { mutableStateOf(false) }
     var showNotes by remember { mutableStateOf(false) }
     var showRemarkPopup by remember { mutableStateOf(false) }
+    var showMobileBoard by remember { mutableStateOf(false) }
     var showHandwrite by remember { mutableStateOf(false) }
     var capturedPhotoUri by remember { mutableStateOf<android.net.Uri?>(null) }
     var showPhotoOptions by remember { mutableStateOf(false) }
@@ -229,6 +231,9 @@ fun BillingScreen(
                     actionIconContentColor = MaterialTheme.colorScheme.onPrimary
                 ),
                 actions = {
+                    IconButton(onClick = { showMobileBoard = true }) {
+                        Icon(Icons.Filled.Phone, contentDescription = "Show mobile number to customer")
+                    }
                     IconButton(onClick = { showBillInfo = !showBillInfo }) {
                         Icon(Icons.Filled.Info, contentDescription = "Bill no & date",
                             tint = if (showBillInfo) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.6f))
@@ -747,6 +752,15 @@ fun BillingScreen(
         HandwriteQuickBillDialog(
             onDismiss = { showHandwrite = false },
             onReview = { list -> showHandwrite = false; ocrReview = list }
+        )
+    }
+
+    // Big customer-facing board to confirm a mobile number.
+    if (showMobileBoard) {
+        MobileNumberDialog(
+            initial = vm.selectedCustomer?.phone.orEmpty(),
+            onAddToItems = { num -> vm.addCustomLine(num, 0.0, 0.0) },
+            onDismiss = { showMobileBoard = false }
         )
     }
 
