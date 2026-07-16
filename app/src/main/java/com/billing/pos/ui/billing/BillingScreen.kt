@@ -44,6 +44,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.NoteAdd
 import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.QrCodeScanner
@@ -145,6 +146,7 @@ fun BillingScreen(
     var showNotes by remember { mutableStateOf(false) }
     var showRemarkPopup by remember { mutableStateOf(false) }
     var showMobileBoard by remember { mutableStateOf(false) }
+    var showFastBill by remember { mutableStateOf(false) }
     var showHandwrite by remember { mutableStateOf(false) }
     var capturedPhotoUri by remember { mutableStateOf<android.net.Uri?>(null) }
     var showPhotoOptions by remember { mutableStateOf(false) }
@@ -231,6 +233,9 @@ fun BillingScreen(
                     actionIconContentColor = MaterialTheme.colorScheme.onPrimary
                 ),
                 actions = {
+                    IconButton(onClick = { showFastBill = true }) {
+                        Icon(Icons.Filled.Calculate, contentDescription = "Fast bill (amounts only)")
+                    }
                     IconButton(onClick = { showMobileBoard = true }) {
                         Icon(Icons.Filled.Phone, contentDescription = "Show mobile number to customer")
                     }
@@ -752,6 +757,14 @@ fun BillingScreen(
         HandwriteQuickBillDialog(
             onDismiss = { showHandwrite = false },
             onReview = { list -> showHandwrite = false; ocrReview = list }
+        )
+    }
+
+    // Fast bill: calculator tape of amounts → price-only lines on the bill.
+    if (showFastBill) {
+        FastBillDialog(
+            onSave = { amounts -> vm.addPriceLines(amounts) },
+            onDismiss = { showFastBill = false }
         )
     }
 

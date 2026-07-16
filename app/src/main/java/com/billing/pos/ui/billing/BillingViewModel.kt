@@ -228,6 +228,16 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
      * If [saveToMaster] is set and a description is given, the item is also created
      * in the item master (deduplicated by name) using [sellingPrice] (or the line price).
      */
+    /** Fast bill: each amount becomes its own cart line with no item name. */
+    fun addPriceLines(prices: List<Double>) {
+        val valid = prices.filter { it > 0.0 }
+        if (valid.isEmpty()) return
+        valid.forEach { p -> cart.add(CartLine(itemId = 0, name = "", price = p, taxPercent = 0.0, qty = 1.0)) }
+        manualTotalText = ""   // let the bill total compute from the lines
+        dirty = true
+        _message.value = "Added ${valid.size} amount(s)"
+    }
+
     fun addCustomLine(
         description: String, price: Double, taxPercent: Double,
         saveToMaster: Boolean = false, sellingPrice: Double = 0.0
