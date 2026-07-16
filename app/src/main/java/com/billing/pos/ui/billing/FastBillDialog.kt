@@ -7,9 +7,12 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -52,6 +55,7 @@ import com.billing.pos.util.Format
  * is added to a big running tape the customer can read, with "=" total at the bottom. Save drops
  * every amount into the bill as its own price-only line (no item name), ready to print.
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun FastBillDialog(
     onSave: (List<Double>) -> Unit,
@@ -59,6 +63,7 @@ fun FastBillDialog(
 ) {
     val entries = remember { mutableStateListOf<Double>() }
     var input by remember { mutableStateOf("") }
+    var editIndex by remember { mutableStateOf(-1) }
     val focus = remember { FocusRequester() }
     val scroll = rememberScrollState()
     val total = entries.sum()
@@ -73,12 +78,16 @@ fun FastBillDialog(
     LaunchedEffect(Unit) { focus.requestFocus() }
     LaunchedEffect(entries.size) { scroll.animateScrollTo(scroll.maxValue) }
 
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+    // decorFitsSystemWindows = false so the dialog gets real insets; safeDrawingPadding then keeps
+    // the buttons clear of the phone's navigation bar and the keyboard.
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+    ) {
         Column(
             Modifier.fillMaxSize()
                 .background(MaterialTheme.colorScheme.surface)
-                .systemBarsPadding()
-                .imePadding()
+                .safeDrawingPadding()
         ) {
             // ---- The tape: every amount on its own line, with + signs, then = total ----
             Box(
@@ -97,7 +106,13 @@ fun FastBillDialog(
                         )
                     }
                     entries.forEachIndexed { i, v ->
-                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        // Long-press an amount to edit or delete it; the total recalculates.
+                        Row(
+                            Modifier.fillMaxWidth()
+                                .combinedClickable(onClick = {}, onLongClick = { editIndex = i })
+                                .padding(vertical = 2.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
                             Text(
                                 if (i == 0) " " else "+",
                                 fontSize = 30.sp, fontFamily = FontFamily.Monospace,
@@ -189,5 +204,41 @@ fun FastBillDialog(
                 }
             }
         }
+    }
+
+    // Long-press edit: change or delete one amount, total recalculates.
+    if (editIndex in entries.indices) {
+        val idx = editIndex
+        var text by remember(idx) { mutableStateOf(Format.money(entries[idx])) }
+        AlertDialog(
+            onDismissRequest = { editIndex = -1 },
+            title = { Text("Edit amount ${idx + 1}") },
+            text = {
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it.filter { c -> c.isDigit() || c == '.' } },
+                    singleLine = true,
+                    textStyle = LocalTextStyle.current.copy(
+                        fontSize = 30.sp, fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold, textAlign = TextAlign.End
+                    ),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val v = text.toDoubleOrNull()
+                    if (v != null && v > 0.0) entries[idx] = v
+                    editIndex = -1
+                }) { Text("Save") }
+            },
+            dismissButton = {
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    TextButton(onClick = { entries.removeAt(idx); editIndex = -1 }) { Text("Delete") }
+                    TextButton(onClick = { editIndex = -1 }) { Text("Cancel") }
+                }
+            }
+        )
     }
 }

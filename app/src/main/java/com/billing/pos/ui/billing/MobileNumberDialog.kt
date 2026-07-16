@@ -8,9 +8,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.Divider
@@ -56,12 +55,16 @@ fun MobileNumberDialog(
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
 
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+    // decorFitsSystemWindows = false so the dialog gets real insets; safeDrawingPadding then keeps
+    // the buttons clear of the phone's navigation bar and the keyboard.
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+    ) {
         Column(
             Modifier.fillMaxSize()
                 .background(MaterialTheme.colorScheme.surface)
-                .systemBarsPadding()
-                .imePadding()
+                .safeDrawingPadding()
         ) {
             // ---- Customer side: upside-down so it reads correctly from the opposite seat ----
             Box(
