@@ -1,24 +1,24 @@
 package com.billing.pos.ui.billing
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.TextButton
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Backspace
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Divider
 import androidx.compose.material3.Icon
@@ -28,6 +28,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -54,6 +55,8 @@ import com.billing.pos.util.Format
  * Fast bill — a calculator tape. Type an amount and press Enter (Enter acts as "+"); each amount
  * is added to a big running tape the customer can read, with "=" total at the bottom. Save drops
  * every amount into the bill as its own price-only line (no item name), ready to print.
+ *
+ * Close/Save live in the TOP bar: the phone's navigation bar can never cover them.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -78,8 +81,6 @@ fun FastBillDialog(
     LaunchedEffect(Unit) { focus.requestFocus() }
     LaunchedEffect(entries.size) { scroll.animateScrollTo(scroll.maxValue) }
 
-    // decorFitsSystemWindows = false so the dialog gets real insets; safeDrawingPadding then keeps
-    // the buttons clear of the phone's navigation bar and the keyboard.
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
@@ -89,6 +90,26 @@ fun FastBillDialog(
                 .background(MaterialTheme.colorScheme.surface)
                 .safeDrawingPadding()
         ) {
+            // ---- TOP BAR: actions always reachable ----
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) { Text("Close") }
+                Button(
+                    onClick = {
+                        val pending = input.toDoubleOrNull()
+                        val all = if (pending != null && pending > 0.0) entries + pending else entries.toList()
+                        if (all.isNotEmpty()) onSave(all)
+                        onDismiss()
+                    },
+                    enabled = entries.isNotEmpty() || (input.toDoubleOrNull() ?: 0.0) > 0.0,
+                    modifier = Modifier.weight(1.4f)
+                ) { Text("Save to bill") }
+            }
+            Divider()
+
             // ---- The tape: every amount on its own line, with + signs, then = total ----
             Box(
                 Modifier.weight(1f).fillMaxWidth().background(MaterialTheme.colorScheme.primaryContainer)
@@ -154,8 +175,8 @@ fun FastBillDialog(
             }
             Divider()
 
-            // ---- Entry + running total + actions ----
-            Column(Modifier.fillMaxWidth().padding(12.dp)) {
+            // ---- Entry + running total ----
+            Column(Modifier.fillMaxWidth().padding(12.dp).navigationBarsPadding()) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(
                         value = input,
@@ -175,9 +196,8 @@ fun FastBillDialog(
                     }
                     Button(onClick = { addNow() }) { Text("+", fontSize = 26.sp, fontWeight = FontWeight.Bold) }
                 }
-                // Total box
                 Row(
-                    Modifier.fillMaxWidth().padding(top = 10.dp),
+                    Modifier.fillMaxWidth().padding(top = 8.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -187,20 +207,6 @@ fun FastBillDialog(
                         fontSize = 34.sp, fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
                     )
-                }
-                Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) { Text("Close") }
-                    Button(
-                        onClick = {
-                            // Fold any half-typed amount in before saving.
-                            val pending = input.toDoubleOrNull()
-                            val all = if (pending != null && pending > 0.0) entries + pending else entries.toList()
-                            if (all.isNotEmpty()) onSave(all)
-                            onDismiss()
-                        },
-                        enabled = entries.isNotEmpty() || (input.toDoubleOrNull() ?: 0.0) > 0.0,
-                        modifier = Modifier.weight(1.4f)
-                    ) { Text("Save to bill") }
                 }
             }
         }

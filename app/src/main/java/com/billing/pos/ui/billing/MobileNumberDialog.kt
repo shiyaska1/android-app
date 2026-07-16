@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.text.KeyboardOptions
@@ -66,6 +67,29 @@ fun MobileNumberDialog(
                 .background(MaterialTheme.colorScheme.surface)
                 .safeDrawingPadding()
         ) {
+            // ---- TOP BAR: actions always reachable (never under the navigation bar) ----
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedButton(
+                    onClick = {
+                        if (number.isNotBlank()) {
+                            clipboard.setText(AnnotatedString(number))
+                            android.widget.Toast.makeText(context, "Number copied", android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    modifier = Modifier.weight(1f)
+                ) { Text("Copy") }
+                Button(
+                    onClick = { if (number.isNotBlank()) { onAddToItems(number); onDismiss() } },
+                    modifier = Modifier.weight(1.3f)
+                ) { Text("Add to items") }
+                OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) { Text("Close") }
+            }
+            Divider()
+
             // ---- Customer side: upside-down so it reads correctly from the opposite seat ----
             Box(
                 Modifier.weight(1f).fillMaxWidth().background(MaterialTheme.colorScheme.primaryContainer),
@@ -102,7 +126,10 @@ fun MobileNumberDialog(
             Divider()
 
             // ---- Your side: type the number ----
-            Column(Modifier.fillMaxWidth().padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+            Column(
+                Modifier.fillMaxWidth().padding(12.dp).navigationBarsPadding(),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
                 OutlinedTextField(
                     value = number,
                     onValueChange = { number = it.filter { c -> c.isDigit() }.take(15) },
@@ -115,22 +142,6 @@ fun MobileNumberDialog(
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
                     modifier = Modifier.fillMaxWidth()
                 )
-                Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(
-                        onClick = {
-                            if (number.isNotBlank()) {
-                                clipboard.setText(AnnotatedString(number))
-                                android.widget.Toast.makeText(context, "Number copied", android.widget.Toast.LENGTH_SHORT).show()
-                            }
-                        },
-                        modifier = Modifier.weight(1f)
-                    ) { Text("Copy") }
-                    Button(
-                        onClick = { if (number.isNotBlank()) { onAddToItems(number); onDismiss() } },
-                        modifier = Modifier.weight(1.2f)
-                    ) { Text("Add to items") }
-                    OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) { Text("Close") }
-                }
             }
         }
     }
