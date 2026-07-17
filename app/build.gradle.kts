@@ -87,6 +87,11 @@ android {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
+        jniLibs {
+            // Store .so uncompressed and page-aligned — required for 16KB page devices
+            // (and what Google Play checks for).
+            useLegacyPackaging = false
+        }
     }
 }
 
@@ -118,8 +123,9 @@ dependencies {
     implementation("com.journeyapps:zxing-android-embedded:4.3.0")
     implementation("com.google.zxing:core:3.5.3")
 
-    // On-device handwriting recognition (offline after one-time model download)
-    implementation("com.google.mlkit:digital-ink-recognition:18.1.0")
+    // On-device handwriting recognition (offline after one-time model download).
+    // 19.0.0+ ships 16KB-page-aligned native libs, which Google Play now requires.
+    implementation("com.google.mlkit:digital-ink-recognition:19.0.0")
 
     // On-device text recognition / OCR (bundled Latin model — fully offline)
     implementation("com.google.mlkit:text-recognition:16.0.1")
