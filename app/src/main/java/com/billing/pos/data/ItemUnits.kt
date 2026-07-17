@@ -45,3 +45,20 @@ fun Item.secondaryChoice(): UnitChoice {
 /** Both choices when the item has two units, otherwise just the primary one. */
 fun Item.unitChoices(): List<UnitChoice> =
     if (hasTwoUnits) listOf(primaryChoice(), secondaryChoice()) else listOf(primaryChoice())
+
+// ---- Buying side (purchase entry / purchase order) --------------------------------------
+/** The rate to buy at: the item's purchase price, or its sales price when none is set. */
+val Item.costRate: Double get() = if (purchasePrice > 0.0) purchasePrice else price
+
+/** The primary unit priced at [costRate]. */
+fun Item.primaryCostChoice(): UnitChoice = UnitChoice(unit.ifBlank { "PCS" }, costRate, 1.0)
+
+/** The secondary unit priced at [costRate] / factor. */
+fun Item.secondaryCostChoice(): UnitChoice {
+    val f = if (conversionFactor > 0) conversionFactor else 1.0
+    return UnitChoice(secondaryUnit.ifBlank { "PCS" }, round2(costRate / f), 1.0 / f)
+}
+
+/** Unit choices for buying — same units as [unitChoices], but at the purchase rate. */
+fun Item.costUnitChoices(): List<UnitChoice> =
+    if (hasTwoUnits) listOf(primaryCostChoice(), secondaryCostChoice()) else listOf(primaryCostChoice())

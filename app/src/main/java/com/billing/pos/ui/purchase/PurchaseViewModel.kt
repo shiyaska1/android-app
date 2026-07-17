@@ -14,6 +14,7 @@ import com.billing.pos.data.Purchase
 import com.billing.pos.data.PurchaseItem
 import com.billing.pos.data.Repository
 import com.billing.pos.data.primaryChoice
+import com.billing.pos.data.primaryCostChoice
 import com.billing.pos.data.Supplier
 import com.billing.pos.ui.billing.CartLine
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -80,7 +81,7 @@ class PurchaseViewModel(app: Application) : AndroidViewModel(app) {
     fun setAdditionalCharge(v: String) { additionalChargeText = v; dirty = true }
     fun setDiscount(v: String) { discountText = v; dirty = true }
 
-    fun addItemToCart(item: Item) = addItemWithUnit(item, item.primaryChoice())
+    fun addItemToCart(item: Item) = addItemWithUnit(item, item.primaryCostChoice())
 
     fun addItemWithUnit(item: Item, choice: com.billing.pos.data.UnitChoice) {
         val idx = cart.indexOfFirst { it.itemId == item.id && it.unit == choice.unit && item.id != 0L }
@@ -92,7 +93,7 @@ class PurchaseViewModel(app: Application) : AndroidViewModel(app) {
     /** Adds a purchase line for a batch (existing or new); stock is received on save. */
     fun addBatchLine(
         item: Item, batchNo: String, expiryMillis: Long, qty: Double, price: Double,
-        choice: com.billing.pos.data.UnitChoice = item.primaryChoice()
+        choice: com.billing.pos.data.UnitChoice = item.primaryCostChoice()
     ) {
         cart.add(
             CartLine(

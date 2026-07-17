@@ -637,11 +637,19 @@ fun ItemPickerDialog(
                                 // Price / stock / location — each a distinct colour.
                                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                     Text(
-                                        Format.rupee(item.price),
+                                        "Sale ${Format.rupee(item.price)}",
                                         style = androidx.compose.material3.MaterialTheme.typography.bodyMedium,
                                         fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
                                         color = androidx.compose.material3.MaterialTheme.colorScheme.primary
                                     )
+                                    if (item.purchasePrice > 0.0) {
+                                        Text(
+                                            "Buy ${Format.rupee(item.purchasePrice)}",
+                                            style = androidx.compose.material3.MaterialTheme.typography.bodyMedium,
+                                            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                                            color = androidx.compose.material3.MaterialTheme.colorScheme.error
+                                        )
+                                    }
                                     Text(
                                         "Stock ${Format.qty(stockByItem[item.id] ?: item.openingStock)} ${item.unit}",
                                         style = androidx.compose.material3.MaterialTheme.typography.bodyMedium,

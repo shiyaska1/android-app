@@ -80,6 +80,8 @@ import com.billing.pos.print.ThermalPrinter
 import com.billing.pos.ui.billing.CustomLineDialog
 import com.billing.pos.data.hasTwoUnits
 import com.billing.pos.data.primaryChoice
+import com.billing.pos.data.primaryCostChoice
+import com.billing.pos.data.costRate
 import com.billing.pos.ui.billing.ItemPickerDialog
 import com.billing.pos.ui.billing.UnitPickDialog
 import com.billing.pos.ui.billing.NewItemDialog
@@ -366,7 +368,7 @@ fun PurchaseScreen(
                 showItemPicker = false
                 when {
                     picked.hasTwoUnits -> unitPickFor = picked
-                    requireBatch -> { pendingChoice = picked.primaryChoice(); batchFor = picked }
+                    requireBatch -> { pendingChoice = picked.primaryCostChoice(); batchFor = picked }
                     else -> vm.addItemToCart(picked)
                 }
             },
@@ -408,6 +410,7 @@ fun PurchaseScreen(
     unitPickFor?.let { item ->
         UnitPickDialog(
             item = item,
+            useCost = true,
             onPick = { choice ->
                 unitPickFor = null
                 if (requireBatch) { pendingChoice = choice; batchFor = item }
@@ -422,7 +425,7 @@ fun PurchaseScreen(
             item = item,
             existing = allBatches.filter { it.itemId == item.id },
             onAdd = { no, exp, q, price ->
-                vm.addBatchLine(item, no, exp, q, price, pendingChoice ?: item.primaryChoice())
+                vm.addBatchLine(item, no, exp, q, price, pendingChoice ?: item.primaryCostChoice())
                 pendingChoice = null; batchFor = null
             },
             onDismiss = { pendingChoice = null; batchFor = null }
@@ -443,7 +446,7 @@ private fun PurchaseBatchDialog(
     var batchNo by remember { mutableStateOf("") }
     var expiry by remember { mutableStateOf(0L) }
     var qty by remember { mutableStateOf("") }
-    var price by remember { mutableStateOf(if (item.price > 0) com.billing.pos.util.Format.money(item.price) else "") }
+    var price by remember { mutableStateOf(if (item.costRate > 0) com.billing.pos.util.Format.money(item.costRate) else "") }
     androidx.compose.material3.AlertDialog(
         onDismissRequest = onDismiss,
         title = { androidx.compose.material3.Text("Batch — ${item.name}") },

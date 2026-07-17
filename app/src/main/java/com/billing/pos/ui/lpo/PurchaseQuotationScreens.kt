@@ -66,6 +66,7 @@ import com.billing.pos.ui.billing.CartLine
 import com.billing.pos.data.UnitChoice
 import com.billing.pos.data.hasTwoUnits
 import com.billing.pos.data.primaryChoice
+import com.billing.pos.data.primaryCostChoice
 import com.billing.pos.ui.billing.ItemPickerDialog
 import com.billing.pos.ui.billing.UnitPickDialog
 import com.billing.pos.ui.billing.collectAsStateSafe
@@ -111,7 +112,7 @@ class PurchaseQuotationViewModel(app: Application) : AndroidViewModel(app) {
     val grandTotal get() = subTotal + taxTotal + additionalCharge - discount
 
     fun selectSupplier(s: Supplier) { selectedSupplier = s }
-    fun addItemToCart(item: Item) = addItemWithUnit(item, item.primaryChoice())
+    fun addItemToCart(item: Item) = addItemWithUnit(item, item.primaryCostChoice())
 
     fun addItemWithUnit(item: Item, choice: UnitChoice) {
         val idx = cart.indexOfFirst { it.itemId == item.id && it.unit == choice.unit && item.id != 0L }
@@ -283,6 +284,7 @@ fun PurchaseQuotationScreen(editId: Long?, onBack: () -> Unit, vm: PurchaseQuota
     unitPickFor?.let { item ->
         UnitPickDialog(
             item = item,
+            useCost = true,
             onPick = { choice -> vm.addItemWithUnit(item, choice); unitPickFor = null },
             onDismiss = { unitPickFor = null }
         )

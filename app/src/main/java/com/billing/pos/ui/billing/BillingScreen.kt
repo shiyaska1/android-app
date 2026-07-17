@@ -98,6 +98,7 @@ import com.billing.pos.data.PaymentMethod
 import com.billing.pos.data.hasTwoUnits
 import com.billing.pos.data.primaryChoice
 import com.billing.pos.data.unitChoices
+import com.billing.pos.data.costUnitChoices
 import com.billing.pos.pdf.InvoicePdf
 import com.billing.pos.pdf.ThermalPdf
 import com.billing.pos.print.ThermalPrinter
@@ -1157,9 +1158,11 @@ internal fun EditLineNameDialog(
 internal fun UnitPickDialog(
     item: com.billing.pos.data.Item,
     onPick: (com.billing.pos.data.UnitChoice) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    /** true on the buying side: rates come from the purchase price, not the sales price. */
+    useCost: Boolean = false
 ) {
-    val choices = item.unitChoices()
+    val choices = if (useCost) item.costUnitChoices() else item.unitChoices()
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Unit — ${item.name}") },
