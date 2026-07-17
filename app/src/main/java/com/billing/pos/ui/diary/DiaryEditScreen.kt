@@ -136,6 +136,10 @@ fun DiaryEditScreen(
     var searchMode by remember { mutableStateOf(false) }
     var showFormat by remember { mutableStateOf(false) }
     var showLinkDialog by remember { mutableStateOf(false) }
+    // One player for the whole entry, so "play all" can run through every voice note.
+    val audio = remember { AudioController() }
+    DisposableEffect(Unit) { onDispose { audio.stop(); audio.release() } }
+    var askPlayFor by remember { mutableStateOf<String?>(null) }
     val titleStyle = diaryStyle(vm.titleSize, vm.titleColor, vm.titleBold, vm.titleItalic)
     val bodyStyle = diaryStyle(vm.bodySize, vm.bodyColor, vm.bodyBold, vm.bodyItalic)
 
@@ -369,7 +373,12 @@ fun DiaryEditScreen(
                         onMoveDown = { vm.moveDown(index) },
                         onRemove = { vm.removeBlock(index) },
                         onOpen = { openBlock(context, block) { vm.message.value = it } },
-                        onSpeak = { startSpeech("body") }
+                        onSpeak = { startSpeech("body") },
+                        audioPlaying = audio.playing && audio.currentPath == block.path,
+                        onAudioToggle = {
+                            if (audio.playing && audio.currentPath == block.path) audio.stop()
+                            else askPlayFor = block.path
+                        }
                     )
                 }
                 if (vm.recording) {
@@ -468,6 +477,38 @@ fun DiaryEditScreen(
         }
     }
 
+    // Tapping a voice note asks how to play it.
+    askPlayFor?.let { path ->
+        val voices = vm.blocks.filter { it.type == BlockType.AUDIO }.map { it.path }
+        val startIndex = voices.indexOf(path).coerceAtLeast(0)
+        val remaining = voices.size - startIndex
+        AlertDialog(
+            onDismissRequest = { askPlayFor = null },
+            title = { Text("Play voice note") },
+            text = {
+                Column {
+                    Text("Play once — stop at the end of this note.")
+                    Text("Loop — repeat this note until you stop it.", Modifier.padding(top = 6.dp))
+                    Text(
+                        "Play all — play this note, then continue through the remaining $remaining voice note(s) in this entry.",
+                        Modifier.padding(top = 6.dp)
+                    )
+                }
+            },
+            confirmButton = {
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    TextButton(onClick = { askPlayFor = null; audio.start(voices, startIndex, PlayMode.ONCE) }) { Text("Once") }
+                    TextButton(onClick = { askPlayFor = null; audio.start(voices, startIndex, PlayMode.LOOP) }) { Text("Loop") }
+                    TextButton(
+                        onClick = { askPlayFor = null; audio.start(voices, startIndex, PlayMode.ALL) },
+                        enabled = remaining > 1
+                    ) { Text("Play all") }
+                }
+            },
+            dismissButton = { TextButton(onClick = { askPlayFor = null }) { Text("Cancel") } }
+        )
+    }
+
     // Attach from a direct file link: paste URL → download with progress → becomes a block.
     if (showLinkDialog) {
         var link by remember { mutableStateOf("") }
@@ -551,7 +592,9 @@ private fun BlockEditor(
     onMoveDown: () -> Unit,
     onRemove: () -> Unit,
     onOpen: () -> Unit,
-    onSpeak: () -> Unit
+    onSpeak: () -> Unit,
+    audioPlaying: Boolean = false,
+    onAudioToggle: () -> Unit = {}
 ) {
     Column(Modifier.fillMaxWidth().padding(top = 6.dp)) {
         when (block.type) {
@@ -582,7 +625,10 @@ private fun BlockEditor(
                     }
                 }
             }
-            BlockType.AUDIO -> VoicePlayer(path = block.path, durationMs = block.durationMs)
+            BlockType.AUDIO -> VoicePlayer(
+                path = block.path, durationMs = block.durationMs,
+                playing = audioPlaying, onToggle = onAudioToggle
+            )
             else -> Row(
                 Modifier.fillMaxWidth().clickable { onOpen() }.padding(vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
@@ -605,35 +651,84 @@ private fun BlockEditor(
     }
 }
 
-/** A small inline play/pause bar for a recorded voice block. */
-@Composable
-private fun VoicePlayer(path: String, durationMs: Long) {
-    var playing by remember(path) { mutableStateOf(false) }
-    var prepared by remember(path) { mutableStateOf(false) }
-    val player = remember(path) { android.media.MediaPlayer() }
-    DisposableEffect(path) {
-        onDispose { runCatching { player.stop() }; runCatching { player.release() } }
+/** How a tapped voice note should play. */
+enum class PlayMode { ONCE, LOOP, ALL }
+
+/**
+ * Owns the one MediaPlayer for the whole entry, so a voice note can play once, loop, or run
+ * on through every later voice note in the entry.
+ */
+class AudioController {
+    private val mp = android.media.MediaPlayer()
+    private var queue: List<String> = emptyList()
+    private var index = 0
+    private var mode = PlayMode.ONCE
+
+    var currentPath by mutableStateOf<String?>(null); private set
+    var playing by mutableStateOf(false); private set
+
+    init {
+        mp.setOnCompletionListener {
+            when (mode) {
+                PlayMode.LOOP -> Unit                    // isLooping repeats it for us
+                PlayMode.ONCE -> stop()
+                PlayMode.ALL -> {
+                    val next = index + 1
+                    if (next < queue.size) { index = next; playAt(next) } else stop()
+                }
+            }
+        }
     }
+
+    /** Plays [paths] from [startIndex] in the given [m]ode. */
+    fun start(paths: List<String>, startIndex: Int, m: PlayMode) {
+        if (paths.isEmpty()) return
+        queue = paths
+        mode = m
+        index = startIndex.coerceIn(0, paths.lastIndex)
+        playAt(index)
+    }
+
+    private fun playAt(i: Int) {
+        val path = queue.getOrNull(i) ?: return stop()
+        runCatching {
+            mp.reset()                                   // safe to call from onCompletion
+            mp.setDataSource(path)
+            mp.prepare()
+            mp.isLooping = mode == PlayMode.LOOP
+            mp.start()
+            currentPath = path
+            playing = true
+        }.onFailure { stop() }
+    }
+
+    fun stop() {
+        runCatching { if (mp.isPlaying) mp.stop() }
+        runCatching { mp.reset() }
+        playing = false
+        currentPath = null
+    }
+
+    fun release() { runCatching { mp.release() } }
+}
+
+/** A small inline play/stop bar for a recorded voice block. */
+@Composable
+private fun VoicePlayer(path: String, durationMs: Long, playing: Boolean, onToggle: () -> Unit) {
     Row(
         Modifier.fillMaxWidth()
             .clip(RoundedCornerShape(10.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .background(
+                if (playing) MaterialTheme.colorScheme.primaryContainer
+                else MaterialTheme.colorScheme.surfaceVariant
+            )
             .padding(horizontal = 8.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        IconButton(onClick = {
-            runCatching {
-                if (playing) { player.pause(); playing = false }
-                else {
-                    if (!prepared) { player.setDataSource(path); player.prepare(); prepared = true }
-                    player.setOnCompletionListener { playing = false }
-                    player.start(); playing = true
-                }
-            }.onFailure { playing = false }
-        }) {
+        IconButton(onClick = onToggle) {
             Icon(
                 if (playing) Icons.Filled.Stop else Icons.Filled.PlayArrow,
-                contentDescription = if (playing) "Pause" else "Play",
+                contentDescription = if (playing) "Stop" else "Play",
                 tint = MaterialTheme.colorScheme.primary
             )
         }
