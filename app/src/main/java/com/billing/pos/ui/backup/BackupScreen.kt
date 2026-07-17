@@ -64,11 +64,12 @@ fun BackupScreen(
         scope.launch {
             busy = true
             val zip = withContext(Dispatchers.IO) { FullBackup.create(context) }
+            val name = backupFileName()
             val ok = withContext(Dispatchers.IO) {
-                DownloadSaver.save(context, zip, "pos-full-backup.zip", "application/zip")
+                DownloadSaver.save(context, zip, name, "application/zip")
             }
             busy = false
-            snackbar.showSnackbar(if (ok) "Backup saved to Downloads folder" else "Could not save backup")
+            snackbar.showSnackbar(if (ok) "Backup saved to Downloads: $name" else "Could not save backup")
         }
     }
     val storagePermission = rememberLauncherForActivityResult(
@@ -167,7 +168,7 @@ fun BackupScreen(
                     modifier = Modifier.fillMaxWidth().padding(top = 16.dp)
                 ) { Icon(Icons.Filled.Download, null); Text("  Download backup to storage") }
                 Button(
-                    onClick = { driveUpload.launch("pos-full-backup.zip") },
+                    onClick = { driveUpload.launch(backupFileName()) },
                     enabled = !busy,
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
                 ) { Icon(Icons.Filled.CloudUpload, null); Text("  Upload to Google Drive") }
@@ -221,4 +222,15 @@ fun BackupScreen(
             }
         )
     }
+}
+
+/**
+ * Backup file name stamped with the date and time, e.g. pos-full-backup-2026-07-15_1432.zip.
+ * yyyy-MM-dd first so backups sort chronologically in the file list; no spaces or colons,
+ * which storage and Drive reject.
+ */
+private fun backupFileName(): String {
+    val stamp = java.text.SimpleDateFormat("yyyy-MM-dd_HHmmss", java.util.Locale.getDefault())
+        .format(java.util.Date())
+    return "pos-full-backup-$stamp.zip"
 }
