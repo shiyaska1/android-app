@@ -5,12 +5,15 @@ import android.net.Uri
 import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
+import androidx.fragment.app.FragmentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -81,7 +84,7 @@ import com.billing.pos.ui.theme.POSTheme
 import com.billing.pos.ui.vat.VatReportScreen
 import com.billing.pos.ui.users.UsersScreen
 
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // Keep the screen awake while the app is in the foreground; normal lock resumes
@@ -92,7 +95,17 @@ class MainActivity : ComponentActivity() {
         setContent {
             POSTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    AppNav()
+                    val ctx = LocalContext.current
+                    // App lock (Settings): ask for the phone's own lock once per app start.
+                    val lockOn = androidx.compose.runtime.remember { AppPrefs(ctx).appLock }
+                    var unlocked by androidx.compose.runtime.remember {
+                        androidx.compose.runtime.mutableStateOf(!lockOn || com.billing.pos.ui.common.AppLockGate.unlocked)
+                    }
+                    if (unlocked) AppNav()
+                    else com.billing.pos.ui.common.AppLockScreen(onUnlocked = {
+                        com.billing.pos.ui.common.AppLockGate.unlocked = true
+                        unlocked = true
+                    })
                 }
             }
         }

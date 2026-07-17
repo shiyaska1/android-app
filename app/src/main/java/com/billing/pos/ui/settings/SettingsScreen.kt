@@ -107,6 +107,11 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
     var topSkip by remember { mutableStateOf(prefs.labTopSkipLines.toString()) }
     var bottomSkip by remember { mutableStateOf(prefs.labBottomSkipLines.toString()) }
     var stickyNote by remember { mutableStateOf(prefs.stickyNoteOnLaunch) }
+    var appLock by remember { mutableStateOf(prefs.appLock) }
+    // Warn if the lock is switched on but the phone itself has no lock to check against.
+    val deviceSecure = remember {
+        context.getSystemService(android.app.KeyguardManager::class.java)?.isDeviceSecure == true
+    }
     val sealPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) scope.launch {
             val path = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { copyToAppFiles(context, uri, "lab_seal") }
@@ -234,6 +239,24 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
                     Text("Open a full-screen handwriting canvas each time the app starts; Save stores each page as a picture in My Diary.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
                 }
                 Checkbox(checked = stickyNote, onCheckedChange = { stickyNote = it; prefs.stickyNoteOnLaunch = it })
+            }
+
+            Divider(Modifier.padding(vertical = 16.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("App lock", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        "Ask for this phone's own fingerprint / PIN / pattern each time the app is opened. No separate password is stored.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline
+                    )
+                }
+                Checkbox(checked = appLock, onCheckedChange = { appLock = it; prefs.appLock = it })
+            }
+            if (appLock && !deviceSecure) {
+                Text(
+                    "This phone has no screen lock set. Set a PIN/pattern/fingerprint in Android Settings, or the app will open without asking.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error
+                )
             }
 
             Divider(Modifier.padding(vertical = 16.dp))

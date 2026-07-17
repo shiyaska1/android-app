@@ -91,6 +91,11 @@ class AppPrefs(context: Context) {
         get() = p.getBoolean("sticky_note", false)
         set(v) { p.edit().putBoolean("sticky_note", v).apply() }
 
+    /** When on, opening the app asks for the phone's own lock (PIN/pattern/fingerprint). */
+    var appLock: Boolean
+        get() = p.getBoolean("app_lock", false)
+        set(v) { p.edit().putBoolean("app_lock", v).apply() }
+
     // ---- medical lab print assets ----
     /** Seal/stamp image path shown above the technician sign-off ("" = none). */
     var labSealPath: String

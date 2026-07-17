@@ -13,8 +13,8 @@ android {
         applicationId = "com.billing.pos"
         minSdk = 26
         targetSdk = 35
-        versionCode = 16
-        versionName = "1.0.9"
+        versionCode = 17
+        versionName = "1.1.0"
         vectorDrawables { useSupportLibrary = true }
 
         // Real Android phones are arm. The x86/x86_64 native libs are emulator-only
@@ -105,6 +105,9 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.navigation:navigation-compose:2.8.0")
+
+    // App lock via the phone's own fingerprint / PIN / pattern
+    implementation("androidx.biometric:biometric:1.1.0")
 
     // Room (local offline database)
     implementation("androidx.room:room-runtime:2.6.1")
