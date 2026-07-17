@@ -108,6 +108,8 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
     var bottomSkip by remember { mutableStateOf(prefs.labBottomSkipLines.toString()) }
     var stickyNote by remember { mutableStateOf(prefs.stickyNoteOnLaunch) }
     var appLock by remember { mutableStateOf(prefs.appLock) }
+    var expiryAlert by remember { mutableStateOf(prefs.expiryAlert) }
+    var expiryDays by remember { mutableStateOf(prefs.expiryAlertDays.toString()) }
     // Warn if the lock is switched on but the phone itself has no lock to check against.
     val deviceSecure = remember {
         context.getSystemService(android.app.KeyguardManager::class.java)?.isDeviceSecure == true
@@ -322,6 +324,43 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
                     },
                     modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
                 ) { Text("Load sample items for $businessType") }
+            }
+
+            // Medical store: warn about medicines nearing expiry.
+            if (businessType == "Medical store") {
+                Divider(Modifier.padding(vertical = 16.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Expiry alert", style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            "Notify once a day about medicines nearing expiry, and show the list when the app opens. Repeats daily until the batch is sold, removed or purchase-returned.",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline
+                        )
+                    }
+                    Checkbox(
+                        checked = expiryAlert,
+                        onCheckedChange = {
+                            expiryAlert = it
+                            prefs.expiryAlert = it
+                            com.billing.pos.medical.ExpiryAlarm.sync(context)
+                        }
+                    )
+                }
+                if (expiryAlert) {
+                    OutlinedTextField(
+                        value = expiryDays,
+                        onValueChange = { v ->
+                            expiryDays = v.filter { it.isDigit() }.take(4)
+                            expiryDays.toIntOrNull()?.let { d ->
+                                if (d > 0) { prefs.expiryAlertDays = d; com.billing.pos.medical.ExpiryAlarm.sync(context) }
+                            }
+                        },
+                        label = { Text("Warn how many days before expiry") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                    )
+                }
             }
 
             if (businessType == "Medical lab") {

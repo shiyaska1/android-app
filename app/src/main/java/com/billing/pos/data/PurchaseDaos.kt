@@ -12,6 +12,16 @@ import kotlinx.coroutines.flow.Flow
 /** A purchase line joined with its purchase date, for stock/last-rate calc. */
 data class PurchaseLineInfo(val name: String, val price: Double, val qty: Double, val dateMillis: Long)
 
+/** A purchased batch's rate and the voucher it came from (for expiry costing + drill-down). */
+data class BatchCostRow(
+    val name: String,
+    val batchNo: String,
+    val price: Double,
+    val purchaseId: Long,
+    val purchaseNo: String,
+    val dateMillis: Long
+)
+
 /** A purchase line joined with its supplier + date, for "last supplier" per item. */
 data class PurchaseLineParty(val name: String, val dateMillis: Long, val supplierName: String)
 
@@ -126,6 +136,15 @@ interface PurchaseDao {
             "FROM purchase_items pi JOIN purchases p ON pi.purchaseId = p.id"
     )
     fun observePurchaseMovements(): Flow<List<MoveRow>>
+
+    /** Batch-wise purchase rate + the voucher it came from, for expiry costing / drill-down. */
+    @Query(
+        "SELECT pi.name AS name, pi.batchNo AS batchNo, pi.price AS price, " +
+            "p.id AS purchaseId, p.purchaseNo AS purchaseNo, p.dateMillis AS dateMillis " +
+            "FROM purchase_items pi JOIN purchases p ON pi.purchaseId = p.id " +
+            "WHERE pi.batchNo <> ''"
+    )
+    fun observeBatchCosts(): Flow<List<BatchCostRow>>
 
     /** One-shot purchase lines (name, price, primary-unit qty, date), for last-rate lookups. */
     @Query(

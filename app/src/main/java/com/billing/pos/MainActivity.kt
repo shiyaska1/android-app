@@ -31,6 +31,7 @@ import com.billing.pos.ui.auth.LoginScreen
 import com.billing.pos.ui.backup.BackupScreen
 import com.billing.pos.ui.accounts.ChartOfAccountsScreen
 import com.billing.pos.ui.billing.BillingScreen
+import com.billing.pos.ui.billing.collectAsStateSafe
 import com.billing.pos.ui.cashbook.CashBookScreen
 import com.billing.pos.ui.customers.CustomersScreen
 import com.billing.pos.ui.dashboard.DashboardScreen
@@ -187,6 +188,30 @@ private fun AppNav() {
                 if (!com.billing.pos.ui.sticky.StickyGate.shown && com.billing.pos.data.AppPrefs(context).stickyNoteOnLaunch) {
                     com.billing.pos.ui.sticky.StickyGate.shown = true
                     nav.navigate("stickynote")
+                }
+            }
+            // Medical store: expiring-medicine popup, once per app start.
+            val prefsNow = androidx.compose.runtime.remember { AppPrefs(context) }
+            if (prefsNow.expiryAlert && prefsNow.businessType == "Medical store") {
+                val expVm: com.billing.pos.ui.medical.ExpiryAlertViewModel =
+                    androidx.lifecycle.viewmodel.compose.viewModel()
+                val expRows by expVm.rows.collectAsStateSafe()
+                var showExpiry by androidx.compose.runtime.remember {
+                    androidx.compose.runtime.mutableStateOf(false)
+                }
+                androidx.compose.runtime.LaunchedEffect(expRows) {
+                    if (!com.billing.pos.ui.medical.ExpiryGate.shown && expRows.isNotEmpty()) {
+                        com.billing.pos.ui.medical.ExpiryGate.shown = true
+                        showExpiry = true
+                    }
+                }
+                androidx.compose.runtime.LaunchedEffect(Unit) { com.billing.pos.medical.ExpiryAlarm.sync(context) }
+                if (showExpiry) {
+                    com.billing.pos.ui.medical.ExpiryAlertDialog(
+                        rows = expRows,
+                        onOpenPurchase = { id -> showExpiry = false; nav.navigate("purchase/edit/$id") },
+                        onDismiss = { showExpiry = false }
+                    )
                 }
             }
             DashboardScreen(

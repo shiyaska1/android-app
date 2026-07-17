@@ -226,6 +226,9 @@ class Repository(context: Context) {
     // ---- item batches (batch no + expiry + qty) ----
     private val itemBatchDao = db.itemBatchDao()
     val itemBatches: Flow<List<ItemBatch>> = itemBatchDao.observeAll()
+
+    /** Batch-wise purchase rate + source voucher, for expiry costing and drill-down. */
+    val batchCosts: Flow<List<BatchCostRow>> = purchaseDao.observeBatchCosts()
     suspend fun batchesForItem(itemId: Long): List<ItemBatch> = itemBatchDao.forItem(itemId)
     suspend fun addBatch(batch: ItemBatch): Long = itemBatchDao.insert(batch)
     suspend fun replaceBatches(itemId: Long, batches: List<ItemBatch>) {

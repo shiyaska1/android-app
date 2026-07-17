@@ -80,6 +80,10 @@
             android:exported="false" />
 
         <receiver
+            android:name=".medical.ExpiryReceiver"
+            android:exported="false" />
+
+        <receiver
             android:name=".diary.BootReceiver"
             android:exported="true">
             <intent-filter>

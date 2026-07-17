@@ -10,10 +10,12 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
@@ -69,8 +71,7 @@ fun HandwriteQuickBillDialog(
     }
 
     val itemStrokes = remember { mutableStateListOf<List<Offset>>() }
-    val priceStrokes = remember { mutableStateListOf<List<Offset>>() }
-    var status by remember { mutableStateOf("Write the item name and price, then tap Next") }
+    var status by remember { mutableStateOf("Write the item name, then tap Next") }
     var busy by remember { mutableStateOf(false) }
 
     fun recognizeAndAdd() {
@@ -79,30 +80,29 @@ fun HandwriteQuickBillDialog(
         busy = true
         status = "Reading your writing…"
         val itemSnapshot = itemStrokes.map { it }
-        val priceSnapshot = priceStrokes.map { it }
         scope.launch {
             val name = recognizer.recognize(itemSnapshot)
-            val priceRaw = recognizer.recognize(priceSnapshot)
-            val price = priceRaw.filter { it.isDigit() || it == '.' }
-                .let { if (it.count { c -> c == '.' } > 1) it.replace(".", "") else it }
-                .toDoubleOrNull() ?: 0.0
             if (name.isBlank()) { status = "Couldn't read the item name — write it again"; busy = false; return@launch }
-            pending.add(com.billing.pos.ocr.ScannedItem(name.trim(), price))
+            // Price is left blank here and filled in on the review screen.
+            pending.add(com.billing.pos.ocr.ScannedItem(name.trim(), 0.0))
             status = "Added \"${name.trim()}\"   •   ${pending.size} to review"
-            itemStrokes.clear(); priceStrokes.clear()
+            itemStrokes.clear()
             busy = false
         }
     }
 
     Dialog(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
+        // decorFitsSystemWindows = false so real insets reach the content and the buttons
+        // stay clear of the phone's navigation bar.
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
     ) {
         Column(
             Modifier
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.surface)
-                .padding(12.dp)
+                .safeDrawingPadding()
+                .padding(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 24.dp)
         ) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text("Handwrite Bill", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
@@ -124,24 +124,17 @@ fun HandwriteQuickBillDialog(
             }
             Spacer(Modifier.height(6.dp))
 
-            // ITEM box (bigger) over PRICE box.
+            // One big ITEM canvas — 70% of the height. Price is typed on the review screen.
             DrawSection(
                 label = "ITEM  (write the item name)",
                 strokes = itemStrokes,
                 enabled = modelState == ModelState.READY && !busy,
-                modifier = Modifier.fillMaxWidth().weight(1.6f)
-            )
-            Spacer(Modifier.height(8.dp))
-            DrawSection(
-                label = "PRICE  (write the amount)",
-                strokes = priceStrokes,
-                enabled = modelState == ModelState.READY && !busy,
-                modifier = Modifier.fillMaxWidth().weight(1f)
+                modifier = Modifier.fillMaxWidth().fillMaxHeight(0.70f)
             )
 
             Spacer(Modifier.height(10.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                OutlinedButton(onClick = { itemStrokes.clear(); priceStrokes.clear(); status = "Cleared — write again" }, enabled = !busy) {
+                OutlinedButton(onClick = { itemStrokes.clear(); status = "Cleared — write again" }, enabled = !busy) {
                     Text("Clear")
                 }
                 Button(onClick = { recognizeAndAdd() }, enabled = modelState == ModelState.READY && !busy, modifier = Modifier.weight(1f)) {

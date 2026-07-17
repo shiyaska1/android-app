@@ -96,6 +96,17 @@ class AppPrefs(context: Context) {
         get() = p.getBoolean("app_lock", false)
         set(v) { p.edit().putBoolean("app_lock", v).apply() }
 
+    // ---- medical store: expiring-stock alerts ----
+    /** Medical store only: warn about batches nearing expiry (daily notification + popup on open). */
+    var expiryAlert: Boolean
+        get() = p.getBoolean("expiry_alert", false)
+        set(v) { p.edit().putBoolean("expiry_alert", v).apply() }
+
+    /** How many days before expiry the warning starts. */
+    var expiryAlertDays: Int
+        get() = p.getInt("expiry_alert_days", 30)
+        set(v) { p.edit().putInt("expiry_alert_days", v.coerceIn(1, 3650)).apply() }
+
     // ---- medical lab print assets ----
     /** Seal/stamp image path shown above the technician sign-off ("" = none). */
     var labSealPath: String
