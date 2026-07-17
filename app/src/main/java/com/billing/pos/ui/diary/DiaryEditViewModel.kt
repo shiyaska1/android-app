@@ -14,6 +14,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.billing.pos.data.AttachmentType
 import com.billing.pos.data.BlockType
+import com.billing.pos.data.DiaryAttachment
 import com.billing.pos.data.DiaryBlock
 import com.billing.pos.data.DiaryEntry
 import com.billing.pos.data.DiaryRepository
@@ -21,6 +22,7 @@ import com.billing.pos.diary.AttachmentStore
 import com.billing.pos.diary.ReminderScheduler
 import com.billing.pos.ocr.TextOcr
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -154,6 +156,103 @@ class DiaryEditViewModel(app: Application) : AndroidViewModel(app) {
                 blocks.add(BlockUi(0, attToBlockType(att.type), path = att.path, name = att.name, mime = att.mime))
             }
         }
+    }
+
+    // ---- Attach from a direct file link -------------------------------------------------
+    /** Name of the file currently downloading, else null. */
+    var downloadName by mutableStateOf<String?>(null); private set
+    /** 0f..1f, or -1f when the server didn't report a size (indeterminate). */
+    var downloadProgress by mutableStateOf(0f); private set
+    var downloading by mutableStateOf(false); private set
+    private var downloadJob: kotlinx.coroutines.Job? = null
+
+    /**
+     * Downloads a direct file URL (mp3/mp4/pdf/image/…) into the diary as a block.
+     * This is a plain HTTP download — the same thing a browser does with a download link.
+     */
+    fun downloadFromUrl(context: Context, rawUrl: String) {
+        val url = rawUrl.trim()
+        if (url.isBlank()) return
+        if (!url.startsWith("http://", true) && !url.startsWith("https://", true)) {
+            message.value = "Enter a link starting with http:// or https://"
+            return
+        }
+        downloadJob?.cancel()
+        downloadJob = viewModelScope.launch {
+            downloading = true; downloadProgress = 0f; downloadName = null
+            val result = runCatching { withContext(Dispatchers.IO) { fetchToAttachment(context, url) } }
+            downloading = false; downloadProgress = 0f
+            result.onSuccess { att ->
+                blocks.add(BlockUi(0, attToBlockType(att.type), path = att.path, name = att.name, mime = att.mime))
+                message.value = "Saved ${att.name}"
+            }.onFailure { e ->
+                if (e !is kotlinx.coroutines.CancellationException)
+                    message.value = e.message ?: "Download failed"
+            }
+            downloadName = null
+        }
+    }
+
+    fun cancelDownload() { downloadJob?.cancel(); downloading = false; downloadName = null }
+
+    private suspend fun fetchToAttachment(context: Context, url: String): DiaryAttachment {
+        val conn = (java.net.URL(url).openConnection() as java.net.HttpURLConnection).apply {
+            instanceFollowRedirects = true
+            connectTimeout = 20_000
+            readTimeout = 30_000
+            setRequestProperty("User-Agent", "POSBilling")
+        }
+        try {
+            conn.connect()
+            val code = conn.responseCode
+            if (code !in 200..299) throw Exception("Server returned $code")
+            val mime = (conn.contentType ?: "application/octet-stream").substringBefore(';').trim()
+            if (mime.startsWith("text/html"))
+                throw Exception("That link is a web page, not a file. Paste a direct link to the file itself (ending in .mp3, .mp4, .pdf …).")
+            val len = conn.contentLengthLong
+            val name = fileNameFor(conn.getHeaderField("Content-Disposition"), url, mime)
+            val ext = name.substringAfterLast('.', "").ifBlank { "bin" }
+            val dest = AttachmentStore.newFile(context, ext)
+            downloadName = name
+            try {
+                conn.inputStream.use { input ->
+                    dest.outputStream().use { out ->
+                        val buf = ByteArray(64 * 1024)
+                        var total = 0L
+                        while (true) {
+                            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                            val r = input.read(buf)
+                            if (r == -1) break
+                            out.write(buf, 0, r)
+                            total += r
+                            downloadProgress = if (len > 0) (total.toFloat() / len).coerceIn(0f, 1f) else -1f
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                dest.delete(); throw e
+            }
+            if (!dest.exists() || dest.length() == 0L) { dest.delete(); throw Exception("Nothing was downloaded") }
+            return AttachmentStore.fromFile(dest, name, mime)
+        } finally {
+            runCatching { conn.disconnect() }
+        }
+    }
+
+    /** Best available file name: Content-Disposition, else the URL path, else by type. */
+    private fun fileNameFor(disposition: String?, url: String, mime: String): String {
+        disposition?.let { d ->
+            Regex("filename\\*?=(?:UTF-8''|\")?([^\";]+)", RegexOption.IGNORE_CASE).find(d)
+                ?.groupValues?.get(1)?.trim()?.trim('"')
+                ?.let { if (it.isNotBlank()) return java.net.URLDecoder.decode(it, "UTF-8").substringAfterLast('/') }
+        }
+        val fromPath = runCatching { java.net.URL(url).path.substringAfterLast('/') }.getOrNull().orEmpty()
+        if (fromPath.isNotBlank() && fromPath.contains('.')) return fromPath
+        val ext = when {
+            mime.startsWith("audio/") -> "mp3"; mime.startsWith("video/") -> "mp4"
+            mime.startsWith("image/") -> "jpg"; mime == "application/pdf" -> "pdf"; else -> "bin"
+        }
+        return "download_${System.currentTimeMillis()}.$ext"
     }
 
     /** Registers a file the camera just wrote (e.g. a video) as a block. */

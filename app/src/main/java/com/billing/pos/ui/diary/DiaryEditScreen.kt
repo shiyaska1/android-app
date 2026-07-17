@@ -65,6 +65,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -134,6 +135,7 @@ fun DiaryEditScreen(
     var confirmDelete by remember { mutableStateOf(false) }
     var searchMode by remember { mutableStateOf(false) }
     var showFormat by remember { mutableStateOf(false) }
+    var showLinkDialog by remember { mutableStateOf(false) }
     val titleStyle = diaryStyle(vm.titleSize, vm.titleColor, vm.titleBold, vm.titleItalic)
     val bodyStyle = diaryStyle(vm.bodySize, vm.bodyColor, vm.bodyBold, vm.bodyItalic)
 
@@ -421,6 +423,9 @@ fun DiaryEditScreen(
                     OutlinedButton(onClick = { requestLocation() }, modifier = Modifier.weight(1f)) {
                         Icon(Icons.Filled.Place, null); Text(" Place")
                     }
+                    OutlinedButton(onClick = { showLinkDialog = true }, modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Filled.Download, null); Text(" Link")
+                    }
                 }
             }
 
@@ -461,6 +466,65 @@ fun DiaryEditScreen(
                 Text("Save")
             }
         }
+    }
+
+    // Attach from a direct file link: paste URL → download with progress → becomes a block.
+    if (showLinkDialog) {
+        var link by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { if (!vm.downloading) showLinkDialog = false },
+            title = { Text("Attach from link") },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = link,
+                        onValueChange = { link = it },
+                        label = { Text("Direct file link") },
+                        placeholder = { Text("https://…/file.mp3") },
+                        singleLine = false, minLines = 2, maxLines = 4,
+                        enabled = !vm.downloading,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Text(
+                        "Paste a direct link to the file itself (.mp3, .mp4, .pdf, image…). It downloads into this entry and stays offline.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.outline,
+                        modifier = Modifier.padding(top = 6.dp)
+                    )
+                    if (vm.downloading) {
+                        Text(
+                            vm.downloadName ?: "Connecting…",
+                            style = MaterialTheme.typography.bodyMedium,
+                            maxLines = 1,
+                            modifier = Modifier.padding(top = 12.dp)
+                        )
+                        if (vm.downloadProgress >= 0f) {
+                            LinearProgressIndicator(
+                                progress = { vm.downloadProgress },
+                                modifier = Modifier.fillMaxWidth().padding(top = 6.dp)
+                            )
+                            Text(
+                                "${(vm.downloadProgress * 100).toInt()}%",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.outline
+                            )
+                        } else {
+                            LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 6.dp))
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                if (vm.downloading) TextButton(onClick = { vm.cancelDownload() }) { Text("Cancel download") }
+                else TextButton(
+                    onClick = { vm.downloadFromUrl(context, link) },
+                    enabled = link.isNotBlank()
+                ) { Text("Download") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showLinkDialog = false }, enabled = !vm.downloading) { Text("Close") }
+            }
+        )
     }
 
     if (confirmDelete) {
