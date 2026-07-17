@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -99,13 +101,37 @@ fun ScanImportDialog(
 
     val selectedCount = rows.count { it.include && it.name.isNotBlank() }
 
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+    ) {
         Column(
-            Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface).padding(12.dp)
+            Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)
+                .safeDrawingPadding().imePadding().padding(12.dp)
         ) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text("Review scanned items", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                 Text("$selectedCount selected", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+            }
+            // Actions on top so they stay reachable above the nav bar / keyboard.
+            Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = onDismiss, modifier = Modifier.weight(1f)) { Text("Cancel") }
+                Button(
+                    onClick = {
+                        val out = rows.filter { it.include && it.name.isNotBlank() }.map {
+                            ImportItem(
+                                name = it.name.trim(),
+                                price = it.price.toDoubleOrNull() ?: 0.0,
+                                category = it.category.trim(),
+                                openingStock = it.stock.toDoubleOrNull() ?: 0.0,
+                                unit = it.unit.trim().ifBlank { "PCS" }
+                            )
+                        }
+                        onImport(out)
+                    },
+                    enabled = selectedCount > 0,
+                    modifier = Modifier.weight(1.4f)
+                ) { Text("Save $selectedCount items") }
             }
             Text(
                 "Tick the ones to add. Duplicates already in your items are unticked. Edit anything below.",
@@ -184,25 +210,6 @@ fun ScanImportDialog(
                 }
             }
 
-            Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(onClick = onDismiss, modifier = Modifier.weight(1f)) { Text("Cancel") }
-                Button(
-                    onClick = {
-                        val out = rows.filter { it.include && it.name.isNotBlank() }.map {
-                            ImportItem(
-                                name = it.name.trim(),
-                                price = it.price.toDoubleOrNull() ?: 0.0,
-                                category = it.category.trim(),
-                                openingStock = it.stock.toDoubleOrNull() ?: 0.0,
-                                unit = it.unit.trim().ifBlank { "PCS" }
-                            )
-                        }
-                        onImport(out)
-                    },
-                    enabled = selectedCount > 0,
-                    modifier = Modifier.weight(1.4f)
-                ) { Text("Save $selectedCount items") }
-            }
         }
     }
 }

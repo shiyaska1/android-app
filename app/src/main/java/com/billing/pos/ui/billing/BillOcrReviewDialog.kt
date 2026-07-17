@@ -7,7 +7,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -70,15 +72,38 @@ fun BillOcrReviewDialog(
     }
     val selected = rows.count { it.include && it.name.isNotBlank() }
 
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface).padding(12.dp)) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        // decorFitsSystemWindows = false so insets reach the content; safeDrawingPadding then keeps
+        // the action buttons clear of the phone's navigation bar and the keyboard.
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+    ) {
+        Column(
+            Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)
+                .safeDrawingPadding().imePadding().padding(12.dp)
+        ) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text("Check scanned items", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                 Text("$selected selected", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
             }
+            // Actions on TOP so they're always reachable, even with a long list + keyboard open.
+            Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = { rows.add(OcrRow("", "")) }) { Icon(Icons.Filled.Add, "Add row"); Text(" Row") }
+                TextButton(onClick = onDismiss, modifier = Modifier.weight(1f)) { Text("Cancel") }
+                Button(
+                    onClick = {
+                        val out = rows.filter { it.include && it.name.isNotBlank() }
+                            .map { ScannedItem(it.name.trim(), it.price.toDoubleOrNull() ?: 0.0) }
+                        onConfirm(out)
+                    },
+                    enabled = selected > 0,
+                    modifier = Modifier.weight(1.2f)
+                ) { Text("Update ($selected)") }
+            }
             Text(
                 "Fix any wrong name or price, untick what you don't want, then Update.",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline,
+                modifier = Modifier.padding(top = 6.dp)
             )
             Divider(Modifier.padding(vertical = 6.dp))
 
@@ -130,20 +155,6 @@ fun BillOcrReviewDialog(
                         Divider()
                     }
                 }
-            }
-
-            Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { rows.add(OcrRow("", "")) }) { Icon(Icons.Filled.Add, "Add row"); Text(" Row") }
-                TextButton(onClick = onDismiss, modifier = Modifier.weight(1f)) { Text("Cancel") }
-                Button(
-                    onClick = {
-                        val out = rows.filter { it.include && it.name.isNotBlank() }
-                            .map { ScannedItem(it.name.trim(), it.price.toDoubleOrNull() ?: 0.0) }
-                        onConfirm(out)
-                    },
-                    enabled = selected > 0,
-                    modifier = Modifier.weight(1.2f)
-                ) { Text("Update ($selected)") }
             }
         }
     }

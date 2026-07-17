@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -76,9 +78,32 @@ fun BulkEntryDialog(
     var modeMenu by remember { mutableStateOf(false) }
     val ready = rows.count { (it.amount.toDoubleOrNull() ?: 0.0) > 0.0 }
 
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface).padding(12.dp)) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+    ) {
+        Column(
+            Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)
+                .safeDrawingPadding().imePadding().padding(12.dp)
+        ) {
             Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            // Actions on top so they stay reachable above the nav bar / keyboard.
+            Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = { rows.add(BulkRowState(defaultDate)) }) { Icon(Icons.Filled.Add, "Add row"); Text(" Row") }
+                TextButton(onClick = onDismiss, modifier = Modifier.weight(1f)) { Text("Cancel") }
+                Button(
+                    onClick = {
+                        val out = rows.mapNotNull { r ->
+                            val amt = r.amount.toDoubleOrNull() ?: 0.0
+                            if (amt <= 0.0) null
+                            else BulkEntryRow(r.party.trim(), r.description.trim(), amt, r.dateMillis)
+                        }
+                        onConfirm(mode, out)
+                    },
+                    enabled = ready > 0,
+                    modifier = Modifier.weight(1.2f)
+                ) { Text("Save ($ready)") }
+            }
             Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 ExposedDropdownMenuBox(expanded = modeMenu, onExpandedChange = { modeMenu = !modeMenu }, modifier = Modifier.width(160.dp)) {
                     OutlinedTextField(
@@ -128,23 +153,6 @@ fun BulkEntryDialog(
                         Divider(Modifier.padding(top = 4.dp))
                     }
                 }
-            }
-
-            Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { rows.add(BulkRowState(defaultDate)) }) { Icon(Icons.Filled.Add, "Add row"); Text(" Row") }
-                TextButton(onClick = onDismiss, modifier = Modifier.weight(1f)) { Text("Cancel") }
-                Button(
-                    onClick = {
-                        val out = rows.mapNotNull { r ->
-                            val amt = r.amount.toDoubleOrNull() ?: 0.0
-                            if (amt <= 0.0) null
-                            else BulkEntryRow(r.party.trim(), r.description.trim(), amt, r.dateMillis)
-                        }
-                        onConfirm(mode, out)
-                    },
-                    enabled = ready > 0,
-                    modifier = Modifier.weight(1.2f)
-                ) { Text("Save ($ready)") }
             }
         }
     }
