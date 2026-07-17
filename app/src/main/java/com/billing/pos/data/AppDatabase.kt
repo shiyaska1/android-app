@@ -31,7 +31,7 @@ import androidx.room.TypeConverters
     // v29 dual units; v30 rental; v31 medical lab; v32 lab masters + heading rows;
     // v33 page breaks, heading master, lab-bill payment; v34 lab balance receipts;
     // v35 doctor master + patient phone; v36 material out + movement.
-    version = 36,
+    version = 37,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -67,6 +67,16 @@ abstract class AppDatabase : RoomDatabase() {
     companion object {
         @Volatile private var INSTANCE: AppDatabase? = null
 
+        /**
+         * Adds Item.purchasePrice. A real migration (not a destructive one) so existing
+         * items, bills and stock survive the upgrade.
+         */
+        private val MIGRATION_36_37 = object : androidx.room.migration.Migration(36, 37) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE items ADD COLUMN purchasePrice REAL NOT NULL DEFAULT 0")
+            }
+        }
+
         fun get(context: Context): AppDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -74,6 +84,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "pos_billing.db"
                 )
+                    .addMigrations(MIGRATION_36_37)
                     .fallbackToDestructiveMigration()
                     .build()
                     .also { INSTANCE = it }

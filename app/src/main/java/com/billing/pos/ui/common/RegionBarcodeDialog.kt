@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -76,10 +77,34 @@ fun RegionBarcodeDialog(uri: Uri, onResult: (String) -> Unit, onDismiss: () -> U
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface).padding(8.dp)) {
-            Text("Drag a box around the barcode, then tap OK", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(8.dp))
-            error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(horizontal = 8.dp)) }
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+    ) {
+        Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface).safeDrawingPadding().padding(8.dp)) {
+            // Actions on top so the phone's navigation bar can never cover them.
+            Row(Modifier.fillMaxWidth().padding(bottom = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = onDismiss, enabled = !busy, modifier = Modifier.weight(1f)) { Text("Cancel") }
+                Button(
+                    onClick = {
+                        val bmp = bitmap ?: run { onDismiss(); return@Button }
+                        busy = true; error = null
+                        scope.launch {
+                            val code = withContext(Dispatchers.IO) {
+                                val cropped = cropToSelection(bmp, start, end, canvasSize)
+                                val text = decodeBarcode(cropped)
+                                if (cropped !== bmp) cropped.recycle()
+                                text
+                            }
+                            busy = false
+                            if (code != null) onResult(code) else error = "No barcode found — try a tighter box or clearer photo"
+                        }
+                    },
+                    enabled = !busy, modifier = Modifier.weight(1f)
+                ) { Text(if (busy) "Reading…" else "OK") }
+            }
+            Text("Drag a box around the barcode, then tap OK", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(bottom = 4.dp))
+            error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(bottom = 4.dp)) }
             Box(Modifier.weight(1f).fillMaxWidth().background(Color.Black)) {
                 if (bitmap == null) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("Could not open image", color = Color.White) }
                 else Canvas(
@@ -104,26 +129,6 @@ fun RegionBarcodeDialog(uri: Uri, onResult: (String) -> Unit, onDismiss: () -> U
                         drawRect(Color(0xFF00E5FF), topLeft = Offset(l, t), size = Size(r - l, b - t), style = Stroke(width = 4f))
                     }
                 }
-            }
-            Row(Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = onDismiss, enabled = !busy, modifier = Modifier.weight(1f)) { Text("Cancel") }
-                Button(
-                    onClick = {
-                        val bmp = bitmap ?: run { onDismiss(); return@Button }
-                        busy = true; error = null
-                        scope.launch {
-                            val code = withContext(Dispatchers.IO) {
-                                val cropped = cropToSelection(bmp, start, end, canvasSize)
-                                val text = decodeBarcode(cropped)
-                                if (cropped !== bmp) cropped.recycle()
-                                text
-                            }
-                            busy = false
-                            if (code != null) onResult(code) else error = "No barcode found — try a tighter box or clearer photo"
-                        }
-                    },
-                    enabled = !busy, modifier = Modifier.weight(1f)
-                ) { Text(if (busy) "Reading…" else "OK") }
             }
         }
     }

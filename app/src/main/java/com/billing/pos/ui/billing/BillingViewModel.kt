@@ -351,7 +351,8 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
                 name = form.name, price = form.price, taxPercent = form.taxPercent,
                 barcode = form.barcode, hsn = form.hsn, category = form.category,
                 openingStock = form.openingStock, unit = form.unit, storeLocation = form.storeLocation,
-                secondaryUnit = form.secondaryUnit, conversionFactor = form.conversionFactor
+                secondaryUnit = form.secondaryUnit, conversionFactor = form.conversionFactor,
+                purchasePrice = form.purchasePrice
             )
             // Persist any photos/documents staged in the New Item dialog.
             form.attachments.forEach { repo.addItemAttachment(it.copy(itemId = id)) }

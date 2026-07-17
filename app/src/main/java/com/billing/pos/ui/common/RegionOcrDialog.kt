@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -72,9 +73,34 @@ fun RegionOcrDialog(uri: Uri, onResult: (String) -> Unit, onDismiss: () -> Unit)
     var end by remember { mutableStateOf<Offset?>(null) }
     var busy by remember { mutableStateOf(false) }
 
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface).padding(8.dp)) {
-            Text("Drag a box around the item name, then tap OK", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(8.dp))
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+    ) {
+        Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface).safeDrawingPadding().padding(8.dp)) {
+            // Actions on top so the phone's navigation bar can never cover them.
+            Row(Modifier.fillMaxWidth().padding(bottom = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = onDismiss, enabled = !busy, modifier = Modifier.weight(1f)) { Text("Cancel") }
+                Button(
+                    onClick = {
+                        val bmp = bitmap ?: run { onDismiss(); return@Button }
+                        busy = true
+                        scope.launch {
+                            val text = withContext(Dispatchers.IO) {
+                                val cropped = cropToSelection(bmp, start, end, canvasSize)
+                                val f = File(context.cacheDir, "region_ocr.jpg")
+                                f.outputStream().use { cropped.compress(Bitmap.CompressFormat.JPEG, 92, it) }
+                                if (cropped !== bmp) cropped.recycle()
+                                TextOcr.singleLine(context, Uri.fromFile(f)).also { f.delete() }
+                            }
+                            busy = false
+                            onResult(text)
+                        }
+                    },
+                    enabled = !busy, modifier = Modifier.weight(1f)
+                ) { Text(if (busy) "Reading…" else "OK") }
+            }
+            Text("Drag a box around the item name, then tap OK", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(bottom = 6.dp))
             Box(Modifier.weight(1f).fillMaxWidth().background(Color.Black)) {
                 if (bitmap == null) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("Could not open image", color = Color.White) }
                 else Canvas(
@@ -99,27 +125,6 @@ fun RegionOcrDialog(uri: Uri, onResult: (String) -> Unit, onDismiss: () -> Unit)
                         drawRect(Color(0xFF00E5FF), topLeft = Offset(l, t), size = Size(r - l, b - t), style = Stroke(width = 4f))
                     }
                 }
-            }
-            Row(Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = onDismiss, enabled = !busy, modifier = Modifier.weight(1f)) { Text("Cancel") }
-                Button(
-                    onClick = {
-                        val bmp = bitmap ?: run { onDismiss(); return@Button }
-                        busy = true
-                        scope.launch {
-                            val text = withContext(Dispatchers.IO) {
-                                val cropped = cropToSelection(bmp, start, end, canvasSize)
-                                val f = File(context.cacheDir, "region_ocr.jpg")
-                                f.outputStream().use { cropped.compress(Bitmap.CompressFormat.JPEG, 92, it) }
-                                if (cropped !== bmp) cropped.recycle()
-                                TextOcr.singleLine(context, Uri.fromFile(f)).also { f.delete() }
-                            }
-                            busy = false
-                            onResult(text)
-                        }
-                    },
-                    enabled = !busy, modifier = Modifier.weight(1f)
-                ) { Text(if (busy) "Reading…" else "OK") }
             }
         }
     }
@@ -150,9 +155,34 @@ fun RegionLinesOcrDialog(uri: Uri, onResult: (List<String>) -> Unit, onDismiss: 
     var end by remember { mutableStateOf<Offset?>(null) }
     var busy by remember { mutableStateOf(false) }
 
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface).padding(8.dp)) {
-            Text("Drag a box around the items, then tap OK", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(8.dp))
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+    ) {
+        Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface).safeDrawingPadding().padding(8.dp)) {
+            // Actions on top so the phone's navigation bar can never cover them.
+            Row(Modifier.fillMaxWidth().padding(bottom = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = onDismiss, enabled = !busy, modifier = Modifier.weight(1f)) { Text("Cancel") }
+                Button(
+                    onClick = {
+                        val bmp = bitmap ?: run { onDismiss(); return@Button }
+                        busy = true
+                        scope.launch {
+                            val lines = withContext(Dispatchers.IO) {
+                                val cropped = cropToSelection(bmp, start, end, canvasSize)
+                                val f = File(context.cacheDir, "region_ocr_lines.jpg")
+                                f.outputStream().use { cropped.compress(Bitmap.CompressFormat.JPEG, 92, it) }
+                                if (cropped !== bmp) cropped.recycle()
+                                TextOcr.lines(context, Uri.fromFile(f)).also { f.delete() }
+                            }
+                            busy = false
+                            onResult(lines)
+                        }
+                    },
+                    enabled = !busy, modifier = Modifier.weight(1f)
+                ) { Text(if (busy) "Reading…" else "OK") }
+            }
+            Text("Drag a box around the items, then tap OK", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(bottom = 6.dp))
             Box(Modifier.weight(1f).fillMaxWidth().background(Color.Black)) {
                 if (bitmap == null) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("Could not open image", color = Color.White) }
                 else Canvas(
@@ -177,27 +207,6 @@ fun RegionLinesOcrDialog(uri: Uri, onResult: (List<String>) -> Unit, onDismiss: 
                         drawRect(Color(0xFF00E5FF), topLeft = Offset(l, t), size = Size(r - l, b - t), style = Stroke(width = 4f))
                     }
                 }
-            }
-            Row(Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = onDismiss, enabled = !busy, modifier = Modifier.weight(1f)) { Text("Cancel") }
-                Button(
-                    onClick = {
-                        val bmp = bitmap ?: run { onDismiss(); return@Button }
-                        busy = true
-                        scope.launch {
-                            val lines = withContext(Dispatchers.IO) {
-                                val cropped = cropToSelection(bmp, start, end, canvasSize)
-                                val f = File(context.cacheDir, "region_ocr_lines.jpg")
-                                f.outputStream().use { cropped.compress(Bitmap.CompressFormat.JPEG, 92, it) }
-                                if (cropped !== bmp) cropped.recycle()
-                                TextOcr.lines(context, Uri.fromFile(f)).also { f.delete() }
-                            }
-                            busy = false
-                            onResult(lines)
-                        }
-                    },
-                    enabled = !busy, modifier = Modifier.weight(1f)
-                ) { Text(if (busy) "Reading…" else "OK") }
             }
         }
     }

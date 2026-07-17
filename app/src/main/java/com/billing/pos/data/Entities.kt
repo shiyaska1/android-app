@@ -21,6 +21,8 @@ data class Item(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val name: String,
     val price: Double,
+    /** Cost/purchase price in the primary unit; 0 = not set (reports fall back to the last purchase rate). */
+    val purchasePrice: Double = 0.0,
     val taxPercent: Double = 0.0,
     val barcode: String = "",
     val hsn: String = "",

@@ -119,6 +119,8 @@ fun NewCustomerDialog(
 data class NewItemForm(
     val name: String,
     val price: Double,
+    /** Cost/purchase price per primary unit; 0 = not set. */
+    val purchasePrice: Double = 0.0,
     val taxPercent: Double,
     val barcode: String,
     val category: String,
@@ -140,6 +142,7 @@ fun NewItemDialog(
 ) {
     var name by remember { mutableStateOf("") }
     var price by remember { mutableStateOf("") }
+    var purchasePrice by remember { mutableStateOf("") }
     var taxable by remember { mutableStateOf(false) }
     var taxPercent by remember { mutableStateOf("18") }
     var barcode by remember { mutableStateOf("") }
@@ -252,6 +255,13 @@ fun NewItemDialog(
                 OutlinedTextField(
                     value = price, onValueChange = { price = it.filter { c -> c.isDigit() || c == '.' } },
                     label = { Text("Selling price (incl. tax) *") }, singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = purchasePrice,
+                    onValueChange = { purchasePrice = it.filter { c -> c.isDigit() || c == '.' } },
+                    label = { Text("Purchase price (optional)") }, singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -390,7 +400,7 @@ fun NewItemDialog(
                 val os = openingStock.toDoubleOrNull() ?: 0.0
                 val sec = if (unitsDiffer) secondaryUnit.trim() else unit.trim()
                 val f = if (unitsDiffer) (factorText.toDoubleOrNull() ?: 1.0).coerceAtLeast(1.0) else 1.0
-                onSave(NewItemForm(name, p, t, barcode, category, hsn, os, unit.trim().ifBlank { "PCS" }, sec, f, storeLocation, staged.toList()))
+                onSave(NewItemForm(name, p, purchasePrice.toDoubleOrNull() ?: 0.0, t, barcode, category, hsn, os, unit.trim().ifBlank { "PCS" }, sec, f, storeLocation, staged.toList()))
             }) { Text("Save & add") }
         },
         dismissButton = { TextButton(onClick = { discardAndDismiss() }) { Text("Cancel") } }

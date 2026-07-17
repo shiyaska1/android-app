@@ -192,10 +192,11 @@ class Repository(context: Context) {
     suspend fun addItem(
         name: String, price: Double, taxPercent: Double, barcode: String = "", hsn: String = "",
         category: String = "", openingStock: Double = 0.0, unit: String = "PCS", storeLocation: String = "",
-        chemicalContent: String = "", secondaryUnit: String = "PCS", conversionFactor: Double = 1.0
+        chemicalContent: String = "", secondaryUnit: String = "PCS", conversionFactor: Double = 1.0,
+        purchasePrice: Double = 0.0
     ): Long =
         itemDao.insert(Item(
-            name = name.trim(), price = price, taxPercent = taxPercent,
+            name = name.trim(), price = price, purchasePrice = purchasePrice, taxPercent = taxPercent,
             barcode = barcode.trim(), hsn = hsn.trim(),
             category = category.trim(), openingStock = openingStock, unit = unit.trim().ifBlank { "PCS" },
             secondaryUnit = secondaryUnit.trim().ifBlank { "PCS" },

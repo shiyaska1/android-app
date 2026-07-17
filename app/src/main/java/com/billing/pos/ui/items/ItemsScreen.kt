@@ -232,18 +232,19 @@ class ItemsViewModel(app: Application) : AndroidViewModel(app) {
     fun save(
         existing: Item?, name: String, price: Double, tax: Double, barcode: String, hsn: String,
         category: String, openingStock: Double, unit: String, storeLocation: String, chemicalContent: String,
-        secondaryUnit: String = "PCS", conversionFactor: Double = 1.0, onDone: () -> Unit
+        secondaryUnit: String = "PCS", conversionFactor: Double = 1.0, purchasePrice: Double = 0.0,
+        onDone: () -> Unit
     ) {
         if (name.isBlank()) { message.value = "Enter a name"; return }
         viewModelScope.launch {
             val id: Long = if (existing == null) {
                 repo.addItem(
                     name, price, tax, barcode, hsn, category, openingStock, unit, storeLocation, chemicalContent,
-                    secondaryUnit, conversionFactor
+                    secondaryUnit, conversionFactor, purchasePrice
                 )
             } else {
                 repo.updateItem(existing.copy(
-                    name = name.trim(), price = price, taxPercent = tax, barcode = barcode.trim(),
+                    name = name.trim(), price = price, purchasePrice = purchasePrice, taxPercent = tax, barcode = barcode.trim(),
                     hsn = hsn.trim(), category = category.trim(), openingStock = openingStock,
                     unit = unit.trim().ifBlank { "PCS" }, storeLocation = storeLocation.trim(),
                     chemicalContent = chemicalContent.trim(),
@@ -641,8 +642,8 @@ fun ItemsScreen(
             onAddCatalogue = { runCatching { cataloguePicker.launch(arrayOf("application/pdf")) } },
             onRemoveAttachment = { vm.removeAttachment(it) },
             onDismiss = { vm.cancelEdit(); showDialog = false },
-            onSave = { n, p, t, b, h, cat, os, u, loc, chem, sec, f ->
-                vm.save(editing, n, p, t, b, h, cat, os, u, loc, chem, sec, f) { showDialog = false }
+            onSave = { n, p, t, b, h, cat, os, u, loc, chem, sec, f, pp ->
+                vm.save(editing, n, p, t, b, h, cat, os, u, loc, chem, sec, f, pp) { showDialog = false }
             }
         )
     }
@@ -703,7 +704,7 @@ private fun ItemDialog(
     onAddCatalogue: () -> Unit,
     onRemoveAttachment: (ItemAttachment) -> Unit,
     onDismiss: () -> Unit,
-    onSave: (String, Double, Double, String, String, String, Double, String, String, String, String, Double) -> Unit
+    onSave: (String, Double, Double, String, String, String, Double, String, String, String, String, Double, Double) -> Unit
 ) {
     val context = LocalContext.current
     var showBatchInput by remember { mutableStateOf(false) }
@@ -717,6 +718,9 @@ private fun ItemDialog(
     val isRestaurant = businessType == "Restaurant"
     var name by remember { mutableStateOf(existing?.name ?: "") }
     var price by remember { mutableStateOf(existing?.price?.let { Format.money(it) } ?: "") }
+    var purchasePrice by remember {
+        mutableStateOf(if ((existing?.purchasePrice ?: 0.0) > 0.0) Format.money(existing!!.purchasePrice) else "")
+    }
     var priceForQty by remember { mutableStateOf("1") }
     var taxable by remember { mutableStateOf((existing?.taxPercent ?: 0.0) > 0.0) }
     var taxPercent by remember { mutableStateOf(if ((existing?.taxPercent ?: 0.0) > 0.0) Format.money(existing!!.taxPercent) else "18") }
@@ -838,6 +842,26 @@ private fun ItemDialog(
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(1f)
                     )
                 }
+                // Cost/purchase price per primary unit — used for profit and stock value.
+                OutlinedTextField(
+                    value = purchasePrice,
+                    onValueChange = { purchasePrice = it.filter { c -> c.isDigit() || c == '.' } },
+                    label = { Text("Purchase price (optional)") }, singleLine = true,
+                    supportingText = {
+                        val sell = (price.toDoubleOrNull() ?: 0.0) /
+                            ((priceForQty.toDoubleOrNull() ?: 1.0).takeIf { it > 0.0 } ?: 1.0)
+                        val cost = purchasePrice.toDoubleOrNull() ?: 0.0
+                        if (cost > 0.0 && sell > 0.0) {
+                            val margin = sell - cost
+                            Text(
+                                "Margin ${Format.money(margin)} (${Format.money(margin / cost * 100.0)}%)",
+                                color = if (margin >= 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                            )
+                        }
+                    },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    modifier = Modifier.fillMaxWidth()
+                )
                 run {
                     val pv = price.toDoubleOrNull() ?: 0.0
                     val qv = priceForQty.toDoubleOrNull() ?: 1.0
@@ -1092,7 +1116,8 @@ private fun ItemDialog(
         confirmButton = {
             val factorInvalid = unitsDiffer && (factorText.toDoubleOrNull() ?: 0.0) <= 1.0
             TextButton(
-                enabled = !(showBatches && batches.isEmpty()) && !factorInvalid,
+                // Batches stay optional — an item can always be saved without one.
+                enabled = !factorInvalid,
                 onClick = {
                     val entered = price.toDoubleOrNull() ?: 0.0
                     val forQty = (priceForQty.toDoubleOrNull() ?: 1.0).takeIf { it > 0.0 } ?: 1.0
@@ -1102,16 +1127,11 @@ private fun ItemDialog(
                     // Same units ⇒ factor is meaningless, force it to 1.
                     val sec = if (unitsDiffer) secondaryUnit.trim() else unit.trim()
                     val f = if (unitsDiffer) (factorText.toDoubleOrNull() ?: 1.0) else 1.0
-                    onSave(name, p, t, barcode, hsn, category, os, unit, storeLocation, chemical, sec, f)
+                    val pp = purchasePrice.toDoubleOrNull() ?: 0.0
+                    onSave(name, p, t, barcode, hsn, category, os, unit, storeLocation, chemical, sec, f, pp)
                 }
             ) {
-                Text(
-                    when {
-                        showBatches && batches.isEmpty() -> "Add a batch"
-                        factorInvalid -> "Set conv. factor"
-                        else -> "Save"
-                    }
-                )
+                Text(if (factorInvalid) "Set conv. factor" else "Save")
             }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
