@@ -35,6 +35,7 @@ import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Dialpad
+import androidx.compose.material.icons.filled.Draw
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.PhotoCamera
@@ -140,6 +141,8 @@ fun BillingScreen(
 
     var showNewCustomer by remember { mutableStateOf(false) }
     var showNewItem by remember { mutableStateOf(false) }
+    // Name carried over from the item search when nothing matched.
+    var newItemName by remember { mutableStateOf("") }
     var showItemPicker by remember { mutableStateOf(false) }
     var showCustomLine by remember { mutableStateOf(false) }
     var showWhatsApp by remember { mutableStateOf(false) }
@@ -573,6 +576,16 @@ fun BillingScreen(
 
             if (showRemarkPopup) {
                 var draft by remember(vm.remarks) { mutableStateOf(vm.remarks) }
+                var drawRemark by remember { mutableStateOf(false) }
+                if (drawRemark) {
+                    com.billing.pos.ui.common.HandwriteTextDialog(
+                        onDismiss = { drawRemark = false },
+                        onResult = { t ->
+                            if (t.isNotBlank()) draft = (draft.trimEnd() + " " + t).trim()
+                            drawRemark = false
+                        }
+                    )
+                }
                 AlertDialog(
                     onDismissRequest = { showRemarkPopup = false },
                     title = { Text("Remark") },
@@ -583,6 +596,11 @@ fun BillingScreen(
                             // Bold + a little bigger, the way it prints.
                             textStyle = MaterialTheme.typography.titleMedium.copy(fontWeight = androidx.compose.ui.text.font.FontWeight.Bold),
                             minLines = 2, maxLines = 6,
+                            trailingIcon = {
+                                IconButton(onClick = { drawRemark = true }) {
+                                    Icon(Icons.Filled.Draw, contentDescription = "Write by hand")
+                                }
+                            },
                             modifier = Modifier.fillMaxWidth()
                         )
                     },
@@ -672,6 +690,7 @@ fun BillingScreen(
         val itemCategories = remember(items) { items.map { it.category }.filter { it.isNotBlank() }.distinct().sortedBy { it.lowercase() } }
         NewItemDialog(
             onDismiss = { showNewItem = false },
+            initialName = newItemName,
             categories = itemCategories,
             onSave = { form -> vm.addItem(form, addToCart = true) { showNewItem = false } }
         )
@@ -702,7 +721,7 @@ fun BillingScreen(
                     else -> vm.addItemToCart(picked)
                 }
             },
-            onNewItem = { showItemPicker = false; showNewItem = true },
+            onNewItem = { q -> showItemPicker = false; newItemName = q; showNewItem = true },
             stockByItem = stockByItem,
             photosByItem = photosByItem
         )

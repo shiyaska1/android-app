@@ -113,6 +113,7 @@ fun PurchaseScreen(
 
     var showNewSupplier by remember { mutableStateOf(false) }
     var showNewItem by remember { mutableStateOf(false) }
+    var newItemName by remember { mutableStateOf("") }
     var showItemPicker by remember { mutableStateOf(false) }
     var unitPickFor by remember { mutableStateOf<com.billing.pos.data.Item?>(null) }
     var pendingChoice by remember { mutableStateOf<com.billing.pos.data.UnitChoice?>(null) }
@@ -366,6 +367,7 @@ fun PurchaseScreen(
     if (showNewItem) {
         NewItemDialog(
             onDismiss = { showNewItem = false },
+            initialName = newItemName,
             categories = items.map { it.category }.filter { it.isNotBlank() }.distinct().sortedBy { it.lowercase() },
             onSave = { form -> vm.addItem(form, addToCart = true) { showNewItem = false } }
         )
@@ -385,7 +387,7 @@ fun PurchaseScreen(
                     else -> vm.addItemToCart(picked)
                 }
             },
-            onNewItem = { showItemPicker = false; showNewItem = true }
+            onNewItem = { q -> showItemPicker = false; newItemName = q; showNewItem = true }
         )
     }
     // Photo → ask Camera or Gallery.

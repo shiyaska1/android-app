@@ -139,9 +139,11 @@ data class NewItemForm(
 fun NewItemDialog(
     onDismiss: () -> Unit,
     categories: List<String> = emptyList(),
+    /** Pre-fills the item name — e.g. the text typed in the item search that found nothing. */
+    initialName: String = "",
     onSave: (NewItemForm) -> Unit
 ) {
-    var name by remember { mutableStateOf("") }
+    var name by remember { mutableStateOf(initialName) }
     var price by remember { mutableStateOf("") }
     var purchasePrice by remember { mutableStateOf("") }
     var taxable by remember { mutableStateOf(false) }
@@ -559,7 +561,8 @@ fun ItemPickerDialog(
     items: List<Item>,
     onDismiss: () -> Unit,
     onPick: (Item) -> Unit,
-    onNewItem: () -> Unit,
+    /** Receives the current search text so the New Item form can be pre-filled with it. */
+    onNewItem: (String) -> Unit,
     stockByItem: Map<Long, Double> = emptyMap(),
     photosByItem: Map<Long, List<String>> = emptyMap()
 ) {
@@ -727,10 +730,24 @@ fun ItemPickerDialog(
                             }
                         }
                     }
+                    // Nothing matched the search → offer to create it with the typed name.
+                    if (filtered.isEmpty() && query.isNotBlank()) {
+                        Column(Modifier.fillMaxWidth().padding(top = 10.dp)) {
+                            Text(
+                                "No item matches \"$query\"",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.outline
+                            )
+                            TextButton(onClick = { onNewItem(query.trim()) }, modifier = Modifier.padding(top = 2.dp)) {
+                                Icon(Icons.Filled.Add, null)
+                                Text("  Create new item \"${query.trim()}\"")
+                            }
+                        }
+                    }
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onNewItem) { Text("New item") } },
+        confirmButton = { TextButton(onClick = { onNewItem(query.trim()) }) { Text("New item") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Close") } }
     )
     // Full-screen image viewer for the tapped item's photos (share doesn't close it).

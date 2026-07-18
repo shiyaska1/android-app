@@ -68,6 +68,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material.icons.filled.Draw
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -254,6 +255,9 @@ fun DiaryEditScreen(
         }
     }
 
+    // Which field the handwriting pad should fill: "title", or "body:<index>".
+    var drawTarget by remember { mutableStateOf<String?>(null) }
+
     fun startSpeech(target: String) {
         speechTarget = target
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
@@ -326,8 +330,13 @@ fun DiaryEditScreen(
                 label = { Text("Title") }, singleLine = true,
                 textStyle = titleStyle,
                 trailingIcon = {
-                    IconButton(onClick = { startSpeech("title") }) {
-                        Icon(Icons.Filled.Mic, contentDescription = "Speak title")
+                    Row {
+                        IconButton(onClick = { drawTarget = "title" }) {
+                            Icon(Icons.Filled.Draw, contentDescription = "Write title by hand")
+                        }
+                        IconButton(onClick = { startSpeech("title") }) {
+                            Icon(Icons.Filled.Mic, contentDescription = "Speak title")
+                        }
                     }
                 },
                 modifier = Modifier.fillMaxWidth()
@@ -374,6 +383,7 @@ fun DiaryEditScreen(
                         onRemove = { vm.removeBlock(index) },
                         onOpen = { openBlock(context, block) { vm.message.value = it } },
                         onSpeak = { startSpeech("body") },
+                        onDraw = { drawTarget = "body:$index" },
                         audioPlaying = audio.playing && audio.currentPath == block.path,
                         onAudioToggle = {
                             if (audio.playing && audio.currentPath == block.path) audio.stop()
@@ -568,6 +578,23 @@ fun DiaryEditScreen(
         )
     }
 
+    drawTarget?.let { target ->
+        com.billing.pos.ui.common.HandwriteTextDialog(
+            onDismiss = { drawTarget = null },
+            onResult = { text ->
+                if (text.isNotBlank()) {
+                    if (target == "title") {
+                        vm.title = (vm.title.trim() + " " + text).trim()
+                    } else {
+                        val i = target.removePrefix("body:").toIntOrNull()
+                        val b = i?.let { vm.blocks.getOrNull(it) }
+                        if (b != null) b.text = (b.text.trimEnd() + " " + text).trim()
+                    }
+                }
+                drawTarget = null
+            }
+        )
+    }
     if (confirmDelete) {
         AlertDialog(
             onDismissRequest = { confirmDelete = false },
@@ -593,6 +620,7 @@ private fun BlockEditor(
     onRemove: () -> Unit,
     onOpen: () -> Unit,
     onSpeak: () -> Unit,
+    onDraw: () -> Unit = {},
     audioPlaying: Boolean = false,
     onAudioToggle: () -> Unit = {}
 ) {
@@ -603,7 +631,10 @@ private fun BlockEditor(
                 placeholder = { Text("Write here…") },
                 minLines = 2, textStyle = bodyStyle,
                 trailingIcon = {
-                    IconButton(onClick = onSpeak) { Icon(Icons.Filled.Mic, contentDescription = "Dictate") }
+                    Row {
+                        IconButton(onClick = onDraw) { Icon(Icons.Filled.Draw, contentDescription = "Write by hand") }
+                        IconButton(onClick = onSpeak) { Icon(Icons.Filled.Mic, contentDescription = "Dictate") }
+                    }
                 },
                 modifier = Modifier.fillMaxWidth()
             )

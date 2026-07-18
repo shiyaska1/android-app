@@ -209,6 +209,7 @@ fun MaterialOutScreen(editId: Long?, resultRefs: String?, resultTests: String?, 
 
     var showItemPicker by remember { mutableStateOf(false) }
     var showNewItem by remember { mutableStateOf(false) }
+    var newItemName by remember { mutableStateOf("") }
     var showHandwrite by remember { mutableStateOf(false) }
     var unitPickFor by remember { mutableStateOf<Item?>(null) }
     var editNameFor by remember { mutableStateOf<Int?>(null) }
@@ -268,7 +269,7 @@ fun MaterialOutScreen(editId: Long?, resultRefs: String?, resultTests: String?, 
             items = items, stockByItem = stock,
             onDismiss = { showItemPicker = false },
             onPick = { picked -> showItemPicker = false; if (picked.hasTwoUnits) unitPickFor = picked else vm.addItemToCart(picked) },
-            onNewItem = { showItemPicker = false; showNewItem = true }
+            onNewItem = { q -> showItemPicker = false; newItemName = q; showNewItem = true }
         )
     }
     unitPickFor?.let { item ->
@@ -276,7 +277,7 @@ fun MaterialOutScreen(editId: Long?, resultRefs: String?, resultTests: String?, 
     }
     if (showNewItem) {
         val cats = remember(items) { items.map { it.category }.filter { it.isNotBlank() }.distinct().sortedBy { it.lowercase() } }
-        NewItemDialog(onDismiss = { showNewItem = false }, categories = cats, onSave = { form -> vm.addItem(form); showNewItem = false })
+        NewItemDialog(onDismiss = { showNewItem = false }, initialName = newItemName, categories = cats, onSave = { form -> vm.addItem(form); showNewItem = false })
     }
     if (showHandwrite) {
         HandwriteQuickBillDialog(onDismiss = { showHandwrite = false }, onReview = { list -> showHandwrite = false; ocrReview = list })
