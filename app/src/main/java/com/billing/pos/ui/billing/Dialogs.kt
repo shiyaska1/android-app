@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Gesture
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.runtime.mutableStateListOf
@@ -574,6 +575,26 @@ fun ItemPickerDialog(
             .collect { last -> if (visibleCount < filtered.size && last >= visibleCount - 8) visibleCount = (visibleCount + pageSize).coerceAtMost(filtered.size) }
     }
     val startVoice = rememberVoiceInput { query = it }
+    // Fill the search box by handwriting, or by drawing a box on a camera/gallery photo (OCR).
+    var showDraw by remember { mutableStateOf(false) }
+    var searchRegionUri by remember { mutableStateOf<android.net.Uri?>(null) }
+    val searchCamera = com.billing.pos.ocr.rememberImageCamera { uri -> searchRegionUri = uri }
+    val searchGallery = rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia()
+    ) { uri -> if (uri != null) searchRegionUri = uri }
+    if (showDraw) {
+        com.billing.pos.ui.common.HandwriteTextDialog(
+            onResult = { if (it.isNotBlank()) query = it; showDraw = false },
+            onDismiss = { showDraw = false }
+        )
+    }
+    searchRegionUri?.let { u ->
+        com.billing.pos.ui.common.RegionOcrDialog(
+            uri = u,
+            onResult = { if (it.isNotBlank()) query = it; searchRegionUri = null },
+            onDismiss = { searchRegionUri = null }
+        )
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -584,8 +605,28 @@ fun ItemPickerDialog(
                     value = query, onValueChange = { query = it },
                     label = { Text("Search") }, singleLine = true,
                     trailingIcon = {
-                        IconButton(onClick = startVoice) {
-                            Icon(Icons.Filled.Mic, contentDescription = "Voice search", tint = MaterialTheme.colorScheme.primary)
+                        // Compact so all four fit inside the field: voice, handwrite, photo, gallery.
+                        Row {
+                            val ib = Modifier.size(38.dp)
+                            val ic = Modifier.size(20.dp)
+                            IconButton(onClick = startVoice, modifier = ib) {
+                                Icon(Icons.Filled.Mic, "Voice search", ic, tint = MaterialTheme.colorScheme.primary)
+                            }
+                            IconButton(onClick = { showDraw = true }, modifier = ib) {
+                                Icon(Icons.Filled.Gesture, "Handwrite search", ic, tint = MaterialTheme.colorScheme.primary)
+                            }
+                            IconButton(onClick = { searchCamera() }, modifier = ib) {
+                                Icon(Icons.Filled.PhotoCamera, "Photo — draw a box to read", ic, tint = MaterialTheme.colorScheme.primary)
+                            }
+                            IconButton(onClick = {
+                                searchGallery.launch(
+                                    androidx.activity.result.PickVisualMediaRequest(
+                                        androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly
+                                    )
+                                )
+                            }, modifier = ib) {
+                                Icon(Icons.Filled.PhotoLibrary, "Gallery — draw a box to read", ic, tint = MaterialTheme.colorScheme.primary)
+                            }
                         }
                     },
                     modifier = Modifier.fillMaxWidth()
