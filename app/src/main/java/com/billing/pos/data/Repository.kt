@@ -409,7 +409,7 @@ class Repository(context: Context) {
     val materialReceipts: Flow<List<MaterialReceipt>> = materialReceiptDao.observeAll()
     val materialReceivedByItem: Flow<List<NameQty>> = materialReceiptDao.observeReceivedByItem()
     val receivedByLpo: Flow<List<LpoReceivedRow>> = materialReceiptDao.observeReceivedByLpo()
-    suspend fun nextReceiptNo(): String = "MRN-" + (materialReceiptDao.count() + 1).toString().padStart(4, '0')
+    suspend fun nextMrnNo(): String = "MRN-" + (materialReceiptDao.count() + 1).toString().padStart(4, '0')
     suspend fun saveMaterialReceipt(m: MaterialReceipt, lines: List<MaterialReceiptItem>): Long = materialReceiptDao.save(m, lines)
     suspend fun updateMaterialReceipt(m: MaterialReceipt, lines: List<MaterialReceiptItem>) = materialReceiptDao.update(m, lines)
     suspend fun deleteMaterialReceipt(m: MaterialReceipt) = materialReceiptDao.delete(m)

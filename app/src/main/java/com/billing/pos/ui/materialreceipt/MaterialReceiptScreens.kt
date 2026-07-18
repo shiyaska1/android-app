@@ -103,7 +103,7 @@ class MaterialReceiptViewModel(app: Application) : AndroidViewModel(app) {
     fun consumeMessage() { message.value = null }
 
     init {
-        viewModelScope.launch { repo.ensureDefaults(); receiptNo = repo.nextReceiptNo() }
+        viewModelScope.launch { repo.ensureDefaults(); receiptNo = repo.nextMrnNo() }
         viewModelScope.launch { suppliers.collect { list -> if (selectedSupplier == null && list.isNotEmpty()) selectedSupplier = list.firstOrNull { it.isDefault } ?: list.first() } }
     }
 
@@ -154,7 +154,7 @@ class MaterialReceiptViewModel(app: Application) : AndroidViewModel(app) {
 
     fun newVoucher() {
         cart.clear(); lpoId = 0; lpoNo = ""; remarks = ""; dateMillis = System.currentTimeMillis(); editingId = null
-        viewModelScope.launch { receiptNo = repo.nextReceiptNo() }
+        viewModelScope.launch { receiptNo = repo.nextMrnNo() }
     }
 
     fun save(onDone: () -> Unit) {
