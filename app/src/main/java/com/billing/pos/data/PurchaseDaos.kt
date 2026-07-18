@@ -129,6 +129,24 @@ interface PurchaseDao {
     )
     fun observePurchaseLines(): Flow<List<PurchaseLineInfo>>
 
+    /** Purchased quantity per item name for STOCK — excludes purchases whose stock was already
+     *  received via a Material Receipt Note (stockReceived = 0). Primary-unit quantity. */
+    @Query(
+        "SELECT pi.name AS name, " +
+            "SUM(CASE WHEN pi.primaryQty > 0 THEN pi.primaryQty ELSE pi.qty END) AS qty " +
+            "FROM purchase_items pi JOIN purchases p ON pi.purchaseId = p.id " +
+            "WHERE p.stockReceived = 1 GROUP BY pi.name COLLATE NOCASE"
+    )
+    fun observePurchaseStockQty(): Flow<List<NameQty>>
+
+    /** Returned-to-supplier quantity per item name for one supplier (for the LPO report). */
+    @Query(
+        "SELECT ri.name AS name, SUM(CASE WHEN ri.primaryQty > 0 THEN ri.primaryQty ELSE ri.qty END) AS qty " +
+            "FROM purchase_return_items ri JOIN purchase_returns r ON ri.returnId = r.id " +
+            "WHERE r.supplierId = :supplierId GROUP BY ri.name COLLATE NOCASE"
+    )
+    suspend fun returnedQtyForSupplier(supplierId: Long): List<NameQty>
+
     /** Per-line purchase movements for the item-movement report (primary-unit quantity). */
     @Query(
         "SELECT pi.name AS name, (CASE WHEN pi.primaryQty > 0 THEN pi.primaryQty ELSE pi.qty END) AS qty, " +

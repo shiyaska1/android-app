@@ -44,6 +44,27 @@ class PurchaseViewModel(app: Application) : AndroidViewModel(app) {
     var discountText by mutableStateOf(""); private set
     var purchaseNo by mutableStateOf("PUR-0001"); private set
     var dateMillis by mutableStateOf(System.currentTimeMillis()); private set
+    /** When on, this purchase is booked against an LPO whose stock was already received (VAT only). */
+    var againstLpo by mutableStateOf(false)
+    var lpoNo by mutableStateOf("")
+    val lpos: StateFlow<List<com.billing.pos.data.PurchaseQuotation>> =
+        repo.purchaseQuotations.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** Fills the cart from an LPO's lines (VAT booking; no stock). */
+    fun loadFromLpo(lpo: com.billing.pos.data.PurchaseQuotation) {
+        lpoNo = lpo.lpoNo
+        selectedSupplier = suppliers.value.firstOrNull { it.id == lpo.supplierId } ?: selectedSupplier
+        viewModelScope.launch {
+            val lines = repo.purchaseQuotationLines(lpo.id)
+            cart.clear()
+            lines.forEach {
+                val itemId = items.value.firstOrNull { m -> m.name.equals(it.name, ignoreCase = true) }?.id ?: it.itemId
+                cart.add(CartLine(itemId, it.name, it.price, it.taxPercent, it.qty, unit = it.unit))
+            }
+            dirty = true
+            if (lines.isEmpty()) _message.value = "That LPO has no items"
+        }
+    }
 
     var editingId by mutableStateOf<Long?>(null); private set
     private var editingSource: String = ""
@@ -217,6 +238,9 @@ class PurchaseViewModel(app: Application) : AndroidViewModel(app) {
             payment == PaymentMethod.CREDIT -> 0.0
             else -> grandTotal
         }
+        // Against an LPO whose goods were already received via an MRN → book for VAT only,
+        // don't add stock again.
+        val addsStock = !againstLpo
         val purchase = Purchase(
             id = editId ?: 0,
             purchaseNo = purchaseNo,
@@ -231,7 +255,9 @@ class PurchaseViewModel(app: Application) : AndroidViewModel(app) {
             grandTotal = grandTotal,
             paidAmount = paid,
             supplierGstin = supplier.gstin,
-            source = editingSource
+            source = editingSource,
+            stockReceived = addsStock,
+            lpoNo = if (againstLpo) lpoNo else ""
         )
         val lines = cart.map {
             PurchaseItem(0, editId ?: 0, it.name, it.qty, it.price, it.taxPercent, it.total, batchNo = it.batchNo, unit = it.unit, primaryQty = it.primaryQty)
@@ -244,10 +270,10 @@ class PurchaseViewModel(app: Application) : AndroidViewModel(app) {
         } else {
             val id = repo.savePurchase(purchase, lines)
             saved = PurchaseWithItems(purchase.copy(id = id), lines)
-            // Receive batch stock for new purchases (add to existing / create new).
-            cart.filter { it.batchNo.isNotBlank() && it.itemId > 0 }
+            // Receive batch stock for new purchases — but NOT when booked against an already-received LPO.
+            if (addsStock) cart.filter { it.batchNo.isNotBlank() && it.itemId > 0 }
                 .forEach { repo.receiveBatch(it.itemId, it.batchNo, it.batchExpiry, it.primaryQty) }
-            _message.value = "Purchase $purchaseNo saved"
+            _message.value = if (addsStock) "Purchase $purchaseNo saved" else "Purchase $purchaseNo saved (VAT only, stock already received)"
         }
         lastSaved = saved
         dirty = false

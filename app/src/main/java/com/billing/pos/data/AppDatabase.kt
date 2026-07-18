@@ -25,13 +25,15 @@ import androidx.room.TypeConverters
         LabTest::class, LabEvaluation::class, Patient::class,
         LabBill::class, LabBillTest::class, LabResultValue::class,
         LabGroup::class, LabEvalMaster::class, LabHeading::class, LabReceipt::class,
-        LabDoctor::class, MaterialOut::class, MaterialOutItem::class
+        LabDoctor::class, MaterialOut::class, MaterialOutItem::class,
+        MaterialReceipt::class, MaterialReceiptItem::class
     ],
     // v25 quotations; v26 sales returns; v27 purchase returns; v28 purchase quotations (LPO);
     // v29 dual units; v30 rental; v31 medical lab; v32 lab masters + heading rows;
     // v33 page breaks, heading master, lab-bill payment; v34 lab balance receipts;
-    // v35 doctor master + patient phone; v36 material out + movement.
-    version = 37,
+    // v35 doctor master + patient phone; v36 material out + movement;
+    // v37 item purchase price; v38 material receipts + purchase stockReceived/lpoNo.
+    version = 38,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -63,6 +65,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun labMasterDao(): LabMasterDao
     abstract fun labReceiptDao(): LabReceiptDao
     abstract fun materialOutDao(): MaterialOutDao
+    abstract fun materialReceiptDao(): MaterialReceiptDao
 
     companion object {
         @Volatile private var INSTANCE: AppDatabase? = null
@@ -77,6 +80,27 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** Adds Material Receipt Notes and the purchase stockReceived/lpoNo columns. Non-destructive. */
+        private val MIGRATION_37_38 = object : androidx.room.migration.Migration(37, 38) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE purchases ADD COLUMN stockReceived INTEGER NOT NULL DEFAULT 1")
+                db.execSQL("ALTER TABLE purchases ADD COLUMN lpoNo TEXT NOT NULL DEFAULT ''")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS material_receipts (" +
+                        "id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, receiptNo TEXT NOT NULL, " +
+                        "dateMillis INTEGER NOT NULL, supplierId INTEGER NOT NULL, supplierName TEXT NOT NULL, " +
+                        "lpoId INTEGER NOT NULL DEFAULT 0, lpoNo TEXT NOT NULL DEFAULT '', remarks TEXT NOT NULL DEFAULT '')"
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS material_receipt_items (" +
+                        "id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, receiptId INTEGER NOT NULL, " +
+                        "itemId INTEGER NOT NULL DEFAULT 0, name TEXT NOT NULL, qty REAL NOT NULL, " +
+                        "price REAL NOT NULL, taxPercent REAL NOT NULL DEFAULT 0, lineTotal REAL NOT NULL DEFAULT 0, " +
+                        "batchNo TEXT NOT NULL DEFAULT '', unit TEXT NOT NULL DEFAULT '')"
+                )
+            }
+        }
+
         fun get(context: Context): AppDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -84,7 +108,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "pos_billing.db"
                 )
-                    .addMigrations(MIGRATION_36_37)
+                    .addMigrations(MIGRATION_36_37, MIGRATION_37_38)
                     .fallbackToDestructiveMigration()
                     .build()
                     .also { INSTANCE = it }

@@ -79,14 +79,8 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
 
     /** itemId -> current stock (opening + purchased - sold - material out), for the item picker. */
     val stockByItem: StateFlow<Map<Long, Double>> =
-        kotlinx.coroutines.flow.combine(repo.items, repo.purchaseLines, repo.soldQty, repo.materialOutByItem) { list, pLines, sold, matOut ->
-            val purchasedByName = pLines.groupBy { it.name.lowercase() }
-            val soldByName = sold.associate { it.name.lowercase() to it.qty }
-            val outByName = matOut.associate { it.name.lowercase() to it.qty }
-            list.associate { item ->
-                val key = item.name.lowercase()
-                item.id to (item.openingStock + (purchasedByName[key]?.sumOf { it.qty } ?: 0.0) - (soldByName[key] ?: 0.0) - (outByName[key] ?: 0.0))
-            }
+        kotlinx.coroutines.flow.combine(repo.items, repo.stockByName) { list, byName ->
+            list.associate { item -> item.id to (item.openingStock + (byName[item.name.lowercase()] ?: 0.0)) }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
     /** itemId -> first product photo path, for the quick-bill grid. */
     val itemPhotos: StateFlow<Map<Long, String>> =

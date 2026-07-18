@@ -19,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.billing.pos.data.Bill
 import com.billing.pos.data.Purchase
+import com.billing.pos.data.PurchaseQuotation
 import com.billing.pos.util.Format
 
 /**
@@ -118,6 +119,58 @@ fun PurchasePickerField(
                         )
                     },
                     onClick = { onPick(p); query = ""; expanded = false }
+                )
+            }
+        }
+    }
+}
+
+/** Searchable dropdown of purchase orders (LPO), filtered to a supplier when [supplierId] > 0. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun LpoPickerField(
+    lpos: List<PurchaseQuotation>,
+    supplierId: Long,
+    selectedNo: String,
+    label: String = "Against purchase order (LPO)",
+    onPick: (PurchaseQuotation) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var expanded by remember { mutableStateOf(false) }
+    var query by remember { mutableStateOf("") }
+    val filtered = remember(query, lpos, supplierId) {
+        val q = query.trim()
+        lpos.filter { (supplierId <= 0 || it.supplierId == supplierId) &&
+            (q.isBlank() || it.lpoNo.contains(q, true) || it.supplierName.contains(q, true)) }
+            .sortedByDescending { it.dateMillis }
+            .take(50)
+    }
+    ExposedDropdownMenuBox(
+        expanded = expanded,
+        onExpandedChange = { expanded = it },
+        modifier = modifier.fillMaxWidth().padding(top = 6.dp)
+    ) {
+        OutlinedTextField(
+            value = if (expanded) query else selectedNo,
+            onValueChange = { query = it; expanded = true },
+            label = { Text(label) },
+            placeholder = { Text("Search LPO no or supplier…") },
+            singleLine = true,
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
+            modifier = Modifier.menuAnchor().fillMaxWidth()
+        )
+        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            if (filtered.isEmpty()) {
+                DropdownMenuItem(text = { Text("No matching LPO") }, onClick = { expanded = false })
+            } else filtered.forEach { l ->
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            "${l.lpoNo}   ${Format.rupee(l.grandTotal)}\n${l.supplierName} • ${Format.date(l.dateMillis)}",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    },
+                    onClick = { onPick(l); query = ""; expanded = false }
                 )
             }
         }

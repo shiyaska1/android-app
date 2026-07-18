@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.ManageAccounts
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.MoneyOff
 import androidx.compose.material.icons.filled.MoveDown
+import androidx.compose.material.icons.filled.MoveToInbox
 import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.PlaylistAddCheck
@@ -104,6 +105,8 @@ fun DashboardScreen(
     onPatients: () -> Unit,
     onLabBills: () -> Unit,
     onMaterialOut: () -> Unit,
+    onMaterialReceipt: () -> Unit,
+    onLpoMaterialReport: () -> Unit,
     onItemMovement: () -> Unit,
     onStockReport: () -> Unit,
     onSalesProfit: () -> Unit,
@@ -134,6 +137,7 @@ fun DashboardScreen(
         if (Session.canViewInvoice) add(Tile("Purchases", Icons.Filled.Inventory2, onPurchases, "Transactions"))
         if (Session.canViewInvoice) add(Tile("Purchase Return", Icons.Filled.AssignmentReturned, onPurchaseReturns, "Transactions"))
         add(Tile("Purchase Order", Icons.Filled.PlaylistAddCheck, onLpos, "Transactions"))
+        if (Session.canViewInvoice) add(Tile("Material Receipt", Icons.Filled.MoveToInbox, onMaterialReceipt, "Transactions"))
         if (isLab) {
             add(Tile("Lab Bill", Icons.Filled.Science, onLabBills, "Transactions"))
             add(Tile("Material Out", Icons.Filled.MoveDown, onMaterialOut, "Transactions"))
@@ -168,6 +172,7 @@ fun DashboardScreen(
         if (Session.canViewInvoice) add(Tile("Sales Report", Icons.Filled.Assessment, onReports, "Reports"))
         if (Session.canViewInvoice) add(Tile("Sales Profit", Icons.Filled.TrendingUp, onSalesProfit, "Reports"))
         if (Session.canViewInvoice) add(Tile("Sales (item-wise)", Icons.Filled.Inventory2, onSalesItemReport, "Reports"))
+        if (Session.canViewInvoice) add(Tile("LPO Material", Icons.Filled.PlaylistAddCheck, onLpoMaterialReport, "Reports"))
         add(Tile("Stock on Date", Icons.Filled.Inventory, onStockReport, "Reports"))
         add(Tile("Item Movement", Icons.Filled.SwapVert, onItemMovement, "Reports"))
         add(Tile("Price Search", Icons.Filled.PriceCheck, onPriceSearch, "Reports"))

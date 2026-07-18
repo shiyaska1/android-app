@@ -70,6 +70,9 @@ import com.billing.pos.ui.lab.LabBillListScreen
 import com.billing.pos.ui.lab.LabResultScreen
 import com.billing.pos.ui.materialout.MaterialOutScreen
 import com.billing.pos.ui.materialout.MaterialOutListScreen
+import com.billing.pos.ui.materialreceipt.MaterialReceiptScreen
+import com.billing.pos.ui.materialreceipt.MaterialReceiptListScreen
+import com.billing.pos.ui.reports.LpoMaterialReportScreen
 import com.billing.pos.ui.materialout.MaterialOutLink
 import com.billing.pos.ui.materialout.ItemMovementScreen
 import com.billing.pos.ui.reports.StockReportScreen
@@ -241,6 +244,8 @@ private fun AppNav() {
                 onPatients = { nav.navigate("patients") },
                 onLabBills = { nav.navigate("labbills") },
                 onMaterialOut = { nav.navigate("materialouts") },
+                onMaterialReceipt = { nav.navigate("materialreceipts") },
+                onLpoMaterialReport = { nav.navigate("lpomaterialreport") },
                 onItemMovement = { nav.navigate("itemmovement") },
                 onStockReport = { nav.navigate("stockreport") },
                 onSalesProfit = { nav.navigate("salesprofit") },
@@ -443,6 +448,19 @@ private fun AppNav() {
             route = "materialout/edit/{id}",
             arguments = listOf(navArgument("id") { type = NavType.LongType })
         ) { entry -> MaterialOutScreen(editId = entry.arguments?.getLong("id"), resultRefs = null, resultTests = null, onBack = { nav.popBackStack() }) }
+
+        // Material Receipt Note (goods received against an LPO).
+        composable("materialreceipts") {
+            MaterialReceiptListScreen(onBack = { nav.popBackStack() }, onOpen = { id -> nav.navigate("materialreceipt/edit/$id") }, onNew = { nav.navigate("materialreceipt") })
+        }
+        composable("materialreceipt") { MaterialReceiptScreen(editId = null, onBack = { nav.popBackStack() }) }
+        composable(
+            route = "materialreceipt/edit/{id}",
+            arguments = listOf(navArgument("id") { type = NavType.LongType })
+        ) { entry -> MaterialReceiptScreen(editId = entry.arguments?.getLong("id"), onBack = { nav.popBackStack() }) }
+        composable("lpomaterialreport") {
+            LpoMaterialReportScreen(onBack = { nav.popBackStack() }, onOpenLpo = { id -> nav.navigate("lpo/edit/$id") })
+        }
         composable("stickynote") {
             com.billing.pos.ui.sticky.StickyNoteScreen(
                 onClose = { nav.popBackStack() },

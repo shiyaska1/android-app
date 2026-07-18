@@ -238,6 +238,19 @@ fun PurchaseScreen(
                 }
             }
 
+            // Book against an LPO (goods already received via a Material Receipt) — VAT only, no stock.
+            Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                androidx.compose.material3.Checkbox(checked = vm.againstLpo, onCheckedChange = { vm.againstLpo = it })
+                Text("Against LPO (already received — VAT only)", style = MaterialTheme.typography.labelMedium)
+            }
+            if (vm.againstLpo) {
+                val lpos by vm.lpos.collectAsStateSafe()
+                com.billing.pos.ui.common.LpoPickerField(
+                    lpos = lpos, supplierId = vm.selectedSupplier?.id ?: 0L, selectedNo = vm.lpoNo,
+                    onPick = { vm.loadFromLpo(it) }
+                )
+            }
+
             Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
                 ToolAction(Icons.Filled.Add, "Item") { showItemPicker = true }
                 ToolAction(Icons.Filled.Dialpad, "Price") { showCustomLine = true }

@@ -30,7 +30,12 @@ data class Purchase(
     val grandTotal: Double,
     val paidAmount: Double = 0.0,
     val supplierGstin: String = "",
-    val source: String = ""
+    val source: String = "",
+    /** When false, this purchase does NOT add stock (goods already received via a Material
+     *  Receipt Note against the LPO); it is booked only for VAT. Default true = normal purchase. */
+    val stockReceived: Boolean = true,
+    /** The LPO this purchase was booked against, if any. */
+    val lpoNo: String = ""
 ) {
     val balance: Double get() = (grandTotal - paidAmount).coerceAtLeast(0.0)
     val paymentStatus: String

@@ -404,6 +404,35 @@ class Repository(context: Context) {
     suspend fun materialOutById(id: Long): MaterialOut? = materialOutDao.byId(id)
     suspend fun materialOutLines(id: Long): List<MaterialOutItem> = materialOutDao.linesFor(id)
 
+    // ---- material receipts (goods received against an LPO) ----
+    private val materialReceiptDao = db.materialReceiptDao()
+    val materialReceipts: Flow<List<MaterialReceipt>> = materialReceiptDao.observeAll()
+    val materialReceivedByItem: Flow<List<NameQty>> = materialReceiptDao.observeReceivedByItem()
+    val receivedByLpo: Flow<List<LpoReceivedRow>> = materialReceiptDao.observeReceivedByLpo()
+    suspend fun nextReceiptNo(): String = "MRN-" + (materialReceiptDao.count() + 1).toString().padStart(4, '0')
+    suspend fun saveMaterialReceipt(m: MaterialReceipt, lines: List<MaterialReceiptItem>): Long = materialReceiptDao.save(m, lines)
+    suspend fun updateMaterialReceipt(m: MaterialReceipt, lines: List<MaterialReceiptItem>) = materialReceiptDao.update(m, lines)
+    suspend fun deleteMaterialReceipt(m: MaterialReceipt) = materialReceiptDao.delete(m)
+    suspend fun materialReceiptById(id: Long): MaterialReceipt? = materialReceiptDao.byId(id)
+    suspend fun materialReceiptLines(id: Long): List<MaterialReceiptItem> = materialReceiptDao.linesFor(id)
+    suspend fun returnedQtyForSupplier(supplierId: Long): List<NameQty> = purchaseDao.returnedQtyForSupplier(supplierId)
+
+    /**
+     * name (lowercased) -> net live-stock delta = stock-purchases + material receipts
+     * - sales - material out. Openings are added per item on top of this.
+     */
+    val stockByName: Flow<Map<String, Double>> =
+        kotlinx.coroutines.flow.combine(
+            purchaseDao.observePurchaseStockQty(), materialReceivedByItem, soldQty, materialOutByItem
+        ) { pur, recv, sold, out ->
+            val m = HashMap<String, Double>()
+            fun apply(list: List<NameQty>, sign: Double) = list.forEach { nq ->
+                val k = nq.name.lowercase(); m[k] = (m[k] ?: 0.0) + sign * nq.qty
+            }
+            apply(pur, 1.0); apply(recv, 1.0); apply(sold, -1.0); apply(out, -1.0)
+            m
+        }
+
     /** All material-out lines belonging to vouchers that reference [billNo]. */
     suspend fun usedMaterialsForBill(billNo: String): List<MaterialOutItem> {
         if (billNo.isBlank()) return emptyList()

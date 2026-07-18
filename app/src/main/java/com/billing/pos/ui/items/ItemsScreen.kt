@@ -129,19 +129,16 @@ class ItemsViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = Repository(app)
 
     val rows: StateFlow<List<ItemStockRow>> =
-        combine(repo.items, repo.purchaseLines, repo.soldQty, repo.purchaseLineParties, repo.materialOutByItem) { items, pLines, sold, parties, matOut ->
-            val purchasedByName = pLines.groupBy { it.name.lowercase() }
-            val soldByName = sold.associate { it.name.lowercase() to it.qty }
-            val outByName = matOut.associate { it.name.lowercase() to it.qty }
+        combine(repo.items, repo.stockByName, repo.purchaseLines, repo.purchaseLineParties) { items, byName, pLines, parties ->
+            // stockByName already nets receipts/purchases/sales/material-out; purchaseLines is only
+            // for the last purchase rate, parties for the last supplier.
+            val rateByName = pLines.groupBy { it.name.lowercase() }
             val lastSupplierByName = parties.groupBy { it.name.lowercase() }
                 .mapValues { (_, l) -> l.maxByOrNull { it.dateMillis }?.supplierName ?: "" }
             items.map { item ->
                 val key = item.name.lowercase()
-                val lines = purchasedByName[key].orEmpty()
-                val purchasedQty = lines.sumOf { it.qty }
-                val lastRate = lines.maxByOrNull { it.dateMillis }?.price ?: 0.0
-                val soldQty = soldByName[key] ?: 0.0
-                ItemStockRow(item, item.openingStock + purchasedQty - soldQty - (outByName[key] ?: 0.0), lastRate, lastSupplierByName[key] ?: "")
+                val lastRate = rateByName[key].orEmpty().maxByOrNull { it.dateMillis }?.price ?: 0.0
+                ItemStockRow(item, item.openingStock + (byName[key] ?: 0.0), lastRate, lastSupplierByName[key] ?: "")
             }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
