@@ -61,8 +61,12 @@ data class LpoReportRow(
     val lpoId: Long, val lpoNo: String, val date: Long, val name: String,
     val ordered: Double, val received: Double, val returned: Double, val rate: Double
 ) {
+    /** Quantity still to receive against the order (informational). */
     val balance: Double get() = (ordered - received).coerceAtLeast(0.0)
-    val value: Double get() = balance * rate
+    /** Net goods kept = received minus returned-to-supplier — what you actually owe for. */
+    val payableQty: Double get() = (received - returned).coerceAtLeast(0.0)
+    /** Payable value for this line. A purchase return lowers it; re-receiving (a new MRN) raises it back. */
+    val value: Double get() = payableQty * rate
 }
 
 class LpoMaterialReportViewModel(app: Application) : AndroidViewModel(app) {
@@ -76,7 +80,10 @@ class LpoMaterialReportViewModel(app: Application) : AndroidViewModel(app) {
         supplierId: Long, lpoId: Long, from: Long, to: Long,
         received: List<LpoReceivedRow>, lpos: List<PurchaseQuotation>
     ): List<LpoReportRow> {
-        val returnedByName = repo.returnedQtyForSupplier(supplierId).associate { it.name.lowercase() to it.qty }
+        // The supplier's total returns per item, allocated greedily across the LPO lines below so a
+        // return reduces payable once (and a re-receipt via a new MRN raises `received` back).
+        val remainingReturn = repo.returnedQtyForSupplier(supplierId)
+            .associate { it.name.lowercase() to it.qty }.toMutableMap()
         val recvMap = received.associate { (it.lpoId to it.name.lowercase()) to it.qty }
         val chosen = lpos.filter {
             it.supplierId == supplierId &&
@@ -87,13 +94,14 @@ class LpoMaterialReportViewModel(app: Application) : AndroidViewModel(app) {
         chosen.forEach { lpo ->
             repo.purchaseQuotationLines(lpo.id).forEach { line ->
                 val key = line.name.lowercase()
+                val recv = recvMap[lpo.id to key] ?: 0.0
+                val avail = remainingReturn[key] ?: 0.0
+                val applied = minOf(avail, recv)          // a line can't return more than it received
+                remainingReturn[key] = avail - applied
                 out.add(
                     LpoReportRow(
                         lpoId = lpo.id, lpoNo = lpo.lpoNo, date = lpo.dateMillis, name = line.name,
-                        ordered = line.qty,
-                        received = recvMap[lpo.id to key] ?: 0.0,
-                        returned = returnedByName[key] ?: 0.0,
-                        rate = line.price
+                        ordered = line.qty, received = recv, returned = applied, rate = line.price
                     )
                 )
             }
@@ -200,7 +208,7 @@ fun LpoMaterialReportScreen(onBack: () -> Unit, onOpenLpo: (Long) -> Unit, vm: L
                 }
             }
             Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text("PAYABLE (balance value)", fontWeight = FontWeight.Bold)
+                Text("PAYABLE (received − returned)", fontWeight = FontWeight.Bold)
                 Text(Format.money(payable), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
             }
         }
