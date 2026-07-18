@@ -89,6 +89,9 @@ class PurchaseReturnViewModel(app: Application) : AndroidViewModel(app) {
     val items: StateFlow<List<Item>> = repo.items.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val allBatches: StateFlow<List<com.billing.pos.data.ItemBatch>> = repo.itemBatches.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val returns: StateFlow<List<PurchaseReturn>> = repo.purchaseReturns.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    /** Past purchases, for the "against bill" picker (newest first). */
+    val purchases: StateFlow<List<com.billing.pos.data.Purchase>> =
+        repo.allPurchases.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     var selectedSupplier by mutableStateOf<Supplier?>(null); private set
     val cart: SnapshotStateList<CartLine> = mutableStateListOf()
@@ -96,6 +99,25 @@ class PurchaseReturnViewModel(app: Application) : AndroidViewModel(app) {
     var discountText by mutableStateOf("")
     var remarks by mutableStateOf("")
     var billNo by mutableStateOf("")
+    /** true = return against a chosen purchase (auto-fills the items); false = direct return. */
+    var againstBill by mutableStateOf(false)
+
+    /** Loads every line of [purchase] into the cart and picks its supplier. */
+    fun loadFromPurchase(purchase: com.billing.pos.data.Purchase) {
+        billNo = purchase.purchaseNo
+        selectedSupplier = suppliers.value.firstOrNull { it.id == purchase.supplierId }
+            ?: Supplier(purchase.supplierId, purchase.supplierName)
+        viewModelScope.launch {
+            val lines = repo.purchaseLinesFor(purchase.id)
+            cart.clear()
+            lines.forEach {
+                val perUnit = if (it.qty > 0) it.primaryQty / it.qty else 1.0
+                val itemId = items.value.firstOrNull { m -> m.name.equals(it.name, ignoreCase = true) }?.id ?: 0L
+                cart.add(CartLine(itemId, it.name, it.price, it.taxPercent, it.qty, batchNo = it.batchNo, unit = it.unit, primaryPerUnit = if (perUnit > 0) perUnit else 1.0))
+            }
+            if (lines.isEmpty()) message.value = "That purchase has no items"
+        }
+    }
     var returnNo by mutableStateOf("PR-0001"); private set
     var dateMillis by mutableStateOf(System.currentTimeMillis())
     var editingId by mutableStateOf<Long?>(null); private set
@@ -247,7 +269,30 @@ fun PurchaseReturnScreen(editId: Long?, onBack: () -> Unit, vm: PurchaseReturnVi
                     suppliers.forEach { s -> DropdownMenuItem(text = { Text(s.name) }, onClick = { vm.selectSupplier(s); supMenu = false }) }
                 }
             }
-            OutlinedTextField(value = vm.billNo, onValueChange = { vm.billNo = it }, label = { Text("Against purchase no (optional)") }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(top = 6.dp))
+            // Return type: Direct (type an optional purchase no) or Against bill (pick a purchase).
+            var typeMenu by remember { mutableStateOf(false) }
+            ExposedDropdownMenuBox(expanded = typeMenu, onExpandedChange = { typeMenu = !typeMenu }, modifier = Modifier.padding(top = 6.dp)) {
+                OutlinedTextField(
+                    readOnly = true, value = if (vm.againstBill) "Against bill" else "Direct", onValueChange = {},
+                    label = { Text("Return type") },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(typeMenu) },
+                    modifier = Modifier.menuAnchor().fillMaxWidth()
+                )
+                ExposedDropdownMenu(expanded = typeMenu, onDismissRequest = { typeMenu = false }) {
+                    DropdownMenuItem(text = { Text("Direct") }, onClick = { vm.againstBill = false; typeMenu = false })
+                    DropdownMenuItem(text = { Text("Against bill") }, onClick = { vm.againstBill = true; typeMenu = false })
+                }
+            }
+            if (vm.againstBill) {
+                val purchases by vm.purchases.collectAsStateSafe()
+                com.billing.pos.ui.common.PurchasePickerField(
+                    purchases = purchases,
+                    selectedNo = vm.billNo,
+                    onPick = { vm.loadFromPurchase(it) }
+                )
+            } else {
+                OutlinedTextField(value = vm.billNo, onValueChange = { vm.billNo = it }, label = { Text("Against purchase no (optional)") }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(top = 6.dp))
+            }
             Button(onClick = { showItemPicker = true }, modifier = Modifier.fillMaxWidth().padding(top = 6.dp)) { Icon(Icons.Filled.Add, null); Text("  Add returned item") }
 
             Card(Modifier.weight(1f).fillMaxWidth().padding(top = 8.dp)) {
