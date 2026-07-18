@@ -176,6 +176,14 @@ fun NewItemDialog(
             onDismiss = { regionUri = null }
         )
     }
+    // Handwrite the item name.
+    var showNameDraw by remember { mutableStateOf(false) }
+    if (showNameDraw) {
+        com.billing.pos.ui.common.HandwriteTextDialog(
+            onResult = { if (it.isNotBlank()) name = it; showNameDraw = false },
+            onDismiss = { showNameDraw = false }
+        )
+    }
 
     // Attachments (photos / camera / document) — same as the item master's add screen.
     val context = LocalContext.current
@@ -237,8 +245,12 @@ fun NewItemDialog(
                     singleLine = false, minLines = 3, maxLines = 6,
                     trailingIcon = {
                         Row {
-                            IconButton(onClick = { regionCamera() }) {
-                                Icon(Icons.Filled.PhotoCamera, contentDescription = "Photo — draw a box to read the name", tint = MaterialTheme.colorScheme.primary)
+                            val ib = Modifier.size(38.dp); val ic = Modifier.size(20.dp)
+                            IconButton(onClick = { showNameDraw = true }, modifier = ib) {
+                                Icon(Icons.Filled.Gesture, "Handwrite item name", ic, tint = MaterialTheme.colorScheme.primary)
+                            }
+                            IconButton(onClick = { regionCamera() }, modifier = ib) {
+                                Icon(Icons.Filled.PhotoCamera, "Photo — draw a box to read the name", ic, tint = MaterialTheme.colorScheme.primary)
                             }
                             IconButton(onClick = {
                                 regionGallery.launch(
@@ -246,8 +258,8 @@ fun NewItemDialog(
                                         androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly
                                     )
                                 )
-                            }) {
-                                Icon(Icons.Filled.PhotoLibrary, contentDescription = "Gallery — draw a box to read the name", tint = MaterialTheme.colorScheme.primary)
+                            }, modifier = ib) {
+                                Icon(Icons.Filled.PhotoLibrary, "Gallery — draw a box to read the name", ic, tint = MaterialTheme.colorScheme.primary)
                             }
                         }
                     },

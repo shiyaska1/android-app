@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.DocumentScanner
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.EventBusy
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Gesture
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.PictureAsPdf
@@ -794,6 +795,14 @@ private fun ItemDialog(
             onDismiss = { regionUri = null }
         )
     }
+    // Handwrite the item name.
+    var showNameDraw by remember { mutableStateOf(false) }
+    if (showNameDraw) {
+        com.billing.pos.ui.common.HandwriteTextDialog(
+            onResult = { if (it.isNotBlank()) name = it; showNameDraw = false },
+            onDismiss = { showNameDraw = false }
+        )
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -808,9 +817,15 @@ private fun ItemDialog(
                     // Tall + multiline so full OCR text is visible and easy to trim.
                     singleLine = false, minLines = 3, maxLines = 6,
                     trailingIcon = {
+                        // Compact so all four fit: handwrite, photo, gallery, voice.
                         Row {
-                            IconButton(onClick = { regionCamera() }) {
-                                Icon(Icons.Filled.PhotoCamera, contentDescription = "Photo — draw a box to read the name", tint = MaterialTheme.colorScheme.primary)
+                            val ib = Modifier.size(38.dp)
+                            val ic = Modifier.size(20.dp)
+                            IconButton(onClick = { showNameDraw = true }, modifier = ib) {
+                                Icon(Icons.Filled.Gesture, "Handwrite item name", ic, tint = MaterialTheme.colorScheme.primary)
+                            }
+                            IconButton(onClick = { regionCamera() }, modifier = ib) {
+                                Icon(Icons.Filled.PhotoCamera, "Photo — draw a box to read the name", ic, tint = MaterialTheme.colorScheme.primary)
                             }
                             IconButton(onClick = {
                                 regionGallery.launch(
@@ -818,11 +833,11 @@ private fun ItemDialog(
                                         androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly
                                     )
                                 )
-                            }) {
-                                Icon(Icons.Filled.PhotoLibrary, contentDescription = "Gallery — draw a box to read the name", tint = MaterialTheme.colorScheme.primary)
+                            }, modifier = ib) {
+                                Icon(Icons.Filled.PhotoLibrary, "Gallery — draw a box to read the name", ic, tint = MaterialTheme.colorScheme.primary)
                             }
-                            IconButton(onClick = { speakName() }) {
-                                Icon(Icons.Filled.Mic, contentDescription = "Speak item name", tint = MaterialTheme.colorScheme.primary)
+                            IconButton(onClick = { speakName() }, modifier = ib) {
+                                Icon(Icons.Filled.Mic, "Speak item name", ic, tint = MaterialTheme.colorScheme.primary)
                             }
                         }
                     },
