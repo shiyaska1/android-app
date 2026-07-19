@@ -267,7 +267,17 @@ private fun AppNav() {
             })
         }
         composable("login") {
-            LoginScreen(onLoggedIn = {
+            LoginScreen(onLoggedIn = { mustChangePassword ->
+                val dest = when {
+                    mustChangePassword -> "changepassword"
+                    PendingImport.uri != null -> "invoices"
+                    else -> "dashboard"
+                }
+                nav.navigate(dest) { popUpTo(0) { inclusive = true } }
+            })
+        }
+        composable("changepassword") {
+            com.billing.pos.ui.auth.ChangePasswordScreen(onDone = {
                 val dest = if (PendingImport.uri != null) "invoices" else "dashboard"
                 nav.navigate(dest) { popUpTo(0) { inclusive = true } }
             })

@@ -169,6 +169,10 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.primary
             )
+            com.billing.pos.ui.license.SupportContactBlock(
+                deviceId = com.billing.pos.data.License.deviceId(context),
+                compact = true
+            )
             Divider(Modifier.padding(vertical = 12.dp))
 
             Text(

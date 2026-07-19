@@ -991,12 +991,13 @@ private fun BuyDialog(
                     onClick = {
                         runCatching {
                             context.startActivity(
-                                Intent(Intent.ACTION_VIEW, android.net.Uri.parse(com.billing.pos.data.License.BUY_URL))
+                                Intent(Intent.ACTION_VIEW, android.net.Uri.parse(com.billing.pos.data.License.buyUrlFor(deviceId)))
                             )
                         }
                     },
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-                ) { Text("Open buy link") }
+                ) { Text("Buy on WhatsApp") }
+                com.billing.pos.ui.license.SupportContactBlock(deviceId = deviceId, compact = true)
                 OutlinedTextField(
                     value = key, onValueChange = { key = it; error = null },
                     label = { Text("License key") }, singleLine = true,

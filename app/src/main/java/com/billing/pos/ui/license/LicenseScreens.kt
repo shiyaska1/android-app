@@ -77,13 +77,14 @@ fun LicenseScreen(onActivated: () -> Unit) {
             },
             modifier = Modifier.fillMaxWidth().padding(top = 16.dp)
         ) { Text("Activate") }
-        OutlinedButton(
+        Button(
             onClick = {
                 runCatching {
-                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(License.BUY_URL)))
+                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(License.buyUrlFor(deviceId))))
                 }
             },
             modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-        ) { Text("Buy app") }
+        ) { Text("Buy app on WhatsApp") }
+        SupportContactBlock(deviceId = deviceId)
     }
 }

@@ -35,10 +35,18 @@ class LoginViewModel(app: Application) : AndroidViewModel(app) {
 
     var loading by mutableStateOf(false); private set
     var error by mutableStateOf<String?>(null); private set
+    /** Show the printed credentials only while the factory password is still in place. */
+    var showDefaults by mutableStateOf(false); private set
 
-    init { viewModelScope.launch { repo.ensureDefaults() } }
+    init {
+        viewModelScope.launch {
+            repo.ensureDefaults()
+            showDefaults = repo.usesDefaultPassword()
+        }
+    }
 
-    fun login(username: String, password: String, onSuccess: () -> Unit) {
+    /** [onSuccess] receives true when the user must set a new password before continuing. */
+    fun login(username: String, password: String, onSuccess: (mustChangePassword: Boolean) -> Unit) {
         if (username.isBlank() || password.isBlank()) { error = "Enter username and password"; return }
         loading = true; error = null
         viewModelScope.launch {
@@ -49,7 +57,7 @@ class LoginViewModel(app: Application) : AndroidViewModel(app) {
             } else {
                 Session.login(user)
                 prefs.loggedInUserId = user.id   // persist so login survives app restart
-                onSuccess()
+                onSuccess(repo.isDefaultAccount(user))
             }
         }
     }
@@ -57,7 +65,7 @@ class LoginViewModel(app: Application) : AndroidViewModel(app) {
 
 @Composable
 fun LoginScreen(
-    onLoggedIn: () -> Unit,
+    onLoggedIn: (mustChangePassword: Boolean) -> Unit,
     vm: LoginViewModel = viewModel()
 ) {
     var username by remember { mutableStateOf("") }
@@ -97,6 +105,22 @@ fun LoginScreen(
                 .padding(top = 8.dp)
         )
 
+        if (vm.showDefaults) {
+            // First run only. Disappears for good once the password is changed.
+            Text(
+                "Username: ${com.billing.pos.data.Repository.DEFAULT_USERNAME}    Password: ${com.billing.pos.data.Repository.DEFAULT_PASSWORD}",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(top = 12.dp)
+            )
+            Text(
+                "You will be asked to set your own password after signing in.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.outline
+            )
+        }
+
         vm.error?.let {
             Text(
                 it,
@@ -106,7 +130,7 @@ fun LoginScreen(
         }
 
         Button(
-            onClick = { vm.login(username.trim(), password) { onLoggedIn() } },
+            onClick = { vm.login(username.trim(), password) { must -> onLoggedIn(must) } },
             enabled = !vm.loading,
             modifier = Modifier
                 .fillMaxWidth()

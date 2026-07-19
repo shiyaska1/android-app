@@ -51,6 +51,11 @@ class Repository(context: Context) {
     val soldQty: Flow<List<NameQty>> = billDao.observeSoldQty()
 
     /** Seeds the default Cash customer and the initial super user. */
+    companion object {
+        const val DEFAULT_USERNAME = "superadmin"
+        const val DEFAULT_PASSWORD = "admin123"
+    }
+
     suspend fun ensureDefaults() {
         if (customerDao.count() == 0) {
             customerDao.insert(Customer(name = "Cash Customer", isDefault = true))
@@ -62,8 +67,8 @@ class Repository(context: Context) {
         if (userDao.count() == 0) {
             userDao.insert(
                 User(
-                    username = "superadmin",
-                    passwordHash = PasswordHasher.hash("admin123"),
+                    username = DEFAULT_USERNAME,
+                    passwordHash = PasswordHasher.hash(DEFAULT_PASSWORD),
                     role = Role.SUPER_USER,
                     canCreateInvoice = true, canEditInvoice = true, canDeleteInvoice = true, canViewInvoice = true,
                     canCreateReceipt = true, canEditReceipt = true, canDeleteReceipt = true, canViewReceipt = true,
@@ -149,6 +154,20 @@ class Repository(context: Context) {
     }
 
     suspend fun userById(id: Long): User? = userDao.byId(id)
+
+    /**
+     * True while the factory account still has its printed password. Drives both the
+     * credential hint on the login screen and the forced password change after login —
+     * derived from the database, so it can never drift out of sync with reality.
+     */
+    suspend fun usesDefaultPassword(): Boolean {
+        val user = userDao.byUsername(DEFAULT_USERNAME) ?: return false
+        return PasswordHasher.verify(DEFAULT_PASSWORD, user.passwordHash)
+    }
+
+    fun isDefaultAccount(user: User): Boolean =
+        user.username.equals(DEFAULT_USERNAME, true) &&
+            PasswordHasher.verify(DEFAULT_PASSWORD, user.passwordHash)
 
     suspend fun createUser(user: User, password: String): Result<Unit> = runCatching {
         userDao.insert(user.copy(passwordHash = PasswordHasher.hash(password)))

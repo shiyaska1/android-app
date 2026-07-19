@@ -16,8 +16,23 @@ import javax.crypto.spec.SecretKeySpec
 object License {
     const val TRIAL_DAYS = 30
 
-    /** Where "Buy app" sends the user. Change this to your real purchase/contact link. */
-    const val BUY_URL = "https://wa.me/910000000000?text=I%20want%20to%20buy%20POS%20Billing"
+    // ---- Support / purchase contact, shown wherever a licence key is needed ----
+    /** WhatsApp number in international form, no "+" (wa.me wants it that way). */
+    const val SUPPORT_WHATSAPP = "919961128378"
+    /** Same number, formatted for display and for a plain dial link. */
+    const val SUPPORT_PHONE = "+919961128378"
+    const val SUPPORT_EMAIL = "shiyaska2009@gmail.com"
+
+    /** Where "Buy app" sends the user — a WhatsApp chat with the support number. */
+    const val BUY_URL = "https://wa.me/$SUPPORT_WHATSAPP?text=I%20want%20to%20buy%20POS%20Billing"
+
+    /** WhatsApp chat pre-filled with the device id, so the licence key can be issued straight away. */
+    fun buyUrlFor(deviceId: String): String {
+        val msg = java.net.URLEncoder.encode(
+            "I want to buy POS Billing. My Device ID is $deviceId", "UTF-8"
+        )
+        return "https://wa.me/$SUPPORT_WHATSAPP?text=$msg"
+    }
 
     /** >>> CHANGE THIS to your own private secret before publishing. Keep it secret. <<< */
     private const val SECRET = "POSB-change-this-secret-2024"
