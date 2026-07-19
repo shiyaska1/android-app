@@ -129,7 +129,7 @@ class DiaryEditViewModel(app: Application) : AndroidViewModel(app) {
      * When [ocr] is true the image is also read with on-device OCR and the recognized
      * text is appended as a text block right below the photo.
      */
-    fun addImageUri(context: Context, uri: Uri, ocr: Boolean = false) {
+    fun addImageUri(context: Context, uri: Uri, ocr: Boolean = false, lang: String? = null) {
         viewModelScope.launch {
             val dest = AttachmentStore.newFile(context, "jpg")
             val ok = withContext(Dispatchers.IO) { AttachmentStore.compressImageTo(context, uri, dest) }
@@ -139,8 +139,8 @@ class DiaryEditViewModel(app: Application) : AndroidViewModel(app) {
 
             message.value = "Reading text…"
             // Read the original (full-resolution) image; fall back to the stored copy.
-            var text = TextOcr.lines(context, uri).joinToString("\n").trim()
-            if (text.isBlank()) text = TextOcr.lines(context, Uri.fromFile(dest)).joinToString("\n").trim()
+            var text = TextOcr.lines(context, uri, lang).joinToString("\n").trim()
+            if (text.isBlank()) text = TextOcr.lines(context, Uri.fromFile(dest), lang).joinToString("\n").trim()
             if (text.isNotBlank()) {
                 blocks.add(BlockUi(0, BlockType.TEXT, text))
                 message.value = "Text added to note"

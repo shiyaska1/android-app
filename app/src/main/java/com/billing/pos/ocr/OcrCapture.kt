@@ -52,17 +52,27 @@ object TextOcr {
     private fun looksEmpty(lines: List<String>): Boolean =
         lines.sumOf { line -> line.count { it.isLetterOrDigit() } } < 3
 
-    /** All recognized text lines (roughly top-to-bottom), or empty on failure. */
-    suspend fun lines(context: Context, uri: Uri): List<String> =
-        readLines(context, uri, singleLine = false)
+    /**
+     * All recognized text lines (roughly top-to-bottom), or empty on failure.
+     *
+     * [lang] forces a language for this one call — that is what the per-scan language
+     * chooser passes. Null falls back to the Settings default.
+     */
+    suspend fun lines(context: Context, uri: Uri, lang: String? = null): List<String> =
+        readLines(context, uri, singleLine = false, lang = lang)
 
     /** The whole recognized text collapsed to a single trimmed line. */
-    suspend fun singleLine(context: Context, uri: Uri): String =
-        readLines(context, uri, singleLine = true)
+    suspend fun singleLine(context: Context, uri: Uri, lang: String? = null): String =
+        readLines(context, uri, singleLine = true, lang = lang)
             .joinToString(" ").replace(Regex("\\s+"), " ").trim()
 
-    private suspend fun readLines(context: Context, uri: Uri, singleLine: Boolean): List<String> =
-        when (AppPrefs(context).ocrLanguage) {
+    private suspend fun readLines(
+        context: Context,
+        uri: Uri,
+        singleLine: Boolean,
+        lang: String? = null
+    ): List<String> =
+        when (lang ?: AppPrefs(context).ocrLanguage) {
             AppPrefs.OCR_MALAYALAM -> TesseractOcr.text(context, uri, singleLine)
             AppPrefs.OCR_AUTO -> {
                 val latin = latinLines(context, uri)
@@ -101,17 +111,33 @@ fun rememberImageCamera(onImage: (Uri) -> Unit): () -> Unit {
     }
 }
 
-/** Photograph an item name → OCR → single line of text. */
+/**
+ * Photograph an item name → OCR → single line of text.
+ *
+ * Asks which language to read before the camera opens. These flows fill the field the
+ * moment the photo is taken — there is no box to draw and no review — so the language
+ * has to be settled up front.
+ */
 @Composable
 fun rememberNameScanner(onText: (String) -> Unit): () -> Unit {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    return rememberImageCamera { uri ->
+    var lang by remember { mutableStateOf<String?>(null) }
+    var asking by remember { mutableStateOf(false) }
+
+    val camera = rememberImageCamera { uri ->
         scope.launch {
-            val text = TextOcr.singleLine(context, uri)
+            val text = TextOcr.singleLine(context, uri, lang)
             if (text.isNotBlank()) onText(text)
         }
     }
+    if (asking) {
+        com.billing.pos.ui.common.OcrLanguageAskDialog(
+            onPick = { picked -> lang = picked; asking = false; camera() },
+            onDismiss = { asking = false }
+        )
+    }
+    return { asking = true }
 }
 
 /** Photograph a printed list → OCR → all lines (for the bulk item-list import). */
@@ -119,7 +145,17 @@ fun rememberNameScanner(onText: (String) -> Unit): () -> Unit {
 fun rememberListScanner(onLines: (List<String>) -> Unit): () -> Unit {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    return rememberImageCamera { uri ->
-        scope.launch { onLines(TextOcr.lines(context, uri)) }
+    var lang by remember { mutableStateOf<String?>(null) }
+    var asking by remember { mutableStateOf(false) }
+
+    val camera = rememberImageCamera { uri ->
+        scope.launch { onLines(TextOcr.lines(context, uri, lang)) }
     }
+    if (asking) {
+        com.billing.pos.ui.common.OcrLanguageAskDialog(
+            onPick = { picked -> lang = picked; asking = false; camera() },
+            onDismiss = { asking = false }
+        )
+    }
+    return { asking = true }
 }

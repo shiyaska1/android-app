@@ -147,15 +147,19 @@ fun DiaryEditScreen(
     // When ticked, photos added below are also read with OCR and the text lands in the note.
     var readTextFromImage by remember { mutableStateOf(false) }
 
+    // Language for the photo OCR, asked before the picture is taken (only when OCR is on).
+    var imageOcrLang by remember { mutableStateOf<String?>(null) }
+    var askImageLangFor by remember { mutableStateOf<String?>(null) }
+
     // Image: photograph with the camera → auto-shrink → image block (+ OCR if ticked).
     val pickImage = com.billing.pos.ocr.rememberImageCamera { uri ->
-        vm.addImageUri(context, uri, readTextFromImage)
+        vm.addImageUri(context, uri, readTextFromImage, imageOcrLang)
     }
 
     // Pick an existing image from the gallery → auto-shrink → image block (+ OCR if ticked).
     val galleryPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.PickVisualMedia()
-    ) { uri -> if (uri != null) vm.addImageUri(context, uri, readTextFromImage) }
+    ) { uri -> if (uri != null) vm.addImageUri(context, uri, readTextFromImage, imageOcrLang) }
 
     val docPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments()
@@ -402,11 +406,17 @@ fun DiaryEditScreen(
                     OutlinedButton(onClick = { vm.addTextBlock() }, modifier = Modifier.weight(1f)) {
                         Icon(Icons.Filled.Edit, null); Text(" Text")
                     }
-                    OutlinedButton(onClick = { pickImage() }, modifier = Modifier.weight(1f)) {
+                    OutlinedButton(
+                        onClick = { if (readTextFromImage) askImageLangFor = "camera" else pickImage() },
+                        modifier = Modifier.weight(1f)
+                    ) {
                         Icon(Icons.Filled.PhotoCamera, null); Text(" Photo")
                     }
                     OutlinedButton(
-                        onClick = { galleryPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                        onClick = {
+                            if (readTextFromImage) askImageLangFor = "gallery"
+                            else galleryPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                        },
                         modifier = Modifier.weight(1f)
                     ) {
                         Icon(Icons.Filled.PhotoLibrary, null); Text(" Gallery")
@@ -575,6 +585,17 @@ fun DiaryEditScreen(
             dismissButton = {
                 TextButton(onClick = { showLinkDialog = false }, enabled = !vm.downloading) { Text("Close") }
             }
+        )
+    }
+
+    askImageLangFor?.let { which ->
+        com.billing.pos.ui.common.OcrLanguageAskDialog(
+            onPick = { picked ->
+                imageOcrLang = picked; askImageLangFor = null
+                if (which == "camera") pickImage()
+                else galleryPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+            },
+            onDismiss = { askImageLangFor = null }
         )
     }
 

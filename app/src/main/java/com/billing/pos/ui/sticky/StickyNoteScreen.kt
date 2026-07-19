@@ -208,7 +208,7 @@ class StickyNoteViewModel(app: Application) : AndroidViewModel(app) {
                     var text = ""
                     if (ready && strokes.isNotEmpty()) text = ink.recognize(strokes)
                     if (text.isBlank() && p.bg != null && w > 0 && h > 0) {
-                        text = ocrPageBitmap(ctx, p, w, h, " ")
+                        text = ocrPageBitmap(ctx, p, w, h, " ", com.billing.pos.data.AppPrefs.OCR_ENGLISH)
                     }
                     numRegex.find(text)?.value?.replace(",", ".")?.toDoubleOrNull()?.let { if (it > 0.0) out.add(com.billing.pos.ocr.ScannedItem("", it)) }
                 }
@@ -225,11 +225,14 @@ class StickyNoteViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Recognises the handwriting TEXT of every page; each page becomes one paragraph. */
-    fun ocrTextAllPages(pages: List<PageData>, w: Int, h: Int, onResult: (String) -> Unit) {
+    fun ocrTextAllPages(pages: List<PageData>, w: Int, h: Int, lang: String? = null, onResult: (String) -> Unit) {
         val ctx = getApplication<Application>()
         message.value = "Reading text…"
         viewModelScope.launch {
-            val ink = com.billing.pos.ink.InkRecognizer(com.billing.pos.ink.InkLang.default(ctx))
+            val ink = com.billing.pos.ink.InkRecognizer(
+                if (lang == com.billing.pos.data.AppPrefs.OCR_MALAYALAM) com.billing.pos.ink.InkLang.MALAYALAM
+                else com.billing.pos.ink.InkLang.ENGLISH
+            )
             val ready = ink.ensureReady()
             val paragraphs = withContext(Dispatchers.IO) {
                 val out = ArrayList<String>()
@@ -238,7 +241,7 @@ class StickyNoteViewModel(app: Application) : AndroidViewModel(app) {
                     var text = ""
                     if (ready && strokes.isNotEmpty()) text = ink.recognize(strokes)
                     if (text.isBlank() && p.bg != null && w > 0 && h > 0) {
-                        text = ocrPageBitmap(ctx, p, w, h, "\n")
+                        text = ocrPageBitmap(ctx, p, w, h, "\n", lang)
                     }
                     if (text.isNotBlank()) out.add(text.trim())
                 }
@@ -262,7 +265,7 @@ class StickyNoteViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Renders the page, crops to the selection box (if any), OCRs it, and returns the joined text. */
-    private suspend fun ocrPageBitmap(ctx: android.content.Context, p: PageData, w: Int, h: Int, sep: String): String {
+    private suspend fun ocrPageBitmap(ctx: android.content.Context, p: PageData, w: Int, h: Int, sep: String, lang: String? = null): String {
         var bmp = renderPage(p, w, h)
         p.region?.let { r ->
             val left = r.left.toInt().coerceIn(0, w - 1)
@@ -276,7 +279,7 @@ class StickyNoteViewModel(app: Application) : AndroidViewModel(app) {
         val f = File(ctx.cacheDir, "ocr_${System.nanoTime()}.jpg")
         f.outputStream().use { bmp.compress(Bitmap.CompressFormat.JPEG, 92, it) }
         bmp.recycle()
-        val text = com.billing.pos.ocr.TextOcr.lines(ctx, android.net.Uri.fromFile(f)).joinToString(sep)
+        val text = com.billing.pos.ocr.TextOcr.lines(ctx, android.net.Uri.fromFile(f), lang).joinToString(sep)
         f.delete()
         return text
     }
@@ -486,18 +489,33 @@ fun StickyNoteScreen(onClose: () -> Unit, onOcrToSales: () -> Unit = {}, vm: Sti
         )
     }
 
-    // Ask: read as numbers or text?
+    // Ask: read as numbers or text? The chips also decide which engine reads the text.
+    var ocrLang by remember { mutableStateOf(com.billing.pos.ui.common.OcrLang.default(context)) }
     if (ocrModeAsk) {
         val pageData = pages.map { PageData(it.strokes.toList(), it.bg, it.regionRect()) }
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { ocrModeAsk = false },
             title = { Text("Read handwriting as") },
-            text = { Text("Numbers — each page's amount for a sale. Text — combine all pages into editable text.") },
+            text = {
+                Column {
+                    Text("Numbers — each page's amount for a sale. Text — combine all pages into editable text.")
+                    Text(
+                        "Text is read in this language (numbers are always digits):",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.outline,
+                        modifier = Modifier.padding(top = 10.dp)
+                    )
+                    com.billing.pos.ui.common.OcrLanguageChips(
+                        selected = ocrLang, onSelect = { ocrLang = it },
+                        modifier = Modifier.padding(top = 6.dp)
+                    )
+                }
+            },
             confirmButton = {
                 Button(onClick = { ocrModeAsk = false; vm.ocrAllPages(pageData, canvasSize.width, canvasSize.height) { items -> ocrResult = items } }) { Text("Numbers") }
             },
             dismissButton = {
-                OutlinedButton(onClick = { ocrModeAsk = false; vm.ocrTextAllPages(pageData, canvasSize.width, canvasSize.height) { t -> ocrText = t } }) { Text("Text") }
+                OutlinedButton(onClick = { ocrModeAsk = false; vm.ocrTextAllPages(pageData, canvasSize.width, canvasSize.height, ocrLang) { t -> ocrText = t } }) { Text("Text") }
             }
         )
     }

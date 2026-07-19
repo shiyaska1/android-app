@@ -401,10 +401,25 @@ fun ItemsScreen(
     val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) vm.importSpreadsheet(context, uri)
     }
+    // Language is asked before the gallery opens — this flow fills the review list directly.
+    var galleryOcrLang by remember { mutableStateOf<String?>(null) }
+    var askGalleryLang by remember { mutableStateOf(false) }
     val galleryScan = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) scope.launch {
-            scanResult = com.billing.pos.ocr.ItemListParser.parse(com.billing.pos.ocr.TextOcr.lines(context, uri))
+            scanResult = com.billing.pos.ocr.ItemListParser.parse(
+                com.billing.pos.ocr.TextOcr.lines(context, uri, galleryOcrLang)
+            )
         }
+    }
+
+    if (askGalleryLang) {
+        com.billing.pos.ui.common.OcrLanguageAskDialog(
+            onPick = { picked ->
+                galleryOcrLang = picked; askGalleryLang = false
+                galleryScan.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+            },
+            onDismiss = { askGalleryLang = false }
+        )
     }
 
     fun doPrint(item: Item, count: Int) {
@@ -527,10 +542,7 @@ fun ItemsScreen(
                             )
                             DropdownMenuItem(
                                 text = { Text("Pick photo (gallery)") },
-                                onClick = {
-                                    importMenu = false
-                                    galleryScan.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-                                }
+                                onClick = { importMenu = false; askGalleryLang = true }
                             )
                         }
                     }

@@ -156,6 +156,8 @@ fun BillingScreen(
     var showPhotoOptions by remember { mutableStateOf(false) }
     var showSetTotal by remember { mutableStateOf(false) }
     var ocrReview by remember { mutableStateOf<List<com.billing.pos.ocr.ScannedItem>?>(null) }
+    // Picture-bill "Read items" asks the language before reading.
+    var askBillOcrLangFor by remember { mutableStateOf<android.net.Uri?>(null) }
     // Items handed over from the sticky-note OCR. Numbers were reviewed in the note, so they
     // go straight to the cart; text-mode items open the review popup to fill in prices.
     LaunchedEffect(Unit) {
@@ -574,6 +576,19 @@ fun BillingScreen(
                 }
             }
 
+            askBillOcrLangFor?.let { billUri ->
+                com.billing.pos.ui.common.OcrLanguageAskDialog(
+                    onPick = { picked ->
+                        askBillOcrLangFor = null
+                        scope.launch {
+                            val lines = com.billing.pos.ocr.TextOcr.lines(context, billUri, picked)
+                            ocrReview = com.billing.pos.ocr.ItemListParser.parse(lines)
+                        }
+                    },
+                    onDismiss = { askBillOcrLangFor = null }
+                )
+            }
+
             if (showRemarkPopup) {
                 var draft by remember(vm.remarks) { mutableStateOf(vm.remarks) }
                 var drawRemark by remember { mutableStateOf(false) }
@@ -843,10 +858,7 @@ fun BillingScreen(
             dismissButton = {
                 TextButton(onClick = {
                     showPhotoOptions = false
-                    scope.launch {
-                        val lines = com.billing.pos.ocr.TextOcr.lines(context, uri)
-                        ocrReview = com.billing.pos.ocr.ItemListParser.parse(lines)
-                    }
+                    askBillOcrLangFor = uri
                 }) { Text("Read items") }
             }
         )
