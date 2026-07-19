@@ -562,7 +562,7 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Clears the form for a brand-new bill and refreshes the auto bill number. */
     /** Called once by the screen before anything is loaded or saved. */
-    fun setEstimateMode(estimate: Boolean) {
+    fun updateEstimateMode(estimate: Boolean) {
         if (estimateMode == estimate) return
         estimateMode = estimate
         if (editingBillId == null) viewModelScope.launch { billNo = nextVoucherNo() }

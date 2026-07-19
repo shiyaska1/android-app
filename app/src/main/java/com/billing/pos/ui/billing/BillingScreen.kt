@@ -138,7 +138,7 @@ fun BillingScreen(
     // Mode is set before any load or save can happen, so both go to the right table.
     val docTitle = if (estimate) "ESTIMATE" else "TAX INVOICE"
     LaunchedEffect(estimate, editBillId) {
-        vm.setEstimateMode(estimate)
+        vm.updateEstimateMode(estimate)
         if (editBillId != null && editBillId > 0) vm.startEditing(editBillId)
     }
 
