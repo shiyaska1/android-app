@@ -42,6 +42,8 @@ data class CartLine(
     val unit: String = "",
     /** Primary units in one [unit]; 1.0 for the primary unit, 1/factor for the secondary. */
     val primaryPerUnit: Double = 1.0,
+    /** Free-text description printed under the item name. Quotations only, for now. */
+    val note: String = "",
     val uid: Long = nextUid()
 ) {
     /** What the customer pays for this line — the selling price is tax-inclusive. */

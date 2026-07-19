@@ -18,6 +18,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Backspace
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Divider
@@ -50,6 +51,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.billing.pos.util.Format
+import kotlinx.coroutines.launch
 
 /**
  * Fast bill — a calculator tape. Type an amount and press Enter (Enter acts as "+"); each amount
@@ -70,12 +72,33 @@ fun FastBillDialog(
     val focus = remember { FocusRequester() }
     val scroll = rememberScrollState()
     val total = entries.sum()
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
 
-    fun addNow() {
+    /** [sign] is +1 for the "+" key and -1 for "−"; a minus entry is stored negative. */
+    fun addNow(sign: Int = 1) {
         val v = input.toDoubleOrNull()
-        if (v != null && v > 0.0) entries.add(v)
+        if (v != null && v > 0.0) entries.add(v * sign)
         input = ""
         focus.requestFocus()
+    }
+
+    /** The tape as plain text, for sharing and for the diary copy. */
+    fun tapeText(): String = buildString {
+        entries.forEachIndexed { i, v ->
+            val sign = if (v < 0) "-" else if (i == 0) " " else "+"
+            append(sign).append(' ').append(Format.money(kotlin.math.abs(v))).append('\n')
+        }
+        append("= ").append(Format.money(entries.sum()))
+    }
+
+    fun saveToDiary() {
+        if (entries.isEmpty()) return
+        val body = tapeText()
+        val sum = Format.money(entries.sum())
+        scope.launch {
+            com.billing.pos.diary.QuickDiaryNote.save(context, "Fast bill $sum", body)
+        }
     }
 
     LaunchedEffect(Unit) { focus.requestFocus() }
@@ -97,10 +120,21 @@ fun FastBillDialog(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) { Text("Close") }
+                IconButton(
+                    onClick = {
+                        if (entries.isNotEmpty()) {
+                            saveToDiary()
+                            shareTapeToWhatsApp(context, tapeText())
+                        }
+                    },
+                    enabled = entries.isNotEmpty()
+                ) { Icon(Icons.Filled.Share, contentDescription = "Share on WhatsApp") }
                 Button(
                     onClick = {
                         val pending = input.toDoubleOrNull()
                         val all = if (pending != null && pending > 0.0) entries + pending else entries.toList()
+                        // Kept in the diary too, so the tape survives after the bill is saved.
+                        saveToDiary()
                         if (all.isNotEmpty()) onSave(all)
                         onDismiss()
                     },
@@ -135,13 +169,13 @@ fun FastBillDialog(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                if (i == 0) " " else "+",
+                                if (v < 0) "-" else if (i == 0) " " else "+",
                                 fontSize = 30.sp, fontFamily = FontFamily.Monospace,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.65f)
                             )
                             Text(
-                                Format.money(v),
+                                Format.money(kotlin.math.abs(v)),
                                 modifier = Modifier.weight(1f),
                                 fontSize = 34.sp, fontFamily = FontFamily.Monospace,
                                 fontWeight = FontWeight.Bold, textAlign = TextAlign.End,
@@ -194,7 +228,10 @@ fun FastBillDialog(
                     IconButton(onClick = { if (input.isNotEmpty()) input = "" else if (entries.isNotEmpty()) entries.removeAt(entries.lastIndex) }) {
                         Icon(Icons.Filled.Backspace, contentDescription = "Remove last")
                     }
-                    Button(onClick = { addNow() }) { Text("+", fontSize = 26.sp, fontWeight = FontWeight.Bold) }
+                    OutlinedButton(onClick = { addNow(-1) }) {
+                        Text("−", fontSize = 26.sp, fontWeight = FontWeight.Bold)
+                    }
+                    Button(onClick = { addNow(1) }) { Text("+", fontSize = 26.sp, fontWeight = FontWeight.Bold) }
                 }
                 Row(
                     Modifier.fillMaxWidth().padding(top = 8.dp),
@@ -245,6 +282,26 @@ fun FastBillDialog(
                     TextButton(onClick = { editIndex = -1 }) { Text("Cancel") }
                 }
             }
+        )
+    }
+}
+
+/** Shares the calculator tape as text, preferring WhatsApp and falling back to a chooser. */
+private fun shareTapeToWhatsApp(context: android.content.Context, text: String) {
+    val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(android.content.Intent.EXTRA_TEXT, text)
+    }
+    for (pkg in listOf("com.whatsapp", "com.whatsapp.w4b")) {
+        val direct = android.content.Intent(send).setPackage(pkg)
+        if (direct.resolveActivity(context.packageManager) != null) {
+            runCatching { context.startActivity(direct) }.onSuccess { return }
+        }
+    }
+    runCatching {
+        context.startActivity(
+            android.content.Intent.createChooser(send, "Share total")
+                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
         )
     }
 }

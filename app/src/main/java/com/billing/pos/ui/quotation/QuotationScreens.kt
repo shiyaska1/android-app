@@ -19,6 +19,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.NoteAdd
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.AlertDialog
@@ -129,6 +130,7 @@ class QuotationViewModel(app: Application) : AndroidViewModel(app) {
     fun setQty(i: Int, q: Double) { val l = cart.getOrNull(i) ?: return; if (q <= 0) cart.removeAt(i) else cart[i] = l.copy(qty = q) }
     fun setLinePrice(i: Int, p: Double) { val l = cart.getOrNull(i) ?: return; cart[i] = l.copy(price = p) }
     fun removeLine(i: Int) { cart.removeAt(i) }
+    fun setLineNote(i: Int, note: String) { val l = cart.getOrNull(i) ?: return; cart[i] = l.copy(note = note) }
 
     fun load(id: Long) {
         if (loaded || id <= 0) { loaded = true; return }
@@ -143,7 +145,7 @@ class QuotationViewModel(app: Application) : AndroidViewModel(app) {
             remarks = q.remarks
             selectedCustomer = customers.value.firstOrNull { it.id == q.customerId } ?: Customer(q.customerId, q.customerName)
             cart.clear()
-            repo.quotationLines(id).forEach { cart.add(CartLine(0, it.name, it.price, it.taxPercent, it.qty, unit = it.unit)) }
+            repo.quotationLines(id).forEach { cart.add(CartLine(0, it.name, it.price, it.taxPercent, it.qty, unit = it.unit, note = it.note)) }
         }
     }
 
@@ -165,7 +167,7 @@ class QuotationViewModel(app: Application) : AndroidViewModel(app) {
                 subTotal = subTotal, taxTotal = taxTotal, additionalCharge = additionalCharge,
                 discount = discount, grandTotal = grandTotal, remarks = remarks.trim()
             )
-            val lines = cart.map { QuotationItem(0, q.id, it.name, it.qty, it.price, it.taxPercent, it.total, it.unit) }
+            val lines = cart.map { QuotationItem(0, q.id, it.name, it.qty, it.price, it.taxPercent, it.total, it.unit, it.note) }
             val eid = editingId
             if (eid != null) { repo.updateQuotation(q, lines); message.value = "Quotation $quotationNo updated" }
             else { val id = repo.saveQuotation(q, lines); editingId = id; message.value = "Quotation $quotationNo saved" }
@@ -189,6 +191,8 @@ fun QuotationScreen(editId: Long?, onBack: () -> Unit, vm: QuotationViewModel = 
     LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); vm.consumeMessage() } }
 
     var showItemPicker by remember { mutableStateOf(false) }
+    // Index of the line whose description is open, if any.
+    var noteFor by remember { mutableStateOf<Int?>(null) }
     var unitPickFor by remember { mutableStateOf<Item?>(null) }
 
     Scaffold(
@@ -203,7 +207,7 @@ fun QuotationScreen(editId: Long?, onBack: () -> Unit, vm: QuotationViewModel = 
                         else PdfDoc(
                             docTitle = "QUOTATION", docNo = vm.quotationNo, dateMillis = vm.dateMillis,
                             partyLabel = "Quote To", partyName = vm.selectedCustomer?.name ?: "",
-                            lines = vm.cart.map { PdfLine(it.name, it.qty, it.price, it.total, it.unit) },
+                            lines = vm.cart.map { PdfLine(it.name, it.qty, it.price, it.total, it.unit, it.note) },
                             subTotal = vm.subTotal, taxTotal = vm.taxTotal, additionalCharge = vm.additionalCharge,
                             discount = vm.discount, grandTotal = vm.grandTotal, grandLabel = "TOTAL",
                             remarks = vm.remarks, filePrefix = "quotation"
@@ -251,6 +255,15 @@ fun QuotationScreen(editId: Long?, onBack: () -> Unit, vm: QuotationViewModel = 
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(line.name, Modifier.weight(1f), fontWeight = FontWeight.SemiBold, maxLines = 1)
                                 if (line.unit.isNotBlank()) Text(line.unit, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
+                                // Description lives behind this icon; it is never shown inline.
+                                IconButton(onClick = { noteFor = i }) {
+                                    Icon(
+                                        if (line.note.isBlank()) Icons.Filled.NoteAdd else Icons.Filled.Description,
+                                        contentDescription = "Item note",
+                                        tint = if (line.note.isBlank()) MaterialTheme.colorScheme.outline
+                                        else MaterialTheme.colorScheme.primary
+                                    )
+                                }
                                 IconButton(onClick = { vm.removeLine(i) }) { Icon(Icons.Filled.Delete, "Remove", tint = MaterialTheme.colorScheme.error) }
                             }
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -284,6 +297,17 @@ fun QuotationScreen(editId: Long?, onBack: () -> Unit, vm: QuotationViewModel = 
             }
             Button(onClick = { vm.save { } }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) { Text("Save quotation") }
         }
+    }
+
+    noteFor?.let { idx ->
+        val line = vm.cart.getOrNull(idx)
+        if (line == null) noteFor = null
+        else com.billing.pos.ui.common.ItemNoteDialog(
+            itemName = line.name,
+            initialNote = line.note,
+            onSave = { vm.setLineNote(idx, it) },
+            onDismiss = { noteFor = null }
+        )
     }
 
     if (showItemPicker) {

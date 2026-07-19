@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import kotlinx.coroutines.launch
 
 /**
  * Full-screen mobile-number confirmation board.
@@ -57,6 +58,7 @@ fun MobileNumberDialog(
     var number by remember { mutableStateOf(initial.filter { it.isDigit() }) }
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
 
     // decorFitsSystemWindows = false so the dialog gets real insets; safeDrawingPadding then keeps
     // the buttons clear of the phone's navigation bar and the keyboard.
@@ -80,7 +82,18 @@ fun MobileNumberDialog(
                     onClick = {
                         if (number.isNotBlank()) {
                             clipboard.setText(AnnotatedString(number))
-                            android.widget.Toast.makeText(context, "Number copied", android.widget.Toast.LENGTH_SHORT).show()
+                            // Also kept in the diary, so the number survives closing the popup.
+                            val saved = number
+                            scope.launch {
+                                com.billing.pos.diary.QuickDiaryNote.save(
+                                    context,
+                                    title = "Mobile number $saved",
+                                    body = saved
+                                )
+                            }
+                            android.widget.Toast.makeText(
+                                context, "Copied and saved to diary", android.widget.Toast.LENGTH_SHORT
+                            ).show()
                         }
                     },
                     modifier = Modifier.weight(1f)

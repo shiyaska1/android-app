@@ -759,13 +759,13 @@ object FullBackup {
     )
 
     private fun qItemJson(l: QuotationItem) = JSONObject().put("id", l.id).put("quotationId", l.quotationId)
-        .put("name", l.name).put("qty", l.qty).put("price", l.price).put("taxPercent", l.taxPercent).put("lineTotal", l.lineTotal).put("unit", l.unit)
+        .put("name", l.name).put("qty", l.qty).put("price", l.price).put("taxPercent", l.taxPercent).put("lineTotal", l.lineTotal).put("unit", l.unit).put("note", l.note)
 
     private fun readQItem(o: JSONObject) = QuotationItem(
         id = o.optLong("id"), quotationId = o.optLong("quotationId"), name = o.optString("name"),
         qty = o.optDouble("qty", 0.0), price = o.optDouble("price", 0.0),
         taxPercent = o.optDouble("taxPercent", 0.0), lineTotal = o.optDouble("lineTotal", 0.0),
-        unit = o.optString("unit")
+        unit = o.optString("unit"), note = o.optString("note")
     )
 
     private fun salesReturnJson(r: SalesReturn) = JSONObject().put("id", r.id).put("returnNo", r.returnNo)

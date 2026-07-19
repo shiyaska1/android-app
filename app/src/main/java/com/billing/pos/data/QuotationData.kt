@@ -37,7 +37,9 @@ data class QuotationItem(
     val taxPercent: Double,
     val lineTotal: Double,
     /** Unit this line is quoted in (blank = the item's primary unit). */
-    val unit: String = ""
+    val unit: String = "",
+    /** Long description printed under the item name on the quotation. */
+    val note: String = ""
 )
 
 data class QuotationWithItems(val quotation: Quotation, val lines: List<QuotationItem>)

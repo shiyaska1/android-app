@@ -20,7 +20,9 @@ data class PdfLine(
     val qty: Double,
     val price: Double,
     val lineTotal: Double,
-    val unit: String = ""
+    val unit: String = "",
+    /** Printed under the item name, wrapped over as many lines as it needs. */
+    val note: String = ""
 )
 
 /** A generic printable business document (quotation, sales/purchase return, LPO, …). */
@@ -140,8 +142,12 @@ object DocumentPdf {
         tableHeader()
 
         val rightCell = Paint(cell).apply { textAlign = Paint.Align.RIGHT }
+        // Notes print smaller and greyer than the item name, so the item still reads first.
+        val notePaint = Paint(cell).apply { textSize = cell.textSize - 2f; color = 0xFF444444.toInt() }
         doc.lines.forEachIndexed { i, l ->
-            if (y + rowH > PH - 120f) {
+            val noteLines = wrapNote(l.note, 58)
+            val thisRowH = rowH + noteLines.size * 13f
+            if (y + thisRowH > PH - 120f) {
                 drawVerticalBorders(c, line, x0, xEnd, cItem, cQty, cRate, cAmt, secTop, y)
                 pdf.finishPage(page)
                 page = pdf.startPage(PdfDocument.PageInfo.Builder(PW.toInt(), PH.toInt(), pdf.pages.size + 1).create())
@@ -155,7 +161,12 @@ object DocumentPdf {
             c.drawText(qtyText, cRate - 4f, y + 14f, rightCell)
             c.drawText(Format.money(l.price), cAmt - 4f, y + 14f, rightCell)
             c.drawText(Format.money(l.lineTotal), xEnd - 4f, y + 14f, rightCell)
-            y += rowH
+            var ny = y + 14f
+            noteLines.forEach { nl ->
+                ny += 13f
+                c.drawText(nl, cItem + 4f, ny, notePaint)
+            }
+            y += thisRowH
             c.drawLine(x0, y, xEnd, y, line)
         }
 
@@ -204,4 +215,25 @@ object DocumentPdf {
     }
 
     private fun clip(s: String, max: Int) = if (s.length <= max) s else s.take(max - 1) + "…"
+}
+
+/**
+ * Splits a multi-line note into printable lines, wrapping anything longer than [width]
+ * characters. The author's own line breaks are kept.
+ */
+private fun wrapNote(note: String, width: Int): List<String> {
+    if (note.isBlank()) return emptyList()
+    val out = ArrayList<String>()
+    note.split("
+").forEach { raw ->
+        var rest = raw.trim()
+        if (rest.isEmpty()) return@forEach
+        while (rest.length > width) {
+            val cut = rest.lastIndexOf(' ', width).let { if (it <= 0) width else it }
+            out.add(rest.substring(0, cut))
+            rest = rest.substring(cut).trim()
+        }
+        if (rest.isNotEmpty()) out.add(rest)
+    }
+    return out
 }
