@@ -16,6 +16,8 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        // Tesseract4Android (Malayalam OCR) is published here, not on Maven Central.
+        maven { url = uri("https://jitpack.io") }
     }
 }
 

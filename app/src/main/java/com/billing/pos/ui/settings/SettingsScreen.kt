@@ -87,6 +87,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
     var requireBatch by remember { mutableStateOf(prefs.requireItemBatch) }
     var businessType by remember { mutableStateOf(prefs.businessType) }
     var receiptWidth by remember { mutableStateOf(prefs.receiptWidth) }
+    var ocrLanguage by remember { mutableStateOf(prefs.ocrLanguage) }
     var logoPath by remember { mutableStateOf(prefs.logoPath) }
     var logoFull by remember { mutableStateOf(prefs.logoFullWidth) }
     val logoPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
@@ -263,6 +264,33 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
                     "This phone has no screen lock set. Set a PIN/pattern/fingerprint in Android Settings, or the app will open without asking.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error
                 )
+            }
+
+            Divider(Modifier.padding(vertical = 16.dp))
+            // Which script the camera/gallery OCR reads. Applies to every scan in the app.
+            Text("Camera text reading (OCR)", style = MaterialTheme.typography.titleSmall)
+            Text(
+                "English is fast and accurate. Malayalam uses a different engine — it works offline " +
+                    "but is slower and less accurate, so check the text before saving. " +
+                    "Auto tries English first and falls back to Malayalam.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline
+            )
+            var ocrMenu by remember { mutableStateOf(false) }
+            ExposedDropdownMenuBox(expanded = ocrMenu, onExpandedChange = { ocrMenu = !ocrMenu }) {
+                OutlinedTextField(
+                    readOnly = true, value = ocrLanguage, onValueChange = {},
+                    label = { Text("OCR language") },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(ocrMenu) },
+                    modifier = Modifier.menuAnchor().fillMaxWidth().padding(top = 4.dp)
+                )
+                ExposedDropdownMenu(expanded = ocrMenu, onDismissRequest = { ocrMenu = false }) {
+                    AppPrefs.OCR_LANGUAGES.forEach { l ->
+                        DropdownMenuItem(
+                            text = { Text(l) },
+                            onClick = { ocrLanguage = l; prefs.ocrLanguage = l; ocrMenu = false }
+                        )
+                    }
+                }
             }
 
             Divider(Modifier.padding(vertical = 16.dp))

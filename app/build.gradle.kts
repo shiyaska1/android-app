@@ -13,8 +13,8 @@ android {
         applicationId = "com.billing.pos"
         minSdk = 26
         targetSdk = 35
-        versionCode = 38
-        versionName = "1.4.3"
+        versionCode = 39
+        versionName = "1.5.0"
         vectorDrawables { useSupportLibrary = true }
 
         // Real Android phones are arm. The x86/x86_64 native libs are emulator-only
@@ -129,6 +129,13 @@ dependencies {
 
     // On-device text recognition / OCR (bundled Latin model — fully offline)
     implementation("com.google.mlkit:text-recognition:16.0.1")
+
+    // Malayalam OCR. ML Kit cannot read Malayalam script at all, so Tesseract fills that
+    // gap — still fully offline (the model ships in assets/tessdata).
+    // 4.8.0+ ships 16 KB-page-aligned native libs, which Google Play requires.
+    implementation("cz.adaptech.tesseract4android:tesseract4android:4.9.0")
+    // EXIF rotation, so a sideways photo still OCRs.
+    implementation("androidx.exifinterface:exifinterface:1.3.7")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

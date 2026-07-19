@@ -22,3 +22,10 @@
 # Coroutines
 -keepclassmembers class kotlinx.coroutines.** { volatile <fields>; }
 -dontwarn kotlinx.coroutines.**
+
+# Tesseract (Malayalam OCR). The native layer looks these classes and their fields up by
+# name through JNI, so renaming or stripping them breaks recognition at runtime.
+-keep class com.googlecode.tesseract.android.** { *; }
+-keep class com.googlecode.leptonica.android.** { *; }
+-dontwarn com.googlecode.tesseract.android.**
+-dontwarn com.googlecode.leptonica.android.**

@@ -70,6 +70,11 @@ class AppPrefs(context: Context) {
 
     companion object {
         val RECEIPT_WIDTHS = listOf("58mm", "80mm", "A4")
+
+        const val OCR_ENGLISH = "English"
+        const val OCR_MALAYALAM = "Malayalam"
+        const val OCR_AUTO = "Auto"
+        val OCR_LANGUAGES = listOf(OCR_ENGLISH, OCR_MALAYALAM, OCR_AUTO)
         /** Monospace columns for a given width. */
         fun colsFor(width: String): Int = when (width) { "80mm" -> 48; "A4" -> 64; else -> 32 }
         /** PDF page width in points for a given width (58mm ≈ 165pt). */
@@ -85,6 +90,14 @@ class AppPrefs(context: Context) {
     var businessType: String
         get() = p.getString("business_type", "") ?: ""
         set(v) { p.edit().putString("business_type", v).apply() }
+
+    /**
+     * Which script the camera/gallery OCR should read.
+     * "English" = ML Kit Latin, "Malayalam" = Tesseract, "Auto" = try Latin then fall back.
+     */
+    var ocrLanguage: String
+        get() = p.getString("ocr_language", OCR_ENGLISH) ?: OCR_ENGLISH
+        set(v) { p.edit().putString("ocr_language", v).apply() }
 
     /** When on, a full-screen handwriting sticky-note canvas opens on launch (before the dashboard). */
     var stickyNoteOnLaunch: Boolean
