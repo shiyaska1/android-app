@@ -23,7 +23,7 @@ object A4InvoicePdf {
     private const val PH = 842f      // A4 height
     private const val M = 36f        // margin
 
-    fun invoice(context: Context, company: CompanyInfo, bill: Bill, lines: List<BillItem>, imagePaths: List<String> = emptyList()): Uri {
+    fun invoice(context: Context, company: CompanyInfo, bill: Bill, lines: List<BillItem>, imagePaths: List<String> = emptyList(), title: String = "TAX INVOICE"): Uri {
         val prefs = AppPrefs(context)
         val doc = PdfDocument()
 
@@ -79,7 +79,7 @@ object A4InvoicePdf {
         c.drawLine(x0, y, xEnd, y, line)
         y += 20f
         val tp = Paint(cellBold).apply { textSize = 15f; textAlign = Paint.Align.CENTER }
-        c.drawText("TAX INVOICE", (x0 + xEnd) / 2f, y, tp)
+        c.drawText(title, (x0 + xEnd) / 2f, y, tp)
         y += 18f
 
         // ---- Bill meta ----

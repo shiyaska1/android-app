@@ -17,6 +17,7 @@ import androidx.room.TypeConverters
         ItemAttachment::class, BillAttachment::class,
         ItemBatch::class, ItemSize::class,
         Quotation::class, QuotationItem::class,
+        Estimate::class, EstimateItem::class,
         SalesReturn::class, SalesReturnItem::class,
         PurchaseReturn::class, PurchaseReturnItem::class,
         PurchaseQuotation::class, PurchaseQuotationItem::class,
@@ -33,7 +34,7 @@ import androidx.room.TypeConverters
     // v33 page breaks, heading master, lab-bill payment; v34 lab balance receipts;
     // v35 doctor master + patient phone; v36 material out + movement;
     // v37 item purchase price; v38 material receipts + purchase stockReceived/lpoNo.
-    version = 38,
+    version = 39,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -54,6 +55,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun itemBatchDao(): ItemBatchDao
     abstract fun itemSizeDao(): ItemSizeDao
     abstract fun quotationDao(): QuotationDao
+    abstract fun estimateDao(): EstimateDao
     abstract fun salesReturnDao(): SalesReturnDao
     abstract fun purchaseReturnDao(): PurchaseReturnDao
     abstract fun purchaseQuotationDao(): PurchaseQuotationDao
@@ -101,6 +103,26 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** Estimates: a new pair of tables, so existing data is untouched. */
+        private val MIGRATION_38_39 = object : androidx.room.migration.Migration(38, 39) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS estimates (" +
+                        "id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, estimateNo TEXT NOT NULL, " +
+                        "dateMillis INTEGER NOT NULL, customerId INTEGER NOT NULL, customerName TEXT NOT NULL, " +
+                        "paymentMethod TEXT NOT NULL, subTotal REAL NOT NULL, taxTotal REAL NOT NULL, " +
+                        "additionalCharge REAL NOT NULL, discount REAL NOT NULL, grandTotal REAL NOT NULL, " +
+                        "customerGstin TEXT NOT NULL DEFAULT '', remarks TEXT NOT NULL DEFAULT '')"
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS estimate_items (" +
+                        "id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, estimateId INTEGER NOT NULL, " +
+                        "name TEXT NOT NULL, qty REAL NOT NULL, price REAL NOT NULL, " +
+                        "taxPercent REAL NOT NULL, lineTotal REAL NOT NULL, unit TEXT NOT NULL DEFAULT '')"
+                )
+            }
+        }
+
         fun get(context: Context): AppDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -108,7 +130,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "pos_billing.db"
                 )
-                    .addMigrations(MIGRATION_36_37, MIGRATION_37_38)
+                    .addMigrations(MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39)
                     .fallbackToDestructiveMigration()
                     .build()
                     .also { INSTANCE = it }

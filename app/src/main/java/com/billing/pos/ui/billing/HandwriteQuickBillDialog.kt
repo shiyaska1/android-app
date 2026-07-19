@@ -63,11 +63,15 @@ fun HandwriteQuickBillDialog(
     val scope = rememberCoroutineScope()
     val handwriteContext = androidx.compose.ui.platform.LocalContext.current
     val pending = remember { mutableStateListOf<com.billing.pos.ocr.ScannedItem>() }
-    val recognizer = remember { InkRecognizer(com.billing.pos.ink.InkLang.default(handwriteContext)) }
-    DisposableEffect(Unit) { onDispose { recognizer.close() } }
+    // Switchable here, starting from the Settings default — you know which language you
+    // are about to write, and each language has its own recognition model.
+    var inkLang by remember { mutableStateOf(com.billing.pos.ink.InkLang.default(handwriteContext)) }
+    val recognizer = remember(inkLang) { InkRecognizer(inkLang) }
+    DisposableEffect(inkLang) { onDispose { recognizer.close() } }
 
-    var modelState by remember { mutableStateOf(ModelState.PREPARING) }
-    LaunchedEffect(Unit) {
+    var modelState by remember(inkLang) { mutableStateOf(ModelState.PREPARING) }
+    LaunchedEffect(inkLang) {
+        modelState = ModelState.PREPARING
         modelState = if (recognizer.ensureReady()) ModelState.READY else ModelState.ERROR
     }
 
@@ -108,6 +112,18 @@ fun HandwriteQuickBillDialog(
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Text("Handwrite Bill", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
                 Text("${pending.size} to review", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+            }
+            Spacer(Modifier.height(6.dp))
+            // Which language the handwriting is read as.
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(com.billing.pos.ink.InkLang.ENGLISH, com.billing.pos.ink.InkLang.MALAYALAM).forEach { tag ->
+                    androidx.compose.material3.FilterChip(
+                        selected = inkLang == tag,
+                        onClick = { if (inkLang != tag && !busy) { itemStrokes.clear(); inkLang = tag } },
+                        enabled = !busy,
+                        label = { Text(com.billing.pos.ink.InkLang.label(tag)) }
+                    )
+                }
             }
             Spacer(Modifier.height(6.dp))
 

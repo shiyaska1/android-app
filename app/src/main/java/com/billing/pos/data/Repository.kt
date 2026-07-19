@@ -278,6 +278,17 @@ class Repository(context: Context) {
     suspend fun quotationById(id: Long): Quotation? = quotationDao.byId(id)
     suspend fun quotationLines(id: Long): List<QuotationItem> = quotationDao.linesFor(id)
 
+    // ---- estimates ----
+    // Deliberately absent from stockByName: an estimate never moves stock.
+    private val estimateDao = db.estimateDao()
+    val estimates: Flow<List<Estimate>> = estimateDao.observeAll()
+    suspend fun nextEstimateNo(): String = "EST-" + (estimateDao.count() + 1).toString().padStart(4, '0')
+    suspend fun saveEstimate(e: Estimate, lines: List<EstimateItem>): Long = estimateDao.save(e, lines)
+    suspend fun updateEstimate(e: Estimate, lines: List<EstimateItem>) = estimateDao.update(e, lines)
+    suspend fun deleteEstimate(e: Estimate) = estimateDao.delete(e)
+    suspend fun estimateById(id: Long): Estimate? = estimateDao.byId(id)
+    suspend fun estimateLines(id: Long): List<EstimateItem> = estimateDao.linesFor(id)
+
     // ---- sales returns ----
     private val salesReturnDao = db.salesReturnDao()
     val salesReturns: Flow<List<SalesReturn>> = salesReturnDao.observeAll()

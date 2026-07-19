@@ -44,9 +44,9 @@ object ThermalPrinter {
     }
 
     @SuppressLint("MissingPermission")
-    fun printBill(context: Context, company: CompanyInfo, bill: Bill, lines: List<BillItem>, imagePaths: List<String> = emptyList()) {
+    fun printBill(context: Context, company: CompanyInfo, bill: Bill, lines: List<BillItem>, imagePaths: List<String> = emptyList(), title: String = "TAX INVOICE") {
         applyWidth(context)
-        sendBytes(context, buildReceipt(company, bill, lines, imagePaths))
+        sendBytes(context, buildReceipt(company, bill, lines, imagePaths, title))
     }
 
     /** Prints a receipt voucher (money received) to give to the customer. */
@@ -208,12 +208,12 @@ object ThermalPrinter {
         ESC.toByte(), 'G'.code.toByte(), 1
     )
 
-    private fun buildReceipt(company: CompanyInfo, bill: Bill, lines: List<BillItem>, imagePaths: List<String> = emptyList()): ByteArray {
+    private fun buildReceipt(company: CompanyInfo, bill: Bill, lines: List<BillItem>, imagePaths: List<String> = emptyList(), title: String = "TAX INVOICE"): ByteArray {
         val sb = StringBuilder()
         sb.append(center(company.name)).append('\n')
         if (company.address.isNotBlank()) sb.append(center(company.address)).append('\n')
         if (company.phone.isNotBlank()) sb.append(center("Ph: ${company.phone}")).append('\n')
-        sb.append(center("TAX INVOICE")).append('\n')
+        sb.append(center(title)).append('\n')
         sb.append(line()).append('\n')
         sb.append("Bill: ${bill.billNo}\n")
         sb.append("Date: ${Format.dateTime(bill.dateMillis)}\n")

@@ -160,8 +160,9 @@ private fun AppNav() {
     }
 
     @Composable
-    fun billing(editId: Long?) {
+    fun billing(editId: Long?, estimate: Boolean = false) {
         BillingScreen(
+            estimate = estimate,
             editBillId = editId,
             onBack = { nav.popBackStack() },
             onOpenReports = { nav.navigate("reports") },
@@ -233,6 +234,7 @@ private fun AppNav() {
                 onPurchases = { nav.navigate("purchases") },
                 onSuppliers = { nav.navigate("suppliers") },
                 onQuotations = { nav.navigate("quotations") },
+                onEstimates = { nav.navigate("estimates") },
                 onSalesReturns = { nav.navigate("salesreturns") },
                 onPurchaseReturns = { nav.navigate("purchasereturns") },
                 onLpos = { nav.navigate("lpos") },
@@ -287,6 +289,19 @@ private fun AppNav() {
             route = "billing/edit/{id}",
             arguments = listOf(navArgument("id") { type = NavType.LongType })
         ) { entry -> billing(entry.arguments?.getLong("id")) }
+        // Estimate: the same sales-entry screen, saved to its own table.
+        composable("estimate") { billing(null, estimate = true) }
+        composable(
+            route = "estimate/edit/{id}",
+            arguments = listOf(navArgument("id") { type = NavType.LongType })
+        ) { entry -> billing(entry.arguments?.getLong("id"), estimate = true) }
+        composable("estimates") {
+            com.billing.pos.ui.estimate.EstimateListScreen(
+                onBack = { nav.popBackStack() },
+                onOpen = { id -> nav.navigate("estimate/edit/$id") },
+                onNew = { nav.navigate("estimate") }
+            )
+        }
         composable("invoices") {
             InvoiceListScreen(
                 onBack = { nav.popBackStack() },

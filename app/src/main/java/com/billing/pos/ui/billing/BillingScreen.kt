@@ -114,6 +114,8 @@ import kotlinx.coroutines.withContext
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BillingScreen(
+    /** Estimate mode: same screen, saved to the estimates table, prints "ESTIMATE". */
+    estimate: Boolean = false,
     editBillId: Long? = null,
     onBack: () -> Unit = {},
     onOpenReports: () -> Unit,
@@ -133,7 +135,12 @@ fun BillingScreen(
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
 
-    LaunchedEffect(editBillId) { if (editBillId != null && editBillId > 0) vm.startEditing(editBillId) }
+    // Mode is set before any load or save can happen, so both go to the right table.
+    val docTitle = if (estimate) "ESTIMATE" else "TAX INVOICE"
+    LaunchedEffect(estimate, editBillId) {
+        vm.setEstimateMode(estimate)
+        if (editBillId != null && editBillId > 0) vm.startEditing(editBillId)
+    }
 
     val customers by vm.customers.collectAsStateSafe()
     val items by vm.items.collectAsStateSafe()
@@ -189,7 +196,7 @@ fun BillingScreen(
     val printPermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
-        if (granted) scope.launch { doPrint(context, vm, snackbar) }
+        if (granted) scope.launch { doPrint(context, vm, snackbar, docTitle) }
         else scope.launch {
             val res = snackbar.showSnackbar(
                 "Allow 'Nearby devices' permission to print",
@@ -226,7 +233,16 @@ fun BillingScreen(
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             TopAppBar(
-                title = { Text(if (vm.editingBillId != null) "Edit Bill" else "New Bill") },
+                title = {
+                    Text(
+                        when {
+                            estimate && vm.editingBillId != null -> "Edit Estimate"
+                            estimate -> "New Estimate"
+                            vm.editingBillId != null -> "Edit Bill"
+                            else -> "New Bill"
+                        }
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -642,7 +658,7 @@ fun BillingScreen(
                     modifier = Modifier.weight(1f)
                 ) { Text("Save") }
                 OutlinedButton(
-                    onClick = { scope.launch { vm.saveCurrent()?.let { sharePdf(context, it, vm.editAttachments.filter { a -> a.mime.startsWith("image/") }.map { a -> a.path }) } } },
+                    onClick = { scope.launch { vm.saveCurrent()?.let { sharePdf(context, it, vm.editAttachments.filter { a -> a.mime.startsWith("image/") }.map { a -> a.path }, docTitle) } } },
                     contentPadding = PaddingValues(horizontal = 8.dp),
                     modifier = Modifier.weight(1f)
                 ) { Text("PDF") }
@@ -652,7 +668,7 @@ fun BillingScreen(
                             if (vm.needsWhatsAppInfo()) showWhatsApp = true
                             else {
                                 val saved = vm.saveCurrent() ?: return@launch
-                                sendWhatsApp(context, vm.selectedCustomer?.phone ?: "", saved, vm.editAttachments.filter { a -> a.mime.startsWith("image/") }.map { a -> a.path }) { scope.launch { snackbar.showSnackbar(it) } }
+                                sendWhatsApp(context, vm.selectedCustomer?.phone ?: "", saved, vm.editAttachments.filter { a -> a.mime.startsWith("image/") }.map { a -> a.path }, docTitle) { scope.launch { snackbar.showSnackbar(it) } }
                             }
                         }
                     },
@@ -663,7 +679,7 @@ fun BillingScreen(
                     onClick = {
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !ThermalPrinter.hasConnectPermission(context)) {
                             printPermission.launch(Manifest.permission.BLUETOOTH_CONNECT)
-                        } else scope.launch { doPrint(context, vm, snackbar) }
+                        } else scope.launch { doPrint(context, vm, snackbar, docTitle) }
                     },
                     contentPadding = PaddingValues(horizontal = 8.dp),
                     modifier = Modifier.weight(1f)
@@ -687,7 +703,7 @@ fun BillingScreen(
                 showWhatsApp = false
                 scope.launch {
                     val saved = vm.prepareWhatsApp(name, number) ?: return@launch
-                    sendWhatsApp(context, vm.selectedCustomer?.phone ?: number, saved, vm.editAttachments.filter { a -> a.mime.startsWith("image/") }.map { a -> a.path }) {
+                    sendWhatsApp(context, vm.selectedCustomer?.phone ?: number, saved, vm.editAttachments.filter { a -> a.mime.startsWith("image/") }.map { a -> a.path }, docTitle) {
                         scope.launch { snackbar.showSnackbar(it) }
                     }
                 }
@@ -900,13 +916,14 @@ fun BillingScreen(
 private suspend fun doPrint(
     context: android.content.Context,
     vm: BillingViewModel,
-    snackbar: SnackbarHostState
+    snackbar: SnackbarHostState,
+    title: String = "TAX INVOICE"
 ) {
     val saved = vm.saveCurrent() ?: return
     val company = com.billing.pos.data.AppPrefs(context).company
     val imgs = vm.editAttachments.filter { it.mime.startsWith("image/") }.map { it.path }
     val result = withContext(Dispatchers.IO) {
-        runCatching { ThermalPrinter.printBill(context, company, saved.bill, saved.lines, imgs) }
+        runCatching { ThermalPrinter.printBill(context, company, saved.bill, saved.lines, imgs, title) }
     }
     result.onSuccess { snackbar.showSnackbar("Sent to printer") }
         .onFailure { snackbar.showSnackbar(it.message ?: "Print failed") }
@@ -924,9 +941,9 @@ private fun pickBillDate(context: android.content.Context, current: Long, onPick
     ).show()
 }
 
-private fun sharePdf(context: android.content.Context, saved: BillWithItems, imagePaths: List<String> = emptyList()) {
+private fun sharePdf(context: android.content.Context, saved: BillWithItems, imagePaths: List<String> = emptyList(), title: String = "TAX INVOICE") {
     val company = com.billing.pos.data.AppPrefs(context).company
-    val uri = InvoicePdf.make(context, company, saved.bill, saved.lines, imagePaths)
+    val uri = InvoicePdf.make(context, company, saved.bill, saved.lines, imagePaths, title)
     val intent = Intent(Intent.ACTION_SEND).apply {
         type = "application/pdf"
         putExtra(Intent.EXTRA_STREAM, uri)
@@ -943,10 +960,11 @@ private fun sendWhatsApp(
     phone: String,
     saved: BillWithItems,
     imagePaths: List<String> = emptyList(),
+    title: String = "TAX INVOICE",
     onInfo: (String) -> Unit
 ) {
     val company = com.billing.pos.data.AppPrefs(context).company
-    val uri = InvoicePdf.make(context, company, saved.bill, saved.lines, imagePaths)
+    val uri = InvoicePdf.make(context, company, saved.bill, saved.lines, imagePaths, title)
     val digits = phone.filter { it.isDigit() }
 
     fun tryPackage(pkg: String?): Boolean {

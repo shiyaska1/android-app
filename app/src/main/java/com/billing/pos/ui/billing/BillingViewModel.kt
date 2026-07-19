@@ -13,6 +13,8 @@ import com.billing.pos.data.BillAttachment
 import com.billing.pos.data.BillItem
 import com.billing.pos.data.BillWithItems
 import com.billing.pos.data.Customer
+import com.billing.pos.data.Estimate
+import com.billing.pos.data.EstimateItem
 import com.billing.pos.data.Item
 import com.billing.pos.data.PaymentMethod
 import com.billing.pos.data.Repository
@@ -109,6 +111,12 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
     var manualTotalText by mutableStateOf(""); private set
     var billNo by mutableStateOf("INV-0001"); private set
     var dateMillis by mutableStateOf(System.currentTimeMillis()); private set
+
+    /**
+     * Estimate mode: the same screen, saved to the estimates table instead of bills.
+     * Nothing an estimate saves touches stock, batches or receivables.
+     */
+    var estimateMode by mutableStateOf(false); private set
 
     /** Non-null when editing an existing bill. */
     var editingBillId by mutableStateOf<Long?>(null); private set
@@ -418,6 +426,7 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         val editId = editingBillId
+        if (estimateMode) return saveCurrentEstimate(customer, editId)
         val paid = when {
             // Keep collected receipts only if it was already credit; a cash bill switched
             // to credit becomes fully outstanding.
@@ -513,6 +522,7 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
     /** Loads an existing bill for editing. Called once from the UI. */
     fun startEditing(billId: Long) {
         if (editingBillId == billId) return
+        if (estimateMode) { startEditingEstimate(billId); return }
         viewModelScope.launch {
             val bill = repo.billById(billId) ?: return@launch
             val lines = repo.linesFor(billId)
@@ -551,6 +561,16 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Clears the form for a brand-new bill and refreshes the auto bill number. */
+    /** Called once by the screen before anything is loaded or saved. */
+    fun setEstimateMode(estimate: Boolean) {
+        if (estimateMode == estimate) return
+        estimateMode = estimate
+        if (editingBillId == null) viewModelScope.launch { billNo = nextVoucherNo() }
+    }
+
+    private suspend fun nextVoucherNo(): String =
+        if (estimateMode) repo.nextEstimateNo() else repo.nextBillNo()
+
     fun newBill() {
         cart.clear()
         val unsaved = editAttachments.filter { it.id == 0L }
@@ -567,6 +587,86 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
         editingSource = ""
         lastSaved = null
         dirty = true
-        viewModelScope.launch { billNo = repo.nextBillNo() }
+        viewModelScope.launch { billNo = nextVoucherNo() }
+    }
+
+    /**
+     * Saves the same cart as an estimate. No batch deduction, no paid amount and no
+     * receivable — an estimate is a quote, so it commits to nothing.
+     */
+    private suspend fun saveCurrentEstimate(customer: Customer, editId: Long?): BillWithItems {
+        val estimate = Estimate(
+            id = editId ?: 0,
+            estimateNo = billNo,
+            dateMillis = dateMillis,
+            customerId = customer.id,
+            customerName = customer.name,
+            paymentMethod = payment.label,
+            subTotal = subTotal,
+            taxTotal = taxTotal,
+            additionalCharge = additionalCharge,
+            discount = discount,
+            grandTotal = grandTotal,
+            customerGstin = customer.gstin,
+            remarks = remarks.trim()
+        )
+        val lines = cart.map {
+            EstimateItem(
+                estimateId = editId ?: 0,
+                name = it.name,
+                qty = it.qty,
+                price = it.price,
+                taxPercent = it.taxPercent,
+                lineTotal = it.total,
+                unit = it.unit
+            )
+        }
+        if (editId != null) {
+            repo.updateEstimate(estimate, lines)
+            _message.value = "Estimate $billNo updated"
+        } else {
+            val id = repo.saveEstimate(estimate, lines)
+            editingBillId = id
+            _message.value = "Estimate $billNo saved"
+        }
+
+        // Hand back a Bill-shaped result so printing and PDF share the invoice renderer.
+        val asBill = Bill(
+            id = editingBillId ?: 0, billNo = billNo, dateMillis = dateMillis,
+            customerId = customer.id, customerName = customer.name,
+            paymentMethod = payment.label, subTotal = subTotal, taxTotal = taxTotal,
+            additionalCharge = additionalCharge, discount = discount, grandTotal = grandTotal,
+            paidAmount = 0.0, customerGstin = customer.gstin, remarks = remarks.trim()
+        )
+        val asLines = cart.map {
+            BillItem(
+                billId = asBill.id, name = it.name, qty = it.qty, price = it.price,
+                taxPercent = it.taxPercent, lineTotal = it.total, unit = it.unit
+            )
+        }
+        val saved = BillWithItems(asBill, asLines)
+        lastSaved = saved
+        dirty = false
+        return saved
+    }
+
+    private fun startEditingEstimate(estimateId: Long) {
+        viewModelScope.launch {
+            val e = repo.estimateById(estimateId) ?: return@launch
+            val lines = repo.estimateLines(estimateId)
+            editingBillId = e.id
+            billNo = e.estimateNo
+            dateMillis = e.dateMillis
+            payment = PaymentMethod.values().firstOrNull { it.label == e.paymentMethod } ?: PaymentMethod.CASH
+            additionalChargeText = if (e.additionalCharge != 0.0) e.additionalCharge.toString() else ""
+            discountText = if (e.discount != 0.0) e.discount.toString() else ""
+            remarks = e.remarks
+            selectedCustomer = customers.value.firstOrNull { it.id == e.customerId }
+                ?: Customer(id = e.customerId, name = e.customerName)
+            editAttachments.clear()
+            cart.clear()
+            lines.forEach { cart.add(CartLine(0, it.name, it.price, it.taxPercent, it.qty, unit = it.unit)) }
+            dirty = false
+        }
     }
 }

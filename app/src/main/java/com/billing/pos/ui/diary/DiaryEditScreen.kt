@@ -20,7 +20,6 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -91,7 +90,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
@@ -877,6 +880,7 @@ private fun appendText(existing: String, spoken: String): String =
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun RemarksSearchView(text: String, lineStyle: TextStyle = TextStyle.Default) {
+    val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
     val lines = remember(text) { if (text.isEmpty()) listOf("") else text.split("\n") }
     var query by remember { mutableStateOf("") }
@@ -960,15 +964,27 @@ private fun RemarksSearchView(text: String, lineStyle: TextStyle = TextStyle.Def
                         isCurrent -> MaterialTheme.colorScheme.primaryContainer
                         else -> Color.Transparent
                     }
+                    val annotated = remember(line, query) { highlightMatches(line, query) }
+                    var layout by remember(line, query) { mutableStateOf<TextLayoutResult?>(null) }
                     Text(
-                        highlightMatches(line, query),
+                        annotated,
                         style = lineStyle,
+                        onTextLayout = { layout = it },
                         modifier = Modifier.fillMaxWidth()
                             .background(bg)
-                            .combinedClickable(
-                                onClick = { if (selectionMode) toggle(i) },
-                                onLongClick = { toggle(i) }
-                            )
+                            // Tap handling is done here rather than with combinedClickable so the
+                            // tap position is available — that is what decides whether a link was hit.
+                            .pointerInput(annotated, selectionMode) {
+                                detectTapGestures(
+                                    onLongPress = { toggle(i) },
+                                    onTap = { offset ->
+                                        if (selectionMode) { toggle(i); return@detectTapGestures }
+                                        val pos = layout?.getOffsetForPosition(offset) ?: return@detectTapGestures
+                                        val link = annotated.getStringAnnotations(LINK_TAG, pos, pos).firstOrNull()
+                                        if (link != null) openDiaryLink(context, link.item)
+                                    }
+                                )
+                            }
                             .padding(vertical = 3.dp, horizontal = 2.dp)
                     )
                 }
@@ -977,21 +993,61 @@ private fun RemarksSearchView(text: String, lineStyle: TextStyle = TextStyle.Def
     }
 }
 
-/** Marks every case-insensitive occurrence of [query] in [line] with a yellow background. */
+private const val LINK_TAG = "diary-link"
+
+/** Web addresses, e-mail addresses and phone numbers found in a note line. */
+private val LINK_REGEX = Regex(
+    """(https?://\S+|www\.\S+|[\w.+-]+@[\w-]+\.[\w.]{2,}|\+?\d[\d\s-]{7,}\d)"""
+)
+
+/**
+ * Marks every case-insensitive occurrence of [query] with a yellow background, and every
+ * link with an underline plus a [LINK_TAG] annotation so a tap can open it.
+ *
+ * Both can cover the same characters, so the line is cut at every span boundary and each
+ * piece is styled for whatever applies to it.
+ */
 private fun highlightMatches(line: String, query: String): AnnotatedString = buildAnnotatedString {
-    if (query.isBlank()) { append(line); return@buildAnnotatedString }
-    val lower = line.lowercase()
-    val q = query.lowercase()
-    var start = 0
-    while (true) {
-        val idx = lower.indexOf(q, start)
-        if (idx < 0) { append(line.substring(start)); break }
-        append(line.substring(start, idx))
-        withStyle(SpanStyle(background = Color(0xFFFFEB3B), color = Color.Black)) {
-            append(line.substring(idx, idx + q.length))
-        }
-        start = idx + q.length
+    val links = LINK_REGEX.findAll(line).map { it.range }.toList()
+    val hits = if (query.isBlank()) emptyList()
+    else Regex(Regex.escape(query), RegexOption.IGNORE_CASE).findAll(line).map { it.range }.toList()
+
+    if (links.isEmpty() && hits.isEmpty()) { append(line); return@buildAnnotatedString }
+
+    val cuts = sortedSetOf(0, line.length)
+    (links + hits).forEach { cuts.add(it.first); cuts.add(it.last + 1) }
+    val points = cuts.filter { it in 0..line.length }
+
+    for (k in 0 until points.size - 1) {
+        val from = points[k]
+        val to = points[k + 1]
+        if (from >= to) continue
+        val link = links.firstOrNull { from >= it.first && to <= it.last + 1 }
+        val isHit = hits.any { from >= it.first && to <= it.last + 1 }
+
+        var style = SpanStyle()
+        if (isHit) style = style.copy(background = Color(0xFFFFEB3B), color = Color.Black)
+        if (link != null) style = style.copy(
+            color = Color(0xFF1565C0), textDecoration = TextDecoration.Underline
+        )
+
+        if (link != null) pushStringAnnotation(LINK_TAG, line.substring(link.first, link.last + 1))
+        withStyle(style) { append(line.substring(from, to)) }
+        if (link != null) pop()
     }
+}
+
+/** Opens a tapped note link: web page, e-mail draft or dialler, whichever it looks like. */
+private fun openDiaryLink(context: android.content.Context, raw: String) {
+    val text = raw.trim().trimEnd('.', ',', ')', ']', ';', ':')
+    if (text.isEmpty()) return
+    val uri = when {
+        text.startsWith("http://", true) || text.startsWith("https://", true) -> Uri.parse(text)
+        text.startsWith("www.", true) -> Uri.parse("https://$text")
+        text.contains("@") -> Uri.parse("mailto:$text")
+        else -> Uri.parse("tel:" + text.filter { it.isDigit() || it == '+' })
+    }
+    runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, uri)) }
 }
 
 /** Predefined text colours; 0 = use the theme default. */

@@ -62,6 +62,8 @@ object FullBackup {
         root.put("itemSizes", JSONArray().apply { db.itemSizeDao().all().forEach { put(sizeJson(it)) } })
         root.put("quotations", JSONArray().apply { db.quotationDao().all().forEach { put(quotationJson(it)) } })
         root.put("quotationItems", JSONArray().apply { db.quotationDao().allLines().forEach { put(qItemJson(it)) } })
+        root.put("estimates", JSONArray().apply { db.estimateDao().all().forEach { put(estimateJson(it)) } })
+        root.put("estimateItems", JSONArray().apply { db.estimateDao().allLines().forEach { put(eItemJson(it)) } })
         root.put("salesReturns", JSONArray().apply { db.salesReturnDao().all().forEach { put(salesReturnJson(it)) } })
         root.put("salesReturnItems", JSONArray().apply { db.salesReturnDao().allLines().forEach { put(srItemJson(it)) } })
         root.put("purchaseReturns", JSONArray().apply { db.purchaseReturnDao().all().forEach { put(purchaseReturnJson(it)) } })
@@ -229,6 +231,12 @@ object FullBackup {
             val ls = ArrayList<QuotationItem>()
             for (i in 0 until it.length()) ls.add(readQItem(it.getJSONObject(i)))
             if (ls.isNotEmpty()) db.quotationDao().insertLines(ls)
+        }
+        root.optJSONArray("estimates")?.let { for (i in 0 until it.length()) db.estimateDao().insertHeader(readEstimate(it.getJSONObject(i))) }
+        root.optJSONArray("estimateItems")?.let {
+            val ls = ArrayList<EstimateItem>()
+            for (i in 0 until it.length()) ls.add(readEItem(it.getJSONObject(i)))
+            if (ls.isNotEmpty()) db.estimateDao().insertLines(ls)
         }
         root.optJSONArray("salesReturns")?.let { for (i in 0 until it.length()) db.salesReturnDao().insertHeader(readSalesReturn(it.getJSONObject(i))) }
         root.optJSONArray("salesReturnItems")?.let {
@@ -470,6 +478,18 @@ object FullBackup {
                 db.quotationDao().insertLines(listOf(l.copy(id = 0, quotationId = nq)))
             }
         }
+        val estMap = HashMap<Long, Long>()
+        root.optJSONArray("estimates")?.let {
+            for (i in 0 until it.length()) {
+                val e = readEstimate(it.getJSONObject(i)); estMap[e.id] = db.estimateDao().insertHeader(e.copy(id = 0))
+            }
+        }
+        root.optJSONArray("estimateItems")?.let {
+            for (i in 0 until it.length()) {
+                val l = readEItem(it.getJSONObject(i)); val ne = estMap[l.estimateId] ?: continue
+                db.estimateDao().insertLines(listOf(l.copy(id = 0, estimateId = ne)))
+            }
+        }
         // Sales returns
         val srMap = HashMap<Long, Long>()
         root.optJSONArray("salesReturns")?.let {
@@ -708,6 +728,34 @@ object FullBackup {
         subTotal = o.optDouble("subTotal", 0.0), taxTotal = o.optDouble("taxTotal", 0.0),
         additionalCharge = o.optDouble("additionalCharge", 0.0), discount = o.optDouble("discount", 0.0),
         grandTotal = o.optDouble("grandTotal", 0.0), remarks = o.optString("remarks")
+    )
+
+    private fun estimateJson(e: Estimate) = JSONObject().put("id", e.id).put("estimateNo", e.estimateNo)
+        .put("dateMillis", e.dateMillis).put("customerId", e.customerId).put("customerName", e.customerName)
+        .put("paymentMethod", e.paymentMethod)
+        .put("subTotal", e.subTotal).put("taxTotal", e.taxTotal).put("additionalCharge", e.additionalCharge)
+        .put("discount", e.discount).put("grandTotal", e.grandTotal)
+        .put("customerGstin", e.customerGstin).put("remarks", e.remarks)
+
+    private fun readEstimate(o: JSONObject) = Estimate(
+        id = o.optLong("id"), estimateNo = o.optString("estimateNo"), dateMillis = o.optLong("dateMillis"),
+        customerId = o.optLong("customerId"), customerName = o.optString("customerName"),
+        paymentMethod = o.optString("paymentMethod"),
+        subTotal = o.optDouble("subTotal", 0.0), taxTotal = o.optDouble("taxTotal", 0.0),
+        additionalCharge = o.optDouble("additionalCharge", 0.0), discount = o.optDouble("discount", 0.0),
+        grandTotal = o.optDouble("grandTotal", 0.0),
+        customerGstin = o.optString("customerGstin"), remarks = o.optString("remarks")
+    )
+
+    private fun eItemJson(l: EstimateItem) = JSONObject().put("id", l.id).put("estimateId", l.estimateId)
+        .put("name", l.name).put("qty", l.qty).put("price", l.price).put("taxPercent", l.taxPercent)
+        .put("lineTotal", l.lineTotal).put("unit", l.unit)
+
+    private fun readEItem(o: JSONObject) = EstimateItem(
+        id = o.optLong("id"), estimateId = o.optLong("estimateId"), name = o.optString("name"),
+        qty = o.optDouble("qty", 0.0), price = o.optDouble("price", 0.0),
+        taxPercent = o.optDouble("taxPercent", 0.0), lineTotal = o.optDouble("lineTotal", 0.0),
+        unit = o.optString("unit")
     )
 
     private fun qItemJson(l: QuotationItem) = JSONObject().put("id", l.id).put("quotationId", l.quotationId)
