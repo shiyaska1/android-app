@@ -130,7 +130,7 @@ object AudioTranscriber {
 
     /** Streams the PCM into the recogniser through a pipe and waits for the transcript. */
     private suspend fun recognizeFile(context: Context, pcm: Pcm, languageTag: String): Result =
-        withContext(Dispatchers.Main) {
+        withContext<Result>(Dispatchers.Main) {
             if (!SpeechRecognizer.isRecognitionAvailable(context)) {
                 return@withContext Result.Failed("No speech recogniser on this phone")
             }
@@ -159,7 +159,7 @@ object AudioTranscriber {
                 putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
             }
 
-            suspendCancellableCoroutine { cont ->
+            suspendCancellableCoroutine<Result> { cont ->
                 fun finish(r: Result) {
                     if (cont.isActive) cont.resume(r)
                     runCatching { recognizer.destroy() }
