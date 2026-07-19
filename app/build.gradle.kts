@@ -13,8 +13,8 @@ android {
         applicationId = "com.billing.pos"
         minSdk = 26
         targetSdk = 35
-        versionCode = 40
-        versionName = "1.5.1"
+        versionCode = 41
+        versionName = "1.5.2"
         vectorDrawables { useSupportLibrary = true }
 
         // Real Android phones are arm. The x86/x86_64 native libs are emulator-only
@@ -82,6 +82,12 @@ android {
     }
     buildFeatures {
         compose = true
+    }
+    androidResources {
+        // Keep the Tesseract model uncompressed in the APK. A DEFLATED asset cannot be
+        // opened with openFd(), and a compressed 12 MB model also costs a slow inflate
+        // on the first scan.
+        noCompress += "traineddata"
     }
     packaging {
         resources {

@@ -293,6 +293,22 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
                     }
                 }
             }
+            if (ocrLanguage != AppPrefs.OCR_ENGLISH) {
+                // Checks the Malayalam reader can actually load, so a problem shows up here
+                // rather than as a silently empty item name after taking a photo.
+                OutlinedButton(
+                    onClick = {
+                        scope.launch {
+                            snackbar.showSnackbar("Checking Malayalam reader…")
+                            val err = com.billing.pos.ocr.TesseractOcr.selfTest(context)
+                            snackbar.showSnackbar(
+                                if (err == null) "Malayalam reader is ready" else "Malayalam reader failed: $err"
+                            )
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                ) { Text("Check Malayalam reader") }
+            }
 
             Divider(Modifier.padding(vertical = 16.dp))
             Text("Printer", style = MaterialTheme.typography.titleSmall)

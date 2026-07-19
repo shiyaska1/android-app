@@ -26,7 +26,18 @@ object TesseractOcr {
     private val lock = Any()
     @Volatile private var dataDir: File? = null
 
-    /** True once the model is on disk and usable. Copies it out of assets on first call. */
+    /** Set when the model could not be prepared, so the UI can say why instead of going quiet. */
+    @Volatile var lastError: String? = null
+        private set
+
+    /**
+     * True once the model is on disk and usable. Copies it out of assets on first call.
+     *
+     * Deliberately avoids AssetManager.openFd() — that throws for any asset the build
+     * compressed, which is how this silently returned nothing on every scan before.
+     * A marker file records which app build did the copy, so an updated model replaces
+     * an older one without an expensive length check on every call.
+     */
     private fun ensureModel(context: Context): File? = synchronized(lock) {
         dataDir?.let { return it }
         return runCatching {
@@ -34,16 +45,42 @@ object TesseractOcr {
             val root = File(context.filesDir, "tesseract")
             val tessdata = File(root, "tessdata").apply { mkdirs() }
             val target = File(tessdata, "$LANG.traineddata")
-            val asset = "tessdata/$LANG.traineddata"
-            val expected = context.assets.openFd(asset).use { it.length }
-            // Re-copy when missing or truncated by an interrupted first run.
-            if (!target.exists() || target.length() != expected) {
-                context.assets.open(asset).use { input ->
+            val marker = File(root, "$LANG.version")
+
+            val build = runCatching {
+                context.packageManager.getPackageInfo(context.packageName, 0).versionName.orEmpty()
+            }.getOrDefault("")
+            val copied = marker.takeIf { it.exists() }?.readText().orEmpty()
+
+            if (!target.exists() || target.length() < 1_000_000L || copied != build) {
+                context.assets.open("tessdata/$LANG.traineddata").use { input ->
                     target.outputStream().use { input.copyTo(it) }
                 }
+                marker.writeText(build)
             }
+            if (target.length() < 1_000_000L) error("model copy failed (${target.length()} bytes)")
+            lastError = null
             root.also { dataDir = it }
-        }.getOrNull()
+        }.onFailure { lastError = it.message ?: it.javaClass.simpleName }.getOrNull()
+    }
+
+    /**
+     * Prepares the model and runs a no-op init, so Settings can report a real result
+     * instead of the user discovering the problem through a blank item name.
+     */
+    suspend fun selfTest(context: Context): String? = withContext(Dispatchers.IO) {
+        val root = ensureModel(context) ?: return@withContext lastError ?: "model not available"
+        synchronized(lock) {
+            val api = TessBaseAPI()
+            try {
+                if (!api.init(root.absolutePath, LANG)) "Tesseract could not load the Malayalam model"
+                else null
+            } catch (t: Throwable) {
+                t.message ?: t.javaClass.simpleName
+            } finally {
+                runCatching { api.recycle() }
+            }
+        }
     }
 
     /**
@@ -101,8 +138,29 @@ object TesseractOcr {
             }
         }.getOrDefault(0f)
 
-        if (degrees == 0f) bmp
-        else Bitmap.createBitmap(bmp, 0, 0, bmp.width, bmp.height, Matrix().apply { postRotate(degrees) }, true)
-            .also { if (it != bmp) bmp.recycle() }
+        val upright =
+            if (degrees == 0f) bmp
+            else Bitmap.createBitmap(bmp, 0, 0, bmp.width, bmp.height, Matrix().apply { postRotate(degrees) }, true)
+                .also { if (it != bmp) bmp.recycle() }
+
+        upscaleIfSmall(upright)
     }.getOrNull()
+
+    /**
+     * A hand-drawn box around one item name can be only a couple of hundred pixels wide.
+     * Tesseract needs roughly 300 DPI worth of pixels per character and reads almost
+     * nothing below that, so small crops are enlarged before recognition. Costs a little
+     * time on an image that is small by definition.
+     */
+    private fun upscaleIfSmall(bmp: Bitmap): Bitmap {
+        val longEdge = maxOf(bmp.width, bmp.height)
+        if (longEdge >= 1000 || longEdge == 0) return bmp
+        val factor = minOf(4f, 1000f / longEdge)
+        val scaled = Bitmap.createScaledBitmap(
+            bmp, (bmp.width * factor).toInt().coerceAtLeast(1),
+            (bmp.height * factor).toInt().coerceAtLeast(1), true
+        )
+        if (scaled != bmp) bmp.recycle()
+        return scaled
+    }
 }
