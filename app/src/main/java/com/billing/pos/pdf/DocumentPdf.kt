@@ -224,8 +224,7 @@ object DocumentPdf {
 private fun wrapNote(note: String, width: Int): List<String> {
     if (note.isBlank()) return emptyList()
     val out = ArrayList<String>()
-    note.split("
-").forEach { raw ->
+    note.split('\n').forEach { raw ->
         var rest = raw.trim()
         if (rest.isEmpty()) return@forEach
         while (rest.length > width) {
