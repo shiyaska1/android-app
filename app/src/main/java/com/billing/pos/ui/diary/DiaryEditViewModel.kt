@@ -315,6 +315,40 @@ class DiaryEditViewModel(app: Application) : AndroidViewModel(app) {
         recordFile = null
     }
 
+    /** True while a voice note is being converted, so the UI can show progress. */
+    var transcribing by mutableStateOf(false); private set
+
+    /**
+     * Converts a recorded voice note to text and inserts it as a text block directly
+     * below the recording.
+     *
+     * This runs on the saved file, not on the microphone: Android silences one of two
+     * concurrent capture clients, so listening while MediaRecorder holds the mic would
+     * produce either a silent recording or an empty transcript.
+     */
+    fun transcribeAudio(context: Context, block: BlockUi, languageTag: String) {
+        if (transcribing) return
+        if (!com.billing.pos.speech.AudioTranscriber.isSupported) {
+            message.value = "This phone needs Android 13 to read a saved recording. " +
+                "Use the microphone button to dictate instead."
+            return
+        }
+        transcribing = true
+        message.value = "Converting speech to text…"
+        viewModelScope.launch {
+            when (val r = com.billing.pos.speech.AudioTranscriber.transcribe(context, block.path, languageTag)) {
+                is com.billing.pos.speech.AudioTranscriber.Result.Text -> {
+                    val at = blocks.indexOf(block)
+                    val textBlock = BlockUi(0, BlockType.TEXT, r.value)
+                    if (at >= 0) blocks.add(at + 1, textBlock) else blocks.add(textBlock)
+                    message.value = "Text added below the recording"
+                }
+                is com.billing.pos.speech.AudioTranscriber.Result.Failed -> message.value = r.reason
+            }
+            transcribing = false
+        }
+    }
+
     fun save(context: Context, onDone: () -> Unit) {
         val remarks = notesText().trim()
         val hasMedia = blocks.any { it.type != BlockType.TEXT }

@@ -53,6 +53,7 @@ import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.AlertDialog
@@ -149,6 +150,9 @@ fun DiaryEditScreen(
 
     // When ticked, photos added below are also read with OCR and the text lands in the note.
     var readTextFromImage by remember { mutableStateOf(false) }
+
+    // Voice note waiting to be converted to text, once its language is chosen.
+    var transcribeBlock by remember { mutableStateOf<BlockUi?>(null) }
 
     // Language for the photo OCR, asked before the picture is taken (only when OCR is on).
     var imageOcrLang by remember { mutableStateOf<String?>(null) }
@@ -391,6 +395,7 @@ fun DiaryEditScreen(
                         onOpen = { openBlock(context, block) { vm.message.value = it } },
                         onSpeak = { startSpeech("body") },
                         onDraw = { drawTarget = "body:$index" },
+                        onTranscribe = { transcribeBlock = block },
                         audioPlaying = audio.playing && audio.currentPath == block.path,
                         onAudioToggle = {
                             if (audio.playing && audio.currentPath == block.path) audio.stop()
@@ -591,6 +596,18 @@ fun DiaryEditScreen(
         )
     }
 
+    transcribeBlock?.let { block ->
+        com.billing.pos.ui.common.OcrLanguageAskDialog(
+            onPick = { picked ->
+                transcribeBlock = null
+                // Same two languages as everywhere else, as speech-recogniser tags.
+                val tag = if (picked == com.billing.pos.data.AppPrefs.OCR_MALAYALAM) "ml-IN" else "en-IN"
+                vm.transcribeAudio(context, block, tag)
+            },
+            onDismiss = { transcribeBlock = null }
+        )
+    }
+
     askImageLangFor?.let { which ->
         com.billing.pos.ui.common.OcrLanguageAskDialog(
             onPick = { picked ->
@@ -645,6 +662,7 @@ private fun BlockEditor(
     onOpen: () -> Unit,
     onSpeak: () -> Unit,
     onDraw: () -> Unit = {},
+    onTranscribe: () -> Unit = {},
     audioPlaying: Boolean = false,
     onAudioToggle: () -> Unit = {}
 ) {
@@ -680,10 +698,17 @@ private fun BlockEditor(
                     }
                 }
             }
-            BlockType.AUDIO -> VoicePlayer(
-                path = block.path, durationMs = block.durationMs,
-                playing = audioPlaying, onToggle = onAudioToggle
-            )
+            BlockType.AUDIO -> Column(Modifier.fillMaxWidth()) {
+                VoicePlayer(
+                    path = block.path, durationMs = block.durationMs,
+                    playing = audioPlaying, onToggle = onAudioToggle
+                )
+                // Convert this recording to text, inserted just below it.
+                TextButton(onClick = onTranscribe) {
+                    Icon(Icons.Filled.Subtitles, contentDescription = null)
+                    Text("  Convert speech to text")
+                }
+            }
             else -> Row(
                 Modifier.fillMaxWidth().clickable { onOpen() }.padding(vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically
