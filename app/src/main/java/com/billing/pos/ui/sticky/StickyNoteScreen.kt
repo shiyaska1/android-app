@@ -197,7 +197,8 @@ class StickyNoteViewModel(app: Application) : AndroidViewModel(app) {
         val ctx = getApplication<Application>()
         message.value = "Reading numbers…"
         viewModelScope.launch {
-            val ink = com.billing.pos.ink.InkRecognizer()
+            // Prices are digits, so this one stays on English whatever the app language is.
+            val ink = com.billing.pos.ink.InkRecognizer(com.billing.pos.ink.InkLang.ENGLISH)
             val ready = ink.ensureReady()
             val numRegex = Regex("[0-9]+(?:[.,][0-9]+)?")
             val result = withContext(Dispatchers.IO) {
@@ -228,7 +229,7 @@ class StickyNoteViewModel(app: Application) : AndroidViewModel(app) {
         val ctx = getApplication<Application>()
         message.value = "Reading text…"
         viewModelScope.launch {
-            val ink = com.billing.pos.ink.InkRecognizer()
+            val ink = com.billing.pos.ink.InkRecognizer(com.billing.pos.ink.InkLang.default(ctx))
             val ready = ink.ensureReady()
             val paragraphs = withContext(Dispatchers.IO) {
                 val out = ArrayList<String>()

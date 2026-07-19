@@ -268,11 +268,12 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
 
             Divider(Modifier.padding(vertical = 16.dp))
             // Which script the camera/gallery OCR reads. Applies to every scan in the app.
-            Text("Camera text reading (OCR)", style = MaterialTheme.typography.titleSmall)
+            Text("Text language (camera & handwriting)", style = MaterialTheme.typography.titleSmall)
             Text(
-                "English is fast and accurate. Malayalam uses a different engine — it works offline " +
-                    "but is slower and less accurate, so check the text before saving. " +
-                    "Auto tries English first and falls back to Malayalam.",
+                "Used when reading a photo and when reading what you draw. English is fast and " +
+                    "accurate. Malayalam photo reading works offline but is slower and less accurate, " +
+                    "so check the text before saving. Auto tries English first, then Malayalam. " +
+                    "On the drawing pad you can switch language at any time.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline
             )
             var ocrMenu by remember { mutableStateOf(false) }

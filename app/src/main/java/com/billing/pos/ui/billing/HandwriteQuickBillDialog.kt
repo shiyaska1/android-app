@@ -61,8 +61,9 @@ fun HandwriteQuickBillDialog(
     onReview: (List<com.billing.pos.ocr.ScannedItem>) -> Unit
 ) {
     val scope = rememberCoroutineScope()
+    val handwriteContext = androidx.compose.ui.platform.LocalContext.current
     val pending = remember { mutableStateListOf<com.billing.pos.ocr.ScannedItem>() }
-    val recognizer = remember { InkRecognizer() }
+    val recognizer = remember { InkRecognizer(com.billing.pos.ink.InkLang.default(handwriteContext)) }
     DisposableEffect(Unit) { onDispose { recognizer.close() } }
 
     var modelState by remember { mutableStateOf(ModelState.PREPARING) }

@@ -37,6 +37,8 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.material3.FilterChip
+import com.billing.pos.ink.InkLang
 import com.billing.pos.ink.InkRecognizer
 import kotlinx.coroutines.launch
 
@@ -46,14 +48,24 @@ import kotlinx.coroutines.launch
  */
 @Composable
 fun HandwriteTextDialog(onResult: (String) -> Unit, onDismiss: () -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val scope = rememberCoroutineScope()
-    val recognizer = remember { InkRecognizer() }
-    DisposableEffect(Unit) { onDispose { recognizer.close() } }
 
-    var ready by remember { mutableStateOf(false) }
+    // Starts on the language from Settings, but stays switchable here — with handwriting
+    // you always know which language you are about to write.
+    var lang by remember { mutableStateOf(InkLang.default(context)) }
+    val recognizer = remember(lang) { InkRecognizer(lang) }
+    DisposableEffect(lang) { onDispose { recognizer.close() } }
+
+    var ready by remember(lang) { mutableStateOf(false) }
+    var failed by remember(lang) { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     val strokes = remember { mutableStateListOf<List<Offset>>() }
-    LaunchedEffect(Unit) { ready = recognizer.ensureReady() }
+    LaunchedEffect(lang) {
+        ready = false; failed = false
+        ready = recognizer.ensureReady()
+        failed = !ready
+    }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -78,13 +90,29 @@ fun HandwriteTextDialog(onResult: (String) -> Unit, onDismiss: () -> Unit) {
                     enabled = ready && !busy, modifier = Modifier.weight(1f)
                 ) { Text(if (busy) "Reading…" else "OK") }
             }
+            // Language switch — what you write is read as this language, nothing else.
+            Row(
+                Modifier.fillMaxWidth().padding(top = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                listOf(InkLang.ENGLISH, InkLang.MALAYALAM).forEach { tag ->
+                    FilterChip(
+                        selected = lang == tag,
+                        onClick = { if (lang != tag && !busy) { strokes.clear(); lang = tag } },
+                        enabled = !busy,
+                        label = { Text(InkLang.label(tag)) }
+                    )
+                }
+            }
             Text(
                 when {
-                    !ready -> "Preparing handwriting… (first time needs internet)"
-                    else -> "Write the item name, then tap OK"
+                    failed -> "Could not prepare ${InkLang.label(lang)} handwriting. It needs internet " +
+                        "the first time only — connect once, then it works offline."
+                    !ready -> "Preparing ${InkLang.label(lang)} handwriting… (first time needs internet)"
+                    else -> "Write in ${InkLang.label(lang)}, then tap OK"
                 },
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.outline,
+                color = if (failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outline,
                 modifier = Modifier.padding(vertical = 6.dp)
             )
             Box(
