@@ -24,7 +24,7 @@ object InvoicePdf {
             A4InvoicePdf.invoice(context, company, bill, lines, imagePaths, docTitle)
         else ThermalPdf.invoice(context, company, bill, lines, imagePaths, docTitle)
 
-    fun generate(context: Context, company: CompanyInfo, bill: Bill, lines: List<BillItem>): Uri {
+    fun generate(context: Context, company: CompanyInfo, bill: Bill, lines: List<BillItem>, docTitle: String = "TAX INVOICE"): Uri {
         val doc = PdfDocument()
         val lineHeight = 20f
         val bodyRows = lines.size
