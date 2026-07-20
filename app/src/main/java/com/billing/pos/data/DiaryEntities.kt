@@ -13,6 +13,8 @@ data class DiaryEntry(
     val remarks: String,
     val createdAt: Long,
     val updatedAt: Long,
+    /** Diary category, from the diary_types master. 0 = none. */
+    val typeId: Long = 0,
     val reminderEnabled: Boolean = false,
     /** For one-time reminders: exact date+time. For daily: the time-of-day used. */
     val reminderAt: Long = 0,

@@ -24,6 +24,7 @@ import com.billing.pos.ocr.TextOcr
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -48,6 +49,8 @@ class DiaryEditViewModel(app: Application) : AndroidViewModel(app) {
     var loadedId by mutableStateOf(0L); private set
     var title by mutableStateOf("")
 
+    /** Diary category (master row id); 0 = none. */
+    var typeId by mutableStateOf(0L)
     var reminderEnabled by mutableStateOf(false)
     var reminderDaily by mutableStateOf(false)
     var reminderAt by mutableStateOf(System.currentTimeMillis())
@@ -73,6 +76,26 @@ class DiaryEditViewModel(app: Application) : AndroidViewModel(app) {
     private var createdAt = System.currentTimeMillis()
     private var loaded = false
 
+    /** Diary type master, for the searchable dropdown. */
+    val types: kotlinx.coroutines.flow.StateFlow<List<com.billing.pos.data.DiaryType>> =
+        repo.types.stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun addType(name: String, onAdded: (Long) -> Unit = {}) {
+        val n = name.trim()
+        if (n.isBlank()) return
+        viewModelScope.launch {
+            val existing = types.value.firstOrNull { it.name.equals(n, true) }
+            val id = existing?.id ?: repo.addType(n)
+            typeId = id
+            onAdded(id)
+        }
+    }
+
+    fun renameType(type: com.billing.pos.data.DiaryType, newName: String) {
+        if (newName.isBlank()) return
+        viewModelScope.launch { repo.renameType(type, newName) }
+    }
+
     val message = MutableStateFlow<String?>(null)
     fun consumeMessage() { message.value = null }
 
@@ -87,6 +110,7 @@ class DiaryEditViewModel(app: Application) : AndroidViewModel(app) {
             val entry = repo.byId(id) ?: run { blocks.add(BlockUi(0, BlockType.TEXT)); return@launch }
             loadedId = entry.id
             title = entry.title
+            typeId = entry.typeId
             reminderEnabled = entry.reminderEnabled
             reminderDaily = entry.reminderDaily
             reminderAt = if (entry.reminderAt > 0) entry.reminderAt else System.currentTimeMillis()
@@ -368,6 +392,7 @@ class DiaryEditViewModel(app: Application) : AndroidViewModel(app) {
                 remarks = remarks,
                 createdAt = if (loadedId == 0L) now else createdAt,
                 updatedAt = now,
+                typeId = typeId,
                 reminderEnabled = reminderEnabled,
                 reminderAt = if (reminderEnabled) reminderAt else 0L,
                 reminderDaily = reminderDaily,

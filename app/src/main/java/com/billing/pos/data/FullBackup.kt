@@ -44,6 +44,7 @@ object FullBackup {
         root.put("expenses", JSONArray().apply { db.expenseDao().all().forEach { put(expenseJson(it)) } })
         root.put("users", JSONArray().apply { db.userDao().all().forEach { put(userJson(it)) } })
         root.put("diaryEntries", JSONArray().apply { db.diaryDao().allEntries().forEach { put(entryJson(it)) } })
+        root.put("diaryTypes", JSONArray().apply { db.diaryTypeDao().all().forEach { t -> put(JSONObject().put("id", t.id).put("name", t.name)) } })
         val attachments = db.diaryDao().allAttachments()
         root.put("diaryAttachments", JSONArray().apply { attachments.forEach { put(attJson(it)) } })
         val diaryBlocks = db.diaryDao().allBlocks()
@@ -195,6 +196,12 @@ object FullBackup {
         root.optJSONArray("receipts")?.let { for (i in 0 until it.length()) db.receiptDao().insert(readReceipt(it.getJSONObject(i))) }
         root.optJSONArray("expenses")?.let { for (i in 0 until it.length()) db.expenseDao().insert(readExpense(it.getJSONObject(i))) }
         root.optJSONArray("users")?.let { for (i in 0 until it.length()) db.userDao().insert(readUser(it.getJSONObject(i))) }
+        root.optJSONArray("diaryTypes")?.let {
+            for (i in 0 until it.length()) {
+                val o = it.getJSONObject(i)
+                db.diaryTypeDao().insert(DiaryType(o.optLong("id"), o.optString("name")))
+            }
+        }
         root.optJSONArray("diaryEntries")?.let { for (i in 0 until it.length()) db.diaryDao().insert(readEntry(it.getJSONObject(i))) }
         root.optJSONArray("diaryBlocks")?.let {
             for (i in 0 until it.length()) db.diaryDao().insertBlock(readBlock(context, it.getJSONObject(i)))
@@ -670,6 +677,7 @@ object FullBackup {
 
     private fun entryJson(e: DiaryEntry) = JSONObject().put("id", e.id).put("title", e.title)
         .put("remarks", e.remarks).put("createdAt", e.createdAt).put("updatedAt", e.updatedAt)
+        .put("typeId", e.typeId)
         .put("reminderEnabled", e.reminderEnabled).put("reminderAt", e.reminderAt)
         .put("reminderDaily", e.reminderDaily)
         .put("titleSize", e.titleSize).put("titleColor", e.titleColor)
@@ -1069,6 +1077,7 @@ object FullBackup {
     private fun readEntry(o: JSONObject) = DiaryEntry(
         id = o.optLong("id"), title = o.optString("title"), remarks = o.optString("remarks"),
         createdAt = o.optLong("createdAt"), updatedAt = o.optLong("updatedAt"),
+        typeId = o.optLong("typeId", 0L),
         reminderEnabled = o.optBoolean("reminderEnabled", false), reminderAt = o.optLong("reminderAt"),
         reminderDaily = o.optBoolean("reminderDaily", false),
         titleSize = o.optInt("titleSize", 20), titleColor = o.optInt("titleColor", 0),

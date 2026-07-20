@@ -35,6 +35,27 @@ interface DiaryDao {
     )
     fun searchAll(q: String): Flow<List<DiaryEntry>>
 
+    /**
+     * The list query: text, an optional diary type, and a date range that can be switched
+     * off. [anyType] and [useDate] act as the "ignore this filter" switches, so one query
+     * serves every combination.
+     */
+    @Query(
+        "SELECT * FROM diary_entries " +
+            "WHERE (title LIKE '%' || :q || '%' OR remarks LIKE '%' || :q || '%') " +
+            "AND (:anyType = 1 OR typeId = :typeId) " +
+            "AND (:useDate = 0 OR updatedAt BETWEEN :from AND :to) " +
+            "ORDER BY reminderEnabled DESC, updatedAt DESC"
+    )
+    fun searchFiltered(
+        q: String,
+        anyType: Boolean,
+        typeId: Long,
+        useDate: Boolean,
+        from: Long,
+        to: Long
+    ): Flow<List<DiaryEntry>>
+
     @Query("SELECT * FROM diary_entries WHERE id = :id LIMIT 1")
     suspend fun byId(id: Long): DiaryEntry?
 

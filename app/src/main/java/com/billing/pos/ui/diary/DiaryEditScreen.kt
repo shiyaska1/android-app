@@ -52,6 +52,7 @@ import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Subtitles
@@ -175,6 +176,13 @@ fun DiaryEditScreen(
 
     // When ticked, photos added below are also read with OCR and the text lands in the note.
     var readTextFromImage by remember { mutableStateOf(false) }
+
+    // Attachment photos opened inside the app.
+    var viewerPaths by remember { mutableStateOf<List<String>>(emptyList()) }
+    var viewerIndex by remember { mutableStateOf(0) }
+    // Diary type master helpers.
+    var showTypePicker by remember { mutableStateOf(false) }
+    var renameType by remember { mutableStateOf<com.billing.pos.data.DiaryType?>(null) }
 
     // Voice note waiting to be converted to text, once its language is chosen.
     var transcribeBlock by remember { mutableStateOf<BlockUi?>(null) }
@@ -342,6 +350,45 @@ fun DiaryEditScreen(
                     actionIconContentColor = MaterialTheme.colorScheme.onPrimary
                 ),
                 actions = {
+                    // Print / share the entry: type, title, body, with the date and time.
+                    IconButton(onClick = {
+                        val type = vm.types.value.firstOrNull { it.id == vm.typeId }?.name.orEmpty()
+                        val uri = com.billing.pos.pdf.DiaryPdf.make(
+                            context, type, vm.title, vm.notesText(), System.currentTimeMillis()
+                        )
+                        if (uri == null) vm.message.value = "Could not create the PDF"
+                        else runCatching {
+                            val send = Intent(Intent.ACTION_SEND).apply {
+                                setType("application/pdf")
+                                putExtra(Intent.EXTRA_STREAM, uri)
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            }
+                            val wa = Intent(send).setPackage("com.whatsapp")
+                            val target = if (wa.resolveActivity(context.packageManager) != null) wa
+                            else Intent.createChooser(send, "Share entry")
+                            context.startActivity(target.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                        }.onFailure { vm.message.value = "Could not share" }
+                    }) {
+                        Icon(Icons.Filled.Share, contentDescription = "Share as PDF")
+                    }
+                    IconButton(onClick = {
+                        val type = vm.types.value.firstOrNull { it.id == vm.typeId }?.name.orEmpty()
+                        scope.launch {
+                            val res = withContext(Dispatchers.IO) {
+                                runCatching {
+                                    com.billing.pos.print.ThermalPrinter.printDiary(
+                                        context,
+                                        com.billing.pos.data.AppPrefs(context).company,
+                                        type, vm.title, vm.notesText(), System.currentTimeMillis()
+                                    )
+                                }
+                            }
+                            vm.message.value =
+                                if (res.isSuccess) "Sent to printer" else (res.exceptionOrNull()?.message ?: "Print failed")
+                        }
+                    }) {
+                        Icon(Icons.Filled.Print, contentDescription = "Print")
+                    }
                     if (vm.loadedId != 0L) {
                         IconButton(onClick = { downloadEntry() }) {
                             Icon(Icons.Filled.Download, contentDescription = "Download entry (zip)")
@@ -361,6 +408,20 @@ fun DiaryEditScreen(
                 .padding(12.dp)
                 .verticalScroll(rememberScrollState())
         ) {
+            // ---- Diary type (master + add + fix spelling) ----
+            val diaryTypes by vm.types.collectAsStateSafe()
+            val currentType = diaryTypes.firstOrNull { it.id == vm.typeId }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                OutlinedButton(onClick = { showTypePicker = true }, modifier = Modifier.weight(1f)) {
+                    Text(currentType?.name ?: "Diary type — none", maxLines = 1)
+                }
+                if (currentType != null) {
+                    IconButton(onClick = { renameType = currentType }) {
+                        Icon(Icons.Filled.Edit, contentDescription = "Correct the spelling")
+                    }
+                }
+            }
+
             OutlinedTextField(
                 value = vm.title, onValueChange = { vm.title = it },
                 label = { Text("Title") }, singleLine = true,
@@ -417,7 +478,14 @@ fun DiaryEditScreen(
                         onMoveUp = { vm.moveUp(index) },
                         onMoveDown = { vm.moveDown(index) },
                         onRemove = { vm.removeBlock(index) },
-                        onOpen = { openBlock(context, block) { vm.message.value = it } },
+                        onOpen = {
+                            // Images open in our own viewer; anything else hands off to the OS.
+                            if (block.type == BlockType.IMAGE) {
+                                val imgs = vm.blocks.filter { b -> b.type == BlockType.IMAGE }
+                                viewerPaths = imgs.map { b -> b.path }
+                                viewerIndex = imgs.indexOfFirst { b -> b.path == block.path }.coerceAtLeast(0)
+                            } else openBlock(context, block) { vm.message.value = it }
+                        },
                         onSpeak = { startSpeech("body") },
                         onDraw = { drawTarget = "body:$index" },
                         onTranscribe = { transcribeBlock = block },
@@ -661,6 +729,44 @@ fun DiaryEditScreen(
             }
         )
     }
+    if (viewerPaths.isNotEmpty()) {
+        com.billing.pos.ui.common.ImageViewerDialog(
+            paths = viewerPaths,
+            startIndex = viewerIndex,
+            onDismiss = { viewerPaths = emptyList() }
+        )
+    }
+
+    if (showTypePicker) {
+        val diaryTypes by vm.types.collectAsStateSafe()
+        com.billing.pos.ui.common.SearchablePickDialog(
+            title = "Diary type",
+            options = diaryTypes.map { it.id to it.name },
+            selectedId = vm.typeId,
+            onPick = { id -> vm.typeId = id; showTypePicker = false },
+            onAdd = { name -> vm.addType(name); showTypePicker = false },
+            onDismiss = { showTypePicker = false }
+        )
+    }
+
+    renameType?.let { t ->
+        var newName by remember(t.id) { mutableStateOf(t.name) }
+        AlertDialog(
+            onDismissRequest = { renameType = null },
+            title = { Text("Correct diary type") },
+            text = {
+                OutlinedTextField(
+                    value = newName, onValueChange = { newName = it },
+                    label = { Text("Name") }, singleLine = true
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { vm.renameType(t, newName); renameType = null }) { Text("Update") }
+            },
+            dismissButton = { TextButton(onClick = { renameType = null }) { Text("Cancel") } }
+        )
+    }
+
     if (confirmDelete) {
         AlertDialog(
             onDismissRequest = { confirmDelete = false },

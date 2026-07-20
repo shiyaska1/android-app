@@ -11,6 +11,19 @@ class DiaryRepository(context: Context) {
     fun searchBetween(query: String, from: Long, to: Long): Flow<List<DiaryEntry>> =
         dao.searchBetween(query, from, to)
     fun searchAll(query: String): Flow<List<DiaryEntry>> = dao.searchAll(query)
+    fun searchFiltered(
+        query: String, anyType: Boolean, typeId: Long, useDate: Boolean, from: Long, to: Long
+    ): Flow<List<DiaryEntry>> = dao.searchFiltered(query, anyType, typeId, useDate, from, to)
+
+    // ---- diary types (master) ----
+    private val typeDao = AppDatabase.get(context).diaryTypeDao()
+    val types: Flow<List<DiaryType>> = typeDao.observeAll()
+    suspend fun addType(name: String): Long = typeDao.insert(DiaryType(name = name.trim()))
+    suspend fun renameType(type: DiaryType, newName: String) = typeDao.update(type.copy(name = newName.trim()))
+    suspend fun deleteType(type: DiaryType) {
+        typeDao.clearTypeOnEntries(type.id)
+        typeDao.delete(type)
+    }
     val allAttachments: Flow<List<DiaryAttachment>> = dao.observeAllAttachments()
     val allBlocks: Flow<List<DiaryBlock>> = dao.observeAllBlocks()
 

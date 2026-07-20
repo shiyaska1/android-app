@@ -25,6 +25,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -67,8 +72,39 @@ fun ImageViewerDialog(paths: List<String>, onDismiss: () -> Unit, startIndex: In
                         BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = s })?.asImageBitmap()
                     }.getOrNull()
                 }
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    if (bmp != null) Image(bmp, contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+                // Pinch to zoom, drag to pan; double-tap resets. Panning is clamped loosely
+                // so the picture cannot be flung completely off screen.
+                var scale by remember(paths[page]) { mutableStateOf(1f) }
+                var offX by remember(paths[page]) { mutableStateOf(0f) }
+                var offY by remember(paths[page]) { mutableStateOf(0f) }
+                Box(
+                    Modifier.fillMaxSize()
+                        .pointerInput(paths[page]) {
+                            androidx.compose.foundation.gestures.detectTransformGestures { _, pan, zoom, _ ->
+                                scale = (scale * zoom).coerceIn(1f, 6f)
+                                if (scale > 1f) {
+                                    val limit = size.width * (scale - 1f) / 2f
+                                    offX = (offX + pan.x).coerceIn(-limit, limit)
+                                    offY = (offY + pan.y).coerceIn(-limit, limit)
+                                } else { offX = 0f; offY = 0f }
+                            }
+                        }
+                        .pointerInput(paths[page]) {
+                            androidx.compose.foundation.gestures.detectTapGestures(
+                                onDoubleTap = {
+                                    if (scale > 1f) { scale = 1f; offX = 0f; offY = 0f } else scale = 2.5f
+                                }
+                            )
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (bmp != null) Image(
+                        bmp, contentDescription = null,
+                        modifier = Modifier.fillMaxSize().graphicsLayer(
+                            scaleX = scale, scaleY = scale, translationX = offX, translationY = offY
+                        ),
+                        contentScale = ContentScale.Fit
+                    )
                     else Text("Could not open image", color = Color.White)
                 }
             }

@@ -51,6 +51,20 @@ object ThermalPrinter {
 
     /** Prints a receipt voucher (money received) to give to the customer. */
     @SuppressLint("MissingPermission")
+    /** Prints a diary entry: type, title, body, with the date and time. */
+    @SuppressLint("MissingPermission")
+    fun printDiary(
+        context: Context,
+        company: CompanyInfo,
+        type: String,
+        title: String,
+        body: String,
+        dateMillis: Long
+    ) {
+        applyWidth(context)
+        sendBytes(context, buildDiary(company, type, title, body, dateMillis))
+    }
+
     fun printReceipt(context: Context, company: CompanyInfo, receipt: Receipt) {
         applyWidth(context)
         sendBytes(context, buildReceiptVoucher(company, receipt))
@@ -188,6 +202,49 @@ object ThermalPrinter {
         val init = byteArrayOf(ESC.toByte(), '@'.code.toByte())
         val cut = byteArrayOf(GS.toByte(), 'V'.code.toByte(), 66, 0)
         return init + BOLD_ON + text + cut
+    }
+
+    private fun buildDiary(
+        company: CompanyInfo,
+        type: String,
+        title: String,
+        body: String,
+        dateMillis: Long
+    ): ByteArray {
+        val sb = StringBuilder()
+        if (company.name.isNotBlank()) sb.append(center(company.name)).append('\n')
+        if (company.phone.isNotBlank()) sb.append(center("Ph: " + company.phone)).append('\n')
+        sb.append(line()).append('\n')
+        sb.append(com.billing.pos.util.Format.dateTime(dateMillis)).append('\n')
+        if (type.isNotBlank()) sb.append("Type: ").append(type).append('\n')
+        sb.append(line()).append('\n')
+        if (title.isNotBlank()) {
+            wrapCols(title).forEach { sb.append(it).append('\n') }
+            sb.append(line()).append('\n')
+        }
+        body.split('\n').forEach { para ->
+            if (para.isBlank()) sb.append('\n')
+            else wrapCols(para).forEach { sb.append(it).append('\n') }
+        }
+        sb.append("\n\n\n")
+        val text = sb.toString().toByteArray(Charsets.US_ASCII)
+        val init = byteArrayOf(ESC.toByte(), '@'.code.toByte())
+        val cut = byteArrayOf(GS.toByte(), 'V'.code.toByte(), 66, 0)
+        return init + BOLD_ON + text + cut
+    }
+
+    /** Hard-wraps to the printer's column count so nothing is chopped off the edge. */
+    private fun wrapCols(text: String): List<String> {
+        val words = text.trim().split(Regex("\\s+"))
+        val out = ArrayList<String>()
+        var line = StringBuilder()
+        words.forEach { w ->
+            val candidate = if (line.isEmpty()) w else line.toString() + " " + w
+            if (candidate.length <= COLS || line.isEmpty()) line = StringBuilder(candidate)
+            else { out.add(line.toString()); line = StringBuilder(w) }
+        }
+        if (line.isNotEmpty()) out.add(line.toString())
+        return out
     }
 
     // ---- ESC/POS byte building -------------------------------------------------

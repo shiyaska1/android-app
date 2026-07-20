@@ -66,8 +66,20 @@ class DiaryListViewModel(app: Application) : AndroidViewModel(app) {
     val fromMillis = MutableStateFlow(threeMonthsAgo())
     val toMillis = MutableStateFlow(endOfToday())
 
-    private data class Filter(val q: String, val from: Long, val to: Long)
-    private val filter = combine(query, fromMillis, toMillis) { q, f, t -> Filter(q.trim(), f, t) }
+    /** 0 = All types. */
+    val typeId = MutableStateFlow(0L)
+    /** Date range on by default; unticking it searches every date. */
+    val useDateRange = MutableStateFlow(true)
+
+    val types: StateFlow<List<com.billing.pos.data.DiaryType>> =
+        repo.types.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    private data class Filter(
+        val q: String, val from: Long, val to: Long, val typeId: Long, val useDate: Boolean
+    )
+    private val filter = combine(query, fromMillis, toMillis, typeId, useDateRange) { a ->
+        Filter((a[0] as String).trim(), a[1] as Long, a[2] as Long, a[3] as Long, a[4] as Boolean)
+    }
 
     /**
      * Entries within the date range, reminders first then newest first. When a search finds
@@ -76,16 +88,22 @@ class DiaryListViewModel(app: Application) : AndroidViewModel(app) {
      */
     val result: StateFlow<DiaryListResult> = filter
         .flatMapLatest { f ->
-            repo.searchBetween(f.q, f.from, f.to).flatMapLatest { inRange ->
-                if (f.q.isNotBlank() && inRange.isEmpty()) {
-                    repo.searchAll(f.q).map { DiaryListResult(it, dateFilterBypassed = true) }
-                } else {
-                    kotlinx.coroutines.flow.flowOf(DiaryListResult(inRange, dateFilterBypassed = false))
+            val anyType = f.typeId == 0L
+            repo.searchFiltered(f.q, anyType, f.typeId, f.useDate, f.from, f.to)
+                .flatMapLatest { inRange ->
+                    if (f.q.isNotBlank() && f.useDate && inRange.isEmpty()) {
+                        // Nothing in the range — drop the dates and search everything.
+                        repo.searchFiltered(f.q, anyType, f.typeId, false, f.from, f.to)
+                            .map { DiaryListResult(it, dateFilterBypassed = true) }
+                    } else {
+                        kotlinx.coroutines.flow.flowOf(DiaryListResult(inRange, dateFilterBypassed = false))
+                    }
                 }
-            }
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), DiaryListResult(emptyList(), false))
 
+    fun setTypeId(id: Long) { typeId.value = id }
+    fun setUseDateRange(on: Boolean) { useDateRange.value = on }
     fun setFrom(millis: Long) { fromMillis.value = millis }
     fun setTo(millis: Long) { toMillis.value = millis }
 
@@ -124,6 +142,10 @@ fun DiaryListScreen(
     val query by vm.query.collectAsStateSafe()
     val from by vm.fromMillis.collectAsStateSafe()
     val to by vm.toMillis.collectAsStateSafe()
+    val typeId by vm.typeId.collectAsStateSafe()
+    val useDates by vm.useDateRange.collectAsStateSafe()
+    val types by vm.types.collectAsStateSafe()
+    var showTypePicker by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     val context = androidx.compose.ui.platform.LocalContext.current
 
     fun pickDate(current: Long, onPicked: (Long) -> Unit) {
@@ -178,18 +200,40 @@ fun DiaryListScreen(
                 modifier = Modifier.fillMaxWidth()
             )
 
+            // Diary type filter — All by default.
+            androidx.compose.material3.OutlinedButton(
+                onClick = { showTypePicker = true },
+                modifier = Modifier.fillMaxWidth().padding(top = 6.dp)
+            ) {
+                Text("Type: " + (types.firstOrNull { it.id == typeId }?.name ?: "All"), maxLines = 1)
+            }
+
+            // Untick to ignore the dates entirely.
+            Row(
+                Modifier.fillMaxWidth().padding(top = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                androidx.compose.material3.Checkbox(
+                    checked = useDates,
+                    onCheckedChange = { vm.setUseDateRange(it) }
+                )
+                Text("Filter by date range", style = MaterialTheme.typography.labelLarge)
+            }
+
             // Date range — defaults to the last 3 months.
             Row(
-                Modifier.fillMaxWidth().padding(top = 6.dp),
+                Modifier.fillMaxWidth().padding(top = 2.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 androidx.compose.material3.OutlinedButton(
                     onClick = { pickDate(from) { vm.setFrom(it) } },
+                    enabled = useDates,
                     modifier = Modifier.weight(1f)
                 ) { Text("From: ${Format.date(from)}", maxLines = 1) }
                 androidx.compose.material3.OutlinedButton(
                     onClick = { pickDate(to) { vm.setTo(it) } },
+                    enabled = useDates,
                     modifier = Modifier.weight(1f)
                 ) { Text("To: ${Format.date(to)}", maxLines = 1) }
             }
@@ -217,6 +261,18 @@ fun DiaryListScreen(
                 }
             }
         }
+    }
+
+    if (showTypePicker) {
+        com.billing.pos.ui.common.SearchablePickDialog(
+            title = "Filter by diary type",
+            options = types.map { it.id to it.name },
+            selectedId = typeId,
+            onPick = { id -> vm.setTypeId(id); showTypePicker = false },
+            onAdd = { showTypePicker = false },   // creating types belongs in the entry screen
+            onDismiss = { showTypePicker = false },
+            noneLabel = "All types"
+        )
     }
 }
 
