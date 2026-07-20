@@ -162,9 +162,14 @@ private fun AppNav() {
     val nav = rememberNavController()
     val context = LocalContext.current
 
-    // Media shared in from another app (WhatsApp etc.) → open a new diary entry to attach it.
-    androidx.compose.runtime.LaunchedEffect(Session.current) {
-        if (PendingSharedMedia.hasItems && Session.isLoggedIn) {
+    // Media shared in from another app (WhatsApp etc.). Cold starts are routed through the
+    // boot / login / change-password redirects below (navigating from an effect there races
+    // boot and loses). This effect only covers a WARM start — the app already open, the share
+    // arriving via onNewIntent — where boot does not run. Keyed on the share generation, not
+    // Session, so it never double-fires against the cold-start redirect.
+    val sharedGeneration = PendingSharedMedia.generation
+    androidx.compose.runtime.LaunchedEffect(sharedGeneration) {
+        if (sharedGeneration > 0 && PendingSharedMedia.hasItems && Session.isLoggedIn) {
             nav.navigate("diary/edit/0") { launchSingleTop = true }
         }
     }
@@ -208,7 +213,11 @@ private fun AppNav() {
     NavHost(navController = nav, startDestination = "boot") {
         composable("boot") {
             BootScreen(onResolved = { route ->
-                val dest = if (route == "dashboard" && PendingImport.uri != null) "invoices" else route
+                val dest = when {
+                    route == "dashboard" && PendingSharedMedia.hasItems -> "diary/edit/0"
+                    route == "dashboard" && PendingImport.uri != null -> "invoices"
+                    else -> route
+                }
                 nav.navigate(dest) { popUpTo("boot") { inclusive = true } }
             })
         }
@@ -298,6 +307,7 @@ private fun AppNav() {
             LoginScreen(onLoggedIn = { mustChangePassword ->
                 val dest = when {
                     mustChangePassword -> "changepassword"
+                    PendingSharedMedia.hasItems -> "diary/edit/0"
                     PendingImport.uri != null -> "invoices"
                     else -> "dashboard"
                 }
@@ -306,7 +316,11 @@ private fun AppNav() {
         }
         composable("changepassword") {
             com.billing.pos.ui.auth.ChangePasswordScreen(onDone = {
-                val dest = if (PendingImport.uri != null) "invoices" else "dashboard"
+                val dest = when {
+                    PendingSharedMedia.hasItems -> "diary/edit/0"
+                    PendingImport.uri != null -> "invoices"
+                    else -> "dashboard"
+                }
                 nav.navigate(dest) { popUpTo(0) { inclusive = true } }
             })
         }
