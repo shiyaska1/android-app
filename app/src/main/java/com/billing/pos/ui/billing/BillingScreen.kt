@@ -823,7 +823,6 @@ fun BillingScreen(
     if (showMobileBoard) {
         MobileNumberDialog(
             initial = vm.selectedCustomer?.phone.orEmpty(),
-            onAddToItems = { num -> vm.addCustomLine(num, 0.0, 0.0) },
             onDismiss = { showMobileBoard = false }
         )
     }

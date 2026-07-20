@@ -47,18 +47,40 @@ import kotlinx.coroutines.launch
  *
  * You type the number in the box at the bottom (your side); the top half shows it in a very
  * large font rotated 180°, so the customer sitting opposite reads it the right way up and can
- * confirm it. Copy puts it on the clipboard; "Add to items" drops it into the bill's item list.
+ * confirm it. Copy puts it on the clipboard; "Add to diary" opens a note (typed, handwritten
+ * or read from a photo) and files the number with it.
  */
 @Composable
 fun MobileNumberDialog(
     initial: String = "",
-    onAddToItems: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
     var number by remember { mutableStateOf(initial.filter { it.isDigit() }) }
+    var noteFor by remember { mutableStateOf<String?>(null) }
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
     val scope = androidx.compose.runtime.rememberCoroutineScope()
+
+    // "Add to diary": note popup, then one diary entry titled with the number and the time.
+    noteFor?.let { num ->
+        com.billing.pos.ui.common.DiaryNoteDialog(
+            heading = "Mobile number $num",
+            onSave = { note ->
+                val stamp = com.billing.pos.util.Format.dateTime(System.currentTimeMillis())
+                scope.launch {
+                    com.billing.pos.diary.QuickDiaryNote.save(
+                        context,
+                        title = "$num — $stamp",
+                        body = if (note.isBlank()) num else "$num\n$note"
+                    )
+                }
+                android.widget.Toast.makeText(context, "Saved to diary", android.widget.Toast.LENGTH_SHORT).show()
+                noteFor = null
+                onDismiss()
+            },
+            onDismiss = { noteFor = null }
+        )
+    }
 
     // decorFitsSystemWindows = false so the dialog gets real insets; safeDrawingPadding then keeps
     // the buttons clear of the phone's navigation bar and the keyboard.
@@ -99,9 +121,9 @@ fun MobileNumberDialog(
                     modifier = Modifier.weight(1f)
                 ) { Text("Copy") }
                 Button(
-                    onClick = { if (number.isNotBlank()) { onAddToItems(number); onDismiss() } },
+                    onClick = { if (number.isNotBlank()) noteFor = number },
                     modifier = Modifier.weight(1.3f)
-                ) { Text("Add to items") }
+                ) { Text("Add to diary") }
                 OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) { Text("Close") }
             }
             Divider()
