@@ -30,6 +30,8 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -80,7 +82,7 @@ fun ImageViewerDialog(paths: List<String>, onDismiss: () -> Unit, startIndex: In
                 Box(
                     Modifier.fillMaxSize()
                         .pointerInput(paths[page]) {
-                            androidx.compose.foundation.gestures.detectTransformGestures { _, pan, zoom, _ ->
+                            detectTransformGestures { _, pan, zoom, _ ->
                                 scale = (scale * zoom).coerceIn(1f, 6f)
                                 if (scale > 1f) {
                                     val limit = size.width * (scale - 1f) / 2f
@@ -90,7 +92,7 @@ fun ImageViewerDialog(paths: List<String>, onDismiss: () -> Unit, startIndex: In
                             }
                         }
                         .pointerInput(paths[page]) {
-                            androidx.compose.foundation.gestures.detectTapGestures(
+                            detectTapGestures(
                                 onDoubleTap = {
                                     if (scale > 1f) { scale = 1f; offX = 0f; offY = 0f } else scale = 2.5f
                                 }

@@ -49,8 +49,6 @@ object ThermalPrinter {
         sendBytes(context, buildReceipt(company, bill, lines, imagePaths, title))
     }
 
-    /** Prints a receipt voucher (money received) to give to the customer. */
-    @SuppressLint("MissingPermission")
     /** Prints a diary entry: type, title, body, with the date and time. */
     @SuppressLint("MissingPermission")
     fun printDiary(
@@ -65,6 +63,8 @@ object ThermalPrinter {
         sendBytes(context, buildDiary(company, type, title, body, dateMillis))
     }
 
+    /** Prints a receipt voucher (money received) to give to the customer. */
+    @SuppressLint("MissingPermission")
     fun printReceipt(context: Context, company: CompanyInfo, receipt: Receipt) {
         applyWidth(context)
         sendBytes(context, buildReceiptVoucher(company, receipt))
