@@ -349,5 +349,4 @@ fun PosterScreen(onBack: () -> Unit) {
 
 /** Text posted alongside the image, so the details are readable without opening it. */
 private fun caption(item: String, price: String, offer: String, footer: String): String =
-    listOf(item, price, offer, footer).filter { it.isNotBlank() }.joinToString("
-")
+    listOf(item, price, offer, footer).filter { it.isNotBlank() }.joinToString("\n")
