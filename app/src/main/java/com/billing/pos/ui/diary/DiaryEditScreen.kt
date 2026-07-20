@@ -135,7 +135,15 @@ fun DiaryEditScreen(
     val snackbar = remember { SnackbarHostState() }
     val message by vm.message.collectAsStateSafe()
 
-    LaunchedEffect(Unit) { vm.load(entryId) }
+    LaunchedEffect(Unit) {
+        vm.load(entryId)
+        // Files shared in from another app (e.g. a WhatsApp photo/voice/video/document)
+        // attach to this fresh entry.
+        if (entryId == 0L && com.billing.pos.auth.PendingSharedMedia.hasItems) {
+            val shared = com.billing.pos.auth.PendingSharedMedia.consume()
+            if (shared.isNotEmpty()) vm.addFileUris(context, shared)
+        }
+    }
     LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); vm.consumeMessage() } }
 
     var confirmDelete by remember { mutableStateOf(false) }

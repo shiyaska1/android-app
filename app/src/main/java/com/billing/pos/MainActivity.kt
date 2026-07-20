@@ -23,6 +23,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.navArgument
 import com.billing.pos.auth.PendingDiaryOpen
 import com.billing.pos.auth.PendingImport
+import com.billing.pos.auth.PendingSharedMedia
 import com.billing.pos.auth.Session
 import com.billing.pos.diary.EXTRA_OPEN_DIARY_ID
 import com.billing.pos.data.AppPrefs
@@ -120,18 +121,30 @@ class MainActivity : FragmentActivity() {
         captureIncoming(intent)
     }
 
-    /** Pulls a backup Uri (import) or a diary id (reminder tap) out of the launch intent. */
+    /**
+     * Pulls out of the launch intent: a backup .zip (import), media shared from another app
+     * (attach to a new diary entry), or a diary id (reminder tap).
+     */
     private fun captureIncoming(intent: Intent?) {
         intent ?: return
-        val uri: Uri? = when (intent.action) {
+        val isZip = intent.type?.let { it == "application/zip" || it == "application/x-zip-compressed" } == true
+
+        when (intent.action) {
             Intent.ACTION_SEND -> {
                 @Suppress("DEPRECATION")
-                intent.getParcelableExtra(Intent.EXTRA_STREAM)
+                val uri = intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)
+                if (uri != null) {
+                    if (isZip) PendingImport.uri = uri
+                    else PendingSharedMedia.set(listOf(uri))   // WhatsApp photo/voice/video/document
+                }
             }
-            Intent.ACTION_VIEW -> intent.data
-            else -> null
+            Intent.ACTION_SEND_MULTIPLE -> {
+                @Suppress("DEPRECATION")
+                val uris = intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)
+                if (!uris.isNullOrEmpty()) PendingSharedMedia.set(uris)
+            }
+            Intent.ACTION_VIEW -> intent.data?.let { PendingImport.uri = it }
         }
-        if (uri != null) PendingImport.uri = uri
 
         val diaryId = intent.getLongExtra(EXTRA_OPEN_DIARY_ID, 0L)
         if (diaryId > 0L) PendingDiaryOpen.id = diaryId
@@ -142,6 +155,13 @@ class MainActivity : FragmentActivity() {
 private fun AppNav() {
     val nav = rememberNavController()
     val context = LocalContext.current
+
+    // Media shared in from another app (WhatsApp etc.) → open a new diary entry to attach it.
+    androidx.compose.runtime.LaunchedEffect(Session.current) {
+        if (PendingSharedMedia.hasItems && Session.isLoggedIn) {
+            nav.navigate("diary/edit/0") { launchSingleTop = true }
+        }
+    }
 
     // Reminder tap → once logged in, open that diary entry in edit mode.
     val pendingDiaryId = PendingDiaryOpen.id
