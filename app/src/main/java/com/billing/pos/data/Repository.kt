@@ -589,8 +589,10 @@ class Repository(context: Context) {
             amount = amount,
             paymentMode = mode.label
         )
-        expenseDao.insert(expense)
-        return expense
+        // Return the row with its generated id — callers attach files to it, and an id of 0
+        // silently orphans them.
+        val id = expenseDao.insert(expense)
+        return expense.copy(id = id)
     }
 
     /** Like [addExpense] but also records the party paid to. */
@@ -603,8 +605,10 @@ class Repository(context: Context) {
             paymentMode = mode.label,
             payTo = payTo.trim()
         )
-        expenseDao.insert(expense)
-        return expense
+        // Return the row with its generated id — callers attach files to it, and an id of 0
+        // silently orphans them.
+        val id = expenseDao.insert(expense)
+        return expense.copy(id = id)
     }
 
     /** Edits a receipt and re-applies the difference to the linked invoice's paid amount. */
@@ -642,10 +646,10 @@ class Repository(context: Context) {
             purchaseNo = purchase.purchaseNo,
             payTo = purchase.supplierName
         )
-        expenseDao.insert(expense)
+        val id = expenseDao.insert(expense)
         val newPaid = (purchase.paidAmount + amount).coerceAtMost(purchase.grandTotal)
         purchaseDao.updateHeader(purchase.copy(paidAmount = newPaid))
-        return expense
+        return expense.copy(id = id)
     }
 
     suspend fun updateExpense(expense: Expense, description: String, amount: Double, mode: PayMode) {
