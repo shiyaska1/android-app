@@ -189,14 +189,14 @@ fun PosterScreen(onBack: () -> Unit) {
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Button(
-                    onClick = { exportThen { f -> PosterStore.share(context, f, caption()) } },
+                    onClick = { exportThen { f -> PosterStore.share(context, f, caption(itemName, price, offer, footer)) } },
                     modifier = Modifier.weight(1.4f)
                 ) {
                     Icon(Icons.Filled.Share, contentDescription = null, modifier = Modifier.size(18.dp))
                     Text(" Share")
                 }
                 OutlinedButton(
-                    onClick = { exportThen { f -> PosterStore.share(context, f, caption(), "com.whatsapp") } },
+                    onClick = { exportThen { f -> PosterStore.share(context, f, caption(itemName, price, offer, footer), "com.whatsapp") } },
                     modifier = Modifier.weight(1f)
                 ) { Text("WhatsApp") }
                 OutlinedButton(
@@ -347,5 +347,7 @@ fun PosterScreen(onBack: () -> Unit) {
     }
 }
 
-/** Caption sent alongside the image when sharing. */
-private fun caption(): String = ""
+/** Text posted alongside the image, so the details are readable without opening it. */
+private fun caption(item: String, price: String, offer: String, footer: String): String =
+    listOf(item, price, offer, footer).filter { it.isNotBlank() }.joinToString("
+")
