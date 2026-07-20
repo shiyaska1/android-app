@@ -59,7 +59,14 @@ object AudioTranscriber {
             ?: return Result.Failed("Could not read this audio format")
 
         return try {
-            recognizeFile(context, pcm, languageTag)
+            // A recogniser that ignores the file source can simply never call back; the
+            // timeout guarantees we always return instead of hanging with "Converting…".
+            kotlinx.coroutines.withTimeoutOrNull(90_000) {
+                recognizeFile(context, pcm, languageTag)
+            } ?: Result.Failed(
+                "This phone's speech recogniser did not return anything for a saved recording. " +
+                    "Try the microphone button to dictate instead."
+            )
         } finally {
             pcm.file.delete()
         }
@@ -148,9 +155,16 @@ object AudioTranscriber {
                 }
             }.start()
 
-            val recognizer = SpeechRecognizer.createSpeechRecognizer(context)
+            // The on-device recogniser (API 31+) is far more likely to honour a file source
+            // than the default one, which often just opens the mic and ignores the extra.
+            val recognizer =
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                    SpeechRecognizer.isOnDeviceRecognitionAvailable(context)
+                ) SpeechRecognizer.createOnDeviceSpeechRecognizer(context)
+                else SpeechRecognizer.createSpeechRecognizer(context)
             val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
                 putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, context.packageName)
                 putExtra(RecognizerIntent.EXTRA_LANGUAGE, languageTag)
                 putExtra(RecognizerIntent.EXTRA_AUDIO_SOURCE, read)
                 putExtra(RecognizerIntent.EXTRA_AUDIO_SOURCE_ENCODING, android.media.AudioFormat.ENCODING_PCM_16BIT)
