@@ -8,6 +8,9 @@ class DiaryRepository(context: Context) {
     private val dao = AppDatabase.get(context).diaryDao()
 
     fun search(query: String): Flow<List<DiaryEntry>> = dao.search(query)
+    fun searchBetween(query: String, from: Long, to: Long): Flow<List<DiaryEntry>> =
+        dao.searchBetween(query, from, to)
+    fun searchAll(query: String): Flow<List<DiaryEntry>> = dao.searchAll(query)
     val allAttachments: Flow<List<DiaryAttachment>> = dao.observeAllAttachments()
     val allBlocks: Flow<List<DiaryBlock>> = dao.observeAllBlocks()
 

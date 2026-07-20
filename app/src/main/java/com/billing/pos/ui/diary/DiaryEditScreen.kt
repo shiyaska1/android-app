@@ -53,6 +53,7 @@ import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Videocam
@@ -723,6 +724,23 @@ private fun BlockEditor(
             }
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+            // Download + share for the real files: voice notes, photos, videos, documents.
+            val hasFile = block.path.isNotBlank() &&
+                block.type in setOf(BlockType.AUDIO, BlockType.IMAGE, BlockType.VIDEO, BlockType.DOCUMENT)
+            if (hasFile) {
+                val blockContext = LocalContext.current
+                IconButton(onClick = {
+                    val f = java.io.File(block.path)
+                    val name = block.name.ifBlank { f.name }
+                    val ok = com.billing.pos.data.DownloadSaver.save(blockContext, f, name, block.mime.ifBlank { "application/octet-stream" })
+                    android.widget.Toast.makeText(
+                        blockContext, if (ok) "Saved to Downloads" else "Could not save", android.widget.Toast.LENGTH_SHORT
+                    ).show()
+                }) { Icon(Icons.Filled.Download, "Download") }
+                IconButton(onClick = { shareBlockFile(blockContext, block) }) {
+                    Icon(Icons.Filled.Share, "Share")
+                }
+            }
             IconButton(onClick = onMoveUp, enabled = !isFirst) { Icon(Icons.Filled.KeyboardArrowUp, "Move up") }
             IconButton(onClick = onMoveDown, enabled = !isLast) { Icon(Icons.Filled.KeyboardArrowDown, "Move down") }
             IconButton(onClick = onRemove) { Icon(Icons.Filled.Delete, "Remove", tint = MaterialTheme.colorScheme.error) }
@@ -1132,4 +1150,21 @@ private fun FormatRow(
             }
         }
     }
+}
+
+/** Shares one diary attachment (voice/photo/video/document) via the system share sheet. */
+private fun shareBlockFile(context: android.content.Context, block: BlockUi) {
+    runCatching {
+        val f = java.io.File(block.path)
+        if (!f.exists()) { android.widget.Toast.makeText(context, "File not found", android.widget.Toast.LENGTH_SHORT).show(); return }
+        val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.provider", f)
+        val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+            type = block.mime.ifBlank { "application/octet-stream" }
+            putExtra(android.content.Intent.EXTRA_STREAM, uri)
+            addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        context.startActivity(
+            android.content.Intent.createChooser(send, "Share").addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
+    }.onFailure { android.widget.Toast.makeText(context, "Could not share", android.widget.Toast.LENGTH_SHORT).show() }
 }

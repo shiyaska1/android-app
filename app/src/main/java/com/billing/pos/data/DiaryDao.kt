@@ -16,6 +16,25 @@ interface DiaryDao {
     )
     fun search(q: String): Flow<List<DiaryEntry>>
 
+    /**
+     * List order: entries with a reminder/notification first, then newest first.
+     * [from]..[to] bounds the date; use [searchAll] when the date filter is bypassed.
+     */
+    @Query(
+        "SELECT * FROM diary_entries " +
+            "WHERE (title LIKE '%' || :q || '%' OR remarks LIKE '%' || :q || '%') " +
+            "AND updatedAt BETWEEN :from AND :to " +
+            "ORDER BY reminderEnabled DESC, updatedAt DESC"
+    )
+    fun searchBetween(q: String, from: Long, to: Long): Flow<List<DiaryEntry>>
+
+    @Query(
+        "SELECT * FROM diary_entries " +
+            "WHERE title LIKE '%' || :q || '%' OR remarks LIKE '%' || :q || '%' " +
+            "ORDER BY reminderEnabled DESC, updatedAt DESC"
+    )
+    fun searchAll(q: String): Flow<List<DiaryEntry>>
+
     @Query("SELECT * FROM diary_entries WHERE id = :id LIMIT 1")
     suspend fun byId(id: Long): DiaryEntry?
 

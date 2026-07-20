@@ -51,17 +51,54 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+
+/** The current list, plus whether the date filter had to be dropped to find matches. */
+data class DiaryListResult(val entries: List<DiaryEntry>, val dateFilterBypassed: Boolean)
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class DiaryListViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = DiaryRepository(app)
 
     val query = MutableStateFlow("")
+    // Default window: the last 3 months.
+    val fromMillis = MutableStateFlow(threeMonthsAgo())
+    val toMillis = MutableStateFlow(endOfToday())
 
-    val entries: StateFlow<List<DiaryEntry>> = query
-        .flatMapLatest { repo.search(it.trim()) }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    private data class Filter(val q: String, val from: Long, val to: Long)
+    private val filter = combine(query, fromMillis, toMillis) { q, f, t -> Filter(q.trim(), f, t) }
+
+    /**
+     * Entries within the date range, reminders first then newest first. When a search finds
+     * nothing in the range, the date filter is dropped and the search runs over all dates —
+     * so a match outside the window is still found, and the UI can say the filter was ignored.
+     */
+    val result: StateFlow<DiaryListResult> = filter
+        .flatMapLatest { f ->
+            repo.searchBetween(f.q, f.from, f.to).flatMapLatest { inRange ->
+                if (f.q.isNotBlank() && inRange.isEmpty()) {
+                    repo.searchAll(f.q).map { DiaryListResult(it, dateFilterBypassed = true) }
+                } else {
+                    kotlinx.coroutines.flow.flowOf(DiaryListResult(inRange, dateFilterBypassed = false))
+                }
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), DiaryListResult(emptyList(), false))
+
+    fun setFrom(millis: Long) { fromMillis.value = millis }
+    fun setTo(millis: Long) { toMillis.value = millis }
+
+    private fun threeMonthsAgo(): Long = java.util.Calendar.getInstance().apply {
+        add(java.util.Calendar.MONTH, -3)
+        set(java.util.Calendar.HOUR_OF_DAY, 0); set(java.util.Calendar.MINUTE, 0)
+        set(java.util.Calendar.SECOND, 0); set(java.util.Calendar.MILLISECOND, 0)
+    }.timeInMillis
+
+    private fun endOfToday(): Long = java.util.Calendar.getInstance().apply {
+        set(java.util.Calendar.HOUR_OF_DAY, 23); set(java.util.Calendar.MINUTE, 59)
+        set(java.util.Calendar.SECOND, 59); set(java.util.Calendar.MILLISECOND, 999)
+    }.timeInMillis
 
     /** Count of media (attachments + non-text blocks) per entry, for the list badge. */
     val mediaCounts: StateFlow<Map<Long, Int>> =
@@ -81,9 +118,28 @@ fun DiaryListScreen(
     onOpen: (Long) -> Unit,
     vm: DiaryListViewModel = viewModel()
 ) {
-    val entries by vm.entries.collectAsStateSafe()
+    val result by vm.result.collectAsStateSafe()
+    val entries = result.entries
     val counts by vm.mediaCounts.collectAsStateSafe()
     val query by vm.query.collectAsStateSafe()
+    val from by vm.fromMillis.collectAsStateSafe()
+    val to by vm.toMillis.collectAsStateSafe()
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    fun pickDate(current: Long, onPicked: (Long) -> Unit) {
+        val cal = java.util.Calendar.getInstance().apply { timeInMillis = current }
+        android.app.DatePickerDialog(
+            context,
+            { _, y, m, d ->
+                onPicked(java.util.Calendar.getInstance().apply {
+                    set(y, m, d, 0, 0, 0); set(java.util.Calendar.MILLISECOND, 0)
+                }.timeInMillis)
+            },
+            cal.get(java.util.Calendar.YEAR),
+            cal.get(java.util.Calendar.MONTH),
+            cal.get(java.util.Calendar.DAY_OF_MONTH)
+        ).show()
+    }
 
     Scaffold(
         topBar = {
@@ -121,6 +177,30 @@ fun DiaryListScreen(
                 leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
                 modifier = Modifier.fillMaxWidth()
             )
+
+            // Date range — defaults to the last 3 months.
+            Row(
+                Modifier.fillMaxWidth().padding(top = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                androidx.compose.material3.OutlinedButton(
+                    onClick = { pickDate(from) { vm.setFrom(it) } },
+                    modifier = Modifier.weight(1f)
+                ) { Text("From: ${Format.date(from)}", maxLines = 1) }
+                androidx.compose.material3.OutlinedButton(
+                    onClick = { pickDate(to) { vm.setTo(it) } },
+                    modifier = Modifier.weight(1f)
+                ) { Text("To: ${Format.date(to)}", maxLines = 1) }
+            }
+            if (result.dateFilterBypassed) {
+                Text(
+                    "No match in that date range — showing results from all dates.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+            }
 
             if (entries.isEmpty()) {
                 Column(
