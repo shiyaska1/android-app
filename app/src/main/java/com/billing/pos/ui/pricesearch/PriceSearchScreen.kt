@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -43,6 +44,9 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material.icons.filled.Draw
+import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -122,6 +126,7 @@ class PriceSearchViewModel(app: Application) : AndroidViewModel(app) {
 @Composable
 fun PriceSearchScreen(
     onBack: () -> Unit,
+    onEditItem: (Long) -> Unit = {},
     vm: PriceSearchViewModel = viewModel()
 ) {
     val context = LocalContext.current
@@ -130,6 +135,27 @@ fun PriceSearchScreen(
     val rows by vm.rows.collectAsStateSafe()
     val message by vm.message.collectAsStateSafe()
     var query by remember { mutableStateOf("") }
+    // Fill the search box by hand, or by reading a photo (draw a box round the text).
+    var drawSearch by remember { mutableStateOf(false) }
+    var searchOcrUri by remember { mutableStateOf<android.net.Uri?>(null) }
+    val searchCamera = com.billing.pos.ocr.rememberImageCamera { uri -> searchOcrUri = uri }
+    val searchGallery = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia()
+    ) { uri -> if (uri != null) searchOcrUri = uri }
+
+    if (drawSearch) {
+        com.billing.pos.ui.common.HandwriteTextDialog(
+            onResult = { if (it.isNotBlank()) query = it; drawSearch = false },
+            onDismiss = { drawSearch = false }
+        )
+    }
+    searchOcrUri?.let { u ->
+        com.billing.pos.ui.common.RegionOcrDialog(
+            uri = u,
+            onResult = { if (it.isNotBlank()) query = it; searchOcrUri = null },
+            onDismiss = { searchOcrUri = null }
+        )
+    }
 
     LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); vm.consumeMessage() } }
 
@@ -215,6 +241,34 @@ fun PriceSearchScreen(
                 modifier = Modifier.fillMaxWidth()
             )
 
+            // Handwrite, or read the name off a label with the camera / a gallery photo.
+            Row(
+                Modifier.fillMaxWidth().padding(top = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                OutlinedButton(onClick = { drawSearch = true }, modifier = Modifier.weight(1f)) {
+                    Icon(Icons.Filled.Draw, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Text(" Draw", style = MaterialTheme.typography.labelMedium)
+                }
+                OutlinedButton(onClick = { searchCamera() }, modifier = Modifier.weight(1f)) {
+                    Icon(Icons.Filled.PhotoCamera, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Text(" Camera", style = MaterialTheme.typography.labelMedium)
+                }
+                OutlinedButton(
+                    onClick = {
+                        searchGallery.launch(
+                            androidx.activity.result.PickVisualMediaRequest(
+                                androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly
+                            )
+                        )
+                    },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Filled.PhotoLibrary, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Text(" Gallery", style = MaterialTheme.typography.labelMedium)
+                }
+            }
+
             if (results.isEmpty()) {
                 Column(
                     Modifier.fillMaxSize(),
@@ -229,7 +283,7 @@ fun PriceSearchScreen(
             } else {
                 LazyColumn(Modifier.fillMaxSize().padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(results, key = { it.item.id }) { row ->
-                        PriceCard(row, onShare = { shareFor = row })
+                        PriceCard(row, onShare = { shareFor = row }, onEdit = { onEditItem(row.item.id) })
                     }
                 }
             }
@@ -374,7 +428,7 @@ private fun shareProductPdf(context: Context, item: Item, price: Double, selecte
 }
 
 @Composable
-private fun PriceCard(row: PriceRow, onShare: () -> Unit) {
+private fun PriceCard(row: PriceRow, onShare: () -> Unit, onEdit: () -> Unit = {}) {
     val context = LocalContext.current
     val images = row.attachments.filter { it.mime.startsWith("image/") }
     val pdfs = row.attachments.filter { it.mime == "application/pdf" }
@@ -394,10 +448,13 @@ private fun PriceCard(row: PriceRow, onShare: () -> Unit) {
         Column(Modifier.fillMaxWidth().padding(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
+                    // Tapping the name opens the item for editing.
                     Text(
                         row.item.name + (if (row.item.category.isNotBlank()) "  ·  ${row.item.category}" else ""),
                         fontWeight = FontWeight.Bold,
-                        style = MaterialTheme.typography.titleMedium
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.clickable { onEdit() }
                     )
                     if (row.item.barcode.isNotBlank()) {
                         Text(row.item.barcode, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)

@@ -589,7 +589,10 @@ private fun AppNav() {
             ItemsScreen(onBack = { nav.popBackStack() }, initialEditItemId = entry.arguments?.getLong("id"))
         }
         composable("pricesearch") {
-            PriceSearchScreen(onBack = { nav.popBackStack() })
+            PriceSearchScreen(
+                onBack = { nav.popBackStack() },
+                onEditItem = { id -> nav.navigate("items/edit/$id") }
+            )
         }
         composable("vat") {
             VatReportScreen(onBack = { nav.popBackStack() })
