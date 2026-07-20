@@ -78,6 +78,11 @@ import com.billing.pos.auth.Session
 
 private data class Tile(val label: String, val icon: ImageVector, val onClick: () -> Unit, val section: String = "Transactions")
 
+/** In Personal mode the dashboard shows only these — the everyday, non-shop tools. */
+private val PERSONAL_TILES = setOf(
+    "Sticky Note", "Calculator", "My Diary", "Payments", "Receipts", "Cash Book", "Backup", "Settings"
+)
+
 private val SECTION_ORDER = listOf("Transactions", "Masters", "Accounts", "Reports")
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -131,6 +136,7 @@ fun DashboardScreen(
     val context = androidx.compose.ui.platform.LocalContext.current
     val businessType = remember { com.billing.pos.data.AppPrefs(context).businessType }
     val isRental = businessType == "Rental"
+    val isPersonal = businessType == "Personal"
     // The two counter tools, available here as well as inside a sale.
     var showCalculator by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     var showMobileBoard by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
@@ -200,12 +206,7 @@ fun DashboardScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Dashboard — ${Session.current?.username ?: ""}") },
-                actions = {
-                    IconButton(onClick = onLogout) {
-                        Icon(Icons.Filled.PowerSettingsNew, contentDescription = "Logout")
-                    }
-                },
+                title = { Text("Dashboard") },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                     titleContentColor = MaterialTheme.colorScheme.onPrimary,
@@ -233,7 +234,8 @@ fun DashboardScreen(
                     items(shown) { tile -> TileCard(tile) }
                 } else {
                     SECTION_ORDER.forEach { section ->
-                        val secTiles = tiles.filter { it.section == section }
+                        val shown = if (isPersonal) tiles.filter { it.title in PERSONAL_TILES } else tiles
+        val secTiles = shown.filter { it.section == section }
                         if (secTiles.isNotEmpty()) {
                             item(span = { GridItemSpan(maxLineSpan) }) {
                                 Text(

@@ -231,6 +231,11 @@ private fun AppNav() {
                 nav.navigate(dest) { popUpTo("boot") { inclusive = true } }
             })
         }
+        composable("chooseBusiness") {
+            com.billing.pos.ui.auth.BusinessTypeScreen(onChosen = {
+                nav.navigate("dashboard") { popUpTo(0) { inclusive = true } }
+            })
+        }
         composable("dashboard") {
             // Catch-all for an incoming share: whatever route led here, if a shared file is
             // still waiting, hand it to the diary. This does not depend on the boot/login

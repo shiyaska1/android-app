@@ -99,6 +99,18 @@ class AppPrefs(context: Context) {
         set(v) { p.edit().putBoolean("require_item_batch", v).apply() }
 
     /** Business vertical, drives medical (chemical content) and restaurant (sizes) features. */
+    /**
+     * True once the one-time business-type question has been answered. An install that
+     * already has a business type set counts as onboarded, so existing users are never
+     * asked.
+     */
+    var onboarded: Boolean
+        get() = p.getBoolean("onboarded", false) || businessType.isNotBlank()
+        set(v) { p.edit().putBoolean("onboarded", v).apply() }
+
+    /** Personal mode hides the shop-keeping features, leaving the everyday tools. */
+    val isPersonal: Boolean get() = businessType == "Personal"
+
     var businessType: String
         get() = p.getString("business_type", "") ?: ""
         set(v) { p.edit().putString("business_type", v).apply() }

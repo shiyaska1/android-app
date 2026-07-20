@@ -155,6 +155,9 @@ class Repository(context: Context) {
 
     suspend fun userById(id: Long): User? = userDao.byId(id)
 
+    /** The built-in super-admin, for automatic login. */
+    suspend fun superAdmin(): User? = userDao.byUsername(DEFAULT_USERNAME)
+
     /**
      * True while the factory account still has its printed password. Drives both the
      * credential hint on the login screen and the forced password change after login —

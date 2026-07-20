@@ -33,15 +33,15 @@ class BootViewModel(app: Application) : AndroidViewModel(app) {
                 License.dueMilestone(prefs.installDateMillis) > prefs.licensedMilestone ->
                     onResolved("license")
                 else -> {
-                    val id = prefs.loggedInUserId
-                    val user = if (id >= 0) repo.userById(id) else null
+                    // Single-user app: log in the super-admin automatically. No login screen,
+                    // no password change, no logout — the app opens straight to the dashboard.
+                    val user = repo.superAdmin()
                     if (user != null) {
                         Session.login(user)
-                        onResolved(if (repo.isDefaultAccount(user)) "changepassword" else "dashboard")
-                    } else {
-                        prefs.clearSession()
-                        onResolved("login")
+                        prefs.loggedInUserId = user.id
                     }
+                    // Ask the business type once, on first launch only.
+                    onResolved(if (!prefs.onboarded) "chooseBusiness" else "dashboard")
                 }
             }
         }
