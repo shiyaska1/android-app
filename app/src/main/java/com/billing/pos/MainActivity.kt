@@ -327,7 +327,9 @@ private fun AppNav() {
         }
         composable("license") {
             LicenseScreen(onActivated = {
-                nav.navigate("login") { popUpTo(0) { inclusive = true } }
+                // Re-run boot: it auto-logs in and routes to onboarding or the dashboard.
+                // (The old flow went to the login screen, which no longer exists.)
+                nav.navigate("boot") { popUpTo(0) { inclusive = true } }
             })
         }
         composable("login") {
