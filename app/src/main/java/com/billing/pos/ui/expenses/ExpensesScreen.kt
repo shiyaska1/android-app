@@ -318,12 +318,6 @@ private fun AddPaymentDialog(
     var description by remember { mutableStateOf("") }
     var amount by remember { mutableStateOf("") }
     val attachments = remember { androidx.compose.runtime.mutableStateListOf<com.billing.pos.data.ExpenseAttachment>() }
-    // Load what is already attached to this payment.
-    androidx.compose.runtime.LaunchedEffect(initial?.id) {
-        val id = initial?.id ?: return@LaunchedEffect
-        attachments.clear()
-        attachments.addAll(loadAttachments(id))
-    }
     // Fill the description by hand or from a photo, and the amount from a calculator.
     var drawDesc by remember { mutableStateOf(false) }
     var descOcrUri by remember { mutableStateOf<android.net.Uri?>(null) }
@@ -456,6 +450,12 @@ private fun ExpenseEditDialog(
     var description by remember { mutableStateOf(initial?.description ?: "") }
     var amount by remember { mutableStateOf(initial?.amount?.let { Format.money(it) } ?: "") }
     val attachments = remember { androidx.compose.runtime.mutableStateListOf<com.billing.pos.data.ExpenseAttachment>() }
+    // Load what is already attached to this payment.
+    androidx.compose.runtime.LaunchedEffect(initial?.id) {
+        val id = initial?.id ?: return@LaunchedEffect
+        attachments.clear()
+        attachments.addAll(loadAttachments(id))
+    }
     // Fill the description by hand or from a photo, and the amount from a calculator.
     var drawDesc by remember { mutableStateOf(false) }
     var descOcrUri by remember { mutableStateOf<android.net.Uri?>(null) }
