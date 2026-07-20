@@ -135,11 +135,14 @@ fun DiaryEditScreen(
     val snackbar = remember { SnackbarHostState() }
     val message by vm.message.collectAsStateSafe()
 
-    LaunchedEffect(Unit) {
-        vm.load(entryId)
-        // Files shared in from another app (e.g. a WhatsApp photo/voice/video/document)
-        // attach to this fresh entry, which opens in edit mode ready for an extra note.
-        if (entryId == 0L && com.billing.pos.auth.PendingSharedMedia.hasItems) {
+    LaunchedEffect(Unit) { vm.load(entryId) }
+
+    // Files shared in from another app (e.g. a WhatsApp photo/voice/video/document).
+    // Keyed on the share generation, not Unit, so sharing again while this entry is still
+    // open adds the new file to it instead of needing a fresh entry.
+    val shareGeneration = com.billing.pos.auth.PendingSharedMedia.generation
+    LaunchedEffect(shareGeneration) {
+        if (com.billing.pos.auth.PendingSharedMedia.hasItems) {
             val source = com.billing.pos.auth.PendingSharedMedia.sourceLabel
             val shared = com.billing.pos.auth.PendingSharedMedia.consume()
             if (shared.isNotEmpty()) {
