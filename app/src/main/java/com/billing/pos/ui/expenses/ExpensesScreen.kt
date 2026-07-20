@@ -86,10 +86,20 @@ class ExpensesViewModel(app: Application) : AndroidViewModel(app) {
     val message = MutableStateFlow<String?>(null)
     fun consumeMessage() { message.value = null }
 
-    fun add(description: String, amount: Double, mode: PayMode, dateMillis: Long) {
+    fun add(
+        description: String, amount: Double, mode: PayMode, dateMillis: Long,
+        attachments: List<com.billing.pos.data.ExpenseAttachment> = emptyList()
+    ) {
         if (amount <= 0) { message.value = "Enter a valid amount"; return }
-        viewModelScope.launch { repo.addExpense(description, amount, mode, dateMillis); message.value = "Payment added" }
+        viewModelScope.launch {
+            val saved = repo.addExpense(description, amount, mode, dateMillis)
+            if (attachments.isNotEmpty()) repo.replaceExpenseAttachments(saved.id, attachments)
+            message.value = "Payment added"
+        }
     }
+
+    /** Attachments already saved against a payment, for the edit dialog. */
+    suspend fun attachmentsFor(expenseId: Long) = repo.expenseAttachmentsFor(expenseId)
 
     fun addBulk(mode: PayMode, rows: List<com.billing.pos.ui.common.BulkEntryRow>) {
         if (rows.isEmpty()) { message.value = "Nothing to save"; return }
@@ -104,9 +114,16 @@ class ExpensesViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { repo.addPaymentForPurchase(purchase, amount, mode); message.value = "Payment added" }
     }
 
-    fun edit(e: Expense, description: String, amount: Double, mode: PayMode) {
+    fun edit(
+        e: Expense, description: String, amount: Double, mode: PayMode,
+        attachments: List<com.billing.pos.data.ExpenseAttachment>? = null
+    ) {
         if (amount <= 0) { message.value = "Enter a valid amount"; return }
-        viewModelScope.launch { repo.updateExpense(e, description, amount, mode); message.value = "Payment updated" }
+        viewModelScope.launch {
+            repo.updateExpense(e, description, amount, mode)
+            if (attachments != null) repo.replaceExpenseAttachments(e.id, attachments)
+            message.value = "Payment updated"
+        }
     }
 
     fun delete(e: Expense) {
@@ -263,7 +280,7 @@ fun ExpensesScreen(
         AddPaymentDialog(
             outstanding = outstanding,
             onDismiss = { showAdd = false },
-            onGeneral = { desc, amt, mode, date -> vm.add(desc, amt, mode, date); showAdd = false },
+            onGeneral = { desc, amt, mode, date, atts -> vm.add(desc, amt, mode, date, atts); showAdd = false },
             onAgainstPurchase = { pur, amt, mode -> vm.addAgainstPurchase(pur, amt, mode); showAdd = false }
         )
     }
@@ -272,7 +289,8 @@ fun ExpensesScreen(
             initial = e,
             canSave = Session.canEditPayment,
             onDismiss = { editFor = null },
-            onSave = { desc, amt, mode -> vm.edit(e, desc, amt, mode); editFor = null }
+            onSave = { desc, amt, mode, atts -> vm.edit(e, desc, amt, mode, atts); editFor = null },
+            loadAttachments = { id -> vm.attachmentsFor(id) }
         )
     }
     deleteFor?.let { e ->
@@ -291,7 +309,7 @@ fun ExpensesScreen(
 private fun AddPaymentDialog(
     outstanding: List<Purchase>,
     onDismiss: () -> Unit,
-    onGeneral: (String, Double, PayMode, Long) -> Unit,
+    onGeneral: (String, Double, PayMode, Long, List<com.billing.pos.data.ExpenseAttachment>) -> Unit,
     onAgainstPurchase: (Purchase, Double, PayMode) -> Unit
 ) {
     val context = LocalContext.current
@@ -299,6 +317,13 @@ private fun AddPaymentDialog(
     var selected by remember { mutableStateOf(outstanding.firstOrNull()) }
     var description by remember { mutableStateOf("") }
     var amount by remember { mutableStateOf("") }
+    val attachments = remember { androidx.compose.runtime.mutableStateListOf<com.billing.pos.data.ExpenseAttachment>() }
+    // Load what is already attached to this payment.
+    androidx.compose.runtime.LaunchedEffect(initial?.id) {
+        val id = initial?.id ?: return@LaunchedEffect
+        attachments.clear()
+        attachments.addAll(loadAttachments(id))
+    }
     // Fill the description by hand or from a photo, and the amount from a calculator.
     var drawDesc by remember { mutableStateOf(false) }
     var descOcrUri by remember { mutableStateOf<android.net.Uri?>(null) }
@@ -402,6 +427,7 @@ private fun AddPaymentDialog(
                 Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     PayMode.values().forEach { m -> FilterChip(selected = mode == m, onClick = { mode = m }, label = { Text(m.label) }) }
                 }
+                PaymentAttachments(attachments, enabled = true)
                 OutlinedButton(
                     onClick = { pickPaymentDate(context, dateMillis) { dateMillis = it } },
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
@@ -412,7 +438,7 @@ private fun AddPaymentDialog(
             Button(onClick = {
                 val amt = amount.toDoubleOrNull() ?: 0.0
                 if (againstPurchase) selected?.let { onAgainstPurchase(it, amt.coerceAtMost(it.balance), mode) }
-                else onGeneral(description, amt, mode, dateMillis)
+                else onGeneral(description, amt, mode, dateMillis, attachments.toList())
             }) { Text("Add") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
@@ -424,10 +450,12 @@ private fun ExpenseEditDialog(
     initial: Expense?,
     canSave: Boolean,
     onDismiss: () -> Unit,
-    onSave: (String, Double, PayMode) -> Unit
+    onSave: (String, Double, PayMode, List<com.billing.pos.data.ExpenseAttachment>) -> Unit,
+    loadAttachments: suspend (Long) -> List<com.billing.pos.data.ExpenseAttachment> = { emptyList() }
 ) {
     var description by remember { mutableStateOf(initial?.description ?: "") }
     var amount by remember { mutableStateOf(initial?.amount?.let { Format.money(it) } ?: "") }
+    val attachments = remember { androidx.compose.runtime.mutableStateListOf<com.billing.pos.data.ExpenseAttachment>() }
     // Fill the description by hand or from a photo, and the amount from a calculator.
     var drawDesc by remember { mutableStateOf(false) }
     var descOcrUri by remember { mutableStateOf<android.net.Uri?>(null) }
@@ -508,10 +536,11 @@ private fun ExpenseEditDialog(
                         FilterChip(selected = mode == m, onClick = { if (canSave) mode = m }, label = { Text(m.label) })
                     }
                 }
+                PaymentAttachments(attachments, enabled = canSave)
             }
         },
         confirmButton = {
-            Button(onClick = { onSave(description, amount.toDoubleOrNull() ?: 0.0, mode) }, enabled = canSave) { Text("Save") }
+            Button(onClick = { onSave(description, amount.toDoubleOrNull() ?: 0.0, mode, attachments.toList()) }, enabled = canSave) { Text("Save") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Close") } }
     )

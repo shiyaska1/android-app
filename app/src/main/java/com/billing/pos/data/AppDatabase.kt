@@ -20,6 +20,7 @@ import androidx.room.TypeConverters
         Estimate::class, EstimateItem::class,
         ItemPhotoVector::class,
         DiaryType::class,
+        ExpenseAttachment::class,
         SalesReturn::class, SalesReturnItem::class,
         PurchaseReturn::class, PurchaseReturnItem::class,
         PurchaseQuotation::class, PurchaseQuotationItem::class,
@@ -36,7 +37,7 @@ import androidx.room.TypeConverters
     // v33 page breaks, heading master, lab-bill payment; v34 lab balance receipts;
     // v35 doctor master + patient phone; v36 material out + movement;
     // v37 item purchase price; v38 material receipts + purchase stockReceived/lpoNo.
-    version = 42,
+    version = 43,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -60,6 +61,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun estimateDao(): EstimateDao
     abstract fun itemPhotoVectorDao(): ItemPhotoVectorDao
     abstract fun diaryTypeDao(): DiaryTypeDao
+    abstract fun expenseAttachmentDao(): ExpenseAttachmentDao
     abstract fun salesReturnDao(): SalesReturnDao
     abstract fun purchaseReturnDao(): PurchaseReturnDao
     abstract fun purchaseQuotationDao(): PurchaseQuotationDao
@@ -156,6 +158,17 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** Voice notes / photos / documents attached to a payment. */
+        private val MIGRATION_42_43 = object : androidx.room.migration.Migration(42, 43) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS expense_attachments (" +
+                        "id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, expenseId INTEGER NOT NULL, " +
+                        "path TEXT NOT NULL, name TEXT NOT NULL, mime TEXT NOT NULL)"
+                )
+            }
+        }
+
         fun get(context: Context): AppDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -163,7 +176,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "pos_billing.db"
                 )
-                    .addMigrations(MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42)
+                    .addMigrations(MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43)
                     .fallbackToDestructiveMigration()
                     .build()
                     .also { INSTANCE = it }

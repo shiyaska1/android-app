@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
@@ -105,7 +106,12 @@ fun CalculatorDialog(
             }
             Divider()
 
-            Box(Modifier.weight(1f).fillMaxWidth().background(MaterialTheme.colorScheme.primaryContainer)) {
+            // Capped rather than weight(1f): a full-height tape pushes the amount box and the
+            // +/- keys under the keyboard and the navigation bar, where they can't be reached.
+            Box(
+                Modifier.fillMaxWidth().fillMaxHeight(0.62f)
+                    .background(MaterialTheme.colorScheme.primaryContainer)
+            ) {
                 Column(
                     Modifier.fillMaxWidth().verticalScroll(scroll).padding(horizontal = 20.dp, vertical = 12.dp)
                 ) {

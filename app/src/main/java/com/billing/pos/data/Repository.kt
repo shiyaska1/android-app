@@ -278,6 +278,20 @@ class Repository(context: Context) {
     suspend fun quotationById(id: Long): Quotation? = quotationDao.byId(id)
     suspend fun quotationLines(id: Long): List<QuotationItem> = quotationDao.linesFor(id)
 
+    // ---- payment attachments ----
+    private val expenseAttachmentDao = db.expenseAttachmentDao()
+    suspend fun expenseAttachmentsFor(expenseId: Long): List<ExpenseAttachment> =
+        expenseAttachmentDao.forExpense(expenseId)
+
+    /** Replaces the attachment rows for a payment, deleting files that were removed. */
+    suspend fun replaceExpenseAttachments(expenseId: Long, list: List<ExpenseAttachment>) {
+        val existing = expenseAttachmentDao.forExpense(expenseId)
+        val keep = list.map { it.path }.toSet()
+        existing.filter { it.path !in keep }.forEach { com.billing.pos.expenses.ExpenseAttachmentStore.delete(it) }
+        expenseAttachmentDao.deleteForExpense(expenseId)
+        list.forEach { expenseAttachmentDao.insert(it.copy(id = 0, expenseId = expenseId)) }
+    }
+
     // ---- estimates ----
     // Deliberately absent from stockByName: an estimate never moves stock.
     private val estimateDao = db.estimateDao()
