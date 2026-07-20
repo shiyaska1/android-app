@@ -43,16 +43,64 @@ object License {
         return (if (id.isBlank()) "UNKNOWNDEVICE" else id).uppercase()
     }
 
-    /** Activation key for a device id: first 16 hex chars of HMAC-SHA256(secret, id), grouped. */
-    fun activationKey(deviceId: String): String {
-        val hex = hmacHex(deviceId.trim().uppercase()).take(16).uppercase()
+    /**
+     * Renewal points, in months since installation. 1 is the end of the free trial; after
+     * that the app asks again at each later milestone, each needing its own key.
+     */
+    val MILESTONES = listOf(1, 6, 12, 36, 48)
+
+    /** Whole months elapsed since [installMillis], by calendar rather than by 30-day blocks. */
+    fun monthsSince(installMillis: Long): Int {
+        if (installMillis <= 0L) return 0
+        val now = java.util.Calendar.getInstance()
+        val probe = java.util.Calendar.getInstance().apply { timeInMillis = installMillis }
+        var months = 0
+        while (true) {
+            probe.add(java.util.Calendar.MONTH, 1)
+            if (probe.timeInMillis > now.timeInMillis) break
+            months++
+        }
+        return months
+    }
+
+    /**
+     * The milestone the device has reached, or 0 while still inside the free trial.
+     * Compared against the highest milestone already activated to decide whether to ask.
+     */
+    fun dueMilestone(installMillis: Long): Int {
+        // Month 1 only falls due once the trial days are actually up.
+        if (!trialExpired(installMillis)) return 0
+        val months = monthsSince(installMillis)
+        return MILESTONES.filter { it <= maxOf(months, 1) }.maxOrNull() ?: 0
+    }
+
+    /** The next renewal after [milestone], or null when the last one has been activated. */
+    fun nextMilestone(milestone: Int): Int? = MILESTONES.firstOrNull { it > milestone }
+
+    /**
+     * Activation key for a device at a given renewal point.
+     *
+     * Milestone 1 keeps the original device-id-only form, so keys already issued to
+     * customers stay valid. Later milestones mix the month count in, which is what makes a
+     * renewal key different from the one before it.
+     */
+    fun activationKey(deviceId: String, milestone: Int = 1): String {
+        val message = if (milestone <= 1) deviceId.trim().uppercase()
+        else deviceId.trim().uppercase() + milestone
+        val hex = hmacHex(message).take(16).uppercase()
         return hex.chunked(4).joinToString("-")
     }
 
-    /** True when [key] matches the device's activation key (dashes/spaces/case ignored). */
-    fun isValid(deviceId: String, key: String): Boolean {
+    /** True when [key] matches the key for this device at [milestone]. */
+    fun isValid(deviceId: String, key: String, milestone: Int = 1): Boolean {
         val norm = key.uppercase().replace(Regex("[^0-9A-F]"), "")
-        return norm.isNotEmpty() && norm == activationKey(deviceId).replace("-", "")
+        if (norm.isEmpty()) return false
+        val accepted = mutableListOf(activationKey(deviceId, milestone).replace("-", ""))
+        // The 48-month point was specified as "+46"; accept both so a key issued either way works.
+        if (milestone == 48) {
+            accepted += hmacHex(deviceId.trim().uppercase() + "46").take(16).uppercase()
+        }
+        return accepted.any { it == norm }
     }
 
     private fun hmacHex(message: String): String {

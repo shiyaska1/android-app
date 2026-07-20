@@ -707,7 +707,13 @@ fun BillingScreen(
         BuyDialog(
             deviceId = com.billing.pos.data.License.deviceId(context),
             onDismiss = { showBuy = false },
-            onActivated = { prefs.licensed = true; licensed = true; showBuy = false }
+            milestone = com.billing.pos.data.License.dueMilestone(prefs.installDateMillis).coerceAtLeast(1),
+            onActivated = { m ->
+                prefs.licensed = true
+                prefs.licensedMilestone = m
+                licensed = true
+                showBuy = false
+            }
         )
     }
     if (showWhatsApp) {
@@ -1012,7 +1018,8 @@ private fun sendWhatsApp(
 private fun BuyDialog(
     deviceId: String,
     onDismiss: () -> Unit,
-    onActivated: () -> Unit
+    milestone: Int = 1,
+    onActivated: (Int) -> Unit
 ) {
     val context = LocalContext.current
     val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
@@ -1052,8 +1059,8 @@ private fun BuyDialog(
         },
         confirmButton = {
             Button(onClick = {
-                if (com.billing.pos.data.License.isValid(deviceId, key)) onActivated()
-                else error = "Invalid activation key"
+                if (com.billing.pos.data.License.isValid(deviceId, key, milestone)) onActivated(milestone)
+                else error = "Invalid activation key for the $milestone-month renewal"
             }) { Text("Activate") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Close") } }

@@ -28,7 +28,10 @@ class BootViewModel(app: Application) : AndroidViewModel(app) {
             // Start the trial clock automatically on first launch (no registration needed).
             if (prefs.installDateMillis <= 0L) prefs.installDateMillis = System.currentTimeMillis()
             when {
-                !prefs.licensed && License.trialExpired(prefs.installDateMillis) -> onResolved("license")
+                // Licensing is staged: month 1, then 6, 12, 36 and 48. Each renewal needs
+                // its own key, so this asks again whenever a later milestone falls due.
+                License.dueMilestone(prefs.installDateMillis) > prefs.licensedMilestone ->
+                    onResolved("license")
                 else -> {
                     val id = prefs.loggedInUserId
                     val user = if (id >= 0) repo.userById(id) else null

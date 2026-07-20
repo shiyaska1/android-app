@@ -35,6 +35,8 @@ fun LicenseScreen(onActivated: () -> Unit) {
     val prefs = remember { AppPrefs(context) }
     val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
     val deviceId = remember { License.deviceId(context) }
+    // Which renewal is being asked for: 1 at the end of the trial, then 6, 12, 36, 48.
+    val due = remember { License.dueMilestone(prefs.installDateMillis).coerceAtLeast(1) }
     var key by remember { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }
 
@@ -43,9 +45,15 @@ fun LicenseScreen(onActivated: () -> Unit) {
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text("Trial ended", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
         Text(
-            "Your ${License.TRIAL_DAYS}-day trial has finished. Send us your Device ID below to get an activation key, then enter it here.",
+            if (due <= 1) "Trial ended" else "Renewal due",
+            style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold
+        )
+        Text(
+            if (due <= 1)
+                "Your ${License.TRIAL_DAYS}-day trial has finished. Send us your Device ID below to get an activation key, then enter it here."
+            else
+                "This licence covers up to $due months. Send us your Device ID and tell us it is the $due-month renewal, then enter the key you get back.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.outline,
             textAlign = TextAlign.Center,
@@ -53,6 +61,11 @@ fun LicenseScreen(onActivated: () -> Unit) {
         )
         Text("Your Device ID", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.outline)
         Text(deviceId, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+        Text(
+            if (due <= 1) "First activation" else "$due-month renewal",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.outline
+        )
         OutlinedButton(
             onClick = { clipboard.setText(androidx.compose.ui.text.AnnotatedString(deviceId)) },
             modifier = Modifier.padding(top = 4.dp)
@@ -70,10 +83,11 @@ fun LicenseScreen(onActivated: () -> Unit) {
         }
         Button(
             onClick = {
-                if (License.isValid(deviceId, key)) {
+                if (License.isValid(deviceId, key, due)) {
                     prefs.licensed = true
+                    prefs.licensedMilestone = due
                     onActivated()
-                } else error = "Invalid activation key"
+                } else error = "Invalid activation key for the $due-month renewal"
             },
             modifier = Modifier.fillMaxWidth().padding(top = 16.dp)
         ) { Text("Activate") }

@@ -39,6 +39,18 @@ class AppPrefs(context: Context) {
         get() = p.getLong("install_date", 0L)
         set(v) { p.edit().putLong("install_date", v).apply() }
 
+    /**
+     * Highest renewal milestone already activated (0 = none). An existing customer who
+     * activated under the old single-key scheme counts as milestone 1, so they are not
+     * asked again the moment they update.
+     */
+    var licensedMilestone: Int
+        get() {
+            val stored = p.getInt("licensed_milestone", 0)
+            return if (stored == 0 && licensed) 1 else stored
+        }
+        set(v) { p.edit().putInt("licensed_milestone", v).apply() }
+
     var licensed: Boolean
         get() = p.getBoolean("licensed", false)
         set(v) { p.edit().putBoolean("licensed", v).apply() }
