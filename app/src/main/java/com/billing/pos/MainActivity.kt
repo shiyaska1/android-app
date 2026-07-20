@@ -290,6 +290,7 @@ private fun AppNav() {
                 onSuppliers = { nav.navigate("suppliers") },
                 onQuotations = { nav.navigate("quotations") },
                 onEstimates = { nav.navigate("estimates") },
+                onPoster = { nav.navigate("poster") },
                 onSalesReturns = { nav.navigate("salesreturns") },
                 onPurchaseReturns = { nav.navigate("purchasereturns") },
                 onLpos = { nav.navigate("lpos") },
@@ -587,6 +588,9 @@ private fun AppNav() {
             arguments = listOf(navArgument("id") { type = NavType.LongType })
         ) { entry ->
             ItemsScreen(onBack = { nav.popBackStack() }, initialEditItemId = entry.arguments?.getLong("id"))
+        }
+        composable("poster") {
+            com.billing.pos.ui.poster.PosterScreen(onBack = { nav.popBackStack() })
         }
         composable("pricesearch") {
             PriceSearchScreen(

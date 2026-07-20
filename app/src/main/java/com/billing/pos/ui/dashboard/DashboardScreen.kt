@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.AssignmentReturned
 import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.Category
+import androidx.compose.material.icons.filled.Campaign
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.RequestQuote
 import androidx.compose.material.icons.filled.EditNote
@@ -96,6 +97,7 @@ fun DashboardScreen(
     onSuppliers: () -> Unit,
     onQuotations: () -> Unit,
     onEstimates: () -> Unit,
+    onPoster: () -> Unit,
     onSalesReturns: () -> Unit,
     onPurchaseReturns: () -> Unit,
     onLpos: () -> Unit,
@@ -135,6 +137,7 @@ fun DashboardScreen(
         if (Session.canViewInvoice) add(Tile("Invoices", Icons.Filled.ReceiptLong, onInvoices, "Transactions"))
         add(Tile("Quotations", Icons.Filled.Description, onQuotations, "Transactions"))
         add(Tile("Estimates", Icons.Filled.RequestQuote, onEstimates, "Transactions"))
+        add(Tile("Poster maker", Icons.Filled.Campaign, onPoster, "Tools"))
         if (Session.canViewInvoice) add(Tile("Sales Return", Icons.Filled.AssignmentReturn, onSalesReturns, "Transactions"))
         add(Tile("New Purchase", Icons.Filled.ShoppingCart, onNewPurchase, "Transactions"))
         if (Session.canViewInvoice) add(Tile("Purchases", Icons.Filled.Inventory2, onPurchases, "Transactions"))
