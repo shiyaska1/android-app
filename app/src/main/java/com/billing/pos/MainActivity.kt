@@ -591,7 +591,8 @@ private fun AppNav() {
         composable("pricesearch") {
             PriceSearchScreen(
                 onBack = { nav.popBackStack() },
-                onEditItem = { id -> nav.navigate("items/edit/$id") }
+                onEditItem = { id -> nav.navigate("items/edit/$id") },
+                onAddToSale = { nav.navigate("billing") }
             )
         }
         composable("vat") {

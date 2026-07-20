@@ -105,8 +105,26 @@ data class PriceRow(
     val attachments: List<ItemAttachment>
 )
 
+/** One-shot hand-off of items picked in price search to a new sales entry. */
+object PriceSearchLink {
+    @Volatile var itemIds: List<Long> = emptyList()
+    fun take(): List<Long> { val v = itemIds; itemIds = emptyList(); return v }
+}
+
 class PriceSearchViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = Repository(app)
+
+    /** Attaches a photo (camera or gallery) to an item straight from the search results. */
+    fun addPhoto(context: android.content.Context, itemId: Long, uri: android.net.Uri) {
+        viewModelScope.launch {
+            val att = withContext(Dispatchers.IO) {
+                ItemAttachmentStore.copyIn(context, uri, "photo")
+            }
+            if (att == null) { message.value = "Could not add the photo"; return@launch }
+            repo.addItemAttachment(att.copy(itemId = itemId))
+            message.value = "Photo added"
+        }
+    }
 
     val rows: StateFlow<List<PriceRow>> =
         combine(repo.items, repo.stockByName, repo.purchaseLines, repo.itemAttachments) { items, byName, pLines, atts ->
@@ -128,6 +146,7 @@ class PriceSearchViewModel(app: Application) : AndroidViewModel(app) {
 fun PriceSearchScreen(
     onBack: () -> Unit,
     onEditItem: (Long) -> Unit = {},
+    onAddToSale: () -> Unit = {},
     vm: PriceSearchViewModel = viewModel()
 ) {
     val context = LocalContext.current
@@ -181,6 +200,62 @@ fun PriceSearchScreen(
                 )
             }
         }
+    }
+
+    // ---- Multi-select: tick items to share their photos or send them to a sale ----
+    val selected = remember { mutableStateListOf<Long>() }
+    fun toggle(id: Long) { if (selected.contains(id)) selected.remove(id) else selected.add(id) }
+
+    // Item currently having a photo added, and the pickers that feed it.
+    var addPhotoFor by remember { mutableStateOf<Long?>(null) }
+    val photoCamera = com.billing.pos.ocr.rememberImageCamera { uri ->
+        addPhotoFor?.let { vm.addPhoto(context, it, uri) }; addPhotoFor = null
+    }
+    val photoGallery = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) addPhotoFor?.let { vm.addPhoto(context, it, uri) }
+        addPhotoFor = null
+    }
+    var photoSourceFor by remember { mutableStateOf<Long?>(null) }
+
+    // WhatsApp share loop: after each send the app comes back and offers the next contact.
+    var askAnother by remember { mutableStateOf(false) }
+    var sentCount by remember { mutableStateOf(0) }
+    val shareLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { sentCount += 1; askAnother = true }
+
+    fun selectedImagePaths(): List<String> =
+        rows.filter { selected.contains(it.item.id) }
+            .flatMap { it.attachments }
+            .filter { it.mime.startsWith("image/") && it.path.isNotBlank() }
+            .map { it.path }
+
+    fun launchWhatsAppShare() {
+        val paths = selectedImagePaths()
+        if (paths.isEmpty()) {
+            scope.launch { snackbar.showSnackbar("Selected items have no photos to share") }
+            return
+        }
+        val uris = ArrayList<Uri>()
+        paths.forEach { p ->
+            runCatching {
+                uris.add(androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.provider", File(p)))
+            }
+        }
+        if (uris.isEmpty()) return
+        val names = rows.filter { selected.contains(it.item.id) }.joinToString("\n") { it.item.name }
+        val send = Intent(if (uris.size > 1) Intent.ACTION_SEND_MULTIPLE else Intent.ACTION_SEND).apply {
+            type = "image/*"
+            if (uris.size > 1) putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
+            else putExtra(Intent.EXTRA_STREAM, uris[0])
+            putExtra(Intent.EXTRA_TEXT, names)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        val direct = Intent(send).setPackage("com.whatsapp")
+        val target = if (direct.resolveActivity(context.packageManager) != null) direct
+        else Intent.createChooser(send, "Share ${uris.size} photo(s)")
+        runCatching { shareLauncher.launch(target) }
+            .onFailure { scope.launch { snackbar.showSnackbar("Could not open WhatsApp") } }
     }
 
     LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); vm.consumeMessage() } }
@@ -317,6 +392,33 @@ fun PriceSearchScreen(
                     }
                 )
             }
+            if (selected.isNotEmpty()) {
+                Row(
+                    Modifier.fillMaxWidth().padding(top = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "${selected.size} selected",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Button(onClick = { launchWhatsAppShare() }, modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Filled.Share, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Text(" WhatsApp", style = MaterialTheme.typography.labelMedium)
+                    }
+                    Button(
+                        onClick = {
+                            PriceSearchLink.itemIds = selected.toList()
+                            selected.clear()
+                            onAddToSale()
+                        },
+                        modifier = Modifier.weight(1f)
+                    ) { Text("To sale", style = MaterialTheme.typography.labelMedium) }
+                    TextButton(onClick = { selected.clear() }) { Text("Clear") }
+                }
+            }
+
             visualMatches?.let { m ->
                 Row(
                     Modifier.fillMaxWidth().padding(top = 4.dp),
@@ -350,12 +452,56 @@ fun PriceSearchScreen(
                             row,
                             onShare = { shareFor = row },
                             onEdit = { onEditItem(row.item.id) },
-                            matchScore = scoreById[row.item.id]
+                            matchScore = scoreById[row.item.id],
+                            checked = selected.contains(row.item.id),
+                            onCheck = { toggle(row.item.id) },
+                            onAddPhoto = { photoSourceFor = row.item.id }
                         )
                     }
                 }
             }
         }
+    }
+
+    // Camera or gallery for a new item photo.
+    photoSourceFor?.let { id ->
+        AlertDialog(
+            onDismissRequest = { photoSourceFor = null },
+            title = { Text("Add photo") },
+            confirmButton = {
+                TextButton(onClick = { addPhotoFor = id; photoSourceFor = null; photoCamera() }) { Text("Camera") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    addPhotoFor = id; photoSourceFor = null
+                    photoGallery.launch(
+                        androidx.activity.result.PickVisualMediaRequest(
+                            ActivityResultContracts.PickVisualMedia.ImageOnly
+                        )
+                    )
+                }) { Text("Gallery") }
+            }
+        )
+    }
+
+    // After each WhatsApp send: offer the next contact, until Done.
+    if (askAnother) {
+        AlertDialog(
+            onDismissRequest = { askAnother = false },
+            title = { Text("Sent to $sentCount contact(s)") },
+            text = {
+                Text(
+                    "WhatsApp can only take one contact per send, so to reach another " +
+                        "contact the same photos are sent again. Send to another contact?"
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { askAnother = false; launchWhatsAppShare() }) { Text("Send to another") }
+            },
+            dismissButton = {
+                TextButton(onClick = { askAnother = false; sentCount = 0; selected.clear() }) { Text("Done") }
+            }
+        )
     }
 
     shareFor?.let { row ->
@@ -500,11 +646,24 @@ private fun PriceCard(
     row: PriceRow,
     onShare: () -> Unit,
     onEdit: () -> Unit = {},
-    matchScore: Float? = null
+    matchScore: Float? = null,
+    checked: Boolean = false,
+    onCheck: () -> Unit = {},
+    onAddPhoto: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val images = row.attachments.filter { it.mime.startsWith("image/") }
     val pdfs = row.attachments.filter { it.mime == "application/pdf" }
+    // Index of the photo opened full-screen, if any.
+    var viewerStart by remember(row.item.id) { mutableStateOf<Int?>(null) }
+
+    viewerStart?.let { start ->
+        com.billing.pos.ui.common.ImageViewerDialog(
+            paths = images.map { it.path },
+            startIndex = start,
+            onDismiss = { viewerStart = null }
+        )
+    }
 
     fun openPdf(att: ItemAttachment) {
         runCatching {
@@ -520,6 +679,7 @@ private fun PriceCard(
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.fillMaxWidth().padding(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(checked = checked, onCheckedChange = { onCheck() })
                 Column(Modifier.weight(1f)) {
                     // Tapping the name opens the item for editing.
                     Text(
@@ -542,6 +702,9 @@ private fun PriceCard(
                         Text(row.item.barcode, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
                     }
                 }
+                IconButton(onClick = onAddPhoto) {
+                    Icon(Icons.Filled.PhotoCamera, contentDescription = "Add photo", tint = MaterialTheme.colorScheme.primary)
+                }
                 IconButton(onClick = onShare) {
                     Icon(Icons.Filled.Share, contentDescription = "Share", tint = MaterialTheme.colorScheme.primary)
                 }
@@ -553,10 +716,13 @@ private fun PriceCard(
                     Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 8.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    images.forEach { att ->
+                    images.forEachIndexed { idx, att ->
                         val bmp = rememberThumbnail(att.path, 400)
                         if (bmp != null) {
-                            Box(Modifier.size(96.dp).clip(RoundedCornerShape(8.dp))) {
+                            Box(
+                                Modifier.size(96.dp).clip(RoundedCornerShape(8.dp))
+                                    .clickable { viewerStart = idx }   // tap to enlarge
+                            ) {
                                 Image(bmp, contentDescription = att.name, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
                                 if (att.kind == "LOCATION") {
                                     Icon(

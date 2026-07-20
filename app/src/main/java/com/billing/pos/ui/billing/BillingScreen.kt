@@ -171,6 +171,15 @@ fun BillingScreen(
         val (items, review) = com.billing.pos.ui.sticky.StickyOcrLink.take()
         if (!items.isNullOrEmpty()) { if (review) ocrReview = items else vm.addOcrItemsToCart(items) }
     }
+    // Items ticked in price search and sent here with "To sale". Waits for the item list
+    // to load, since the ids have to be resolved against it.
+    LaunchedEffect(items) {
+        val picked = com.billing.pos.ui.pricesearch.PriceSearchLink.itemIds
+        if (picked.isNotEmpty() && items.isNotEmpty()) {
+            com.billing.pos.ui.pricesearch.PriceSearchLink.take()
+            picked.forEach { id -> items.firstOrNull { it.id == id }?.let { vm.addItemToCart(it) } }
+        }
+    }
     val requireBatch = remember { com.billing.pos.data.AppPrefs(context).requireItemBatch }
     var batchPickFor by remember { mutableStateOf<com.billing.pos.data.Item?>(null) }
     var sizePickFor by remember { mutableStateOf<com.billing.pos.data.Item?>(null) }
