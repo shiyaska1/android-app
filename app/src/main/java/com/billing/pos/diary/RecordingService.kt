@@ -28,7 +28,12 @@ class RecordingService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
-        startForeground(NOTIFICATION_ID, buildNotification())
+        // Declaring the microphone type is what lets the mic keep running in the background.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(NOTIFICATION_ID, buildNotification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
+        } else {
+            startForeground(NOTIFICATION_ID, buildNotification())
+        }
         return START_STICKY
     }
 
@@ -57,15 +62,6 @@ class RecordingService : Service() {
             stopForeground(STOP_FOREGROUND_REMOVE)
         } else {
             @Suppress("DEPRECATION") stopForeground(true)
-        }
-    }
-
-    override fun startForeground(id: Int, notification: Notification) {
-        // Declaring the microphone type is what lets the mic keep running in the background.
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            super.startForeground(id, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE)
-        } else {
-            super.startForeground(id, notification)
         }
     }
 
