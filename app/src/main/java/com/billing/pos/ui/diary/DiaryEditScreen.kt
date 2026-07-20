@@ -138,10 +138,17 @@ fun DiaryEditScreen(
     LaunchedEffect(Unit) {
         vm.load(entryId)
         // Files shared in from another app (e.g. a WhatsApp photo/voice/video/document)
-        // attach to this fresh entry.
+        // attach to this fresh entry, which opens in edit mode ready for an extra note.
         if (entryId == 0L && com.billing.pos.auth.PendingSharedMedia.hasItems) {
+            val source = com.billing.pos.auth.PendingSharedMedia.sourceLabel
             val shared = com.billing.pos.auth.PendingSharedMedia.consume()
-            if (shared.isNotEmpty()) vm.addFileUris(context, shared)
+            if (shared.isNotEmpty()) {
+                vm.addFileUris(context, shared)
+                if (vm.title.isBlank()) {
+                    val prefix = if (source.isNotBlank()) "$source share" else "Shared"
+                    vm.title = "$prefix — ${Format.dateTime(System.currentTimeMillis())}"
+                }
+            }
         }
     }
     LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); vm.consumeMessage() } }

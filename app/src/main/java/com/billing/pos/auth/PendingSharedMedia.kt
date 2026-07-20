@@ -10,9 +10,16 @@ import android.net.Uri
 object PendingSharedMedia {
     @Volatile private var uris: List<Uri> = emptyList()
 
+    /** Friendly name of the app the files came from (e.g. "WhatsApp"); blank if unknown. */
+    @Volatile var sourceLabel: String = ""
+        private set
+
     val hasItems: Boolean get() = uris.isNotEmpty()
 
-    fun set(list: List<Uri>) { uris = list.filterNotNull() }
+    fun set(list: List<Uri>, source: String = "") {
+        uris = list.filterNotNull()
+        sourceLabel = source
+    }
 
     fun consume(): List<Uri> {
         val u = uris

@@ -128,6 +128,12 @@ class MainActivity : FragmentActivity() {
     private fun captureIncoming(intent: Intent?) {
         intent ?: return
         val isZip = intent.type?.let { it == "application/zip" || it == "application/x-zip-compressed" } == true
+        // Which app shared to us, so the diary title can name it. Often "" when unknown.
+        val source = when (referrer?.host) {
+            "com.whatsapp" -> "WhatsApp"
+            "com.whatsapp.w4b" -> "WhatsApp Business"
+            else -> ""
+        }
 
         when (intent.action) {
             Intent.ACTION_SEND -> {
@@ -135,13 +141,13 @@ class MainActivity : FragmentActivity() {
                 val uri = intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)
                 if (uri != null) {
                     if (isZip) PendingImport.uri = uri
-                    else PendingSharedMedia.set(listOf(uri))   // WhatsApp photo/voice/video/document
+                    else PendingSharedMedia.set(listOf(uri), source)   // WhatsApp photo/voice/video/document
                 }
             }
             Intent.ACTION_SEND_MULTIPLE -> {
                 @Suppress("DEPRECATION")
                 val uris = intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)
-                if (!uris.isNullOrEmpty()) PendingSharedMedia.set(uris)
+                if (!uris.isNullOrEmpty()) PendingSharedMedia.set(uris, source)
             }
             Intent.ACTION_VIEW -> intent.data?.let { PendingImport.uri = it }
         }
