@@ -31,6 +31,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -298,6 +299,34 @@ private fun AddPaymentDialog(
     var selected by remember { mutableStateOf(outstanding.firstOrNull()) }
     var description by remember { mutableStateOf("") }
     var amount by remember { mutableStateOf("") }
+    // Fill the description by hand or from a photo, and the amount from a calculator.
+    var drawDesc by remember { mutableStateOf(false) }
+    var descOcrUri by remember { mutableStateOf<android.net.Uri?>(null) }
+    var showCalc by remember { mutableStateOf(false) }
+    val descCamera = com.billing.pos.ocr.rememberImageCamera { u -> descOcrUri = u }
+    val descGallery = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia()
+    ) { u -> if (u != null) descOcrUri = u }
+    if (drawDesc) {
+        com.billing.pos.ui.common.HandwriteTextDialog(
+            onResult = { t -> if (t.isNotBlank()) description = (description.trimEnd() + " " + t).trim(); drawDesc = false },
+            onDismiss = { drawDesc = false }
+        )
+    }
+    descOcrUri?.let { u ->
+        com.billing.pos.ui.common.RegionOcrDialog(
+            uri = u,
+            onResult = { t -> if (t.isNotBlank()) description = (description.trimEnd() + " " + t).trim(); descOcrUri = null },
+            onDismiss = { descOcrUri = null }
+        )
+    }
+    if (showCalc) {
+        com.billing.pos.ui.common.CalculatorDialog(
+            initial = amount.toDoubleOrNull() ?: 0.0,
+            onOk = { total -> amount = Format.money(total); showCalc = false },
+            onDismiss = { showCalc = false }
+        )
+    }
     var mode by remember { mutableStateOf(PayMode.CASH) }
     var dateMillis by remember { mutableStateOf(System.currentTimeMillis()) }
     var expanded by remember { mutableStateOf(false) }
@@ -332,14 +361,42 @@ private fun AddPaymentDialog(
                 } else {
                     OutlinedTextField(
                         value = description, onValueChange = { description = it },
-                        label = { Text("Description") }, singleLine = true,
+                        label = { Text("Description") },
+                        minLines = 3, maxLines = 6,
                         modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
                     )
+                }
+                // Handwrite the description, or read it off a photo.
+                Row(
+                    Modifier.fillMaxWidth().padding(top = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    OutlinedButton(onClick = { drawDesc = true }, modifier = Modifier.weight(1f)) {
+                        Text("Draw", style = MaterialTheme.typography.labelMedium)
+                    }
+                    OutlinedButton(onClick = { descCamera() }, modifier = Modifier.weight(1f)) {
+                        Text("Camera", style = MaterialTheme.typography.labelMedium)
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            descGallery.launch(
+                                androidx.activity.result.PickVisualMediaRequest(
+                                    androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly
+                                )
+                            )
+                        },
+                        modifier = Modifier.weight(1f)
+                    ) { Text("Gallery", style = MaterialTheme.typography.labelMedium) }
                 }
                 OutlinedTextField(
                     value = amount, onValueChange = { amount = it.filter { c -> c.isDigit() || c == '.' } },
                     label = { Text("Amount") }, singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    trailingIcon = {
+                        IconButton(onClick = { showCalc = true }) {
+                            Icon(Icons.Filled.Calculate, contentDescription = "Calculator")
+                        }
+                    },
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
                 )
                 Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -371,6 +428,34 @@ private fun ExpenseEditDialog(
 ) {
     var description by remember { mutableStateOf(initial?.description ?: "") }
     var amount by remember { mutableStateOf(initial?.amount?.let { Format.money(it) } ?: "") }
+    // Fill the description by hand or from a photo, and the amount from a calculator.
+    var drawDesc by remember { mutableStateOf(false) }
+    var descOcrUri by remember { mutableStateOf<android.net.Uri?>(null) }
+    var showCalc by remember { mutableStateOf(false) }
+    val descCamera = com.billing.pos.ocr.rememberImageCamera { u -> descOcrUri = u }
+    val descGallery = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia()
+    ) { u -> if (u != null) descOcrUri = u }
+    if (drawDesc) {
+        com.billing.pos.ui.common.HandwriteTextDialog(
+            onResult = { t -> if (t.isNotBlank()) description = (description.trimEnd() + " " + t).trim(); drawDesc = false },
+            onDismiss = { drawDesc = false }
+        )
+    }
+    descOcrUri?.let { u ->
+        com.billing.pos.ui.common.RegionOcrDialog(
+            uri = u,
+            onResult = { t -> if (t.isNotBlank()) description = (description.trimEnd() + " " + t).trim(); descOcrUri = null },
+            onDismiss = { descOcrUri = null }
+        )
+    }
+    if (showCalc) {
+        com.billing.pos.ui.common.CalculatorDialog(
+            initial = amount.toDoubleOrNull() ?: 0.0,
+            onOk = { total -> amount = Format.money(total); showCalc = false },
+            onDismiss = { showCalc = false }
+        )
+    }
     var mode by remember { mutableStateOf(PayMode.values().firstOrNull { it.label == initial?.paymentMode } ?: PayMode.CASH) }
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -379,13 +464,43 @@ private fun ExpenseEditDialog(
             Column {
                 OutlinedTextField(
                     value = description, onValueChange = { description = it },
-                    label = { Text("Description") }, singleLine = true, enabled = canSave,
+                    label = { Text("Description") }, enabled = canSave,
+                    minLines = 3, maxLines = 6,
                     modifier = Modifier.fillMaxWidth()
                 )
+                if (canSave) {
+                // Handwrite the description, or read it off a photo.
+                Row(
+                    Modifier.fillMaxWidth().padding(top = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    OutlinedButton(onClick = { drawDesc = true }, modifier = Modifier.weight(1f)) {
+                        Text("Draw", style = MaterialTheme.typography.labelMedium)
+                    }
+                    OutlinedButton(onClick = { descCamera() }, modifier = Modifier.weight(1f)) {
+                        Text("Camera", style = MaterialTheme.typography.labelMedium)
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            descGallery.launch(
+                                androidx.activity.result.PickVisualMediaRequest(
+                                    androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly
+                                )
+                            )
+                        },
+                        modifier = Modifier.weight(1f)
+                    ) { Text("Gallery", style = MaterialTheme.typography.labelMedium) }
+                }
+                }
                 OutlinedTextField(
                     value = amount, onValueChange = { amount = it.filter { c -> c.isDigit() || c == '.' } },
                     label = { Text("Amount") }, singleLine = true, enabled = canSave,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    trailingIcon = {
+                        if (canSave) IconButton(onClick = { showCalc = true }) {
+                            Icon(Icons.Filled.Calculate, contentDescription = "Calculator")
+                        }
+                    },
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
                 )
                 Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {

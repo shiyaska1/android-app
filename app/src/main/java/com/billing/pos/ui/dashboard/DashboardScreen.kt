@@ -24,6 +24,8 @@ import androidx.compose.material.icons.filled.AssignmentReturned
 import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.Category
+import androidx.compose.material.icons.filled.Calculate
+import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Campaign
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.RequestQuote
@@ -98,6 +100,7 @@ fun DashboardScreen(
     onQuotations: () -> Unit,
     onEstimates: () -> Unit,
     onPoster: () -> Unit,
+    onCalculatorToBill: () -> Unit,
     onSalesReturns: () -> Unit,
     onPurchaseReturns: () -> Unit,
     onLpos: () -> Unit,
@@ -128,6 +131,9 @@ fun DashboardScreen(
     val context = androidx.compose.ui.platform.LocalContext.current
     val businessType = remember { com.billing.pos.data.AppPrefs(context).businessType }
     val isRental = businessType == "Rental"
+    // The two counter tools, available here as well as inside a sale.
+    var showCalculator by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    var showMobileBoard by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     val isLab = businessType == "Medical lab"
     val tiles = buildList {
         // ---- Transactions ----
@@ -135,9 +141,11 @@ fun DashboardScreen(
         add(Tile("New Bill", Icons.Filled.PointOfSale, onNewBill, "Transactions"))
         add(Tile("Quick Bill", Icons.Filled.Restaurant, onQuickBill, "Transactions"))
         if (Session.canViewInvoice) add(Tile("Invoices", Icons.Filled.ReceiptLong, onInvoices, "Transactions"))
+        add(Tile("Calculator", Icons.Filled.Calculate, { showCalculator = true }, "Transactions"))
+        add(Tile("Mobile number", Icons.Filled.Phone, { showMobileBoard = true }, "Transactions"))
+        add(Tile("Poster maker", Icons.Filled.Campaign, onPoster, "Transactions"))
         add(Tile("Quotations", Icons.Filled.Description, onQuotations, "Transactions"))
         add(Tile("Estimates", Icons.Filled.RequestQuote, onEstimates, "Transactions"))
-        add(Tile("Poster maker", Icons.Filled.Campaign, onPoster, "Tools"))
         if (Session.canViewInvoice) add(Tile("Sales Return", Icons.Filled.AssignmentReturn, onSalesReturns, "Transactions"))
         add(Tile("New Purchase", Icons.Filled.ShoppingCart, onNewPurchase, "Transactions"))
         if (Session.canViewInvoice) add(Tile("Purchases", Icons.Filled.Inventory2, onPurchases, "Transactions"))
@@ -256,6 +264,21 @@ fun DashboardScreen(
                 }.padding(vertical = 6.dp)
             )
         }
+    }
+
+    if (showCalculator) {
+        com.billing.pos.ui.billing.FastBillDialog(
+            onSave = { amounts ->
+                // Hand the tape to a new sale, same as saving it from inside a bill.
+                com.billing.pos.ui.billing.FastBillLink.amounts = amounts
+                showCalculator = false
+                onCalculatorToBill()
+            },
+            onDismiss = { showCalculator = false }
+        )
+    }
+    if (showMobileBoard) {
+        com.billing.pos.ui.billing.MobileNumberDialog(onDismiss = { showMobileBoard = false })
     }
 }
 

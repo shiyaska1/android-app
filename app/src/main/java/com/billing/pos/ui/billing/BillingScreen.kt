@@ -171,6 +171,12 @@ fun BillingScreen(
         val (items, review) = com.billing.pos.ui.sticky.StickyOcrLink.take()
         if (!items.isNullOrEmpty()) { if (review) ocrReview = items else vm.addOcrItemsToCart(items) }
     }
+    // A calculator tape sent from the dashboard becomes price-only lines.
+    LaunchedEffect(Unit) {
+        val amounts = FastBillLink.take()
+        if (amounts.isNotEmpty()) vm.addPriceLines(amounts)
+    }
+
     // Items ticked in price search and sent here with "To sale". Waits for the item list
     // to load, since the ids have to be resolved against it.
     LaunchedEffect(items) {

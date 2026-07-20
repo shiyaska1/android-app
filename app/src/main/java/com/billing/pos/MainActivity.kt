@@ -291,6 +291,7 @@ private fun AppNav() {
                 onQuotations = { nav.navigate("quotations") },
                 onEstimates = { nav.navigate("estimates") },
                 onPoster = { nav.navigate("poster") },
+                onCalculatorToBill = { nav.navigate("billing") },
                 onSalesReturns = { nav.navigate("salesreturns") },
                 onPurchaseReturns = { nav.navigate("purchasereturns") },
                 onLpos = { nav.navigate("lpos") },

@@ -60,6 +60,12 @@ import kotlinx.coroutines.launch
  *
  * Close/Save live in the TOP bar: the phone's navigation bar can never cover them.
  */
+/** One-shot hand-off of a calculator tape from the dashboard into a new sale. */
+object FastBillLink {
+    @Volatile var amounts: List<Double> = emptyList()
+    fun take(): List<Double> { val v = amounts; amounts = emptyList(); return v }
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun FastBillDialog(
