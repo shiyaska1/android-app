@@ -17,7 +17,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.billing.pos.data.AppPrefs
-import com.billing.pos.data.BUSINESS_TYPES
+import com.billing.pos.ui.settings.BUSINESS_TYPES
 
 /**
  * One-time question on first launch: what is this app for?

@@ -234,7 +234,7 @@ fun DashboardScreen(
                     items(shown) { tile -> TileCard(tile) }
                 } else {
                     SECTION_ORDER.forEach { section ->
-                        val shown = if (isPersonal) tiles.filter { it.title in PERSONAL_TILES } else tiles
+                        val shown = if (isPersonal) tiles.filter { it.label in PERSONAL_TILES } else tiles
         val secTiles = shown.filter { it.section == section }
                         if (secTiles.isNotEmpty()) {
                             item(span = { GridItemSpan(maxLineSpan) }) {
