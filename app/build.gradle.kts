@@ -13,8 +13,8 @@ android {
         applicationId = "com.billing.pos"
         minSdk = 26
         targetSdk = 35
-        versionCode = 54
-        versionName = "1.7.1"
+        versionCode = 55
+        versionName = "1.7.2"
         vectorDrawables { useSupportLibrary = true }
 
         // Real Android phones are arm. The x86/x86_64 native libs are emulator-only
@@ -88,6 +88,7 @@ android {
         // opened with openFd(), and a compressed 12 MB model also costs a slow inflate
         // on the first scan.
         noCompress += "traineddata"
+        noCompress += "tflite"
     }
     packaging {
         resources {
@@ -135,6 +136,9 @@ dependencies {
 
     // On-device text recognition / OCR (bundled Latin model — fully offline)
     implementation("com.google.mlkit:text-recognition:16.0.1")
+
+    // On-device image embeddings, for "find this item by photo" in price search.
+    implementation("com.google.mediapipe:tasks-vision:0.10.35")
 
     // Malayalam OCR. ML Kit cannot read Malayalam script at all, so Tesseract fills that
     // gap — still fully offline (the model ships in assets/tessdata).

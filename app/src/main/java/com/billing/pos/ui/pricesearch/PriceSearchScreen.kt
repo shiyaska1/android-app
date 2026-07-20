@@ -38,6 +38,7 @@ import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -157,6 +158,31 @@ fun PriceSearchScreen(
         )
     }
 
+    // "Match photo": rank items by how much they look like a photo you take.
+    var visualMatches by remember { mutableStateOf<List<com.billing.pos.vision.ItemImageMatcher.Match>?>(null) }
+    var matching by remember { mutableStateOf(false) }
+    var matchDone by remember { mutableStateOf(0) }
+    var matchTotal by remember { mutableStateOf(0) }
+    val visualCamera = com.billing.pos.ocr.rememberImageCamera { uri ->
+        scope.launch {
+            matching = true; matchDone = 0; matchTotal = 0
+            val atts = rows.flatMap { it.attachments }
+            val found = com.billing.pos.vision.ItemImageMatcher.search(
+                context, uri, atts,
+                onProgress = { done, total -> matchDone = done; matchTotal = total }
+            )
+            matching = false
+            visualMatches = found
+            if (found.isEmpty()) {
+                snackbar.showSnackbar(
+                    if (atts.none { it.mime.startsWith("image/") })
+                        "No item has a photo yet — add photos to items first"
+                    else "No close visual match"
+                )
+            }
+        }
+    }
+
     LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); vm.consumeMessage() } }
 
     // Download an attachment (photo / PDF) to the public Downloads folder.
@@ -199,11 +225,17 @@ fun PriceSearchScreen(
     }
 
     val q = query.trim().lowercase()
-    val results = if (q.isBlank()) rows else rows.filter {
+    val textResults = if (q.isBlank()) rows else rows.filter {
         it.item.name.lowercase().contains(q) ||
             it.item.category.lowercase().contains(q) ||
             it.item.barcode.lowercase().contains(q)
     }
+    // A photo match replaces the list and keeps the model's ranking (best first).
+    val results = visualMatches?.let { matches ->
+        val byId = rows.associateBy { it.item.id }
+        matches.mapNotNull { byId[it.itemId] }
+    } ?: textResults
+    val scoreById = visualMatches?.associate { it.itemId to it.score }.orEmpty()
 
     var shareFor by remember { mutableStateOf<PriceRow?>(null) }
 
@@ -269,6 +301,37 @@ fun PriceSearchScreen(
                 }
             }
 
+            // Separate from the OCR buttons above: this one matches the picture itself,
+            // rather than reading text off it.
+            Button(
+                onClick = { visualCamera() },
+                enabled = !matching,
+                modifier = Modifier.fillMaxWidth().padding(top = 6.dp)
+            ) {
+                Icon(Icons.Filled.PhotoCamera, contentDescription = null, modifier = Modifier.size(18.dp))
+                Text(
+                    when {
+                        matching && matchTotal > 0 -> "  Indexing photos $matchDone/$matchTotal…"
+                        matching -> "  Matching…"
+                        else -> "  Find item by photo (visual match)"
+                    }
+                )
+            }
+            visualMatches?.let { m ->
+                Row(
+                    Modifier.fillMaxWidth().padding(top = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        if (m.isEmpty()) "No visual match" else "Photo match — ${m.size} item(s), closest first",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.weight(1f)
+                    )
+                    TextButton(onClick = { visualMatches = null }) { Text("Clear") }
+                }
+            }
+
             if (results.isEmpty()) {
                 Column(
                     Modifier.fillMaxSize(),
@@ -283,7 +346,12 @@ fun PriceSearchScreen(
             } else {
                 LazyColumn(Modifier.fillMaxSize().padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(results, key = { it.item.id }) { row ->
-                        PriceCard(row, onShare = { shareFor = row }, onEdit = { onEditItem(row.item.id) })
+                        PriceCard(
+                            row,
+                            onShare = { shareFor = row },
+                            onEdit = { onEditItem(row.item.id) },
+                            matchScore = scoreById[row.item.id]
+                        )
                     }
                 }
             }
@@ -428,7 +496,12 @@ private fun shareProductPdf(context: Context, item: Item, price: Double, selecte
 }
 
 @Composable
-private fun PriceCard(row: PriceRow, onShare: () -> Unit, onEdit: () -> Unit = {}) {
+private fun PriceCard(
+    row: PriceRow,
+    onShare: () -> Unit,
+    onEdit: () -> Unit = {},
+    matchScore: Float? = null
+) {
     val context = LocalContext.current
     val images = row.attachments.filter { it.mime.startsWith("image/") }
     val pdfs = row.attachments.filter { it.mime == "application/pdf" }
@@ -456,6 +529,15 @@ private fun PriceCard(row: PriceRow, onShare: () -> Unit, onEdit: () -> Unit = {
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.clickable { onEdit() }
                     )
+                    matchScore?.let { sc ->
+                        // Shown so a weak match is obviously weak, not presented as certain.
+                        Text(
+                            "Photo match ${(sc * 100).toInt()}%",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (sc >= 0.75f) MaterialTheme.colorScheme.primary
+                            else MaterialTheme.colorScheme.error
+                        )
+                    }
                     if (row.item.barcode.isNotBlank()) {
                         Text(row.item.barcode, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
                     }

@@ -18,6 +18,7 @@ import androidx.room.TypeConverters
         ItemBatch::class, ItemSize::class,
         Quotation::class, QuotationItem::class,
         Estimate::class, EstimateItem::class,
+        ItemPhotoVector::class,
         SalesReturn::class, SalesReturnItem::class,
         PurchaseReturn::class, PurchaseReturnItem::class,
         PurchaseQuotation::class, PurchaseQuotationItem::class,
@@ -34,7 +35,7 @@ import androidx.room.TypeConverters
     // v33 page breaks, heading master, lab-bill payment; v34 lab balance receipts;
     // v35 doctor master + patient phone; v36 material out + movement;
     // v37 item purchase price; v38 material receipts + purchase stockReceived/lpoNo.
-    version = 40,
+    version = 41,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -56,6 +57,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun itemSizeDao(): ItemSizeDao
     abstract fun quotationDao(): QuotationDao
     abstract fun estimateDao(): EstimateDao
+    abstract fun itemPhotoVectorDao(): ItemPhotoVectorDao
     abstract fun salesReturnDao(): SalesReturnDao
     abstract fun purchaseReturnDao(): PurchaseReturnDao
     abstract fun purchaseQuotationDao(): PurchaseQuotationDao
@@ -130,6 +132,17 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** Cached image fingerprints for visual item search. */
+        private val MIGRATION_40_41 = object : androidx.room.migration.Migration(40, 41) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS item_photo_vectors (" +
+                        "path TEXT NOT NULL PRIMARY KEY, itemId INTEGER NOT NULL, " +
+                        "vec BLOB NOT NULL, stamp INTEGER NOT NULL)"
+                )
+            }
+        }
+
         fun get(context: Context): AppDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -137,7 +150,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "pos_billing.db"
                 )
-                    .addMigrations(MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40)
+                    .addMigrations(MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41)
                     .fallbackToDestructiveMigration()
                     .build()
                     .also { INSTANCE = it }
