@@ -33,13 +33,31 @@ object PendingSharedMedia {
     var generation by mutableStateOf(0)
         private set
 
+    /** Plain text shared in (a forwarded WhatsApp message), when there is no file. */
+    @Volatile var sharedText: String = ""
+        private set
+
     val hasItems: Boolean get() = uris.isNotEmpty()
+    val hasText: Boolean get() = sharedText.isNotBlank()
 
     fun set(list: List<Uri>, source: String = "") {
         uris = list.filterNotNull()
         sourceLabel = source
         awaitingDiary = uris.isNotEmpty()
         generation++
+    }
+
+    fun setText(text: String, source: String = "") {
+        sharedText = text.trim()
+        sourceLabel = source
+        awaitingDiary = sharedText.isNotEmpty()
+        generation++
+    }
+
+    fun consumeText(): String {
+        val t = sharedText
+        sharedText = ""
+        return t
     }
 
     /** Takes the files. Leaves [awaitingDiary] alone — that is the router's business. */

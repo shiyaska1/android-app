@@ -142,6 +142,10 @@ class MainActivity : FragmentActivity() {
                 if (uri != null) {
                     if (isZip) PendingImport.uri = uri
                     else PendingSharedMedia.set(listOf(uri), source)   // WhatsApp photo/voice/video/document
+                } else {
+                    // A forwarded message: text only, no file.
+                    val text = intent.getStringExtra(Intent.EXTRA_TEXT).orEmpty()
+                    if (text.isNotBlank()) PendingSharedMedia.setText(text, source)
                 }
             }
             Intent.ACTION_SEND_MULTIPLE -> {
@@ -228,8 +232,18 @@ private fun AppNav() {
             })
         }
         composable("dashboard") {
+            // Catch-all for an incoming share: whatever route led here, if a shared file is
+            // still waiting, hand it to the diary. This does not depend on the boot/login
+            // handshake winning a race, so it holds even if an earlier redirect was missed.
+            androidx.compose.runtime.LaunchedEffect(PendingSharedMedia.generation) {
+                if (PendingSharedMedia.awaitingDiary) {
+                    PendingSharedMedia.markRouted()
+                    nav.navigate("diary/edit/0")
+                }
+            }
             // Sticky note on launch (once per app start).
             androidx.compose.runtime.LaunchedEffect(Unit) {
+                if (PendingSharedMedia.awaitingDiary) return@LaunchedEffect   // share wins
                 if (!com.billing.pos.ui.sticky.StickyGate.shown && com.billing.pos.data.AppPrefs(context).stickyNoteOnLaunch) {
                     com.billing.pos.ui.sticky.StickyGate.shown = true
                     nav.navigate("stickynote")

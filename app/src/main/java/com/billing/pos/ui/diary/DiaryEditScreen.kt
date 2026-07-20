@@ -142,15 +142,21 @@ fun DiaryEditScreen(
     // open adds the new file to it instead of needing a fresh entry.
     val shareGeneration = com.billing.pos.auth.PendingSharedMedia.generation
     LaunchedEffect(shareGeneration) {
-        if (com.billing.pos.auth.PendingSharedMedia.hasItems) {
-            val source = com.billing.pos.auth.PendingSharedMedia.sourceLabel
-            val shared = com.billing.pos.auth.PendingSharedMedia.consume()
-            if (shared.isNotEmpty()) {
-                vm.addFileUris(context, shared)
-                if (vm.title.isBlank()) {
-                    val prefix = if (source.isNotBlank()) "$source share" else "Shared"
-                    vm.title = "$prefix — ${Format.dateTime(System.currentTimeMillis())}"
-                }
+        val pending = com.billing.pos.auth.PendingSharedMedia
+        if (pending.hasItems || pending.hasText) {
+            val source = pending.sourceLabel
+            val files = pending.consume()
+            val text = pending.consumeText()
+            if (files.isNotEmpty()) vm.addFileUris(context, files)
+            if (text.isNotBlank()) {
+                // Drop a forwarded message into the first empty text block, else a new one.
+                val blank = vm.blocks.indexOfFirst { it.type == BlockType.TEXT && it.text.isBlank() }
+                if (blank >= 0) vm.blocks[blank].text = text
+                else vm.blocks.add(BlockUi(0, BlockType.TEXT, text))
+            }
+            if (vm.title.isBlank()) {
+                val prefix = if (source.isNotBlank()) "$source share" else "Shared"
+                vm.title = "$prefix — ${Format.dateTime(System.currentTimeMillis())}"
             }
         }
     }
