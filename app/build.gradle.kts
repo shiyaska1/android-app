@@ -13,8 +13,8 @@ android {
         applicationId = "com.billing.pos"
         minSdk = 26
         targetSdk = 35
-        versionCode = 68
-        versionName = "1.12.0"
+        versionCode = 69
+        versionName = "1.12.1"
         vectorDrawables { useSupportLibrary = true }
 
         // Real Android phones are arm. The x86/x86_64 native libs are emulator-only
@@ -136,6 +136,9 @@ dependencies {
 
     // On-device text recognition / OCR (bundled Latin model — fully offline)
     implementation("com.google.mlkit:text-recognition:16.0.1")
+
+    // Play in-app updates: prompt for a new version as soon as one is published.
+    implementation("com.google.android.play:app-update-ktx:2.1.0")
 
     // On-device image embeddings, for "find this item by photo" in price search.
     implementation("com.google.mediapipe:tasks-vision:0.10.35")

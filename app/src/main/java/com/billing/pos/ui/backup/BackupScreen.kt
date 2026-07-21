@@ -95,7 +95,7 @@ fun BackupScreen(
                     snackbar.showSnackbar(result.getOrNull() ?: "Merge complete")
                     onOpenMergeLog()
                 } else {
-                    snackbar.showSnackbar("Restore complete — please sign in")
+                    snackbar.showSnackbar("Restore complete")
                     onRestored()
                 }
             } else {

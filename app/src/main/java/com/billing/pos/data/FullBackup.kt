@@ -7,7 +7,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.ByteArrayInputStream
 import java.io.File
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
@@ -148,15 +147,15 @@ object FullBackup {
     }
 
     suspend fun restore(context: Context, uri: Uri, merge: Boolean = false): Result<String> = runCatching {
-        val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-            ?: error("Cannot read the file")
-
         val filesDir = AttachmentStore.dir(context)
         val itemFilesDir = com.billing.pos.items.ItemAttachmentStore.dir(context)
         val billFilesDir = com.billing.pos.bills.BillAttachmentStore.dir(context)
         val expenseFilesDir = com.billing.pos.expenses.ExpenseAttachmentStore.dir(context)
         var json: String? = null
-        ZipInputStream(ByteArrayInputStream(bytes)).use { zis ->
+        // Streamed, never loaded whole: a backup with photos and voice notes can be hundreds
+        // of MB, and reading it into a ByteArray first is an instant OutOfMemory on a phone.
+        val input = context.contentResolver.openInputStream(uri) ?: error("Cannot read the file")
+        ZipInputStream(input.buffered()).use { zis ->
             var e = zis.nextEntry
             while (e != null) {
                 if (!e.isDirectory) {

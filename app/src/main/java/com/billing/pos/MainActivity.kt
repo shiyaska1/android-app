@@ -96,6 +96,8 @@ class MainActivity : FragmentActivity() {
         // once the app is closed/backgrounded (the flag only applies to this window).
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         captureIncoming(intent)
+        // Offer the Play update straight away, so customers are not left on an old build.
+        com.billing.pos.update.AppUpdater.check(this)
         enableEdgeToEdge()
         setContent {
             POSTheme {
@@ -119,6 +121,12 @@ class MainActivity : FragmentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         captureIncoming(intent)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Pick an update back up if it was interrupted last time.
+        com.billing.pos.update.AppUpdater.resumeIfInterrupted(this)
     }
 
     /**
@@ -658,7 +666,10 @@ private fun AppNav() {
         composable("backup") {
             BackupScreen(
                 onBack = { nav.popBackStack() },
-                onRestored = { logout() },
+                // Restore replaces the database, so re-run boot: it re-logs the
+                // super-admin in and lands on the dashboard. (It used to sign out to a
+                // login screen that no longer exists.)
+                onRestored = { nav.navigate("boot") { popUpTo(0) { inclusive = true } } },
                 onOpenMergeLog = { nav.navigate("mergelog") }
             )
         }
