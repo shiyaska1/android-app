@@ -34,6 +34,7 @@ jobs:
         # project would configure it, and that Gradle is too new for our AGP.
         run: |
           mkdir -p /tmp/wrapgen
+          touch /tmp/wrapgen/settings.gradle
           cd /tmp/wrapgen && gradle wrapper --gradle-version 8.13
           cp -r /tmp/wrapgen/gradle/wrapper/gradle-wrapper.jar $GITHUB_WORKSPACE/gradle/wrapper/
           cp /tmp/wrapgen/gradlew /tmp/wrapgen/gradlew.bat $GITHUB_WORKSPACE/
