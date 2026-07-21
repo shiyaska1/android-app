@@ -7,14 +7,14 @@ plugins {
 
 android {
     namespace = "com.billing.pos"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.billing.pos"
         minSdk = 26
-        targetSdk = 35
-        versionCode = 71
-        versionName = "1.14.0"
+        targetSdk = 36
+        versionCode = 72
+        versionName = "1.14.1"
         vectorDrawables { useSupportLibrary = true }
 
         // Real Android phones are arm. The x86/x86_64 native libs are emulator-only
