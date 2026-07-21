@@ -151,6 +151,33 @@ class ItemsViewModel(app: Application) : AndroidViewModel(app) {
     val message = MutableStateFlow<String?>(null)
     fun consumeMessage() { message.value = null }
 
+    /** Saves every filled row from the multi-item form, with its photos. */
+    fun saveMany(context: android.content.Context, rows: List<MultiItemRow>, onDone: () -> Unit) {
+        val usable = rows.filter { it.isFilled }
+        if (usable.isEmpty()) { message.value = "Nothing to save"; return }
+        viewModelScope.launch {
+            var saved = 0
+            usable.forEach { r ->
+                val id = repo.addItem(
+                    name = r.name.trim(),
+                    price = r.price.toDoubleOrNull() ?: 0.0,
+                    taxPercent = 0.0,
+                    category = r.category.trim()
+                )
+                // Photos are only copied in once the item exists, so nothing is orphaned.
+                r.photos.forEach { uri ->
+                    val att = withContext(Dispatchers.IO) {
+                        com.billing.pos.items.ItemAttachmentStore.copyIn(context, uri, "photo")
+                    }
+                    if (att != null) repo.addItemAttachment(att.copy(itemId = id))
+                }
+                saved++
+            }
+            message.value = "$saved item(s) saved"
+            onDone()
+        }
+    }
+
     /** Attachments (photos / location photo / PDF) staged for the item being edited. */
     val editAttachments: SnapshotStateList<ItemAttachment> = mutableStateListOf()
 
@@ -380,6 +407,9 @@ fun ItemsScreen(
 
     var showDialog by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<Item?>(null) }
+    // "+" asks whether one item or several, then opens the matching form.
+    var askAddMode by remember { mutableStateOf(false) }
+    var showMulti by remember { mutableStateOf(false) }
     var deleteFor by remember { mutableStateOf<Item?>(null) }
     // Deep link (from the item-wise sales report): open this item in edit mode once loaded.
     var editLinkDone by remember { mutableStateOf(false) }
@@ -553,7 +583,7 @@ fun ItemsScreen(
             )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = { editing = null; vm.beginEdit(null); showDialog = true }) {
+            FloatingActionButton(onClick = { askAddMode = true }) {
                 Icon(Icons.Filled.Add, contentDescription = "Add item")
             }
         }
@@ -629,6 +659,35 @@ fun ItemsScreen(
                 }
             }
         }
+    }
+
+    if (askAddMode) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { askAddMode = false },
+            title = { Text("Add items") },
+            text = { Text("Add one item with the full form, or several at once in a simple table.") },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    askAddMode = false; editing = null; vm.beginEdit(null); showDialog = true
+                }) { Text("Single item") }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    askAddMode = false; showMulti = true
+                }) { Text("Multiple items") }
+            }
+        )
+    }
+
+    if (showMulti) {
+        val cats = remember(rows) {
+            rows.map { it.item.category }.filter { it.isNotBlank() }.distinct().sortedBy { it.lowercase() }
+        }
+        MultiItemDialog(
+            categories = cats,
+            onSave = { entered -> vm.saveMany(context, entered) { showMulti = false } },
+            onDismiss = { showMulti = false }
+        )
     }
 
     if (showDialog) {

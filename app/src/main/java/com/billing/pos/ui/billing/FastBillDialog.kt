@@ -258,27 +258,44 @@ fun FastBillDialog(
     // Long-press edit: change or delete one amount, total recalculates.
     if (editIndex in entries.indices) {
         val idx = editIndex
-        var text by remember(idx) { mutableStateOf(Format.money(entries[idx])) }
+        var text by remember(idx) { mutableStateOf(Format.money(kotlin.math.abs(entries[idx]))) }
+        // Sign is edited here too, so a line entered as + can be switched to − and the
+        // total recalculates without deleting and re-typing it.
+        var plus by remember(idx) { mutableStateOf(entries[idx] >= 0) }
         AlertDialog(
             onDismissRequest = { editIndex = -1 },
             title = { Text("Edit amount ${idx + 1}") },
             text = {
-                OutlinedTextField(
-                    value = text,
-                    onValueChange = { text = it.filter { c -> c.isDigit() || c == '.' } },
-                    singleLine = true,
-                    textStyle = LocalTextStyle.current.copy(
-                        fontSize = 30.sp, fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.Bold, textAlign = TextAlign.End
-                    ),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    modifier = Modifier.fillMaxWidth()
-                )
+                Column {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        androidx.compose.material3.FilterChip(
+                            selected = plus,
+                            onClick = { plus = true },
+                            label = { Text("+ Add", fontWeight = FontWeight.Bold) }
+                        )
+                        androidx.compose.material3.FilterChip(
+                            selected = !plus,
+                            onClick = { plus = false },
+                            label = { Text("− Subtract", fontWeight = FontWeight.Bold) }
+                        )
+                    }
+                    OutlinedTextField(
+                        value = text,
+                        onValueChange = { text = it.filter { c -> c.isDigit() || c == '.' } },
+                        singleLine = true,
+                        textStyle = LocalTextStyle.current.copy(
+                            fontSize = 30.sp, fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold, textAlign = TextAlign.End
+                        ),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                    )
+                }
             },
             confirmButton = {
                 TextButton(onClick = {
                     val v = text.toDoubleOrNull()
-                    if (v != null && v > 0.0) entries[idx] = v
+                    if (v != null && v > 0.0) entries[idx] = if (plus) v else -v
                     editIndex = -1
                 }) { Text("Save") }
             },
