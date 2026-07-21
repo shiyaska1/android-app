@@ -317,9 +317,6 @@ class DiaryEditViewModel(app: Application) : AndroidViewModel(app) {
             recordFile = file
             recordStart = System.currentTimeMillis()
             recording = true
-            // Foreground service keeps the mic alive once the screen locks. It shows the
-            // required "Recording…" notification — the recording is never hidden.
-            com.billing.pos.diary.RecordingService.start(getApplication())
         } catch (e: Exception) {
             runCatching { rec.release() }
             file.delete()
@@ -331,7 +328,6 @@ class DiaryEditViewModel(app: Application) : AndroidViewModel(app) {
         val rec = recorder ?: return
         runCatching { rec.stop() }
         runCatching { rec.release() }
-        com.billing.pos.diary.RecordingService.stop(getApplication())
         recorder = null
         recording = false
         val dur = System.currentTimeMillis() - recordStart

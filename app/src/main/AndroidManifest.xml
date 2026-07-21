@@ -21,9 +21,6 @@
 
     <!-- Diary: voice notes, reminders/notifications -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
-    <!-- Keep the mic alive on the lock screen; the notification is mandatory and kept. -->
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"
@@ -119,11 +116,6 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths" />
         </provider>
-
-        <service
-            android:name=".diary.RecordingService"
-            android:exported="false"
-            android:foregroundServiceType="microphone" />
 
     </application>
 </manifest>
