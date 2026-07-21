@@ -327,8 +327,7 @@ class StickyNoteViewModel(app: Application) : AndroidViewModel(app) {
             }
             // y is the top of the label on screen, so shift down by one ascent to match.
             var ty = t.y - tp.fontMetrics.ascent
-            t.text.split('
-').forEach { line ->
+            t.text.split('\n').forEach { line ->
                 c.drawText(line, t.x, ty, tp)
                 ty += tp.textSize * 1.2f
             }
@@ -513,8 +512,7 @@ fun StickyNoteScreen(onClose: () -> Unit, onOcrToSales: () -> Unit = {}, vm: Sti
                         typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
                     }
                     var ty = t.y - tp.fontMetrics.ascent
-                    t.text.split('
-').forEach { line ->
+                    t.text.split('\n').forEach { line ->
                         canvas.nativeCanvas.drawText(line, t.x, ty, tp)
                         ty += tp.textSize * 1.2f
                     }
