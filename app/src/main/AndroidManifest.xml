@@ -34,6 +34,13 @@
         android:maxSdkVersion="28" />
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
 
+    <!--
+      WorkManager arrives transitively with ML Kit and declares a foreground service, which
+      makes Play demand a Foreground Service declaration even though nothing here uses one.
+      We never call WorkManager, so both the service and its permission are merged out.
+    -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" tools:node="remove" />
+
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
@@ -106,6 +113,10 @@
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
             </intent-filter>
         </receiver>
+
+        <service
+            android:name="androidx.work.impl.foreground.SystemForegroundService"
+            tools:node="remove" />
 
         <provider
             android:name="androidx.core.content.FileProvider"
