@@ -120,6 +120,10 @@ fun MobileNumberDialog(
                     },
                     modifier = Modifier.weight(1f)
                 ) { Text("Copy") }
+                OutlinedButton(
+                    onClick = { com.billing.pos.util.ShareText.share(context, number) },
+                    modifier = Modifier.weight(1f)
+                ) { Text("Share") }
                 Button(
                     onClick = { if (number.isNotBlank()) noteFor = number },
                     modifier = Modifier.weight(1.3f)

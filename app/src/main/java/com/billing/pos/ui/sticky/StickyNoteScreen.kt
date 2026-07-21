@@ -18,6 +18,10 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -97,9 +101,32 @@ object StickyOcrLink {
 
 private typealias StrokePts = List<Offset>
 
+/** A typed label placed on the page; position is in canvas coordinates. */
+class NoteText(
+    text: String,
+    x: Float,
+    y: Float,
+    colorInt: Int,
+    sizePx: Float
+) {
+    var text by mutableStateOf(text)
+    var x by mutableStateOf(x)
+    var y by mutableStateOf(y)
+    var colorInt by mutableStateOf(colorInt)
+    var sizePx by mutableStateOf(sizePx)
+
+    fun snapshot() = NoteTextData(text, x, y, colorInt, sizePx)
+}
+
+/** Immutable copy of a [NoteText], for rendering off the UI thread. */
+data class NoteTextData(
+    val text: String, val x: Float, val y: Float, val colorInt: Int, val sizePx: Float
+)
+
 /** A page of the note: handwriting strokes over an optional background image. */
 class NotePage {
     val strokes = mutableStateListOf<StrokePts>()
+    val texts = mutableStateListOf<NoteText>()
     var bg by mutableStateOf<String?>(null)
     // Optional OCR selection box (canvas coords): when set, only content inside is read.
     var selStart by mutableStateOf<Offset?>(null)
@@ -115,7 +142,12 @@ class NotePage {
 }
 
 /** Immutable snapshot passed to the VM for rendering. */
-data class PageData(val strokes: List<StrokePts>, val bg: String?, val region: androidx.compose.ui.geometry.Rect? = null)
+data class PageData(
+    val strokes: List<StrokePts>,
+    val bg: String?,
+    val region: androidx.compose.ui.geometry.Rect? = null,
+    val texts: List<NoteTextData> = emptyList()
+)
 
 class StickyNoteViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = DiaryRepository(app)
@@ -284,6 +316,25 @@ class StickyNoteViewModel(app: Application) : AndroidViewModel(app) {
         return text
     }
 
+    /** Typed labels, drawn the same way for the preview, the export and the OCR bitmap. */
+    private fun drawTexts(c: AndroidCanvas, texts: List<NoteTextData>) {
+        texts.forEach { t ->
+            val tp = AndroidPaint().apply {
+                color = t.colorInt
+                isAntiAlias = true
+                textSize = t.sizePx
+                typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
+            }
+            // y is the top of the label on screen, so shift down by one ascent to match.
+            var ty = t.y - tp.fontMetrics.ascent
+            t.text.split('
+').forEach { line ->
+                c.drawText(line, t.x, ty, tp)
+                ty += tp.textSize * 1.2f
+            }
+        }
+    }
+
     private fun renderPage(p: PageData, w: Int, h: Int): Bitmap {
         val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
         val c = AndroidCanvas(bmp)
@@ -294,6 +345,7 @@ class StickyNoteViewModel(app: Application) : AndroidViewModel(app) {
             val path = AndroidPath(); pts.forEachIndexed { i, pt -> if (i == 0) path.moveTo(pt.x, pt.y) else path.lineTo(pt.x, pt.y) }
             c.drawPath(path, paint)
         }
+        drawTexts(c, p.texts)
         return bmp
     }
 }
@@ -313,6 +365,11 @@ fun StickyNoteScreen(onClose: () -> Unit, onOcrToSales: () -> Unit = {}, vm: Sti
     var bgMode by remember { mutableStateOf(false) }
     // When on, dragging draws an OCR selection box (instead of ink); Read reads only inside it.
     var regionMode by remember { mutableStateOf(false) }
+    // Text mode: drags move the nearest label instead of drawing ink.
+    var textMode by remember { mutableStateOf(false) }
+    var editingText by remember { mutableStateOf<NoteText?>(null) }
+    var addingText by remember { mutableStateOf(false) }
+    var draggingText by remember { mutableStateOf<NoteText?>(null) }
     var ocrResult by remember { mutableStateOf<List<com.billing.pos.ocr.ScannedItem>?>(null) }
     var ocrModeAsk by remember { mutableStateOf(false) }
     var ocrText by remember { mutableStateOf<String?>(null) }
@@ -384,27 +441,56 @@ fun StickyNoteScreen(onClose: () -> Unit, onOcrToSales: () -> Unit = {}, vm: Sti
                 Checkbox(checked = regionMode, onCheckedChange = { regionMode = it; if (it) bgMode = false })
                 Text("Read in box", style = MaterialTheme.typography.labelSmall)
             }
+            // Text tool: add typed labels, then drag them into place.
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                androidx.compose.material3.Switch(
+                    checked = textMode,
+                    onCheckedChange = { textMode = it; if (it) regionMode = false }
+                )
+                Text("Text", style = MaterialTheme.typography.labelSmall)
+            }
+            if (textMode) {
+                androidx.compose.material3.TextButton(onClick = { addingText = true }) {
+                    Text("+ Add", style = MaterialTheme.typography.labelSmall)
+                }
+            }
             if (vm.recording) Text("● REC", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall)
         }
         Canvas(
             Modifier.weight(1f).fillMaxWidth().background(Color.White)
                 .onSizeChanged { canvasSize = it }
-                .pointerInput(pageIndex, regionMode) {
+                .pointerInput(pageIndex, regionMode, textMode) {
                     detectDragGestures(
                         onDragStart = { off ->
-                            if (regionMode) { pages.getOrNull(pageIndex)?.let { it.selStart = off; it.selEnd = off } }
-                            else { current.clear(); current.add(off) }
+                            when {
+                                textMode -> draggingText = nearestText(pages.getOrNull(pageIndex), off)
+                                regionMode -> pages.getOrNull(pageIndex)?.let { it.selStart = off; it.selEnd = off }
+                                else -> { current.clear(); current.add(off) }
+                            }
                         },
-                        onDrag = { change, _ ->
-                            if (regionMode) { pages.getOrNull(pageIndex)?.selEnd = change.position }
-                            else current.add(change.position)
+                        onDrag = { change, drag ->
+                            when {
+                                textMode -> draggingText?.let { t -> t.x += drag.x; t.y += drag.y }
+                                regionMode -> pages.getOrNull(pageIndex)?.selEnd = change.position
+                                else -> current.add(change.position)
+                            }
                             change.consume()
                         },
                         onDragEnd = {
-                            if (!regionMode && current.isNotEmpty()) { while (pages.size <= pageIndex) pages.add(NotePage()); pages[pageIndex].strokes.add(current.toList()) }
+                            if (!textMode && !regionMode && current.isNotEmpty()) {
+                                while (pages.size <= pageIndex) pages.add(NotePage())
+                                pages[pageIndex].strokes.add(current.toList())
+                            }
+                            draggingText = null
                             current.clear()
                         }
                     )
+                }
+                .pointerInput(pageIndex, textMode) {
+                    // In text mode a tap opens the label under the finger for editing.
+                    androidx.compose.foundation.gestures.detectTapGestures { off ->
+                        if (textMode) nearestText(pages.getOrNull(pageIndex), off)?.let { editingText = it }
+                    }
                 }
         ) {
             bgImage?.let { drawImage(it, srcOffset = IntOffset.Zero, srcSize = IntSize(it.width, it.height), dstOffset = IntOffset.Zero, dstSize = IntSize(size.width.toInt(), size.height.toInt())) }
@@ -416,6 +502,23 @@ fun StickyNoteScreen(onClose: () -> Unit, onOcrToSales: () -> Unit = {}, vm: Sti
             if (current.isNotEmpty()) {
                 val path = Path().apply { current.forEachIndexed { i, p -> if (i == 0) moveTo(p.x, p.y) else lineTo(p.x, p.y) } }
                 drawPath(path, ink, style = Stroke(width = 4f, cap = StrokeCap.Round))
+            }
+            // Typed labels.
+            pages.getOrNull(pageIndex)?.texts?.forEach { t ->
+                drawIntoCanvas { canvas ->
+                    val tp = android.graphics.Paint().apply {
+                        color = t.colorInt
+                        isAntiAlias = true
+                        textSize = t.sizePx
+                        typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
+                    }
+                    var ty = t.y - tp.fontMetrics.ascent
+                    t.text.split('
+').forEach { line ->
+                        canvas.nativeCanvas.drawText(line, t.x, ty, tp)
+                        ty += tp.textSize * 1.2f
+                    }
+                }
             }
             // Selection box overlay for region OCR.
             pages.getOrNull(pageIndex)?.let { pg ->
@@ -443,14 +546,14 @@ fun StickyNoteScreen(onClose: () -> Unit, onOcrToSales: () -> Unit = {}, vm: Sti
             OutlinedButton(onClick = { startVideo() }, modifier = actBtn, contentPadding = noPad) { Icon(Icons.Filled.Videocam, "Video", modifier = bigIcon) }
             OutlinedButton(onClick = {
                 shareCurrent()
-                vm.save(pages.map { PageData(it.strokes.toList(), it.bg) }, canvasSize.width, canvasSize.height, images.toList(), audios.toList(), videos.toList()) { }
+                vm.save(pages.map { PageData(it.strokes.toList(), it.bg, null, it.texts.map { t -> t.snapshot() }) }, canvasSize.width, canvasSize.height, images.toList(), audios.toList(), videos.toList()) { }
             }, modifier = actBtn, contentPadding = noPad) { Icon(Icons.Filled.Share, "Share", modifier = bigIcon) }
             OutlinedButton(onClick = { ocrModeAsk = true }, modifier = actBtn, contentPadding = noPad) { Icon(Icons.Filled.TextFields, "Read", modifier = bigIcon) }
         }
         // Row 3: close / save
         Row(Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             OutlinedButton(onClick = onClose, modifier = Modifier.weight(1f)) { Text("Close") }
-            Button(onClick = { vm.save(pages.map { PageData(it.strokes.toList(), it.bg) }, canvasSize.width, canvasSize.height, images.toList(), audios.toList(), videos.toList()) { onClose() } }, modifier = Modifier.weight(1f)) { Icon(Icons.Filled.Save, null); Text("Save") }
+            Button(onClick = { vm.save(pages.map { PageData(it.strokes.toList(), it.bg, null, it.texts.map { t -> t.snapshot() }) }, canvasSize.width, canvasSize.height, images.toList(), audios.toList(), videos.toList()) { onClose() } }, modifier = Modifier.weight(1f)) { Icon(Icons.Filled.Save, null); Text("Save") }
         }
     }
 
@@ -489,10 +592,33 @@ fun StickyNoteScreen(onClose: () -> Unit, onOcrToSales: () -> Unit = {}, vm: Sti
         )
     }
 
+    // Add / edit a typed label.
+    if (addingText || editingText != null) {
+        val existing = editingText
+        StickyTextDialog(
+            initial = existing,
+            onDismiss = { addingText = false; editingText = null },
+            onDelete = {
+                existing?.let { pages.getOrNull(pageIndex)?.texts?.remove(it) }
+                addingText = false; editingText = null
+            },
+            onSave = { text, colorInt, sizePx ->
+                if (existing != null) {
+                    existing.text = text; existing.colorInt = colorInt; existing.sizePx = sizePx
+                } else {
+                    while (pages.size <= pageIndex) pages.add(NotePage())
+                    // Drop it near the top-left so it is always on screen, then drag it.
+                    pages[pageIndex].texts.add(NoteText(text, 60f, 80f, colorInt, sizePx))
+                }
+                addingText = false; editingText = null
+            }
+        )
+    }
+
     // Ask: read as numbers or text? The chips also decide which engine reads the text.
     var ocrLang by remember { mutableStateOf(com.billing.pos.ui.common.OcrLang.default(context)) }
     if (ocrModeAsk) {
-        val pageData = pages.map { PageData(it.strokes.toList(), it.bg, it.regionRect()) }
+        val pageData = pages.map { PageData(it.strokes.toList(), it.bg, it.regionRect(), it.texts.map { t -> t.snapshot() }) }
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { ocrModeAsk = false },
             title = { Text("Read handwriting as") },
@@ -552,4 +678,98 @@ fun StickyNoteScreen(onClose: () -> Unit, onOcrToSales: () -> Unit = {}, vm: Sti
             confirmButton = { androidx.compose.material3.TextButton(onClick = { ocrText = null }) { Text("Close") } }
         )
     }
+}
+
+/** The label nearest [off], within a generous radius so it is easy to grab. */
+private fun nearestText(page: NotePage?, off: Offset): NoteText? {
+    val texts = page?.texts ?: return null
+    return texts.minByOrNull { t ->
+        val dx = off.x - t.x
+        val dy = off.y - (t.y + t.sizePx / 2f)
+        dx * dx + dy * dy
+    }?.takeIf { t ->
+        // Roughly the label's box: width guessed from character count.
+        val w = t.sizePx * 0.62f * t.text.length.coerceAtLeast(1) + 40f
+        off.x >= t.x - 40f && off.x <= t.x + w && off.y >= t.y - 40f && off.y <= t.y + t.sizePx + 40f
+    }
+}
+
+/** Colours offered for a sticky-note label. */
+private val TEXT_COLORS = listOf(
+    0xFF111111.toInt(), 0xFFD32F2F.toInt(), 0xFF1976D2.toInt(),
+    0xFF388E3C.toInt(), 0xFFF57C00.toInt(), 0xFF7B1FA2.toInt(), 0xFFFFFFFF.toInt()
+)
+
+@Composable
+private fun StickyTextDialog(
+    initial: NoteText?,
+    onDismiss: () -> Unit,
+    onDelete: () -> Unit,
+    onSave: (String, Int, Float) -> Unit
+) {
+    var text by remember { mutableStateOf(initial?.text ?: "") }
+    var colorInt by remember { mutableStateOf(initial?.colorInt ?: TEXT_COLORS.first()) }
+    var sizePx by remember { mutableStateOf(initial?.sizePx ?: 48f) }
+
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (initial == null) "Add text" else "Edit text") },
+        text = {
+            Column {
+                androidx.compose.material3.OutlinedTextField(
+                    value = text, onValueChange = { text = it },
+                    label = { Text("Text") },
+                    minLines = 2, maxLines = 4,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Text("Colour", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 10.dp))
+                Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TEXT_COLORS.forEach { c ->
+                        Box(
+                            Modifier.size(30.dp)
+                                .clip(androidx.compose.foundation.shape.CircleShape)
+                                .background(Color(c))
+                                .border(
+                                    if (colorInt == c) 3.dp else 1.dp,
+                                    if (colorInt == c) MaterialTheme.colorScheme.primary else Color.Gray,
+                                    androidx.compose.foundation.shape.CircleShape
+                                )
+                                .clickable { colorInt = c }
+                        )
+                    }
+                }
+                Text(
+                    "Size ${sizePx.toInt()}",
+                    style = MaterialTheme.typography.labelMedium,
+                    modifier = Modifier.padding(top = 10.dp)
+                )
+                androidx.compose.material3.Slider(
+                    value = sizePx,
+                    onValueChange = { sizePx = it },
+                    valueRange = 20f..160f
+                )
+                Text(
+                    "Turn the Text switch on and drag the label to place it.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.outline
+                )
+            }
+        },
+        confirmButton = {
+            androidx.compose.material3.TextButton(
+                onClick = { if (text.isNotBlank()) onSave(text.trim(), colorInt, sizePx) },
+                enabled = text.isNotBlank()
+            ) { Text("Save") }
+        },
+        dismissButton = {
+            Row {
+                if (initial != null) {
+                    androidx.compose.material3.TextButton(onClick = onDelete) {
+                        Text("Delete", color = MaterialTheme.colorScheme.error)
+                    }
+                }
+                androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Cancel") }
+            }
+        }
+    )
 }

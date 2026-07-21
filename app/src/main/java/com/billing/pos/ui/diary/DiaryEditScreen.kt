@@ -428,6 +428,11 @@ fun DiaryEditScreen(
                 textStyle = titleStyle,
                 trailingIcon = {
                     Row {
+                        IconButton(onClick = {
+                            com.billing.pos.util.ShareText.share(context, vm.title, vm.title)
+                        }) {
+                            Icon(Icons.Filled.Share, contentDescription = "Share title text")
+                        }
                         IconButton(onClick = { drawTarget = "title" }) {
                             Icon(Icons.Filled.Draw, contentDescription = "Write title by hand")
                         }
@@ -488,6 +493,7 @@ fun DiaryEditScreen(
                         },
                         onSpeak = { startSpeech("body") },
                         onDraw = { drawTarget = "body:$index" },
+                        onShareText = { com.billing.pos.util.ShareText.share(context, block.text, vm.title) },
                         onTranscribe = { transcribeBlock = block },
                         audioPlaying = audio.playing && audio.currentPath == block.path,
                         onAudioToggle = {
@@ -793,6 +799,7 @@ private fun BlockEditor(
     onOpen: () -> Unit,
     onSpeak: () -> Unit,
     onDraw: () -> Unit = {},
+    onShareText: () -> Unit = {},
     onTranscribe: () -> Unit = {},
     audioPlaying: Boolean = false,
     onAudioToggle: () -> Unit = {}
@@ -805,6 +812,7 @@ private fun BlockEditor(
                 minLines = 2, textStyle = bodyStyle,
                 trailingIcon = {
                     Row {
+                        IconButton(onClick = onShareText) { Icon(Icons.Filled.Share, contentDescription = "Share this text") }
                         IconButton(onClick = onDraw) { Icon(Icons.Filled.Draw, contentDescription = "Write by hand") }
                         IconButton(onClick = onSpeak) { Icon(Icons.Filled.Mic, contentDescription = "Dictate") }
                     }
