@@ -18,6 +18,9 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.foundation.clickable
@@ -487,7 +490,7 @@ fun StickyNoteScreen(onClose: () -> Unit, onOcrToSales: () -> Unit = {}, vm: Sti
                 }
                 .pointerInput(pageIndex, textMode) {
                     // In text mode a tap opens the label under the finger for editing.
-                    androidx.compose.foundation.gestures.detectTapGestures { off ->
+                    detectTapGestures { off ->
                         if (textMode) nearestText(pages.getOrNull(pageIndex), off)?.let { editingText = it }
                     }
                 }
