@@ -88,8 +88,12 @@ object FullBackup {
         root.put("labDoctors", JSONArray().apply { db.labMasterDao().allDoctors().forEach { put(JSONObject().put("id", it.id).put("name", it.name)) } })
         root.put("materialOuts", JSONArray().apply { db.materialOutDao().all().forEach { put(matOutJson(it)) } })
         root.put("materialOutItems", JSONArray().apply { db.materialOutDao().allLines().forEach { put(matOutItemJson(it)) } })
+        root.put("materialReceipts", JSONArray().apply { db.materialReceiptDao().all().forEach { put(matRecJson(it)) } })
+        root.put("materialReceiptItems", JSONArray().apply { db.materialReceiptDao().allLines().forEach { put(matRecItemJson(it)) } })
         val billAtts = db.billAttachmentDao().all()
         root.put("billAttachments", JSONArray().apply { billAtts.forEach { put(billAttJson(it)) } })
+        val expenseAtts = db.expenseAttachmentDao().all()
+        root.put("expenseAttachments", JSONArray().apply { expenseAtts.forEach { put(expenseAttJson(it)) } })
 
         val dir = File(context.cacheDir, "shared").apply { mkdirs() }
         val zip = File(dir, "pos-full-backup.zip")
@@ -131,6 +135,14 @@ object FullBackup {
                     zos.closeEntry()
                 }
             }
+            expenseAtts.forEach { att ->
+                val f = File(att.path)
+                if (f.exists()) {
+                    zos.putNextEntry(ZipEntry("expensefiles/" + f.name))
+                    f.inputStream().use { it.copyTo(zos) }
+                    zos.closeEntry()
+                }
+            }
         }
         return zip
     }
@@ -142,6 +154,7 @@ object FullBackup {
         val filesDir = AttachmentStore.dir(context)
         val itemFilesDir = com.billing.pos.items.ItemAttachmentStore.dir(context)
         val billFilesDir = com.billing.pos.bills.BillAttachmentStore.dir(context)
+        val expenseFilesDir = com.billing.pos.expenses.ExpenseAttachmentStore.dir(context)
         var json: String? = null
         ZipInputStream(ByteArrayInputStream(bytes)).use { zis ->
             var e = zis.nextEntry
@@ -155,6 +168,10 @@ object FullBackup {
                         }
                         e.name.startsWith("billfiles/") -> {
                             val out = File(billFilesDir, e.name.removePrefix("billfiles/"))
+                            out.outputStream().use { zis.copyTo(it) }
+                        }
+                        e.name.startsWith("expensefiles/") -> {
+                            val out = File(expenseFilesDir, e.name.removePrefix("expensefiles/"))
                             out.outputStream().use { zis.copyTo(it) }
                         }
                         e.name.startsWith("files/") -> {
@@ -172,8 +189,9 @@ object FullBackup {
         val db = AppDatabase.get(context)
 
         if (merge) {
-            mergeInto(context, db, root)
-            return@runCatching "Merge complete — backup data appended"
+            val report = mergeInto(context, db, root)
+            MergeReport.save(context, report)
+            return@runCatching "Merge complete — ${report.total} record(s) added"
         }
 
         withContext(Dispatchers.IO) { db.clearAllTables() }
@@ -307,6 +325,17 @@ object FullBackup {
         root.optJSONArray("billAttachments")?.let {
             for (i in 0 until it.length()) db.billAttachmentDao().insert(readBillAtt(context, it.getJSONObject(i)))
         }
+        root.optJSONArray("expenseAttachments")?.let {
+            for (i in 0 until it.length()) db.expenseAttachmentDao().insert(readExpenseAtt(context, it.getJSONObject(i)))
+        }
+        root.optJSONArray("materialReceipts")?.let {
+            for (i in 0 until it.length()) db.materialReceiptDao().insertHeader(readMatRec(it.getJSONObject(i)))
+        }
+        root.optJSONArray("materialReceiptItems")?.let {
+            val ls = ArrayList<MaterialReceiptItem>()
+            for (i in 0 until it.length()) ls.add(readMatRecItem(it.getJSONObject(i)))
+            if (ls.isNotEmpty()) db.materialReceiptDao().insertLines(ls)
+        }
 
         "Restore complete"
     }
@@ -317,7 +346,8 @@ object FullBackup {
      * documents are always inserted as new rows with their parent ids remapped.
      * Users are intentionally NOT merged so local logins are preserved.
      */
-    private suspend fun mergeInto(context: Context, db: AppDatabase, root: JSONObject) {
+    private suspend fun mergeInto(context: Context, db: AppDatabase, root: JSONObject): MergeReport {
+        val log = MergeReportBuilder()
         // Customers
         val custByName = HashMap<String, Long>()
         db.customerDao().all().forEach { custByName[it.name.lowercase()] = it.id }
@@ -325,7 +355,8 @@ object FullBackup {
         root.optJSONArray("customers")?.let {
             for (i in 0 until it.length()) {
                 val c = readCust(it.getJSONObject(i)); val key = c.name.lowercase()
-                custMap[c.id] = custByName[key] ?: db.customerDao().insert(c.copy(id = 0)).also { nid -> custByName[key] = nid }
+                custMap[c.id] = custByName[key]
+                    ?: db.customerDao().insert(c.copy(id = 0)).also { nid -> custByName[key] = nid; log.add("customers", nid) }
             }
         }
         // Suppliers
@@ -335,7 +366,8 @@ object FullBackup {
         root.optJSONArray("suppliers")?.let {
             for (i in 0 until it.length()) {
                 val s = readSupplier(it.getJSONObject(i)); val key = s.name.lowercase()
-                suppMap[s.id] = suppByName[key] ?: db.supplierDao().insert(s.copy(id = 0)).also { nid -> suppByName[key] = nid }
+                suppMap[s.id] = suppByName[key]
+                    ?: db.supplierDao().insert(s.copy(id = 0)).also { nid -> suppByName[key] = nid; log.add("suppliers", nid) }
             }
         }
         // Items
@@ -345,7 +377,8 @@ object FullBackup {
         root.optJSONArray("items")?.let {
             for (i in 0 until it.length()) {
                 val it2 = readItem(it.getJSONObject(i)); val key = it2.name.lowercase()
-                itemMap[it2.id] = itemByName[key] ?: db.itemDao().insert(it2.copy(id = 0)).also { nid -> itemByName[key] = nid }
+                itemMap[it2.id] = itemByName[key]
+                    ?: db.itemDao().insert(it2.copy(id = 0)).also { nid -> itemByName[key] = nid; log.add("items", nid) }
             }
         }
         // Account groups
@@ -366,16 +399,45 @@ object FullBackup {
             for (i in 0 until it.length()) {
                 val h = readHead(it.getJSONObject(i)); val key = h.name.lowercase()
                 headMap[h.id] = headByName[key]
-                    ?: db.accountDao().insertHead(h.copy(id = 0, groupId = groupMap[h.groupId] ?: h.groupId)).also { nid -> headByName[key] = nid }
+                    ?: db.accountDao().insertHead(h.copy(id = 0, groupId = groupMap[h.groupId] ?: h.groupId))
+                        .also { nid -> headByName[key] = nid; log.add("accountHeads", nid) }
+            }
+        }
+
+        // Diary types — merged before entries, which remap their typeId onto these.
+        val typeByName = HashMap<String, Long>()
+        db.diaryTypeDao().all().forEach { typeByName[it.name.lowercase()] = it.id }
+        val diaryTypeMap = HashMap<Long, Long>()
+        root.optJSONArray("diaryTypes")?.let {
+            for (i in 0 until it.length()) {
+                val o = it.getJSONObject(i)
+                val name = o.optString("name"); val key = name.lowercase()
+                diaryTypeMap[o.optLong("id")] =
+                    typeByName[key] ?: db.diaryTypeDao().insert(DiaryType(name = name)).also { nid -> typeByName[key] = nid }
+            }
+        }
+
+        // Users — matched by username so the same person is not duplicated.
+        val userByName = HashMap<String, Long>()
+        db.userDao().all().forEach { userByName[it.username.lowercase()] = it.id }
+        root.optJSONArray("users")?.let {
+            for (i in 0 until it.length()) {
+                val u = readUser(it.getJSONObject(i)); val key = u.username.lowercase()
+                if (userByName.containsKey(key)) continue
+                val nid = db.userDao().insert(u.copy(id = 0))
+                userByName[key] = nid
+                log.add("users", nid)
             }
         }
 
         // Bills + items
+        val expMap = HashMap<Long, Long>()
         val billMap = HashMap<Long, Long>()
         root.optJSONArray("bills")?.let {
             for (i in 0 until it.length()) {
                 val b = readBill(it.getJSONObject(i))
                 billMap[b.id] = db.billDao().insertBill(b.copy(id = 0, customerId = custMap[b.customerId] ?: b.customerId))
+                    .also { nid -> log.add("bills", nid) }
             }
         }
         root.optJSONArray("billItems")?.let {
@@ -392,6 +454,7 @@ object FullBackup {
             for (i in 0 until it.length()) {
                 val p = readPurchase(it.getJSONObject(i))
                 purMap[p.id] = db.purchaseDao().insertPurchase(p.copy(id = 0, supplierId = suppMap[p.supplierId] ?: p.supplierId))
+                    .also { nid -> log.add("purchases", nid) }
             }
         }
         root.optJSONArray("purchaseItems")?.let {
@@ -414,7 +477,7 @@ object FullBackup {
             for (i in 0 until it.length()) {
                 val ex = readExpense(it.getJSONObject(i))
                 val np = if (ex.purchaseId > 0) (purMap[ex.purchaseId] ?: 0L) else 0L
-                db.expenseDao().insert(ex.copy(id = 0, purchaseId = np))
+                expMap[ex.id] = db.expenseDao().insert(ex.copy(id = 0, purchaseId = np)).also { nid -> log.add("expenses", nid) }
             }
         }
         // Journals
@@ -438,7 +501,9 @@ object FullBackup {
         root.optJSONArray("diaryEntries")?.let {
             for (i in 0 until it.length()) {
                 val e = readEntry(it.getJSONObject(i))
-                diaryMap[e.id] = db.diaryDao().insert(e.copy(id = 0))
+                diaryMap[e.id] = db.diaryDao()
+                    .insert(e.copy(id = 0, typeId = diaryTypeMap[e.typeId] ?: 0L))
+                    .also { nid -> log.add("diaryEntries", nid) }
             }
         }
         root.optJSONArray("diaryAttachments")?.let {
@@ -629,6 +694,31 @@ object FullBackup {
                 db.billAttachmentDao().insert(a.copy(id = 0, billId = nb))
             }
         }
+        // Payment attachments (voice / photo / file)
+        root.optJSONArray("expenseAttachments")?.let {
+            for (i in 0 until it.length()) {
+                val a = readExpenseAtt(context, it.getJSONObject(i)); val ne = expMap[a.expenseId] ?: continue
+                db.expenseAttachmentDao().insert(a.copy(id = 0, expenseId = ne))
+            }
+        }
+        // Material receipts + lines
+        val matRecMap = HashMap<Long, Long>()
+        root.optJSONArray("materialReceipts")?.let {
+            for (i in 0 until it.length()) {
+                val m = readMatRec(it.getJSONObject(i))
+                matRecMap[m.id] = db.materialReceiptDao()
+                    .insertHeader(m.copy(id = 0, supplierId = suppMap[m.supplierId] ?: m.supplierId))
+                    .also { nid -> log.add("materialReceipts", nid) }
+            }
+        }
+        root.optJSONArray("materialReceiptItems")?.let {
+            for (i in 0 until it.length()) {
+                val l = readMatRecItem(it.getJSONObject(i)); val nm = matRecMap[l.receiptId] ?: continue
+                db.materialReceiptDao().insertLines(listOf(l.copy(id = 0, receiptId = nm, itemId = itemMap[l.itemId] ?: l.itemId)))
+            }
+        }
+
+        return log.build()
     }
 
     // ---- serialisers ----
@@ -996,6 +1086,36 @@ object FullBackup {
 
     private fun itemAttJson(a: ItemAttachment) = JSONObject().put("id", a.id).put("itemId", a.itemId)
         .put("file", File(a.path).name).put("name", a.name).put("mime", a.mime).put("kind", a.kind)
+
+    private fun matRecJson(m: MaterialReceipt) = JSONObject().put("id", m.id).put("receiptNo", m.receiptNo)
+        .put("dateMillis", m.dateMillis).put("supplierId", m.supplierId).put("supplierName", m.supplierName)
+        .put("lpoId", m.lpoId).put("lpoNo", m.lpoNo).put("remarks", m.remarks)
+
+    private fun readMatRec(o: JSONObject) = MaterialReceipt(
+        id = o.optLong("id"), receiptNo = o.optString("receiptNo"), dateMillis = o.optLong("dateMillis"),
+        supplierId = o.optLong("supplierId"), supplierName = o.optString("supplierName"),
+        lpoId = o.optLong("lpoId"), lpoNo = o.optString("lpoNo"), remarks = o.optString("remarks")
+    )
+
+    private fun matRecItemJson(l: MaterialReceiptItem) = JSONObject().put("id", l.id).put("receiptId", l.receiptId)
+        .put("itemId", l.itemId).put("name", l.name).put("qty", l.qty).put("price", l.price)
+        .put("taxPercent", l.taxPercent).put("lineTotal", l.lineTotal).put("batchNo", l.batchNo).put("unit", l.unit)
+
+    private fun readMatRecItem(o: JSONObject) = MaterialReceiptItem(
+        id = o.optLong("id"), receiptId = o.optLong("receiptId"), itemId = o.optLong("itemId"),
+        name = o.optString("name"), qty = o.optDouble("qty", 0.0), price = o.optDouble("price", 0.0),
+        taxPercent = o.optDouble("taxPercent", 0.0), lineTotal = o.optDouble("lineTotal", 0.0),
+        batchNo = o.optString("batchNo"), unit = o.optString("unit")
+    )
+
+    private fun expenseAttJson(a: ExpenseAttachment) = JSONObject().put("id", a.id).put("expenseId", a.expenseId)
+        .put("file", File(a.path).name).put("name", a.name).put("mime", a.mime)
+
+    private fun readExpenseAtt(context: Context, o: JSONObject) = ExpenseAttachment(
+        id = o.optLong("id"), expenseId = o.optLong("expenseId"),
+        path = File(com.billing.pos.expenses.ExpenseAttachmentStore.dir(context), o.optString("file")).absolutePath,
+        name = o.optString("name"), mime = o.optString("mime")
+    )
 
     private fun billAttJson(a: BillAttachment) = JSONObject().put("id", a.id).put("billId", a.billId)
         .put("file", File(a.path).name).put("name", a.name).put("mime", a.mime)

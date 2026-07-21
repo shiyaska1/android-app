@@ -231,6 +231,22 @@ private fun AppNav() {
                 nav.navigate(dest) { popUpTo("boot") { inclusive = true } }
             })
         }
+        composable("mergelog") {
+            com.billing.pos.ui.backup.MergeLogScreen(
+                onBack = { nav.popBackStack() },
+                onOpenGroup = { key -> nav.navigate("mergelog/$key") }
+            )
+        }
+        composable(
+            route = "mergelog/{key}",
+            arguments = listOf(navArgument("key") { type = NavType.StringType })
+        ) { entry ->
+            com.billing.pos.ui.backup.MergeLogDetailScreen(
+                groupKey = entry.arguments?.getString("key").orEmpty(),
+                onBack = { nav.popBackStack() },
+                onEdit = { route -> nav.navigate(route) }
+            )
+        }
         composable("chooseBusiness") {
             com.billing.pos.ui.auth.BusinessTypeScreen(onChosen = {
                 nav.navigate("dashboard") { popUpTo(0) { inclusive = true } }
@@ -642,7 +658,8 @@ private fun AppNav() {
         composable("backup") {
             BackupScreen(
                 onBack = { nav.popBackStack() },
-                onRestored = { logout() }
+                onRestored = { logout() },
+                onOpenMergeLog = { nav.navigate("mergelog") }
             )
         }
         composable("users") {

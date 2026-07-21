@@ -111,6 +111,11 @@ class AppPrefs(context: Context) {
     /** Personal mode hides the shop-keeping features, leaving the everyday tools. */
     val isPersonal: Boolean get() = businessType == "Personal"
 
+    /** JSON of the most recent merge-restore, so its log can be reopened. */
+    var lastMergeReport: String
+        get() = p.getString("last_merge_report", "") ?: ""
+        set(v) { p.edit().putString("last_merge_report", v).apply() }
+
     var businessType: String
         get() = p.getString("business_type", "") ?: ""
         set(v) { p.edit().putString("business_type", v).apply() }

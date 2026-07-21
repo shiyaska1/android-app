@@ -50,7 +50,8 @@ import kotlinx.coroutines.withContext
 @Composable
 fun BackupScreen(
     onBack: () -> Unit,
-    onRestored: () -> Unit
+    onRestored: () -> Unit,
+    onOpenMergeLog: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -92,6 +93,7 @@ fun BackupScreen(
             if (result.isSuccess) {
                 if (merge) {
                     snackbar.showSnackbar(result.getOrNull() ?: "Merge complete")
+                    onOpenMergeLog()
                 } else {
                     snackbar.showSnackbar("Restore complete — please sign in")
                     onRestored()
@@ -185,6 +187,14 @@ fun BackupScreen(
                     enabled = !busy,
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
                 ) { Icon(Icons.Filled.CloudDownload, null); Text("  Restore from Google Drive") }
+                // Available whenever a merge has been run before, not only right after one.
+                if (com.billing.pos.data.MergeReport.load(context) != null) {
+                    OutlinedButton(
+                        onClick = onOpenMergeLog,
+                        enabled = !busy,
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                    ) { Icon(Icons.Filled.Restore, null); Text("  View last merge log") }
+                }
             }
 
             if (busy) {
