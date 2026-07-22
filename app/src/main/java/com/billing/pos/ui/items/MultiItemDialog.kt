@@ -44,6 +44,9 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.clickable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -312,6 +315,263 @@ fun MultiItemDialog(
                     }
                 }
             }
+        }
+    }
+}
+
+/**
+ * Adds several items from photographs: shoot each item in turn, then name them by reading
+ * the text off each picture.
+ *
+ * The camera reopens itself after every shot so a shelf can be worked through without
+ * returning to the app between items; backing out of the camera ends the run and leaves
+ * one row per photo taken. Tapping a picture opens it full screen, where drawing a box
+ * over the name reads it into that row.
+ */
+@Composable
+fun PhotoItemsDialog(
+    categories: List<String>,
+    onSave: (List<MultiItemRow>) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val rows = remember { mutableStateListOf<MultiItemRow>() }
+    var shots by remember { mutableStateOf(0) }
+    var keepShooting by remember { mutableStateOf(true) }
+
+    val addedCategories = remember { mutableStateListOf<String>() }
+    val allCategories = (categories + addedCategories).distinct().filter { it.isNotBlank() }
+    var newCatFor by remember { mutableStateOf<MultiItemRow?>(null) }
+    var ocrFor by remember { mutableStateOf<MultiItemRow?>(null) }
+
+    val camera = com.billing.pos.ocr.rememberImageCamera { uri ->
+        rows.add(MultiItemRow().also { it.photos.add(uri) })
+        shots++
+    }
+    val gallery = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickMultipleVisualMedia(30)
+    ) { uris ->
+        uris.forEach { u -> rows.add(MultiItemRow().also { it.photos.add(u) }) }
+    }
+
+    // Fires once on open and again after every shot, so the camera keeps coming back.
+    // Cancelling the camera reports nothing, so the run simply stops there.
+    LaunchedEffect(shots) { if (keepShooting) camera() }
+
+    ocrFor?.let { row ->
+        val uri = row.photos.firstOrNull()
+        if (uri == null) ocrFor = null
+        else com.billing.pos.ui.common.RegionOcrDialog(
+            uri = uri,
+            onResult = { t -> if (t.isNotBlank()) row.name = t; ocrFor = null },
+            onDismiss = { ocrFor = null }
+        )
+    }
+
+    newCatFor?.let { row ->
+        var typed by remember(row) { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { newCatFor = null },
+            title = { Text("New category") },
+            text = {
+                OutlinedTextField(
+                    value = typed, onValueChange = { typed = it },
+                    label = { Text("Category name") }, singleLine = true
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val name = typed.trim()
+                    if (name.isNotBlank()) { addedCategories.add(name); row.category = name }
+                    newCatFor = null
+                }) { Text("Add") }
+            },
+            dismissButton = { TextButton(onClick = { newCatFor = null }) { Text("Cancel") } }
+        )
+    }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+    ) {
+        Column(
+            Modifier.fillMaxSize()
+                .background(MaterialTheme.colorScheme.surface)
+                .safeDrawingPadding()
+                .imePadding()
+        ) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedButton(
+                    onClick = { keepShooting = false; onDismiss() },
+                    modifier = Modifier.weight(1f)
+                ) { Text("Cancel") }
+                Button(
+                    onClick = { keepShooting = false; onSave(rows.filter { it.isFilled }.toList()) },
+                    enabled = rows.any { it.isFilled },
+                    modifier = Modifier.weight(1.6f)
+                ) { Text("Save ${rows.count { it.isFilled }} item(s)") }
+            }
+            Divider()
+
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(
+                    onClick = { keepShooting = true; camera() },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Filled.PhotoCamera, null, Modifier.size(18.dp))
+                    Text(" More photos", style = MaterialTheme.typography.labelMedium)
+                }
+                OutlinedButton(
+                    onClick = {
+                        keepShooting = false
+                        gallery.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                    },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Filled.PhotoLibrary, null, Modifier.size(18.dp))
+                    Text(" From gallery", style = MaterialTheme.typography.labelMedium)
+                }
+            }
+
+            if (rows.isEmpty()) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text(
+                        "Take a photo of each item. Back out of the camera when you are done.",
+                        color = MaterialTheme.colorScheme.outline,
+                        modifier = Modifier.padding(24.dp)
+                    )
+                }
+                return@Column
+            }
+
+            LazyColumn(Modifier.fillMaxSize().padding(horizontal = 10.dp)) {
+                itemsIndexed(rows) { index, row ->
+                    Card(Modifier.fillMaxWidth().padding(vertical = 5.dp)) {
+                        Column(Modifier.padding(10.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    "Photo ${index + 1}",
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                IconButton(onClick = { rows.removeAt(index) }) {
+                                    Icon(Icons.Filled.Delete, "Remove row", tint = MaterialTheme.colorScheme.error)
+                                }
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                // Tap the picture to open it full screen and box the name.
+                                UriThumbnail(
+                                    uri = row.photos.firstOrNull(),
+                                    modifier = Modifier.size(84.dp).clickable { ocrFor = row }
+                                )
+                                Column(Modifier.weight(1f).padding(start = 8.dp)) {
+                                    OutlinedTextField(
+                                        value = row.name,
+                                        onValueChange = { row.name = it },
+                                        label = { Text("Item name") },
+                                        singleLine = true,
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                    OutlinedButton(
+                                        onClick = { ocrFor = row },
+                                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                                    ) {
+                                        Icon(Icons.Filled.PhotoCamera, null, Modifier.size(16.dp))
+                                        Text(" Read name from photo", style = MaterialTheme.typography.labelSmall)
+                                    }
+                                }
+                            }
+
+                            Row(
+                                Modifier.fillMaxWidth().padding(top = 6.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                OutlinedTextField(
+                                    value = row.price,
+                                    onValueChange = { row.price = it.filter { c -> c.isDigit() || c == '.' } },
+                                    label = { Text("Selling price") },
+                                    singleLine = true,
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Box(Modifier.weight(1f)) {
+                                    var catMenu by remember { mutableStateOf(false) }
+                                    OutlinedTextField(
+                                        readOnly = true,
+                                        value = row.category,
+                                        onValueChange = {},
+                                        label = { Text("Category") },
+                                        singleLine = true,
+                                        trailingIcon = {
+                                            Row {
+                                                IconButton(onClick = { newCatFor = row }) {
+                                                    Icon(Icons.Filled.Add, "New category", Modifier.size(18.dp))
+                                                }
+                                                IconButton(onClick = { catMenu = true }) {
+                                                    Icon(Icons.Filled.ArrowDropDown, "Pick category")
+                                                }
+                                            }
+                                        },
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                    DropdownMenu(expanded = catMenu, onDismissRequest = { catMenu = false }) {
+                                        if (allCategories.isEmpty()) DropdownMenuItem(
+                                            text = { Text("No categories yet — use +") },
+                                            onClick = { catMenu = false }
+                                        )
+                                        allCategories.forEach { c ->
+                                            DropdownMenuItem(
+                                                text = { Text(c) },
+                                                onClick = { row.category = c; catMenu = false }
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Small preview of a picked image, decoded once and downsampled to keep the list light. */
+@Composable
+private fun UriThumbnail(uri: android.net.Uri?, modifier: Modifier = Modifier) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val bmp = remember(uri) {
+        uri?.let {
+            runCatching {
+                context.contentResolver.openInputStream(it)?.use { input ->
+                    val bytes = input.readBytes()
+                    val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+                    var sample = 1
+                    while (maxOf(bounds.outWidth, bounds.outHeight) / sample > 300) sample *= 2
+                    val opts = android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }
+                    android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)?.asImageBitmap()
+                }
+            }.getOrNull()
+        }
+    }
+    if (bmp != null) {
+        androidx.compose.foundation.Image(
+            bitmap = bmp,
+            contentDescription = "Item photo",
+            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+            modifier = modifier
+        )
+    } else {
+        Box(modifier.background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
+            Icon(Icons.Filled.PhotoCamera, null, Modifier.size(24.dp))
         }
     }
 }

@@ -410,6 +410,7 @@ fun ItemsScreen(
     // "+" asks whether one item or several, then opens the matching form.
     var askAddMode by remember { mutableStateOf(false) }
     var showMulti by remember { mutableStateOf(false) }
+    var showPhotoMulti by remember { mutableStateOf(false) }
     var deleteFor by remember { mutableStateOf<Item?>(null) }
     // Deep link (from the item-wise sales report): open this item in edit mode once loaded.
     var editLinkDone by remember { mutableStateOf(false) }
@@ -665,17 +666,34 @@ fun ItemsScreen(
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { askAddMode = false },
             title = { Text("Add items") },
-            text = { Text("Add one item with the full form, or several at once in a simple table.") },
-            confirmButton = {
-                androidx.compose.material3.TextButton(onClick = {
-                    askAddMode = false; editing = null; vm.beginEdit(null); showDialog = true
-                }) { Text("Single item") }
+            text = {
+                Column {
+                    androidx.compose.material3.TextButton(onClick = {
+                        askAddMode = false; editing = null; vm.beginEdit(null); showDialog = true
+                    }, modifier = Modifier.fillMaxWidth()) { Text("Single item — the full form") }
+                    androidx.compose.material3.TextButton(onClick = {
+                        askAddMode = false; showMulti = true
+                    }, modifier = Modifier.fillMaxWidth()) { Text("Multiple items — a table of rows") }
+                    androidx.compose.material3.TextButton(onClick = {
+                        askAddMode = false; showPhotoMulti = true
+                    }, modifier = Modifier.fillMaxWidth()) { Text("Multiple by image — photograph each item") }
+                }
             },
+            confirmButton = {},
             dismissButton = {
-                androidx.compose.material3.TextButton(onClick = {
-                    askAddMode = false; showMulti = true
-                }) { Text("Multiple items") }
+                androidx.compose.material3.TextButton(onClick = { askAddMode = false }) { Text("Cancel") }
             }
+        )
+    }
+
+    if (showPhotoMulti) {
+        val cats = remember(rows) {
+            rows.map { it.item.category }.filter { it.isNotBlank() }.distinct().sortedBy { it.lowercase() }
+        }
+        PhotoItemsDialog(
+            categories = cats,
+            onSave = { entered -> vm.saveMany(context, entered) { showPhotoMulti = false } },
+            onDismiss = { showPhotoMulti = false }
         )
     }
 
