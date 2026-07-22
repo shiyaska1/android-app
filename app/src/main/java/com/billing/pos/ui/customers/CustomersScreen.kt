@@ -13,6 +13,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Divider
@@ -20,6 +22,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -95,6 +98,10 @@ fun CustomersScreen(
     var showDialog by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<Customer?>(null) }
     var deleteFor by remember { mutableStateOf<Customer?>(null) }
+    // Picking customers to share. Off by default so the list stays a plain list.
+    var selecting by remember { mutableStateOf(false) }
+    val selected = remember { mutableStateListOf<Long>() }
+    val context = androidx.compose.ui.platform.LocalContext.current
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
@@ -106,10 +113,34 @@ fun CustomersScreen(
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
                 },
+                actions = {
+                    if (selecting) {
+                        Text("${selected.size}", fontWeight = FontWeight.Bold)
+                        IconButton(
+                            onClick = {
+                                val chosen = customers.filter { it.id in selected }
+                                if (chosen.isNotEmpty()) {
+                                    com.billing.pos.util.ShareText.share(
+                                        context, customerShareText(chosen), "Customer details"
+                                    )
+                                }
+                            },
+                            enabled = selected.isNotEmpty()
+                        ) { Icon(Icons.Filled.Share, "Share selected") }
+                        IconButton(onClick = { selecting = false; selected.clear() }) {
+                            Icon(Icons.Filled.Close, "Cancel selection")
+                        }
+                    } else {
+                        IconButton(onClick = { selecting = true }) {
+                            Icon(Icons.Filled.Share, "Share customers")
+                        }
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                     titleContentColor = MaterialTheme.colorScheme.onPrimary,
-                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary
+                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary,
+                    actionIconContentColor = MaterialTheme.colorScheme.onPrimary
                 )
             )
         },
@@ -122,9 +153,23 @@ fun CustomersScreen(
         LazyColumn(Modifier.fillMaxSize().padding(pad).padding(horizontal = 12.dp)) {
             items(customers, key = { it.id }) { c ->
                 Row(
-                    Modifier.fillMaxWidth().clickable { editing = c; showDialog = true }.padding(vertical = 8.dp),
+                    Modifier.fillMaxWidth()
+                        .clickable {
+                            if (selecting) {
+                                if (c.id in selected) selected.remove(c.id) else selected.add(c.id)
+                            } else { editing = c; showDialog = true }
+                        }
+                        .padding(vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    if (selecting) {
+                        androidx.compose.material3.Checkbox(
+                            checked = c.id in selected,
+                            onCheckedChange = {
+                                if (c.id in selected) selected.remove(c.id) else selected.add(c.id)
+                            }
+                        )
+                    }
                     Column(Modifier.weight(1f)) {
                         Text(c.name + if (c.isDefault) "  (default)" else "", fontWeight = FontWeight.Bold)
                         val sub = listOf(c.phone, c.address).filter { it.isNotBlank() }.joinToString("  •  ")
@@ -132,7 +177,7 @@ fun CustomersScreen(
                             Text(sub, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
                         }
                     }
-                    if (!c.isDefault) {
+                    if (!c.isDefault && !selecting) {
                         IconButton(onClick = { deleteFor = c }) {
                             Icon(Icons.Filled.Delete, "Delete", tint = MaterialTheme.colorScheme.error)
                         }
@@ -202,4 +247,15 @@ private fun CustomerDialog(
         confirmButton = { TextButton(onClick = { onSave(name, phone, address, gstin) }) { Text("Save") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
+}
+
+/** The chosen customers as plain text, ready to paste into WhatsApp. */
+private fun customerShareText(customers: List<Customer>): String = buildString {
+    customers.forEachIndexed { i, c ->
+        if (i > 0) appendLine()
+        appendLine(c.name)
+        if (c.phone.isNotBlank()) appendLine("Phone: " + c.phone)
+        if (c.address.isNotBlank()) appendLine("Address: " + c.address)
+        if (c.gstin.isNotBlank()) appendLine("GSTIN: " + c.gstin)
+    }
 }

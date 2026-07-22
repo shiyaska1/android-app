@@ -57,6 +57,7 @@ fun MobileNumberDialog(
 ) {
     var number by remember { mutableStateOf(initial.filter { it.isDigit() }) }
     var noteFor by remember { mutableStateOf<String?>(null) }
+    var saveCustomerFor by remember { mutableStateOf<String?>(null) }
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
     val scope = androidx.compose.runtime.rememberCoroutineScope()
@@ -79,6 +80,46 @@ fun MobileNumberDialog(
                 onDismiss()
             },
             onDismiss = { noteFor = null }
+        )
+    }
+
+    // "Save customer": the number is already known, so only the name is asked for.
+    saveCustomerFor?.let { num ->
+        var name by remember(num) { mutableStateOf("") }
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { saveCustomerFor = null },
+            title = { Text("Save as customer") },
+            text = {
+                Column {
+                    Text(
+                        num,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    OutlinedTextField(
+                        value = name, onValueChange = { name = it },
+                        label = { Text("Customer name") }, singleLine = true,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                }
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    val typed = name.trim()
+                    if (typed.isNotBlank()) {
+                        scope.launch {
+                            com.billing.pos.data.Repository(context).addCustomer(typed, num, "")
+                        }
+                        android.widget.Toast.makeText(
+                            context, "$typed saved to customers", android.widget.Toast.LENGTH_SHORT
+                        ).show()
+                        saveCustomerFor = null
+                    }
+                }) { Text("Save") }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { saveCustomerFor = null }) { Text("Cancel") }
+            }
         )
     }
 
@@ -139,6 +180,10 @@ fun MobileNumberDialog(
                     },
                     modifier = Modifier.weight(1f)
                 ) { Text("Call") }
+                OutlinedButton(
+                    onClick = { if (number.isNotBlank()) saveCustomerFor = number },
+                    modifier = Modifier.weight(1.4f)
+                ) { Text("Save customer") }
                 Button(
                     onClick = { if (number.isNotBlank()) noteFor = number },
                     modifier = Modifier.weight(1.3f)
