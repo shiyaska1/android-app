@@ -124,6 +124,21 @@ fun MobileNumberDialog(
                     onClick = { com.billing.pos.util.ShareText.share(context, number) },
                     modifier = Modifier.weight(1f)
                 ) { Text("Share") }
+                OutlinedButton(
+                    // Opens the phone's dialer with the number filled in — the call itself is
+                    // still started by you, so the app needs no calling permission.
+                    onClick = {
+                        if (number.isNotBlank()) runCatching {
+                            context.startActivity(
+                                android.content.Intent(
+                                    android.content.Intent.ACTION_DIAL,
+                                    android.net.Uri.parse("tel:" + number)
+                                ).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                            )
+                        }
+                    },
+                    modifier = Modifier.weight(1f)
+                ) { Text("Call") }
                 Button(
                     onClick = { if (number.isNotBlank()) noteFor = number },
                     modifier = Modifier.weight(1.3f)

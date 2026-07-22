@@ -818,13 +818,15 @@ object FullBackup {
         .put("dateMillis", q.dateMillis).put("customerId", q.customerId).put("customerName", q.customerName)
         .put("subTotal", q.subTotal).put("taxTotal", q.taxTotal).put("additionalCharge", q.additionalCharge)
         .put("discount", q.discount).put("grandTotal", q.grandTotal).put("remarks", q.remarks)
+        .put("terms", q.terms)
 
     private fun readQuotation(o: JSONObject) = Quotation(
         id = o.optLong("id"), quotationNo = o.optString("quotationNo"), dateMillis = o.optLong("dateMillis"),
         customerId = o.optLong("customerId"), customerName = o.optString("customerName"),
         subTotal = o.optDouble("subTotal", 0.0), taxTotal = o.optDouble("taxTotal", 0.0),
         additionalCharge = o.optDouble("additionalCharge", 0.0), discount = o.optDouble("discount", 0.0),
-        grandTotal = o.optDouble("grandTotal", 0.0), remarks = o.optString("remarks")
+        grandTotal = o.optDouble("grandTotal", 0.0), remarks = o.optString("remarks"),
+        terms = o.optString("terms")
     )
 
     private fun estimateJson(e: Estimate) = JSONObject().put("id", e.id).put("estimateNo", e.estimateNo)

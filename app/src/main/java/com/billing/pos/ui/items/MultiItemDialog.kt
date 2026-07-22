@@ -20,19 +20,24 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Draw
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Divider
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -78,6 +83,11 @@ fun MultiItemDialog(
     var ocrUri by remember { mutableStateOf<android.net.Uri?>(null) }
     var photoFor by remember { mutableStateOf<MultiItemRow?>(null) }
 
+    // Categories offered in the dropdowns: the existing ones plus anything added here.
+    val addedCategories = remember { mutableStateListOf<String>() }
+    val allCategories = (categories + addedCategories).distinct().filter { it.isNotBlank() }
+    var newCatFor by remember { mutableStateOf<MultiItemRow?>(null) }
+
     val ocrCamera = com.billing.pos.ocr.rememberImageCamera { uri -> ocrUri = uri }
     val ocrGallery = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) ocrUri = uri
@@ -102,6 +112,28 @@ fun MultiItemDialog(
             uri = u,
             onResult = { t -> if (t.isNotBlank() && row != null) row.name = t; ocrUri = null; ocrFor = null },
             onDismiss = { ocrUri = null; ocrFor = null }
+        )
+    }
+
+    newCatFor?.let { row ->
+        var typed by remember(row) { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { newCatFor = null },
+            title = { Text("New category") },
+            text = {
+                OutlinedTextField(
+                    value = typed, onValueChange = { typed = it },
+                    label = { Text("Category name") }, singleLine = true
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val name = typed.trim()
+                    if (name.isNotBlank()) { addedCategories.add(name); row.category = name }
+                    newCatFor = null
+                }) { Text("Add") }
+            },
+            dismissButton = { TextButton(onClick = { newCatFor = null }) { Text("Cancel") } }
         )
     }
 
@@ -196,13 +228,41 @@ fun MultiItemDialog(
                                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                                     modifier = Modifier.weight(1f)
                                 )
-                                OutlinedTextField(
-                                    value = row.category,
-                                    onValueChange = { row.category = it },
-                                    label = { Text("Category") },
-                                    singleLine = true,
-                                    modifier = Modifier.weight(1f)
-                                )
+                                // Category is picked from the ones already in use; "+" adds a new
+                                // one, which then shows up for every other row straight away.
+                                Box(Modifier.weight(1f)) {
+                                    var catMenu by remember { mutableStateOf(false) }
+                                    OutlinedTextField(
+                                        readOnly = true,
+                                        value = row.category,
+                                        onValueChange = {},
+                                        label = { Text("Category") },
+                                        singleLine = true,
+                                        trailingIcon = {
+                                            Row {
+                                                IconButton(onClick = { newCatFor = row }) {
+                                                    Icon(Icons.Filled.Add, "New category", Modifier.size(18.dp))
+                                                }
+                                                IconButton(onClick = { catMenu = true }) {
+                                                    Icon(Icons.Filled.ArrowDropDown, "Pick category")
+                                                }
+                                            }
+                                        },
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                    DropdownMenu(expanded = catMenu, onDismissRequest = { catMenu = false }) {
+                                        if (allCategories.isEmpty()) DropdownMenuItem(
+                                            text = { Text("No categories yet — use +") },
+                                            onClick = { catMenu = false }
+                                        )
+                                        allCategories.forEach { c ->
+                                            DropdownMenuItem(
+                                                text = { Text(c) },
+                                                onClick = { row.category = c; catMenu = false }
+                                            )
+                                        }
+                                    }
+                                }
                             }
 
                             // Item photos, copied in on save.

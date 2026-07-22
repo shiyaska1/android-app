@@ -12,6 +12,7 @@ import androidx.core.content.FileProvider
 import com.billing.pos.data.AppPrefs
 import com.billing.pos.data.CompanyInfo
 import com.billing.pos.util.Format
+import com.billing.pos.util.layoutRich
 import java.io.File
 
 /** One printable line on a document. [unit] is shown next to the quantity when set. */
@@ -41,6 +42,8 @@ data class PdfDoc(
     val grandTotal: Double,
     val grandLabel: String = "GRAND TOTAL",
     val remarks: String = "",
+    /** Terms and conditions, printed under the totals. Accepts the same formatting as notes. */
+    val terms: String = "",
     val filePrefix: String         // used for the pdf file name, e.g. "quotation"
 )
 
@@ -144,9 +147,13 @@ object DocumentPdf {
         val rightCell = Paint(cell).apply { textAlign = Paint.Align.RIGHT }
         // Notes print smaller and greyer than the item name, so the item still reads first.
         val notePaint = Paint(cell).apply { textSize = cell.textSize - 2f; color = 0xFF444444.toInt() }
+        val itemColWidth = cQty - cItem - 8f
         doc.lines.forEachIndexed { i, l ->
-            val noteLines = wrapNote(l.note, 58)
-            val thisRowH = rowH + noteLines.size * 13f
+            // A description replaces the item name rather than sitting under it, so a line
+            // that has been described prints only the description.
+            val noteLines = layoutRich(l.note, itemColWidth, notePaint)
+            val notesH = noteLines.sumOf { it.height.toDouble() }.toFloat()
+            val thisRowH = if (noteLines.isEmpty()) rowH else maxOf(rowH, notesH + 10f)
             if (y + thisRowH > PH - 120f) {
                 drawVerticalBorders(c, line, x0, xEnd, cItem, cQty, cRate, cAmt, secTop, y)
                 pdf.finishPage(page)
@@ -156,15 +163,22 @@ object DocumentPdf {
                 tableHeader()
             }
             c.drawText("${i + 1}", cNo + 4f, y + 14f, cell)
-            c.drawText(clip(l.name, 44), cItem + 4f, y + 14f, cell)
             val qtyText = Format.qty(l.qty) + if (l.unit.isNotBlank()) " ${l.unit}" else ""
             c.drawText(qtyText, cRate - 4f, y + 14f, rightCell)
             c.drawText(Format.money(l.price), cAmt - 4f, y + 14f, rightCell)
             c.drawText(Format.money(l.lineTotal), xEnd - 4f, y + 14f, rightCell)
-            var ny = y + 14f
-            noteLines.forEach { nl ->
-                ny += 13f
-                c.drawText(nl, cItem + 4f, ny, notePaint)
+            if (noteLines.isEmpty()) {
+                c.drawText(clip(l.name, 44), cItem + 4f, y + 14f, cell)
+            } else {
+                var ny = y + 6f
+                noteLines.forEach { nl ->
+                    ny += nl.height
+                    var nx = cItem + 4f
+                    nl.runs.forEach { run ->
+                        c.drawText(run.text, nx, ny, run.paint)
+                        nx += run.paint.measureText(run.text)
+                    }
+                }
             }
             y += thisRowH
             c.drawLine(x0, y, xEnd, y, line)
@@ -198,6 +212,28 @@ object DocumentPdf {
             val note = Paint(cellBold).apply { textSize = 12f; color = 0xFF000000.toInt() }
             c.drawText("Note: ${clip(doc.remarks, 80)}", x0, y, note); y += 18f
         }
+
+        if (doc.terms.isNotBlank()) {
+            c.drawText("Terms & Conditions", x0, y, Paint(cellBold).apply { textSize = 11f })
+            y += 14f
+            val termsPaint = Paint(cell).apply { textSize = 10f; color = 0xFF222222.toInt() }
+            layoutRich(doc.terms, xEnd - x0, termsPaint).forEach { tl ->
+                // Start a new page rather than printing the terms over the footer.
+                if (y + tl.height > PH - M - 14f) {
+                    pdf.finishPage(page)
+                    page = pdf.startPage(PdfDocument.PageInfo.Builder(PW.toInt(), PH.toInt(), pdf.pages.size + 1).create())
+                    c = page.canvas
+                    y = M + 14f
+                }
+                y += tl.height
+                var tx = x0
+                tl.runs.forEach { run ->
+                    c.drawText(run.text, tx, y, run.paint)
+                    tx += run.paint.measureText(run.text)
+                }
+            }
+            y += 8f
+        }
         c.drawText("This is a computer-generated document.", x0, PH - M, small)
 
         pdf.finishPage(page)
@@ -217,22 +253,3 @@ object DocumentPdf {
     private fun clip(s: String, max: Int) = if (s.length <= max) s else s.take(max - 1) + "…"
 }
 
-/**
- * Splits a multi-line note into printable lines, wrapping anything longer than [width]
- * characters. The author's own line breaks are kept.
- */
-private fun wrapNote(note: String, width: Int): List<String> {
-    if (note.isBlank()) return emptyList()
-    val out = ArrayList<String>()
-    note.split('\n').forEach { raw ->
-        var rest = raw.trim()
-        if (rest.isEmpty()) return@forEach
-        while (rest.length > width) {
-            val cut = rest.lastIndexOf(' ', width).let { if (it <= 0) width else it }
-            out.add(rest.substring(0, cut))
-            rest = rest.substring(cut).trim()
-        }
-        if (rest.isNotEmpty()) out.add(rest)
-    }
-    return out
-}

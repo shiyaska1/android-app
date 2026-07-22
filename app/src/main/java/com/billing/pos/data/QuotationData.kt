@@ -24,7 +24,9 @@ data class Quotation(
     val additionalCharge: Double,
     val discount: Double,
     val grandTotal: Double,
-    val remarks: String = ""
+    val remarks: String = "",
+    /** Terms and conditions printed at the foot of the quotation. */
+    val terms: String = ""
 )
 
 @Entity(tableName = "quotation_items")

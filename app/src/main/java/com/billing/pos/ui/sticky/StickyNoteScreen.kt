@@ -319,24 +319,6 @@ class StickyNoteViewModel(app: Application) : AndroidViewModel(app) {
         return text
     }
 
-    /** Typed labels, drawn the same way for the preview, the export and the OCR bitmap. */
-    private fun drawTexts(c: AndroidCanvas, texts: List<NoteTextData>) {
-        texts.forEach { t ->
-            val tp = AndroidPaint().apply {
-                color = t.colorInt
-                isAntiAlias = true
-                textSize = t.sizePx
-                typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
-            }
-            // y is the top of the label on screen, so shift down by one ascent to match.
-            var ty = t.y - tp.fontMetrics.ascent
-            t.text.split('\n').forEach { line ->
-                c.drawText(line, t.x, ty, tp)
-                ty += tp.textSize * 1.2f
-            }
-        }
-    }
-
     private fun renderPage(p: PageData, w: Int, h: Int): Bitmap {
         val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
         val c = AndroidCanvas(bmp)
@@ -347,8 +329,29 @@ class StickyNoteViewModel(app: Application) : AndroidViewModel(app) {
             val path = AndroidPath(); pts.forEachIndexed { i, pt -> if (i == 0) path.moveTo(pt.x, pt.y) else path.lineTo(pt.x, pt.y) }
             c.drawPath(path, paint)
         }
-        drawTexts(c, p.texts)
+        drawNoteTexts(c, p.texts)
         return bmp
+    }
+}
+
+/**
+ * Typed labels, drawn the same way for the saved page, the OCR bitmap and the share image —
+ * a share that left them out would send a picture missing whatever was typed on the note.
+ */
+fun drawNoteTexts(c: AndroidCanvas, texts: List<NoteTextData>) {
+    texts.forEach { t ->
+        val tp = AndroidPaint().apply {
+            color = t.colorInt
+            isAntiAlias = true
+            textSize = t.sizePx
+            typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
+        }
+        // y is the top of the label on screen, so shift down by one ascent to match.
+        var ty = t.y - tp.fontMetrics.ascent
+        t.text.split('\n').forEach { line ->
+            c.drawText(line, t.x, ty, tp)
+            ty += tp.textSize * 1.2f
+        }
     }
 }
 
@@ -420,6 +423,7 @@ fun StickyNoteScreen(onClose: () -> Unit, onOcrToSales: () -> Unit = {}, vm: Sti
             page.bg?.let { p -> runCatching { BitmapFactory.decodeFile(p) }.getOrNull()?.let { drawBitmap(it, null, Rect(0, 0, canvasSize.width, canvasSize.height), null) } }
             val paint = AndroidPaint().apply { color = 0xFF111111.toInt(); isAntiAlias = true; style = AndroidPaint.Style.STROKE; strokeWidth = 4f; strokeCap = AndroidPaint.Cap.ROUND }
             page.strokes.forEach { pts -> val pa = AndroidPath(); pts.forEachIndexed { i, pt -> if (i == 0) pa.moveTo(pt.x, pt.y) else pa.lineTo(pt.x, pt.y) }; drawPath(pa, paint) }
+            drawNoteTexts(this, page.texts.map { it.snapshot() })
         }
         val dir = File(context.cacheDir, "shared").apply { mkdirs() }
         val f = File(dir, "stickynote_${System.nanoTime()}.jpg")

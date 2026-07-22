@@ -18,6 +18,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.FormatBold
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.NoteAdd
@@ -82,6 +84,15 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
+/**
+ * Hands a quotation id from the list to the editor when "copy" is tapped. The two screens
+ * get separate view models, so the id cannot simply be passed in memory on the model.
+ */
+object QuotationCopy {
+    @Volatile var pending: Long? = null
+    fun take(): Long? { val p = pending; pending = null; return p }
+}
+
 class QuotationViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = Repository(app)
 
@@ -97,6 +108,7 @@ class QuotationViewModel(app: Application) : AndroidViewModel(app) {
     var additionalChargeText by mutableStateOf("")
     var discountText by mutableStateOf("")
     var remarks by mutableStateOf("")
+    var terms by mutableStateOf("")
     var quotationNo by mutableStateOf("QT-0001"); private set
     var dateMillis by mutableStateOf(System.currentTimeMillis())
     var editingId by mutableStateOf<Long?>(null); private set
@@ -143,6 +155,7 @@ class QuotationViewModel(app: Application) : AndroidViewModel(app) {
             additionalChargeText = if (q.additionalCharge != 0.0) q.additionalCharge.toString() else ""
             discountText = if (q.discount != 0.0) q.discount.toString() else ""
             remarks = q.remarks
+            terms = q.terms
             selectedCustomer = customers.value.firstOrNull { it.id == q.customerId } ?: Customer(q.customerId, q.customerName)
             cart.clear()
             repo.quotationLines(id).forEach { cart.add(CartLine(0, it.name, it.price, it.taxPercent, it.qty, unit = it.unit, note = it.note)) }
@@ -150,7 +163,7 @@ class QuotationViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun newQuotation() {
-        cart.clear(); additionalChargeText = ""; discountText = ""; remarks = ""
+        cart.clear(); additionalChargeText = ""; discountText = ""; remarks = ""; terms = ""
         dateMillis = System.currentTimeMillis(); editingId = null
         selectedCustomer = customers.value.firstOrNull { it.isDefault } ?: customers.value.firstOrNull()
         viewModelScope.launch { quotationNo = repo.nextQuotationNo() }
@@ -165,13 +178,36 @@ class QuotationViewModel(app: Application) : AndroidViewModel(app) {
                 id = editingId ?: 0, quotationNo = quotationNo, dateMillis = dateMillis,
                 customerId = customer.id, customerName = customer.name,
                 subTotal = subTotal, taxTotal = taxTotal, additionalCharge = additionalCharge,
-                discount = discount, grandTotal = grandTotal, remarks = remarks.trim()
+                discount = discount, grandTotal = grandTotal, remarks = remarks.trim(), terms = terms.trim()
             )
             val lines = cart.map { QuotationItem(0, q.id, it.name, it.qty, it.price, it.taxPercent, it.total, it.unit, it.note) }
             val eid = editingId
             if (eid != null) { repo.updateQuotation(q, lines); message.value = "Quotation $quotationNo updated" }
             else { val id = repo.saveQuotation(q, lines); editingId = id; message.value = "Quotation $quotationNo saved" }
             onDone()
+        }
+    }
+
+    /**
+     * Loads an existing quotation as a brand-new one: same customer, lines, charges and
+     * terms, but a fresh number and today's date. Saving creates a second quotation and
+     * leaves the original untouched.
+     */
+    fun copyFrom(id: Long) {
+        loaded = true
+        viewModelScope.launch {
+            val q = repo.quotationById(id) ?: return@launch
+            editingId = null
+            quotationNo = repo.nextQuotationNo()
+            dateMillis = System.currentTimeMillis()
+            additionalChargeText = if (q.additionalCharge != 0.0) q.additionalCharge.toString() else ""
+            discountText = if (q.discount != 0.0) q.discount.toString() else ""
+            remarks = q.remarks
+            terms = q.terms
+            selectedCustomer = customers.value.firstOrNull { it.id == q.customerId } ?: Customer(q.customerId, q.customerName)
+            cart.clear()
+            repo.quotationLines(id).forEach { cart.add(CartLine(0, it.name, it.price, it.taxPercent, it.qty, unit = it.unit, note = it.note)) }
+            message.value = "Copied — save to keep it as $quotationNo"
         }
     }
 
@@ -187,13 +223,18 @@ fun QuotationScreen(editId: Long?, onBack: () -> Unit, vm: QuotationViewModel = 
     val items by vm.items.collectAsStateSafe()
     val customers by vm.customers.collectAsStateSafe()
     val message by vm.message.collectAsStateSafe()
-    LaunchedEffect(Unit) { if (editId != null && editId > 0) vm.load(editId) }
+    LaunchedEffect(Unit) {
+        val copyId = QuotationCopy.take()
+        if (copyId != null) vm.copyFrom(copyId)
+        else if (editId != null && editId > 0) vm.load(editId)
+    }
     LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); vm.consumeMessage() } }
 
     var showItemPicker by remember { mutableStateOf(false) }
     // Index of the line whose description is open, if any.
     var noteFor by remember { mutableStateOf<Int?>(null) }
     var unitPickFor by remember { mutableStateOf<Item?>(null) }
+    var showTerms by remember { mutableStateOf(false) }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
@@ -210,7 +251,7 @@ fun QuotationScreen(editId: Long?, onBack: () -> Unit, vm: QuotationViewModel = 
                             lines = vm.cart.map { PdfLine(it.name, it.qty, it.price, it.total, it.unit, it.note) },
                             subTotal = vm.subTotal, taxTotal = vm.taxTotal, additionalCharge = vm.additionalCharge,
                             discount = vm.discount, grandTotal = vm.grandTotal, grandLabel = "TOTAL",
-                            remarks = vm.remarks, filePrefix = "quotation"
+                            remarks = vm.remarks, terms = vm.terms, filePrefix = "quotation"
                         )
                     }
                     IconButton(onClick = { vm.newQuotation() }) { Icon(Icons.Filled.NoteAdd, "New") }
@@ -295,6 +336,22 @@ fun QuotationScreen(editId: Long?, onBack: () -> Unit, vm: QuotationViewModel = 
                     }
                 }
             }
+            Row(
+                Modifier.fillMaxWidth().padding(top = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedTextField(
+                    value = vm.terms,
+                    onValueChange = { vm.terms = it },
+                    label = { Text("Terms & Conditions") },
+                    minLines = 2,
+                    maxLines = 4,
+                    modifier = Modifier.weight(1f)
+                )
+                IconButton(onClick = { showTerms = true }) {
+                    Icon(Icons.Filled.FormatBold, "Format terms", tint = MaterialTheme.colorScheme.primary)
+                }
+            }
             Button(onClick = { vm.save { } }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) { Text("Save quotation") }
         }
     }
@@ -307,6 +364,16 @@ fun QuotationScreen(editId: Long?, onBack: () -> Unit, vm: QuotationViewModel = 
             initialNote = line.note,
             onSave = { vm.setLineNote(idx, it) },
             onDismiss = { noteFor = null }
+        )
+    }
+
+    if (showTerms) {
+        com.billing.pos.ui.common.RichTextFullScreen(
+            heading = "Terms & Conditions",
+            hint = "Printed at the foot of the quotation and its PDF.",
+            initial = vm.terms,
+            onSave = { vm.terms = it },
+            onDismiss = { showTerms = false }
         )
     }
 
@@ -363,6 +430,9 @@ fun QuotationListScreen(onBack: () -> Unit, onOpen: (Long) -> Unit, onNew: () ->
                         Text("${q.customerName} • ${Format.date(q.dateMillis)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
                     }
                     Text(Format.rupee(q.grandTotal), fontWeight = FontWeight.Bold)
+                    IconButton(onClick = { QuotationCopy.pending = q.id; onNew() }) {
+                        Icon(Icons.Filled.ContentCopy, "Copy to a new quotation", tint = MaterialTheme.colorScheme.primary)
+                    }
                     IconButton(onClick = { deleteFor = q }) { Icon(Icons.Filled.Delete, "Delete", tint = MaterialTheme.colorScheme.error) }
                 }
                 Divider()
