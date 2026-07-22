@@ -426,6 +426,20 @@ fun FastBillDialog(
         }
         val receipts by repo.allReceipts.collectAsState(initial = emptyList<com.billing.pos.data.Receipt>())
         val shownTotal = shown.sumOf { it.total }
+
+        // Money already received from a customer since a tape was saved, up to the next
+        // tape for that same customer, so a receipt is counted against one calculation only.
+        fun receiptsFor(calc: com.billing.pos.data.SavedCalc): List<com.billing.pos.data.Receipt> {
+            val nextForCustomer = shown
+                .filter { it.customerName.equals(calc.customerName, true) && it.dateMillis > calc.dateMillis }
+                .minByOrNull { it.dateMillis }?.dateMillis ?: Long.MAX_VALUE
+            return receipts.filter { r ->
+                val who = r.payFrom.ifBlank { r.customerName }
+                who.equals(calc.customerName, ignoreCase = true) &&
+                    r.dateMillis >= calc.dateMillis && r.dateMillis < nextForCustomer
+            }
+        }
+        val shownReceived = shown.sumOf { c -> receiptsFor(c).sumOf { it.amount } }
         var filterMenu by remember { mutableStateOf(false) }
 
         Dialog(
@@ -529,17 +543,7 @@ fun FastBillDialog(
                         Modifier.fillMaxHeight(0.75f).fillMaxWidth()
                     ) {
                         items(shown, key = { it.id }) { calc ->
-                            // Money already received from this customer since the tape was
-                            // saved, up to the next tape for the same customer, so a receipt
-                            // is counted against one calculation only.
-                            val nextForCustomer = shown
-                                .filter { it.customerName.equals(calc.customerName, true) && it.dateMillis > calc.dateMillis }
-                                .minByOrNull { it.dateMillis }?.dateMillis ?: Long.MAX_VALUE
-                            val paid = receipts.filter { r ->
-                                val who = r.payFrom.ifBlank { r.customerName }
-                                who.equals(calc.customerName, ignoreCase = true) &&
-                                    r.dateMillis >= calc.dateMillis && r.dateMillis < nextForCustomer
-                            }
+                            val paid = receiptsFor(calc)
                             val received = paid.sumOf { it.amount }
                             Row(
                                 Modifier.fillMaxWidth()
@@ -627,17 +631,31 @@ fun FastBillDialog(
                 ) {
                     Column {
                         Text(
-                            "TOTAL  (${shown.size})",
+                            "TOTAL",
                             fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.outline
+                        )
+                        // The money, big. What is still outstanding once receipts are taken
+                        // off is the figure that matters, with the gross above it.
+                        if (shownReceived > 0.0) Text(
+                            Format.money(shownTotal) + "  −  " + Format.money(shownReceived),
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.outline
                         )
                         Text(
-                            Format.money(shownTotal),
-                            fontSize = 30.sp, fontWeight = FontWeight.Bold,
+                            Format.money(shownTotal - shownReceived),
+                            fontSize = 40.sp, fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace,
+                            maxLines = 1, softWrap = false,
                             color = MaterialTheme.colorScheme.primary
                         )
                     }
+                    Text(
+                        "${shown.size} saved",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.outline
+                    )
                 }
             }
         }
