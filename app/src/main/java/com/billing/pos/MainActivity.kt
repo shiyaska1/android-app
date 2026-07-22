@@ -19,6 +19,7 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.navArgument
 import com.billing.pos.auth.PendingDiaryOpen
@@ -225,6 +226,39 @@ private fun AppNav() {
         )
     }
 
+    // ---- Minimise / restore ----
+    //
+    // A back stack cannot hold two background screens and switch freely between them, so a
+    // parked screen is popped with its state saved and brought back by navigating to it
+    // again with restoreState. One saved state per destination, hence one of each kind.
+    val currentEntry by nav.currentBackStackEntryAsState()
+    val currentPattern = currentEntry?.destination?.route
+
+    fun concreteRoute(entry: androidx.navigation.NavBackStackEntry): String {
+        var route = entry.destination.route ?: return ""
+        entry.arguments?.let { args ->
+            Regex("\\{(\\w+)\\}").findAll(route).map { it.groupValues[1] }.toList().forEach { key ->
+                val value = args.get(key)?.toString() ?: ""
+                route = route.replace("{" + key + "}", value)
+            }
+        }
+        return route
+    }
+
+    androidx.compose.runtime.LaunchedEffect(com.billing.pos.ui.common.ParkedScreens.pendingLabel) {
+        val label = com.billing.pos.ui.common.ParkedScreens.consumePending() ?: return@LaunchedEffect
+        val entry = nav.currentBackStackEntry ?: return@LaunchedEffect
+        val route = concreteRoute(entry)
+        if (route.isBlank()) return@LaunchedEffect
+        com.billing.pos.ui.common.ParkedScreens.remember(route, label)
+        nav.navigate("dashboard") {
+            popUpTo(entry.destination.id) { saveState = true; inclusive = true }
+            launchSingleTop = true
+            restoreState = true
+        }
+    }
+
+    androidx.compose.foundation.layout.Box(Modifier.fillMaxSize()) {
     NavHost(navController = nav, startDestination = "boot") {
         composable("boot") {
             BootScreen(onResolved = { route ->
@@ -351,6 +385,10 @@ private fun AppNav() {
                 onLpos = { nav.navigate("lpos") },
                 onPurchaseQuotes = { nav.navigate("pquotes") },
                 onOpenChart = { metric -> nav.navigate("chart/$metric") },
+                onOpenParked = { route ->
+                    com.billing.pos.ui.common.ParkedScreens.forget(route)
+                    nav.navigate(route) { restoreState = true; launchSingleTop = true }
+                },
                 onHireInvoices = { nav.navigate("hires") },
                 onHireReturns = { nav.navigate("hirereturns") },
                 onHireItemReport = { nav.navigate("hireitemreport") },
@@ -746,5 +784,32 @@ private fun AppNav() {
                 onBackRequested = { nav.popBackStack() }
             )
         }
+    }
+
+    // A small handle on the right edge, only on the screens worth parking. Deliberately
+    // off to the side: entry screens already use the top bar and the bottom of the screen.
+    if (com.billing.pos.ui.common.ParkedScreens.isMinimizable(currentPattern)) {
+        androidx.compose.material3.Surface(
+            onClick = {
+                com.billing.pos.ui.common.ParkedScreens.minimize(
+                    com.billing.pos.ui.common.ParkedScreens.labelFor(currentPattern ?: "")
+                )
+            },
+            shape = androidx.compose.foundation.shape.RoundedCornerShape(
+                topStart = 16.dp, bottomStart = 16.dp
+            ),
+            color = androidx.compose.material3.MaterialTheme.colorScheme.primary,
+            modifier = Modifier
+                .align(androidx.compose.ui.Alignment.CenterEnd)
+                .padding(vertical = 2.dp)
+        ) {
+            androidx.compose.material3.Icon(
+                androidx.compose.material.icons.Icons.Filled.KeyboardArrowDown,
+                contentDescription = "Minimise this screen",
+                tint = androidx.compose.material3.MaterialTheme.colorScheme.onPrimary,
+                modifier = Modifier.padding(horizontal = 2.dp, vertical = 10.dp)
+            )
+        }
+    }
     }
 }

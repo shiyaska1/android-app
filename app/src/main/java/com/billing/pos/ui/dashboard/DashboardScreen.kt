@@ -1,6 +1,8 @@
 package com.billing.pos.ui.dashboard
 
 import androidx.compose.foundation.clickable
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -113,6 +115,7 @@ fun DashboardScreen(
     onPurchaseReturns: () -> Unit,
     onPurchaseQuotes: () -> Unit,
     onOpenChart: (String) -> Unit,
+    onOpenParked: (String) -> Unit,
     onLpos: () -> Unit,
     onHireInvoices: () -> Unit,
     onHireReturns: () -> Unit,
@@ -241,6 +244,40 @@ fun DashboardScreen(
         val openSections = remember { androidx.compose.runtime.mutableStateMapOf<String, Boolean>() }
 
         Column(Modifier.fillMaxSize().padding(pad)) {
+            // Screens set aside with the minimise handle, waiting to be picked up again.
+            val parked = com.billing.pos.ui.common.ParkedScreens.items
+            if (parked.isNotEmpty()) {
+                Row(
+                    Modifier.fillMaxWidth()
+                        .horizontalScroll(androidx.compose.foundation.rememberScrollState())
+                        .padding(horizontal = 12.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "MINIMISED",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.outline
+                    )
+                    parked.toList().forEach { item ->
+                        androidx.compose.material3.AssistChip(
+                            onClick = { onOpenParked(item.route) },
+                            label = { Text(item.label, style = MaterialTheme.typography.labelMedium) },
+                            trailingIcon = {
+                                Icon(
+                                    Icons.Filled.Close,
+                                    contentDescription = "Discard",
+                                    modifier = Modifier.size(16.dp).clickable {
+                                        com.billing.pos.ui.common.ParkedScreens.forget(item.route)
+                                    }
+                                )
+                            }
+                        )
+                    }
+                }
+            }
+
             OutlinedTextField(
                 value = query, onValueChange = { query = it },
                 label = { Text("Search a feature…") }, singleLine = true,
