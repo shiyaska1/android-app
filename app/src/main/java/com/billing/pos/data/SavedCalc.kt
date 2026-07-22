@@ -21,12 +21,17 @@ data class SavedCalc(
     val dateMillis: Long,
     val amounts: String,
     val total: Double,
-    val title: String = ""
+    val title: String = "",
+    val customerId: Long = 0,
+    /** Kept by name as well, so a tape still reads correctly if the customer is renamed. */
+    val customerName: String = DEFAULT_CUSTOMER,
+    val narration: String = ""
 ) {
     val amountList: List<Double>
         get() = amounts.split(',').mapNotNull { it.trim().toDoubleOrNull() }
 
     companion object {
+        const val DEFAULT_CUSTOMER = "Cash Customer"
         fun pack(values: List<Double>) = values.joinToString(",")
     }
 }

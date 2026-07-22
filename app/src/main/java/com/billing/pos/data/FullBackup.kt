@@ -828,11 +828,16 @@ object FullBackup {
     private fun savedCalcJson(c: SavedCalc) = JSONObject().put("id", c.id)
         .put("dateMillis", c.dateMillis).put("amounts", c.amounts)
         .put("total", c.total).put("title", c.title)
+        .put("customerId", c.customerId).put("customerName", c.customerName)
+        .put("narration", c.narration)
 
     private fun readSavedCalc(o: JSONObject) = SavedCalc(
         id = o.optLong("id"), dateMillis = o.optLong("dateMillis"),
         amounts = o.optString("amounts"), total = o.optDouble("total", 0.0),
-        title = o.optString("title")
+        title = o.optString("title"),
+        customerId = o.optLong("customerId"),
+        customerName = o.optString("customerName", SavedCalc.DEFAULT_CUSTOMER),
+        narration = o.optString("narration")
     )
 
     private fun quotationJson(q: Quotation) = JSONObject().put("id", q.id).put("quotationNo", q.quotationNo)

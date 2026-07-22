@@ -38,7 +38,7 @@ import androidx.room.TypeConverters
     // v33 page breaks, heading master, lab-bill payment; v34 lab balance receipts;
     // v35 doctor master + patient phone; v36 material out + movement;
     // v37 item purchase price; v38 material receipts + purchase stockReceived/lpoNo.
-    version = 45,
+    version = 46,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -189,6 +189,15 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** Customer and narration on a saved calculation. */
+        private val MIGRATION_45_46 = object : androidx.room.migration.Migration(45, 46) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE saved_calcs ADD COLUMN customerId INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE saved_calcs ADD COLUMN customerName TEXT NOT NULL DEFAULT 'Cash Customer'")
+                db.execSQL("ALTER TABLE saved_calcs ADD COLUMN narration TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         fun get(context: Context): AppDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -196,7 +205,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "pos_billing.db"
                 )
-                    .addMigrations(MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45)
+                    .addMigrations(MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45, MIGRATION_45_46)
                     .fallbackToDestructiveMigration()
                     .build()
                     .also { INSTANCE = it }

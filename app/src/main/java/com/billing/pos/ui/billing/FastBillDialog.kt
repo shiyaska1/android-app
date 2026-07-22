@@ -20,7 +20,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Backspace
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.ListAlt
+import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
@@ -82,6 +85,13 @@ fun FastBillDialog(
     // Id of the saved tape being edited, or 0 while this is a fresh calculation.
     var savedId by remember { mutableStateOf(0L) }
     var showSaved by remember { mutableStateOf(false) }
+    // The save popup, and what it collects.
+    var askSave by remember { mutableStateOf(false) }
+    var custName by remember { mutableStateOf(com.billing.pos.data.SavedCalc.DEFAULT_CUSTOMER) }
+    var custId by remember { mutableStateOf(0L) }
+    var narration by remember { mutableStateOf("") }
+    // Which customer the saved list is filtered to; blank means all of them.
+    var listFilter by remember { mutableStateOf("") }
     var editIndex by remember { mutableStateOf(-1) }
     val focus = remember { FocusRequester() }
     val scroll = rememberScrollState()
@@ -116,6 +126,9 @@ fun FastBillDialog(
     }
 
     val repo = remember { com.billing.pos.data.Repository(context) }
+    val downloadCalcPdf = com.billing.pos.ui.common.rememberPdfDownloader { msg ->
+        android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+    }
     val savedCalcs: List<com.billing.pos.data.SavedCalc> by
         repo.savedCalcs.collectAsState(initial = emptyList())
 
@@ -130,7 +143,10 @@ fun FastBillDialog(
                     id = savedId,
                     dateMillis = System.currentTimeMillis(),
                     amounts = com.billing.pos.data.SavedCalc.pack(all),
-                    total = all.sum()
+                    total = all.sum(),
+                    customerId = custId,
+                    customerName = custName.ifBlank { com.billing.pos.data.SavedCalc.DEFAULT_CUSTOMER },
+                    narration = narration.trim()
                 )
             )
             val fresh = savedId == 0L
@@ -162,11 +178,7 @@ fun FastBillDialog(
                     Icon(Icons.Filled.ListAlt, contentDescription = "Saved calculations")
                 }
                 IconButton(
-                    onClick = {
-                        storeTape { msg ->
-                            android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
-                        }
-                    },
+                    onClick = { askSave = true },
                     enabled = entries.isNotEmpty() || (input.toDoubleOrNull() ?: 0.0) > 0.0
                 ) { Icon(Icons.Filled.Save, contentDescription = "Save calculation") }
                 IconButton(
@@ -298,8 +310,106 @@ fun FastBillDialog(
         }
     }
 
+    // ---- Save popup: who it is for, and why ----
+    if (askSave) {
+        val customers by repo.customers.collectAsState(initial = emptyList<com.billing.pos.data.Customer>())
+        var custMenu by remember { mutableStateOf(false) }
+        var newCust by remember { mutableStateOf(false) }
+        var newCustName by remember { mutableStateOf("") }
+
+        if (newCust) {
+            AlertDialog(
+                onDismissRequest = { newCust = false },
+                title = { Text("New customer") },
+                text = {
+                    OutlinedTextField(
+                        value = newCustName, onValueChange = { newCustName = it },
+                        label = { Text("Customer name") }, singleLine = true
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        val name = newCustName.trim()
+                        if (name.isNotBlank()) scope.launch {
+                            // Added to the customer list proper, so it is there next time too.
+                            val c = repo.addCustomerReturning(name, "")
+                            custId = c.id; custName = c.name
+                        }
+                        newCustName = ""; newCust = false
+                    }) { Text("Add") }
+                },
+                dismissButton = { TextButton(onClick = { newCust = false }) { Text("Cancel") } }
+            )
+        }
+
+        AlertDialog(
+            onDismissRequest = { askSave = false },
+            title = { Text("Save calculation") },
+            text = {
+                Column {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.weight(1f)) {
+                            OutlinedTextField(
+                                readOnly = true, value = custName, onValueChange = {},
+                                label = { Text("Customer") },
+                                trailingIcon = {
+                                    IconButton(onClick = { custMenu = true }) {
+                                        Icon(Icons.Filled.ArrowDropDown, "Pick customer")
+                                    }
+                                },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            androidx.compose.material3.DropdownMenu(
+                                expanded = custMenu, onDismissRequest = { custMenu = false }
+                            ) {
+                                androidx.compose.material3.DropdownMenuItem(
+                                    text = { Text(com.billing.pos.data.SavedCalc.DEFAULT_CUSTOMER) },
+                                    onClick = {
+                                        custName = com.billing.pos.data.SavedCalc.DEFAULT_CUSTOMER
+                                        custId = 0L; custMenu = false
+                                    }
+                                )
+                                customers.forEach { c ->
+                                    androidx.compose.material3.DropdownMenuItem(
+                                        text = { Text(c.name) },
+                                        onClick = { custName = c.name; custId = c.id; custMenu = false }
+                                    )
+                                }
+                            }
+                        }
+                        IconButton(onClick = { newCust = true }) {
+                            Icon(Icons.Filled.Add, "Add customer", tint = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+                    OutlinedTextField(
+                        value = narration,
+                        onValueChange = { narration = it },
+                        label = { Text("Narration") },
+                        minLines = 3,
+                        maxLines = 6,
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    askSave = false
+                    storeTape { msg ->
+                        android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                }) { Text("OK") }
+            },
+            dismissButton = { TextButton(onClick = { askSave = false }) { Text("Cancel") } }
+        )
+    }
+
     // Saved tapes: newest first, tap one to carry on adding to it.
     if (showSaved) {
+        val shown = savedCalcs.filter { listFilter.isBlank() || it.customerName == listFilter }
+        val shownTotal = shown.sumOf { it.total }
+        var filterMenu by remember { mutableStateOf(false) }
+
         Dialog(
             onDismissRequest = { showSaved = false },
             properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
@@ -319,24 +429,67 @@ fun FastBillDialog(
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.weight(1f)
                     )
+                    IconButton(
+                        onClick = { shareCalcList(context, shown, listFilter) },
+                        enabled = shown.isNotEmpty()
+                    ) { Icon(Icons.Filled.Share, "Share list") }
+                    IconButton(
+                        onClick = { downloadCalcPdf { buildCalcListPdf(context, shown, listFilter) } },
+                        enabled = shown.isNotEmpty()
+                    ) { Icon(Icons.Filled.PictureAsPdf, "Save as PDF") }
                     OutlinedButton(onClick = { showSaved = false }) { Text("Close") }
                 }
+
+                // Filter by customer; "All customers" is the default.
+                Box(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
+                    OutlinedTextField(
+                        readOnly = true,
+                        value = listFilter.ifBlank { "All customers" },
+                        onValueChange = {},
+                        label = { Text("Customer") },
+                        singleLine = true,
+                        trailingIcon = {
+                            IconButton(onClick = { filterMenu = true }) {
+                                Icon(Icons.Filled.ArrowDropDown, "Filter by customer")
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    androidx.compose.material3.DropdownMenu(
+                        expanded = filterMenu, onDismissRequest = { filterMenu = false }
+                    ) {
+                        androidx.compose.material3.DropdownMenuItem(
+                            text = { Text("All customers") },
+                            onClick = { listFilter = ""; filterMenu = false }
+                        )
+                        savedCalcs.map { it.customerName }.distinct().sorted().forEach { name ->
+                            androidx.compose.material3.DropdownMenuItem(
+                                text = { Text(name) },
+                                onClick = { listFilter = name; filterMenu = false }
+                            )
+                        }
+                    }
+                }
                 Divider()
-                if (savedCalcs.isEmpty()) {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+
+                if (shown.isEmpty()) {
+                    Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                         Text("Nothing saved yet", color = MaterialTheme.colorScheme.outline)
                     }
                 } else {
-                    androidx.compose.foundation.lazy.LazyColumn(Modifier.fillMaxSize()) {
-                        items(savedCalcs, key = { it.id }) { calc ->
+                    androidx.compose.foundation.lazy.LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
+                        items(shown, key = { it.id }) { calc ->
                             Row(
                                 Modifier.fillMaxWidth()
                                     .combinedClickable(onClick = {
-                                        // Open in edit mode: the tape comes back and anything
-                                        // added afterwards updates this same entry.
+                                        // Open in edit mode: the tape, its customer and its
+                                        // narration all come back, and saving updates this entry.
                                         entries.clear()
                                         entries.addAll(calc.amountList)
                                         savedId = calc.id
+                                        custId = calc.customerId
+                                        custName = calc.customerName
+                                        narration = calc.narration
                                         input = ""
                                         showSaved = false
                                     })
@@ -344,17 +497,23 @@ fun FastBillDialog(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Column(Modifier.weight(1f)) {
-                                    Text(
-                                        Format.money(calc.total),
-                                        fontSize = 24.sp, fontWeight = FontWeight.Bold,
-                                        fontFamily = FontFamily.Monospace
-                                    )
+                                    Text(calc.customerName, fontWeight = FontWeight.Bold)
                                     Text(
                                         Format.dateTime(calc.dateMillis) + "  •  " + calc.amountList.size + " amount(s)",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.outline
                                     )
+                                    if (calc.narration.isNotBlank()) Text(
+                                        calc.narration,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        maxLines = 2
+                                    )
                                 }
+                                Text(
+                                    Format.money(calc.total),
+                                    fontSize = 22.sp, fontWeight = FontWeight.Bold,
+                                    fontFamily = FontFamily.Monospace
+                                )
                                 IconButton(onClick = { scope.launch { repo.deleteCalc(calc.id) } }) {
                                     Icon(Icons.Filled.Delete, "Delete", tint = MaterialTheme.colorScheme.error)
                                 }
@@ -362,6 +521,22 @@ fun FastBillDialog(
                             Divider()
                         }
                     }
+                }
+
+                // Total of exactly what is listed, so it follows the filter.
+                Divider(thickness = 2.dp)
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp)
+                        .navigationBarsPadding(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("TOTAL  (${shown.size})", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        Format.money(shownTotal),
+                        fontSize = 30.sp, fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
                 }
             }
         }
@@ -436,6 +611,61 @@ private fun shareTapeToWhatsApp(context: android.content.Context, text: String) 
     runCatching {
         context.startActivity(
             android.content.Intent.createChooser(send, "Share total")
+                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
+    }
+}
+
+/** The saved-calculation list as a PDF: one row per tape, filtered exactly as shown. */
+private fun buildCalcListPdf(
+    context: android.content.Context,
+    rows: List<com.billing.pos.data.SavedCalc>,
+    customerFilter: String
+): java.io.File {
+    val cols = listOf(
+        com.billing.pos.pdf.TablePdf.Col("Date", 1.5f),
+        com.billing.pos.pdf.TablePdf.Col("Customer", 1.6f),
+        com.billing.pos.pdf.TablePdf.Col("Narration", 2.4f),
+        com.billing.pos.pdf.TablePdf.Col("Amounts", 0.8f, right = true),
+        com.billing.pos.pdf.TablePdf.Col("Total", 1.2f, right = true)
+    )
+    val data = rows.map {
+        listOf(
+            Format.dateTime(it.dateMillis), it.customerName, it.narration,
+            it.amountList.size.toString(), Format.money(it.total)
+        )
+    }
+    return com.billing.pos.pdf.TablePdf.generate(
+        context,
+        com.billing.pos.data.AppPrefs(context).company,
+        "Saved Calculations",
+        if (customerFilter.isBlank()) "All customers" else "Customer: " + customerFilter,
+        cols, data,
+        listOf("Total" to Format.money(rows.sumOf { it.total }))
+    )
+}
+
+/** Shares that same list as a PDF attachment. */
+private fun shareCalcList(
+    context: android.content.Context,
+    rows: List<com.billing.pos.data.SavedCalc>,
+    customerFilter: String
+) {
+    runCatching {
+        val file = buildCalcListPdf(context, rows, customerFilter)
+        val uri = androidx.core.content.FileProvider.getUriForFile(
+            context, context.packageName + ".provider", file
+        )
+        val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+            type = "application/pdf"
+            putExtra(android.content.Intent.EXTRA_STREAM, uri)
+            addFlags(
+                android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                    android.content.Intent.FLAG_ACTIVITY_NEW_TASK
+            )
+        }
+        context.startActivity(
+            android.content.Intent.createChooser(send, "Share calculations")
                 .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
         )
     }
