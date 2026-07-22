@@ -23,6 +23,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -60,8 +61,15 @@ class ChartDetailViewModel(app: Application) : AndroidViewModel(app) {
         set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
     }.timeInMillis
 
+    // One flow per metric, kept: building a new one on every recomposition restarted the
+    // collection each time, so the list blinked back to empty and the screen flickered.
+    private val cache = HashMap<String, StateFlow<List<DetailRow>>>()
+
     /** Everything a chart is made of, grouped exactly as the chart's slices are. */
-    fun rowsFor(metric: String): StateFlow<List<DetailRow>> = when (metric) {
+    fun rowsFor(metric: String): StateFlow<List<DetailRow>> =
+        cache.getOrPut(metric) { buildRows(metric) }
+
+    private fun buildRows(metric: String): StateFlow<List<DetailRow>> = when (metric) {
         "cash" -> combine(
             repo.allBills, repo.allReceipts, repo.allExpenses, repo.allPurchases
         ) { bills, receipts, expenses, purchases ->
@@ -153,7 +161,8 @@ fun ChartDetailScreen(
     onOpen: (String) -> Unit,
     vm: ChartDetailViewModel = viewModel()
 ) {
-    val rows by vm.rowsFor(metric).collectAsStateSafe()
+    val rowsFlow = remember(metric) { vm.rowsFor(metric) }
+    val rows by rowsFlow.collectAsStateSafe()
     val groups = rows.groupBy { it.group }
 
     Scaffold(
