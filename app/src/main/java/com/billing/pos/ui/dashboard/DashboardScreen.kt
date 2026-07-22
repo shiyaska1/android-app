@@ -112,6 +112,7 @@ fun DashboardScreen(
     onSalesReturns: () -> Unit,
     onPurchaseReturns: () -> Unit,
     onPurchaseQuotes: () -> Unit,
+    onOpenChart: (String) -> Unit,
     onLpos: () -> Unit,
     onHireInvoices: () -> Unit,
     onHireReturns: () -> Unit,
@@ -300,7 +301,9 @@ fun DashboardScreen(
                     }
 
                     if (!isPersonal) {
-                        item(span = { GridItemSpan(maxLineSpan) }) { DashboardCharts() }
+                        item(span = { GridItemSpan(maxLineSpan) }) {
+                            DashboardCharts(onOpenDetail = onOpenChart)
+                        }
                     }
 
                     SECTION_ORDER.forEach { section ->

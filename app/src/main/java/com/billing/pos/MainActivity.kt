@@ -350,6 +350,7 @@ private fun AppNav() {
                 onPurchaseReturns = { nav.navigate("purchasereturns") },
                 onLpos = { nav.navigate("lpos") },
                 onPurchaseQuotes = { nav.navigate("pquotes") },
+                onOpenChart = { metric -> nav.navigate("chart/$metric") },
                 onHireInvoices = { nav.navigate("hires") },
                 onHireReturns = { nav.navigate("hirereturns") },
                 onHireItemReport = { nav.navigate("hireitemreport") },
@@ -514,6 +515,16 @@ private fun AppNav() {
             )
         }
         composable("lpo") { PurchaseQuotationScreen(editId = null, onBack = { nav.popBackStack() }) }
+        composable(
+            route = "chart/{metric}",
+            arguments = listOf(navArgument("metric") { type = NavType.StringType })
+        ) { entry ->
+            com.billing.pos.ui.dashboard.ChartDetailScreen(
+                metric = entry.arguments?.getString("metric") ?: "cash",
+                onBack = { nav.popBackStack() },
+                onOpen = { route -> if (route.isNotBlank()) nav.navigate(route) }
+            )
+        }
         composable("pquotes") {
             com.billing.pos.ui.purchasequote.PurchaseQuoteListScreen(
                 onBack = { nav.popBackStack() },

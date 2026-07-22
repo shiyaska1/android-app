@@ -68,4 +68,5 @@ interface PurchaseQuotationDao {
     @Query("SELECT * FROM purchase_quotations WHERE id = :id LIMIT 1") suspend fun byId(id: Long): PurchaseQuotation?
     @Query("SELECT * FROM purchase_quotation_items WHERE lpoId = :id") suspend fun linesFor(id: Long): List<PurchaseQuotationItem>
     @Query("SELECT * FROM purchase_quotation_items") suspend fun allLines(): List<PurchaseQuotationItem>
+    @Query("SELECT * FROM purchase_quotation_items") fun observeAllLines(): Flow<List<PurchaseQuotationItem>>
 }

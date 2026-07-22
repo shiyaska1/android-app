@@ -2,6 +2,7 @@ package com.billing.pos.ui.dashboard
 
 import android.app.Application
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -46,7 +47,11 @@ data class DashboardFigures(
     val purchaseThisMonth: Double = 0.0,
     val receivable: Double = 0.0,
     val payable: Double = 0.0,
-    val stockValue: Double = 0.0
+    val stockValue: Double = 0.0,
+    val ordered: Double = 0.0,
+    val receivedAgainstOrders: Double = 0.0,
+    val returnedToSupplier: Double = 0.0,
+    val pendingToReceive: Double = 0.0
 )
 
 private fun startOfMonth(): Long = Calendar.getInstance().apply {
@@ -97,12 +102,31 @@ class DashboardChartsViewModel(app: Application) : AndroidViewModel(app) {
      * Stock is valued from the same on-hand figures the stock report uses, at cost where a
      * cost is recorded and at the selling price otherwise.
      */
-    val figures: StateFlow<DashboardFigures> = combine(
+    private val withStock = combine(
         cashAndTrade, repo.items, repo.stockByName
     ) { figures, items, stock ->
         val rateByName = items.associate { it.name.lowercase() to if (it.purchasePrice > 0.0) it.purchasePrice else it.price }
         val value = stock.entries.sumOf { (name, qty) -> qty * (rateByName[name.lowercase()] ?: 0.0) }
         figures.copy(stockValue = value)
+    }
+
+    /**
+     * Material against purchase orders, valued at the ordered rate throughout so the four
+     * figures can be compared: what was ordered, what has arrived, what went back, and what
+     * is still owed to us.
+     */
+    val figures: StateFlow<DashboardFigures> = combine(
+        withStock, repo.purchaseQuotationLinesFlow, repo.receivedByLpo, repo.purchaseReturns
+    ) { figures, lpoLines, received, returns ->
+        val ordered = lpoLines.sumOf { it.qty * it.price }
+        val rateFor = lpoLines.associate { (it.lpoId to it.name.lowercase()) to it.price }
+        val receivedValue = received.sumOf { r -> r.qty * (rateFor[r.lpoId to r.name.lowercase()] ?: 0.0) }
+        figures.copy(
+            ordered = ordered,
+            receivedAgainstOrders = receivedValue,
+            returnedToSupplier = returns.sumOf { it.grandTotal },
+            pendingToReceive = (ordered - receivedValue).coerceAtLeast(0.0)
+        )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), DashboardFigures())
 }
 
@@ -113,7 +137,7 @@ class DashboardChartsViewModel(app: Application) : AndroidViewModel(app) {
  * Hidden for a personal business, where none of these figures mean anything.
  */
 @Composable
-fun DashboardCharts(vm: DashboardChartsViewModel = viewModel()) {
+fun DashboardCharts(onOpenDetail: (String) -> Unit = {}, vm: DashboardChartsViewModel = viewModel()) {
     val f by vm.figures.collectAsStateSafe()
 
     Column(Modifier.fillMaxWidth().padding(top = 6.dp)) {
@@ -122,6 +146,7 @@ fun DashboardCharts(vm: DashboardChartsViewModel = viewModel()) {
                 title = "Cash in hand",
                 centre = Format.money(f.cashInHand),
                 slices = f.byMode,
+                onClick = { onOpenDetail("cash") },
                 modifier = Modifier.weight(1f)
             )
             ChartCard(
@@ -131,6 +156,7 @@ fun DashboardCharts(vm: DashboardChartsViewModel = viewModel()) {
                     Slice("Sales", f.salesThisMonth, Color(0xFF2E7D32)),
                     Slice("Purchase", f.purchaseThisMonth, Color(0xFFC62828))
                 ),
+                onClick = { onOpenDetail("month") },
                 modifier = Modifier.weight(1f)
             )
         }
@@ -142,14 +168,33 @@ fun DashboardCharts(vm: DashboardChartsViewModel = viewModel()) {
                 Slice("Payable", f.payable, Color(0xFFC62828)),
                 Slice("Stock value", f.stockValue, Color(0xFF5D4037))
             ),
+            onClick = { onOpenDetail("owed") },
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+        )
+        ChartCard(
+            title = "Material against purchase orders",
+            centre = Format.money(f.pendingToReceive),
+            slices = listOf(
+                Slice("Ordered", f.ordered, Color(0xFF1565C0)),
+                Slice("Received", f.receivedAgainstOrders, Color(0xFF2E7D32)),
+                Slice("Returned", f.returnedToSupplier, Color(0xFFC62828)),
+                Slice("Still to receive", f.pendingToReceive, Color(0xFFEF6C00))
+            ),
+            onClick = { onOpenDetail("material") },
             modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
         )
     }
 }
 
 @Composable
-private fun ChartCard(title: String, centre: String, slices: List<Slice>, modifier: Modifier = Modifier) {
-    Card(modifier) {
+private fun ChartCard(
+    title: String,
+    centre: String,
+    slices: List<Slice>,
+    onClick: () -> Unit = {},
+    modifier: Modifier = Modifier
+) {
+    Card(modifier.clickable { onClick() }) {
         Column(Modifier.padding(10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
                 title,
@@ -157,6 +202,11 @@ private fun ChartCard(title: String, centre: String, slices: List<Slice>, modifi
                 fontWeight = FontWeight.Bold,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth()
+            )
+            Text(
+                "tap for details",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.outline
             )
             DonutRing(slices, centre)
             slices.forEach { s ->
