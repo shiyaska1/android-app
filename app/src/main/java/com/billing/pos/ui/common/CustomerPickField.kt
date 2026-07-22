@@ -1,6 +1,7 @@
 package com.billing.pos.ui.common
 
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -69,7 +70,13 @@ fun CustomerPickField(
                 else if (!allowFreeText) query = selectedName
             }
         )
-        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+        // Five rows tall at most. A full-height menu gets placed above the field and then
+        // hidden by the keyboard, which makes the box impossible to type into.
+        ExposedDropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            modifier = Modifier.heightIn(max = 232.dp)
+        ) {
             matches.forEach { c ->
                 DropdownMenuItem(
                     text = { Text(c.name + if (c.isDefault) "  (default)" else "") },
