@@ -77,6 +77,8 @@ class MergeLogViewModel(app: Application) : AndroidViewModel(app) {
                     .map { MergedRow(it.id, it.voucherNo, "${it.payTo.ifBlank { it.description }} · ${Format.date(it.dateMillis)}", Format.rupee(it.amount)) }
                 "diaryEntries" -> db.diaryDao().allEntries().filter { it.id in ids }
                     .map { MergedRow(it.id, it.title.ifBlank { "(untitled)" }, Format.dateTime(it.updatedAt), "") }
+                "savedCalcs" -> db.savedCalcDao().all().filter { it.id in ids }
+                    .map { MergedRow(it.id, Format.money(it.total), Format.dateTime(it.dateMillis), "") }
                 "materialReceipts" -> db.materialReceiptDao().all().filter { it.id in ids }
                     .map { MergedRow(it.id, it.receiptNo, "${it.supplierName} · ${Format.date(it.dateMillis)}", "") }
                 "users" -> db.userDao().all().filter { it.id in ids }

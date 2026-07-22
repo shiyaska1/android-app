@@ -30,14 +30,15 @@ import androidx.room.TypeConverters
         LabBill::class, LabBillTest::class, LabResultValue::class,
         LabGroup::class, LabEvalMaster::class, LabHeading::class, LabReceipt::class,
         LabDoctor::class, MaterialOut::class, MaterialOutItem::class,
-        MaterialReceipt::class, MaterialReceiptItem::class
+        MaterialReceipt::class, MaterialReceiptItem::class,
+        SavedCalc::class
     ],
     // v25 quotations; v26 sales returns; v27 purchase returns; v28 purchase quotations (LPO);
     // v29 dual units; v30 rental; v31 medical lab; v32 lab masters + heading rows;
     // v33 page breaks, heading master, lab-bill payment; v34 lab balance receipts;
     // v35 doctor master + patient phone; v36 material out + movement;
     // v37 item purchase price; v38 material receipts + purchase stockReceived/lpoNo.
-    version = 44,
+    version = 45,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -62,6 +63,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun itemPhotoVectorDao(): ItemPhotoVectorDao
     abstract fun diaryTypeDao(): DiaryTypeDao
     abstract fun expenseAttachmentDao(): ExpenseAttachmentDao
+    abstract fun savedCalcDao(): SavedCalcDao
     abstract fun salesReturnDao(): SalesReturnDao
     abstract fun purchaseReturnDao(): PurchaseReturnDao
     abstract fun purchaseQuotationDao(): PurchaseQuotationDao
@@ -176,6 +178,17 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** Saved calculator tapes. */
+        private val MIGRATION_44_45 = object : androidx.room.migration.Migration(44, 45) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS saved_calcs (" +
+                        "id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, dateMillis INTEGER NOT NULL, " +
+                        "amounts TEXT NOT NULL, total REAL NOT NULL, title TEXT NOT NULL DEFAULT '')"
+                )
+            }
+        }
+
         fun get(context: Context): AppDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -183,7 +196,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "pos_billing.db"
                 )
-                    .addMigrations(MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44)
+                    .addMigrations(MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45)
                     .fallbackToDestructiveMigration()
                     .build()
                     .also { INSTANCE = it }

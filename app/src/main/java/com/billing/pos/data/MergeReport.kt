@@ -115,6 +115,7 @@ object MergeCategories {
         "journalEntries" to "Journal entries",
         "accountHeads" to "Account heads",
         "diaryEntries" to "Diary entries",
+        "savedCalcs" to "Saved calculations",
         "users" to "Users"
     )
 

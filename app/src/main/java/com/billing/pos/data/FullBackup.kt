@@ -93,6 +93,7 @@ object FullBackup {
         root.put("billAttachments", JSONArray().apply { billAtts.forEach { put(billAttJson(it)) } })
         val expenseAtts = db.expenseAttachmentDao().all()
         root.put("expenseAttachments", JSONArray().apply { expenseAtts.forEach { put(expenseAttJson(it)) } })
+        root.put("savedCalcs", JSONArray().apply { db.savedCalcDao().all().forEach { put(savedCalcJson(it)) } })
 
         val dir = File(context.cacheDir, "shared").apply { mkdirs() }
         val zip = File(dir, "pos-full-backup.zip")
@@ -326,6 +327,9 @@ object FullBackup {
         }
         root.optJSONArray("expenseAttachments")?.let {
             for (i in 0 until it.length()) db.expenseAttachmentDao().insert(readExpenseAtt(context, it.getJSONObject(i)))
+        }
+        root.optJSONArray("savedCalcs")?.let {
+            for (i in 0 until it.length()) db.savedCalcDao().insert(readSavedCalc(it.getJSONObject(i)))
         }
         root.optJSONArray("materialReceipts")?.let {
             for (i in 0 until it.length()) db.materialReceiptDao().insertHeader(readMatRec(it.getJSONObject(i)))
@@ -700,6 +704,13 @@ object FullBackup {
                 db.expenseAttachmentDao().insert(a.copy(id = 0, expenseId = ne))
             }
         }
+        // Saved calculator tapes — standalone, so they merge by simply being added.
+        root.optJSONArray("savedCalcs")?.let {
+            for (i in 0 until it.length()) {
+                db.savedCalcDao().insert(readSavedCalc(it.getJSONObject(i)).copy(id = 0))
+                    .also { nid -> log.add("savedCalcs", nid) }
+            }
+        }
         // Material receipts + lines
         val matRecMap = HashMap<Long, Long>()
         root.optJSONArray("materialReceipts")?.let {
@@ -813,6 +824,16 @@ object FullBackup {
 
     private fun sizeJson(s: ItemSize) = JSONObject().put("id", s.id).put("itemId", s.itemId)
         .put("name", s.name).put("price", s.price)
+
+    private fun savedCalcJson(c: SavedCalc) = JSONObject().put("id", c.id)
+        .put("dateMillis", c.dateMillis).put("amounts", c.amounts)
+        .put("total", c.total).put("title", c.title)
+
+    private fun readSavedCalc(o: JSONObject) = SavedCalc(
+        id = o.optLong("id"), dateMillis = o.optLong("dateMillis"),
+        amounts = o.optString("amounts"), total = o.optDouble("total", 0.0),
+        title = o.optString("title")
+    )
 
     private fun quotationJson(q: Quotation) = JSONObject().put("id", q.id).put("quotationNo", q.quotationNo)
         .put("dateMillis", q.dateMillis).put("customerId", q.customerId).put("customerName", q.customerName)

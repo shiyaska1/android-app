@@ -282,6 +282,16 @@ class Repository(context: Context) {
     suspend fun quotationLines(id: Long): List<QuotationItem> = quotationDao.linesFor(id)
 
     // ---- payment attachments ----
+    private val savedCalcDao = db.savedCalcDao()
+
+    /** Saved calculator tapes, newest first. */
+    val savedCalcs: kotlinx.coroutines.flow.Flow<List<SavedCalc>> = savedCalcDao.observeAll()
+
+    suspend fun saveCalc(c: SavedCalc): Long =
+        if (c.id == 0L) savedCalcDao.insert(c) else { savedCalcDao.update(c); c.id }
+
+    suspend fun deleteCalc(id: Long) = savedCalcDao.delete(id)
+
     private val expenseAttachmentDao = db.expenseAttachmentDao()
     suspend fun expenseAttachmentsFor(expenseId: Long): List<ExpenseAttachment> =
         expenseAttachmentDao.forExpense(expenseId)

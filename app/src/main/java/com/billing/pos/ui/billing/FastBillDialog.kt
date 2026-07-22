@@ -12,12 +12,16 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Backspace
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.ListAlt
+import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -74,6 +78,9 @@ fun FastBillDialog(
 ) {
     val entries = remember { mutableStateListOf<Double>() }
     var input by remember { mutableStateOf("") }
+    // Id of the saved tape being edited, or 0 while this is a fresh calculation.
+    var savedId by remember { mutableStateOf(0L) }
+    var showSaved by remember { mutableStateOf(false) }
     var editIndex by remember { mutableStateOf(-1) }
     val focus = remember { FocusRequester() }
     val scroll = rememberScrollState()
@@ -107,6 +114,29 @@ fun FastBillDialog(
         }
     }
 
+    val repo = remember { com.billing.pos.data.Repository(context) }
+    val savedCalcs by repo.savedCalcs.collectAsStateSafe()
+
+    /** Stores the tape, updating the one being edited rather than piling up copies. */
+    fun storeTape(onDone: (String) -> Unit) {
+        val pending = input.toDoubleOrNull()
+        val all = if (pending != null && pending > 0.0) entries + pending else entries.toList()
+        if (all.isEmpty()) { onDone("Nothing to save"); return }
+        scope.launch {
+            val id = repo.saveCalc(
+                com.billing.pos.data.SavedCalc(
+                    id = savedId,
+                    dateMillis = System.currentTimeMillis(),
+                    amounts = com.billing.pos.data.SavedCalc.pack(all),
+                    total = all.sum()
+                )
+            )
+            val fresh = savedId == 0L
+            savedId = id
+            onDone(if (fresh) "Calculation saved" else "Calculation updated")
+        }
+    }
+
     LaunchedEffect(Unit) { focus.requestFocus() }
     LaunchedEffect(entries.size) { scroll.animateScrollTo(scroll.maxValue) }
 
@@ -126,6 +156,17 @@ fun FastBillDialog(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) { Text("Close") }
+                IconButton(onClick = { showSaved = true }) {
+                    Icon(Icons.Filled.ListAlt, contentDescription = "Saved calculations")
+                }
+                IconButton(
+                    onClick = {
+                        storeTape { msg ->
+                            android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    enabled = entries.isNotEmpty() || (input.toDoubleOrNull() ?: 0.0) > 0.0
+                ) { Icon(Icons.Filled.Save, contentDescription = "Save calculation") }
                 IconButton(
                     onClick = {
                         if (entries.isNotEmpty()) {
@@ -250,6 +291,75 @@ fun FastBillDialog(
                         fontSize = 34.sp, fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
                     )
+                }
+            }
+        }
+    }
+
+    // Saved tapes: newest first, tap one to carry on adding to it.
+    if (showSaved) {
+        Dialog(
+            onDismissRequest = { showSaved = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+        ) {
+            Column(
+                Modifier.fillMaxSize()
+                    .background(MaterialTheme.colorScheme.surface)
+                    .safeDrawingPadding()
+            ) {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "Saved calculations",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f)
+                    )
+                    OutlinedButton(onClick = { showSaved = false }) { Text("Close") }
+                }
+                Divider()
+                if (savedCalcs.isEmpty()) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text("Nothing saved yet", color = MaterialTheme.colorScheme.outline)
+                    }
+                } else {
+                    androidx.compose.foundation.lazy.LazyColumn(Modifier.fillMaxSize()) {
+                        items(savedCalcs, key = { it.id }) { calc ->
+                            Row(
+                                Modifier.fillMaxWidth()
+                                    .combinedClickable(onClick = {
+                                        // Open in edit mode: the tape comes back and anything
+                                        // added afterwards updates this same entry.
+                                        entries.clear()
+                                        entries.addAll(calc.amountList)
+                                        savedId = calc.id
+                                        input = ""
+                                        showSaved = false
+                                    })
+                                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(
+                                        Format.money(calc.total),
+                                        fontSize = 24.sp, fontWeight = FontWeight.Bold,
+                                        fontFamily = FontFamily.Monospace
+                                    )
+                                    Text(
+                                        Format.dateTime(calc.dateMillis) + "  •  " + calc.amountList.size + " amount(s)",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.outline
+                                    )
+                                }
+                                IconButton(onClick = { scope.launch { repo.deleteCalc(calc.id) } }) {
+                                    Icon(Icons.Filled.Delete, "Delete", tint = MaterialTheme.colorScheme.error)
+                                }
+                            }
+                            Divider()
+                        }
+                    }
                 }
             }
         }
