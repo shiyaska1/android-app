@@ -357,41 +357,16 @@ fun FastBillDialog(
             text = {
                 Column {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(Modifier.weight(1f)) {
-                            // Type to search the customer list; the arrow still shows all of it.
-                            OutlinedTextField(
-                                value = custName,
-                                onValueChange = { custName = it; custId = 0L; custMenu = true },
-                                label = { Text("Customer") },
-                                trailingIcon = {
-                                    IconButton(onClick = { custMenu = !custMenu }) {
-                                        Icon(Icons.Filled.ArrowDropDown, "Pick customer")
-                                    }
-                                },
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                            val matches = customers.filter {
-                                custName.isBlank() || it.name.contains(custName.trim(), ignoreCase = true)
-                            }
-                            androidx.compose.material3.DropdownMenu(
-                                expanded = custMenu, onDismissRequest = { custMenu = false }
-                            ) {
-                                androidx.compose.material3.DropdownMenuItem(
-                                    text = { Text(com.billing.pos.data.SavedCalc.DEFAULT_CUSTOMER) },
-                                    onClick = {
-                                        custName = com.billing.pos.data.SavedCalc.DEFAULT_CUSTOMER
-                                        custId = 0L; custMenu = false
-                                    }
-                                )
-                                matches.forEach { c ->
-                                    androidx.compose.material3.DropdownMenuItem(
-                                        text = { Text(c.name) },
-                                        onClick = { custName = c.name; custId = c.id; custMenu = false }
-                                    )
-                                }
-                            }
-                        }
+                        com.billing.pos.ui.common.CustomerPickField(
+                            customers = customers,
+                            selectedName = custName,
+                            onPick = { c -> custName = c.name; custId = c.id },
+                            allowFreeText = true,
+                            onTyped = { custName = it; custId = 0L },
+                            extraOptions = listOf(com.billing.pos.data.SavedCalc.DEFAULT_CUSTOMER),
+                            onPickExtra = { custName = it; custId = 0L },
+                            modifier = Modifier.weight(1f)
+                        )
                         IconButton(onClick = { newCust = true }) {
                             Icon(Icons.Filled.Add, "Add customer", tint = MaterialTheme.colorScheme.primary)
                         }

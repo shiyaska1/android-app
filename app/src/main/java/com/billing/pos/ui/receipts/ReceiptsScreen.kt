@@ -98,6 +98,9 @@ class ReceiptsViewModel(app: Application) : AndroidViewModel(app) {
     val bills: StateFlow<List<Bill>> =
         repo.allBills.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    val customers: StateFlow<List<com.billing.pos.data.Customer>> =
+        repo.customers.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     val payFromOptions = MutableStateFlow<List<String>>(emptyList())
     val message = MutableStateFlow<String?>(null)
     fun consumeMessage() { message.value = null }
@@ -163,6 +166,7 @@ fun ReceiptsScreen(
     val receipts by vm.receipts.collectAsStateSafe()
     val bills by vm.bills.collectAsStateSafe()
     val payFromOptions by vm.payFromOptions.collectAsStateSafe()
+    val customers by vm.customers.collectAsStateSafe()
     val message by vm.message.collectAsStateSafe()
 
     LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); vm.consumeMessage() } }
@@ -334,6 +338,7 @@ fun ReceiptsScreen(
     if (showAdd) {
         AddReceiptDialog(
             outstanding = outstanding,
+            customers = customers,
             payFromOptions = payFromOptions,
             onDismiss = { showAdd = false },
             onAddInvoice = { bill, amt, mode, date -> vm.addAgainstInvoice(bill, amt, mode, date); showAdd = false },
@@ -395,6 +400,7 @@ private suspend fun doPrintReceipt(context: Context, r: Receipt, snackbar: Snack
 @Composable
 private fun AddReceiptDialog(
     outstanding: List<Bill>,
+    customers: List<com.billing.pos.data.Customer>,
     payFromOptions: List<String>,
     onDismiss: () -> Unit,
     onAddInvoice: (Bill, Double, PayMode, Long) -> Unit,
@@ -449,25 +455,17 @@ private fun AddReceiptDialog(
                         }
                     }
                 } else {
-                    ExposedDropdownMenuBox(expanded = payFromExpanded, onExpandedChange = { payFromExpanded = it }, modifier = Modifier.padding(top = 8.dp)) {
-                        OutlinedTextField(
-                            value = payFrom,
-                            onValueChange = { payFrom = it; payFromExpanded = true },
-                            label = { Text("Pay from (optional)") },
-                            placeholder = { Text("Type or pick a name") },
-                            singleLine = true,
-                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(payFromExpanded) },
-                            modifier = Modifier.menuAnchor().fillMaxWidth()
-                        )
-                        val filtered = payFromOptions.filter { it.contains(payFrom, ignoreCase = true) }
-                        if (filtered.isNotEmpty()) {
-                            ExposedDropdownMenu(expanded = payFromExpanded, onDismissRequest = { payFromExpanded = false }) {
-                                filtered.forEach { name ->
-                                    DropdownMenuItem(text = { Text(name) }, onClick = { payFrom = name; payFromExpanded = false })
-                                }
-                            }
-                        }
-                    }
+                    com.billing.pos.ui.common.CustomerPickField(
+                        customers = customers,
+                        selectedName = payFrom,
+                        onPick = { c -> payFrom = c.name },
+                        label = "Pay from (optional)",
+                        allowFreeText = true,
+                        onTyped = { payFrom = it },
+                        extraOptions = payFromOptions,
+                        onPickExtra = { payFrom = it },
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                    )
                 }
 
                 OutlinedTextField(
