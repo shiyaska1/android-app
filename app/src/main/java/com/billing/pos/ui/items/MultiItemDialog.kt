@@ -342,6 +342,7 @@ fun PhotoItemsDialog(
     val allCategories = (categories + addedCategories).distinct().filter { it.isNotBlank() }
     var newCatFor by remember { mutableStateOf<MultiItemRow?>(null) }
     var ocrFor by remember { mutableStateOf<MultiItemRow?>(null) }
+    var drawFor by remember { mutableStateOf<MultiItemRow?>(null) }
 
     val camera = com.billing.pos.ocr.rememberImageCamera { uri ->
         rows.add(MultiItemRow().also { it.photos.add(uri) })
@@ -356,6 +357,13 @@ fun PhotoItemsDialog(
     // Fires once on open and again after every shot, so the camera keeps coming back.
     // Cancelling the camera reports nothing, so the run simply stops there.
     LaunchedEffect(shots) { if (keepShooting) camera() }
+
+    drawFor?.let { row ->
+        com.billing.pos.ui.common.HandwriteTextDialog(
+            onResult = { t -> if (t.isNotBlank()) row.name = (row.name.trimEnd() + " " + t).trim(); drawFor = null },
+            onDismiss = { drawFor = null }
+        )
+    }
 
     ocrFor?.let { row ->
         val uri = row.photos.firstOrNull()
@@ -479,12 +487,25 @@ fun PhotoItemsDialog(
                                         singleLine = true,
                                         modifier = Modifier.fillMaxWidth()
                                     )
-                                    OutlinedButton(
-                                        onClick = { ocrFor = row },
-                                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                                    Row(
+                                        Modifier.fillMaxWidth().padding(top = 4.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                                     ) {
-                                        Icon(Icons.Filled.PhotoCamera, null, Modifier.size(16.dp))
-                                        Text(" Read name from photo", style = MaterialTheme.typography.labelSmall)
+                                        OutlinedButton(
+                                            onClick = { ocrFor = row },
+                                            modifier = Modifier.weight(1.6f)
+                                        ) {
+                                            Icon(Icons.Filled.PhotoCamera, null, Modifier.size(16.dp))
+                                            Text(" Read photo", style = MaterialTheme.typography.labelSmall)
+                                        }
+                                        // Handwriting, for a name the photo cannot be read from.
+                                        OutlinedButton(
+                                            onClick = { keepShooting = false; drawFor = row },
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Icon(Icons.Filled.Draw, null, Modifier.size(16.dp))
+                                            Text(" Draw", style = MaterialTheme.typography.labelSmall)
+                                        }
                                     }
                                 }
                             }
