@@ -353,6 +353,16 @@ class Repository(context: Context) {
     // ---- purchase quotations (LPO) ----
     private val purchaseQuotationDao = db.purchaseQuotationDao()
     val purchaseQuotations: Flow<List<PurchaseQuotation>> = purchaseQuotationDao.observeAll()
+    private val purchaseQuoteDao = db.purchaseQuoteDao()
+
+    val purchaseQuotes: Flow<List<PurchaseQuote>> = purchaseQuoteDao.observeAll()
+    suspend fun nextPurchaseQuoteNo(): String = "PQ-" + (purchaseQuoteDao.count() + 1).toString().padStart(4, '0')
+    suspend fun savePurchaseQuote(r: PurchaseQuote, lines: List<PurchaseQuoteItem>): Long = purchaseQuoteDao.save(r, lines)
+    suspend fun updatePurchaseQuote(r: PurchaseQuote, lines: List<PurchaseQuoteItem>) = purchaseQuoteDao.update(r, lines)
+    suspend fun deletePurchaseQuote(r: PurchaseQuote) = purchaseQuoteDao.delete(r)
+    suspend fun purchaseQuoteById(id: Long): PurchaseQuote? = purchaseQuoteDao.byId(id)
+    suspend fun purchaseQuoteLines(id: Long): List<PurchaseQuoteItem> = purchaseQuoteDao.linesFor(id)
+
     suspend fun nextLpoNo(): String = "LPO-" + (purchaseQuotationDao.count() + 1).toString().padStart(4, '0')
     suspend fun savePurchaseQuotation(r: PurchaseQuotation, lines: List<PurchaseQuotationItem>): Long = purchaseQuotationDao.save(r, lines)
     suspend fun updatePurchaseQuotation(r: PurchaseQuotation, lines: List<PurchaseQuotationItem>) = purchaseQuotationDao.update(r, lines)

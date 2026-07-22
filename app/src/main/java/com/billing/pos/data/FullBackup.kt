@@ -94,6 +94,8 @@ object FullBackup {
         val expenseAtts = db.expenseAttachmentDao().all()
         root.put("expenseAttachments", JSONArray().apply { expenseAtts.forEach { put(expenseAttJson(it)) } })
         root.put("savedCalcs", JSONArray().apply { db.savedCalcDao().all().forEach { put(savedCalcJson(it)) } })
+        root.put("purchaseQuotes", JSONArray().apply { db.purchaseQuoteDao().all().forEach { put(pQuoteJson(it)) } })
+        root.put("purchaseQuoteItems", JSONArray().apply { db.purchaseQuoteDao().allLines().forEach { put(pQuoteItemJson(it)) } })
         val custAtts = db.customerAttachmentDao().all()
         root.put("customerAttachments", JSONArray().apply { custAtts.forEach { put(custAttJson(it)) } })
 
@@ -345,6 +347,14 @@ object FullBackup {
         }
         root.optJSONArray("savedCalcs")?.let {
             for (i in 0 until it.length()) db.savedCalcDao().insert(readSavedCalc(it.getJSONObject(i)))
+        }
+        root.optJSONArray("purchaseQuotes")?.let {
+            for (i in 0 until it.length()) db.purchaseQuoteDao().insertHeader(readPQuote(it.getJSONObject(i)))
+        }
+        root.optJSONArray("purchaseQuoteItems")?.let {
+            val ls = ArrayList<PurchaseQuoteItem>()
+            for (i in 0 until it.length()) ls.add(readPQuoteItem(it.getJSONObject(i)))
+            if (ls.isNotEmpty()) db.purchaseQuoteDao().insertLines(ls)
         }
         root.optJSONArray("customerAttachments")?.let {
             for (i in 0 until it.length()) db.customerAttachmentDao().insert(readCustAtt(context, it.getJSONObject(i)))
@@ -730,6 +740,22 @@ object FullBackup {
                 db.customerAttachmentDao().insert(a2.copy(id = 0, customerId = nc))
             }
         }
+        // Purchase quotations, with their lines following the header's new id.
+        val pQuoteMap = HashMap<Long, Long>()
+        root.optJSONArray("purchaseQuotes")?.let {
+            for (i in 0 until it.length()) {
+                val q = readPQuote(it.getJSONObject(i))
+                pQuoteMap[q.id] = db.purchaseQuoteDao().insertHeader(q.copy(id = 0))
+                    .also { nid -> log.add("purchaseQuotes", nid) }
+            }
+        }
+        root.optJSONArray("purchaseQuoteItems")?.let {
+            for (i in 0 until it.length()) {
+                val l = readPQuoteItem(it.getJSONObject(i))
+                val nq = pQuoteMap[l.quoteId] ?: continue
+                db.purchaseQuoteDao().insertLines(listOf(l.copy(id = 0, quoteId = nq)))
+            }
+        }
         // Saved calculator tapes — standalone, so they merge by simply being added.
         root.optJSONArray("savedCalcs")?.let {
             for (i in 0 until it.length()) {
@@ -859,6 +885,31 @@ object FullBackup {
         id = o.optLong("id"), customerId = o.optLong("customerId"),
         path = File(CustomerAttachmentStore.dir(context), o.optString("file")).absolutePath,
         name = o.optString("name"), mime = o.optString("mime")
+    )
+
+    private fun pQuoteJson(q: PurchaseQuote) = JSONObject().put("id", q.id).put("quoteNo", q.quoteNo)
+        .put("dateMillis", q.dateMillis).put("supplierId", q.supplierId).put("supplierName", q.supplierName)
+        .put("subTotal", q.subTotal).put("taxTotal", q.taxTotal).put("additionalCharge", q.additionalCharge)
+        .put("discount", q.discount).put("grandTotal", q.grandTotal).put("remarks", q.remarks)
+
+    private fun readPQuote(o: JSONObject) = PurchaseQuote(
+        id = o.optLong("id"), quoteNo = o.optString("quoteNo"), dateMillis = o.optLong("dateMillis"),
+        supplierId = o.optLong("supplierId"), supplierName = o.optString("supplierName"),
+        subTotal = o.optDouble("subTotal", 0.0), taxTotal = o.optDouble("taxTotal", 0.0),
+        additionalCharge = o.optDouble("additionalCharge", 0.0), discount = o.optDouble("discount", 0.0),
+        grandTotal = o.optDouble("grandTotal", 0.0), remarks = o.optString("remarks")
+    )
+
+    private fun pQuoteItemJson(l: PurchaseQuoteItem) = JSONObject().put("id", l.id)
+        .put("quoteId", l.quoteId).put("itemId", l.itemId).put("name", l.name).put("qty", l.qty)
+        .put("price", l.price).put("taxPercent", l.taxPercent).put("lineTotal", l.lineTotal)
+        .put("unit", l.unit)
+
+    private fun readPQuoteItem(o: JSONObject) = PurchaseQuoteItem(
+        id = o.optLong("id"), quoteId = o.optLong("quoteId"), itemId = o.optLong("itemId"),
+        name = o.optString("name"), qty = o.optDouble("qty", 0.0), price = o.optDouble("price", 0.0),
+        taxPercent = o.optDouble("taxPercent", 0.0), lineTotal = o.optDouble("lineTotal", 0.0),
+        unit = o.optString("unit")
     )
 
     private fun savedCalcJson(c: SavedCalc) = JSONObject().put("id", c.id)

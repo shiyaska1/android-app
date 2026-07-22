@@ -100,6 +100,7 @@ object MergeCategories {
         "purchases" to "Purchases",
         "purchaseReturns" to "Purchase returns",
         "purchaseQuotations" to "Purchase orders (LPO)",
+        "purchaseQuotes" to "Purchase quotations",
         "materialReceipts" to "Material receipts",
         "materialOuts" to "Material out",
         "hireInvoices" to "Hire invoices",
@@ -131,6 +132,7 @@ object MergeCategories {
         "purchases" -> "purchase/edit/{id}"
         "purchaseReturns" -> "purchasereturn/edit/{id}"
         "purchaseQuotations" -> "lpo/edit/{id}"
+        "purchaseQuotes" -> "pquote/edit/{id}"
         "materialReceipts" -> "materialreceipt/edit/{id}"
         "materialOuts" -> "materialout/edit/{id}"
         "hireInvoices" -> "hire/edit/{id}"

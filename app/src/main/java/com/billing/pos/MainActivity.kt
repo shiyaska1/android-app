@@ -324,6 +324,7 @@ private fun AppNav() {
                 onSalesReturns = { nav.navigate("salesreturns") },
                 onPurchaseReturns = { nav.navigate("purchasereturns") },
                 onLpos = { nav.navigate("lpos") },
+                onPurchaseQuotes = { nav.navigate("pquotes") },
                 onHireInvoices = { nav.navigate("hires") },
                 onHireReturns = { nav.navigate("hirereturns") },
                 onHireItemReport = { nav.navigate("hireitemreport") },
@@ -488,6 +489,24 @@ private fun AppNav() {
             )
         }
         composable("lpo") { PurchaseQuotationScreen(editId = null, onBack = { nav.popBackStack() }) }
+        composable("pquotes") {
+            com.billing.pos.ui.purchasequote.PurchaseQuoteListScreen(
+                onBack = { nav.popBackStack() },
+                onOpen = { id -> nav.navigate("pquote/edit/$id") },
+                onNew = { nav.navigate("pquote") }
+            )
+        }
+        composable("pquote") {
+            com.billing.pos.ui.purchasequote.PurchaseQuoteScreen(editId = null, onBack = { nav.popBackStack() })
+        }
+        composable(
+            route = "pquote/edit/{id}",
+            arguments = listOf(navArgument("id") { type = NavType.LongType })
+        ) { entry ->
+            com.billing.pos.ui.purchasequote.PurchaseQuoteScreen(
+                editId = entry.arguments?.getLong("id"), onBack = { nav.popBackStack() }
+            )
+        }
         composable(
             route = "lpo/edit/{id}",
             arguments = listOf(navArgument("id") { type = NavType.LongType })

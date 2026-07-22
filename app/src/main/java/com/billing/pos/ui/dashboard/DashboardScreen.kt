@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -50,6 +51,8 @@ import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.PriceCheck
 import androidx.compose.material.icons.filled.Restaurant
 import androidx.compose.material.icons.filled.ReceiptLong
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.ShoppingCart
@@ -108,6 +111,7 @@ fun DashboardScreen(
     onCalculatorToBill: () -> Unit,
     onSalesReturns: () -> Unit,
     onPurchaseReturns: () -> Unit,
+    onPurchaseQuotes: () -> Unit,
     onLpos: () -> Unit,
     onHireInvoices: () -> Unit,
     onHireReturns: () -> Unit,
@@ -157,6 +161,7 @@ fun DashboardScreen(
         if (Session.canViewInvoice) add(Tile("Purchases", Icons.Filled.Inventory2, onPurchases, "Transactions"))
         if (Session.canViewInvoice) add(Tile("Purchase Return", Icons.Filled.AssignmentReturned, onPurchaseReturns, "Transactions"))
         add(Tile("Purchase Order", Icons.Filled.PlaylistAddCheck, onLpos, "Transactions"))
+        add(Tile("Purchase Quotation", Icons.Filled.RequestQuote, onPurchaseQuotes, "Transactions"))
         if (Session.canViewInvoice) add(Tile("Material Receipt", Icons.Filled.MoveToInbox, onMaterialReceipt, "Transactions"))
         if (isLab) {
             add(Tile("Lab Bill", Icons.Filled.Science, onLabBills, "Transactions"))
@@ -217,6 +222,23 @@ fun DashboardScreen(
     ) { pad ->
         var query by remember { mutableStateOf("") }
         val shown = if (query.isBlank()) tiles else tiles.filter { it.label.contains(query, ignoreCase = true) }
+
+        // How often each tile has been opened, so the five most-used can sit on top.
+        val usage = remember { context.getSharedPreferences("dashboard_usage", android.content.Context.MODE_PRIVATE) }
+        var useTick by remember { mutableStateOf(0) }
+        fun record(label: String) {
+            usage.edit().putInt(label, usage.getInt(label, 0) + 1).apply()
+            useTick++
+        }
+        val visibleTiles = if (isPersonal) tiles.filter { it.label in PERSONAL_TILES } else tiles
+        val frequent = remember(useTick, visibleTiles.size) {
+            visibleTiles.filter { usage.getInt(it.label, 0) > 0 }
+                .sortedByDescending { usage.getInt(it.label, 0) }
+                .take(5)
+        }
+        // Sections start closed; opening one is remembered only for this visit.
+        val openSections = remember { androidx.compose.runtime.mutableStateMapOf<String, Boolean>() }
+
         Column(Modifier.fillMaxSize().padding(pad)) {
             OutlinedTextField(
                 value = query, onValueChange = { query = it },
@@ -231,22 +253,85 @@ fun DashboardScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 if (query.isNotBlank()) {
-                    items(shown) { tile -> TileCard(tile) }
+                    // Searching shows the matches straight away, no section to open first.
+                    items(shown) { tile -> TileCard(tile) { record(tile.label); tile.onClick() } }
                 } else {
-                    SECTION_ORDER.forEach { section ->
-                        val shown = if (isPersonal) tiles.filter { it.label in PERSONAL_TILES } else tiles
-        val secTiles = shown.filter { it.section == section }
-                        if (secTiles.isNotEmpty()) {
-                            item(span = { GridItemSpan(maxLineSpan) }) {
+                    if (frequent.isNotEmpty()) {
+                        item(span = { GridItemSpan(maxLineSpan) }) {
+                            Column {
                                 Text(
-                                    section.uppercase(),
+                                    "FREQUENTLY USED",
                                     style = MaterialTheme.typography.labelLarge,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.padding(top = 12.dp, bottom = 2.dp)
+                                    modifier = Modifier.padding(top = 6.dp, bottom = 4.dp)
                                 )
+                                Row(
+                                    Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    frequent.forEach { tile ->
+                                        Card(
+                                            Modifier.weight(1f).height(76.dp)
+                                                .clickable { record(tile.label); tile.onClick() }
+                                        ) {
+                                            Column(
+                                                Modifier.fillMaxSize().padding(4.dp),
+                                                verticalArrangement = Arrangement.Center,
+                                                horizontalAlignment = Alignment.CenterHorizontally
+                                            ) {
+                                                Icon(
+                                                    tile.icon, tile.label,
+                                                    tint = MaterialTheme.colorScheme.primary,
+                                                    modifier = Modifier.size(26.dp)
+                                                )
+                                                Text(
+                                                    tile.label,
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    textAlign = TextAlign.Center,
+                                                    maxLines = 2
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
                             }
-                            items(secTiles) { tile -> TileCard(tile) }
+                        }
+                    }
+
+                    SECTION_ORDER.forEach { section ->
+                        val secTiles = visibleTiles.filter { it.section == section }
+                        if (secTiles.isNotEmpty()) {
+                            val open = openSections[section] == true
+                            item(span = { GridItemSpan(maxLineSpan) }) {
+                                Row(
+                                    Modifier.fillMaxWidth()
+                                        .clickable { openSections[section] = !open }
+                                        .padding(top = 10.dp, bottom = 2.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        if (open) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                                        contentDescription = if (open) "Collapse" else "Expand",
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                    Text(
+                                        section.uppercase(),
+                                        style = MaterialTheme.typography.labelLarge,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.weight(1f).padding(start = 4.dp)
+                                    )
+                                    Text(
+                                        secTiles.size.toString(),
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.outline
+                                    )
+                                }
+                            }
+                            if (open) {
+                                items(secTiles) { tile -> TileCard(tile) { record(tile.label); tile.onClick() } }
+                            }
                         }
                     }
                 }
@@ -285,8 +370,8 @@ fun DashboardScreen(
 }
 
 @Composable
-private fun TileCard(tile: Tile) {
-    Card(Modifier.fillMaxWidth().height(120.dp).clickable { tile.onClick() }) {
+private fun TileCard(tile: Tile, onClick: () -> Unit = tile.onClick) {
+    Card(Modifier.fillMaxWidth().height(120.dp).clickable { onClick() }) {
         Column(
             Modifier.fillMaxSize().padding(12.dp),
             verticalArrangement = Arrangement.Center,
