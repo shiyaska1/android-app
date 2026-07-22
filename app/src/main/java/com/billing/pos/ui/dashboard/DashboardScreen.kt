@@ -299,6 +299,10 @@ fun DashboardScreen(
                         }
                     }
 
+                    if (!isPersonal) {
+                        item(span = { GridItemSpan(maxLineSpan) }) { DashboardCharts() }
+                    }
+
                     SECTION_ORDER.forEach { section ->
                         val secTiles = visibleTiles.filter { it.section == section }
                         if (secTiles.isNotEmpty()) {
