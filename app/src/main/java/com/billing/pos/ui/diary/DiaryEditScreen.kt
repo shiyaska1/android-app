@@ -128,9 +128,11 @@ import java.util.Calendar
 @Composable
 fun DiaryEditScreen(
     entryId: Long,
-    onBack: () -> Unit,
+    onBackRequested: () -> Unit,
     vm: DiaryEditViewModel = viewModel()
 ) {
+    // Leaving the entry stops any voice note; moving to another screen does not.
+    val onBack: () -> Unit = { DiaryAudio.controller.stop(); onBackRequested() }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
@@ -168,8 +170,10 @@ fun DiaryEditScreen(
     var showFormat by remember { mutableStateOf(false) }
     var showLinkDialog by remember { mutableStateOf(false) }
     // One player for the whole entry, so "play all" can run through every voice note.
-    val audio = remember { AudioController() }
-    DisposableEffect(Unit) { onDispose { audio.stop(); audio.release() } }
+    // Shared with the rest of the app, so moving to another screen does not cut the
+    // playback off. Backing out of the entry does.
+    val audio = DiaryAudio.controller
+    androidx.activity.compose.BackHandler { onBack() }
     var askPlayFor by remember { mutableStateOf<String?>(null) }
     val titleStyle = diaryStyle(vm.titleSize, vm.titleColor, vm.titleBold, vm.titleItalic)
     val bodyStyle = diaryStyle(vm.bodySize, vm.bodyColor, vm.bodyBold, vm.bodyItalic)
@@ -630,6 +634,11 @@ fun DiaryEditScreen(
                         onClick = { askPlayFor = null; audio.start(voices, startIndex, PlayMode.ALL) },
                         enabled = remaining > 1
                     ) { Text("Play all") }
+                    // Runs the whole list, then starts again from the first note.
+                    TextButton(
+                        onClick = { askPlayFor = null; audio.start(voices, startIndex, PlayMode.ALL_LOOP) },
+                        enabled = remaining > 1
+                    ) { Text("All + repeat") }
                 }
             },
             dismissButton = { TextButton(onClick = { askPlayFor = null }) { Text("Cancel") } }
@@ -888,7 +897,17 @@ private fun BlockEditor(
 }
 
 /** How a tapped voice note should play. */
-enum class PlayMode { ONCE, LOOP, ALL }
+enum class PlayMode { ONCE, LOOP, ALL, ALL_LOOP }
+
+/**
+ * The one player for the whole app.
+ *
+ * Held outside the screen so a voice note keeps playing while you move around the app.
+ * It stops when you back out of the diary entry, and is released when the app closes.
+ */
+object DiaryAudio {
+    val controller = AudioController()
+}
 
 /**
  * Owns the one MediaPlayer for the whole entry, so a voice note can play once, loop, or run
@@ -911,6 +930,11 @@ class AudioController {
                 PlayMode.ALL -> {
                     val next = index + 1
                     if (next < queue.size) { index = next; playAt(next) } else stop()
+                }
+                // Runs through every voice note, then starts again from the first.
+                PlayMode.ALL_LOOP -> {
+                    index = if (index + 1 < queue.size) index + 1 else 0
+                    playAt(index)
                 }
             }
         }

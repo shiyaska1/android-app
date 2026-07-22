@@ -2,12 +2,15 @@ package com.billing.pos.ui.billing
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -93,6 +96,11 @@ fun FastBillDialog(
     var narration by remember { mutableStateOf("") }
     // Which customer the saved list is filtered to; blank means all of them.
     var listFilter by remember { mutableStateOf("") }
+    // Date range, off by default. When switched on it starts at one month back.
+    var dateRangeOn by remember { mutableStateOf(false) }
+    var editReceipt by remember { mutableStateOf<com.billing.pos.data.Receipt?>(null) }
+    var fromMillis by remember { mutableStateOf(defaultFromMillis()) }
+    var toMillis by remember { mutableStateOf(System.currentTimeMillis()) }
     var editIndex by remember { mutableStateOf(-1) }
     val focus = remember { FocusRequester() }
     val scroll = rememberScrollState()
@@ -350,17 +358,22 @@ fun FastBillDialog(
                 Column {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Box(Modifier.weight(1f)) {
+                            // Type to search the customer list; the arrow still shows all of it.
                             OutlinedTextField(
-                                readOnly = true, value = custName, onValueChange = {},
+                                value = custName,
+                                onValueChange = { custName = it; custId = 0L; custMenu = true },
                                 label = { Text("Customer") },
                                 trailingIcon = {
-                                    IconButton(onClick = { custMenu = true }) {
+                                    IconButton(onClick = { custMenu = !custMenu }) {
                                         Icon(Icons.Filled.ArrowDropDown, "Pick customer")
                                     }
                                 },
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth()
                             )
+                            val matches = customers.filter {
+                                custName.isBlank() || it.name.contains(custName.trim(), ignoreCase = true)
+                            }
                             androidx.compose.material3.DropdownMenu(
                                 expanded = custMenu, onDismissRequest = { custMenu = false }
                             ) {
@@ -371,7 +384,7 @@ fun FastBillDialog(
                                         custId = 0L; custMenu = false
                                     }
                                 )
-                                customers.forEach { c ->
+                                matches.forEach { c ->
                                     androidx.compose.material3.DropdownMenuItem(
                                         text = { Text(c.name) },
                                         onClick = { custName = c.name; custId = c.id; custMenu = false }
@@ -408,8 +421,10 @@ fun FastBillDialog(
     // Saved tapes: newest first, tap one to carry on adding to it.
     if (showSaved) {
         val shown = savedCalcs.filter {
-            listFilter.isBlank() || it.customerName.contains(listFilter.trim(), ignoreCase = true)
+            (listFilter.isBlank() || it.customerName.contains(listFilter.trim(), ignoreCase = true)) &&
+                (!dateRangeOn || (it.dateMillis >= startOfDayMillis(fromMillis) && it.dateMillis <= endOfDayMillis(toMillis)))
         }
+        val receipts by repo.allReceipts.collectAsState(initial = emptyList<com.billing.pos.data.Receipt>())
         val shownTotal = shown.sumOf { it.total }
         var filterMenu by remember { mutableStateOf(false) }
 
@@ -482,6 +497,27 @@ fun FastBillDialog(
                         }
                     }
                 }
+                // Date range, off by default so the list shows everything until asked.
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    androidx.compose.material3.Checkbox(
+                        checked = dateRangeOn,
+                        onCheckedChange = { dateRangeOn = it }
+                    )
+                    Text("Date range", style = MaterialTheme.typography.labelLarge)
+                    if (dateRangeOn) {
+                        Spacer(Modifier.weight(1f))
+                        OutlinedButton(onClick = { pickCalcDate(context, fromMillis) { fromMillis = it } }) {
+                            Text(Format.date(fromMillis), style = MaterialTheme.typography.labelSmall)
+                        }
+                        Text(" — ", style = MaterialTheme.typography.labelSmall)
+                        OutlinedButton(onClick = { pickCalcDate(context, toMillis) { toMillis = it } }) {
+                            Text(Format.date(toMillis), style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                }
                 Divider()
 
                 if (shown.isEmpty()) {
@@ -489,8 +525,22 @@ fun FastBillDialog(
                         Text("Nothing saved yet", color = MaterialTheme.colorScheme.outline)
                     }
                 } else {
-                    androidx.compose.foundation.lazy.LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
+                    androidx.compose.foundation.lazy.LazyColumn(
+                        Modifier.fillMaxHeight(0.75f).fillMaxWidth()
+                    ) {
                         items(shown, key = { it.id }) { calc ->
+                            // Money already received from this customer since the tape was
+                            // saved, up to the next tape for the same customer, so a receipt
+                            // is counted against one calculation only.
+                            val nextForCustomer = shown
+                                .filter { it.customerName.equals(calc.customerName, true) && it.dateMillis > calc.dateMillis }
+                                .minByOrNull { it.dateMillis }?.dateMillis ?: Long.MAX_VALUE
+                            val paid = receipts.filter { r ->
+                                val who = r.payFrom.ifBlank { r.customerName }
+                                who.equals(calc.customerName, ignoreCase = true) &&
+                                    r.dateMillis >= calc.dateMillis && r.dateMillis < nextForCustomer
+                            }
+                            val received = paid.sumOf { it.amount }
                             Row(
                                 Modifier.fillMaxWidth()
                                     .combinedClickable(onClick = {
@@ -521,13 +571,45 @@ fun FastBillDialog(
                                         maxLines = 2
                                     )
                                 }
-                                Text(
-                                    Format.money(calc.total),
-                                    fontSize = 22.sp, fontWeight = FontWeight.Bold,
-                                    fontFamily = FontFamily.Monospace
-                                )
+                                Column(horizontalAlignment = Alignment.End) {
+                                    Text(
+                                        Format.money(calc.total),
+                                        fontSize = 22.sp, fontWeight = FontWeight.Bold,
+                                        fontFamily = FontFamily.Monospace,
+                                        textDecoration = if (received > 0.0)
+                                            androidx.compose.ui.text.style.TextDecoration.LineThrough else null
+                                    )
+                                    if (received > 0.0) Text(
+                                        "Balance " + Format.money(calc.total - received),
+                                        fontSize = 18.sp, fontWeight = FontWeight.Bold,
+                                        fontFamily = FontFamily.Monospace,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
                                 IconButton(onClick = { scope.launch { repo.deleteCalc(calc.id) } }) {
                                     Icon(Icons.Filled.Delete, "Delete", tint = MaterialTheme.colorScheme.error)
+                                }
+                            }
+                            // Each receipt is its own line: tap to correct the amount.
+                            paid.forEach { r ->
+                                Row(
+                                    Modifier.fillMaxWidth()
+                                        .clickable { editReceipt = r }
+                                        .padding(start = 24.dp, end = 14.dp, bottom = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        "Received " + r.receiptNo + "  " + Format.date(r.dateMillis),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Text(
+                                        "- " + Format.money(r.amount),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
                                 }
                             }
                             Divider()
@@ -559,6 +641,53 @@ fun FastBillDialog(
                 }
             }
         }
+    }
+
+    // Correcting a receipt straight from the calculation it was received against.
+    editReceipt?.let { r ->
+        var amountText by remember(r.id) { mutableStateOf(Format.money(r.amount)) }
+        var mode by remember(r.id) { mutableStateOf(runCatching { com.billing.pos.data.PayMode.valueOf(r.paymentMode.uppercase()) }.getOrDefault(com.billing.pos.data.PayMode.CASH)) }
+        AlertDialog(
+            onDismissRequest = { editReceipt = null },
+            title = { Text("Receipt " + r.receiptNo) },
+            text = {
+                Column {
+                    Text(
+                        r.payFrom.ifBlank { r.customerName } + "  •  " + Format.date(r.dateMillis),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.outline
+                    )
+                    OutlinedTextField(
+                        value = amountText,
+                        onValueChange = { amountText = it.filter { c -> c.isDigit() || c == '.' } },
+                        label = { Text("Amount") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                    )
+                    Row(
+                        Modifier.fillMaxWidth().padding(top = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        com.billing.pos.data.PayMode.values().forEach { m ->
+                            androidx.compose.material3.FilterChip(
+                                selected = mode == m,
+                                onClick = { mode = m },
+                                label = { Text(m.label, style = MaterialTheme.typography.labelSmall) }
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val v = amountText.toDoubleOrNull()
+                    if (v != null && v > 0.0) scope.launch { repo.updateReceipt(r, v, mode) }
+                    editReceipt = null
+                }) { Text("Save") }
+            },
+            dismissButton = { TextButton(onClick = { editReceipt = null }) { Text("Cancel") } }
+        )
     }
 
     // Long-press edit: change or delete one amount, total recalculates.
@@ -688,4 +817,30 @@ private fun shareCalcList(
                 .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
         )
     }
+}
+
+/** The date the range starts on when it is first switched on: one month back. */
+private fun defaultFromMillis(): Long = java.util.Calendar.getInstance().apply {
+    add(java.util.Calendar.MONTH, -1)
+}.timeInMillis
+
+private fun startOfDayMillis(m: Long): Long = java.util.Calendar.getInstance().apply {
+    timeInMillis = m
+    set(java.util.Calendar.HOUR_OF_DAY, 0); set(java.util.Calendar.MINUTE, 0)
+    set(java.util.Calendar.SECOND, 0); set(java.util.Calendar.MILLISECOND, 0)
+}.timeInMillis
+
+private fun endOfDayMillis(m: Long): Long = startOfDayMillis(m) + 24L * 60 * 60 * 1000 - 1
+
+private fun pickCalcDate(context: android.content.Context, current: Long, onPicked: (Long) -> Unit) {
+    val c = java.util.Calendar.getInstance().apply { timeInMillis = current }
+    android.app.DatePickerDialog(
+        context,
+        { _, y, mo, d ->
+            c.set(java.util.Calendar.YEAR, y); c.set(java.util.Calendar.MONTH, mo)
+            c.set(java.util.Calendar.DAY_OF_MONTH, d)
+            onPicked(c.timeInMillis)
+        },
+        c.get(java.util.Calendar.YEAR), c.get(java.util.Calendar.MONTH), c.get(java.util.Calendar.DAY_OF_MONTH)
+    ).show()
 }

@@ -261,6 +261,31 @@ private fun AppNav() {
             })
         }
         composable("dashboard") {
+            // Back from the dashboard means leaving the app, so make it deliberate — a
+            // stray back press should not throw away a half-finished day.
+            var confirmExit by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+            val activity = androidx.compose.ui.platform.LocalContext.current as? android.app.Activity
+            androidx.activity.compose.BackHandler { confirmExit = true }
+            if (confirmExit) {
+                androidx.compose.material3.AlertDialog(
+                    onDismissRequest = { confirmExit = false },
+                    title = { androidx.compose.material3.Text("Close the app?") },
+                    text = { androidx.compose.material3.Text("Are you sure you want to close?") },
+                    confirmButton = {
+                        androidx.compose.material3.TextButton(onClick = {
+                            confirmExit = false
+                            com.billing.pos.ui.diary.DiaryAudio.controller.stop()
+                            activity?.finish()
+                        }) { androidx.compose.material3.Text("Close") }
+                    },
+                    dismissButton = {
+                        androidx.compose.material3.TextButton(onClick = { confirmExit = false }) {
+                            androidx.compose.material3.Text("Stay")
+                        }
+                    }
+                )
+            }
+
             // Catch-all for an incoming share: whatever route led here, if a shared file is
             // still waiting, hand it to the diary. This does not depend on the boot/login
             // handshake winning a race, so it holds even if an earlier redirect was missed.
@@ -707,7 +732,7 @@ private fun AppNav() {
         ) { entry ->
             DiaryEditScreen(
                 entryId = entry.arguments?.getLong("id") ?: 0L,
-                onBack = { nav.popBackStack() }
+                onBackRequested = { nav.popBackStack() }
             )
         }
     }

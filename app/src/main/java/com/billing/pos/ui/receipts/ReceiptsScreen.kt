@@ -83,6 +83,7 @@ import com.billing.pos.util.Format
 import com.billing.pos.util.Permissions
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
@@ -101,7 +102,21 @@ class ReceiptsViewModel(app: Application) : AndroidViewModel(app) {
     val message = MutableStateFlow<String?>(null)
     fun consumeMessage() { message.value = null }
 
-    init { viewModelScope.launch { payFromOptions.value = repo.payFromNames() } }
+    /**
+     * Names offered under "Pay from": everyone in the customer master, plus any name typed
+     * on an earlier receipt. A name typed here is never written back to the master, but it
+     * is remembered for the next search because past receipts are part of this list.
+     */
+    private suspend fun refreshPayFrom() {
+        val used = repo.payFromNames()
+        val masters = repo.customers.first().map { it.name }
+        payFromOptions.value = (masters + used)
+            .map { it.trim() }.filter { it.isNotBlank() }
+            .distinctBy { it.lowercase() }
+            .sortedBy { it.lowercase() }
+    }
+
+    init { viewModelScope.launch { refreshPayFrom() } }
 
     fun addAgainstInvoice(bill: Bill, amount: Double, mode: PayMode, dateMillis: Long) {
         if (amount <= 0) { message.value = "Enter a valid amount"; return }
@@ -112,7 +127,7 @@ class ReceiptsViewModel(app: Application) : AndroidViewModel(app) {
         if (amount <= 0) { message.value = "Enter a valid amount"; return }
         viewModelScope.launch {
             repo.addStandaloneReceipt(payFrom.trim().ifBlank { "Cash receipt" }, amount, mode, dateMillis)
-            payFromOptions.value = repo.payFromNames()
+            refreshPayFrom()
             message.value = "Receipt added"
         }
     }
@@ -121,7 +136,7 @@ class ReceiptsViewModel(app: Application) : AndroidViewModel(app) {
         if (rows.isEmpty()) { message.value = "Nothing to save"; return }
         viewModelScope.launch {
             rows.forEach { r -> repo.addStandaloneReceipt(r.party.ifBlank { "Cash receipt" }, r.amount, mode, r.dateMillis) }
-            payFromOptions.value = repo.payFromNames()
+            refreshPayFrom()
             message.value = "${rows.size} receipt(s) added"
         }
     }
