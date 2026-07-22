@@ -51,7 +51,8 @@ fun CustomerAttachments(
 ) {
     val context = LocalContext.current
     // Images open in the app's own zoomable viewer rather than handing off to a gallery app.
-    var viewing by remember { mutableStateOf<List<String>?>(null) }
+    // The index matters: without it every row opened the first picture.
+    var viewing by remember { mutableStateOf<Pair<List<String>, Int>?>(null) }
 
     fun addFrom(uri: android.net.Uri?) {
         if (uri == null) return
@@ -62,8 +63,12 @@ fun CustomerAttachments(
     val gallery = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { addFrom(it) }
     val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { addFrom(it) }
 
-    viewing?.let { paths ->
-        com.billing.pos.ui.common.ImageViewerDialog(paths = paths, onDismiss = { viewing = null })
+    viewing?.let { (paths, start) ->
+        com.billing.pos.ui.common.ImageViewerDialog(
+            paths = paths,
+            startIndex = start,
+            onDismiss = { viewing = null }
+        )
     }
 
     Column(Modifier.fillMaxWidth().padding(top = 10.dp)) {
@@ -94,9 +99,12 @@ fun CustomerAttachments(
                     att.name,
                     maxLines = 1,
                     modifier = Modifier.weight(1f).clickable {
-                        // Images stay in the app so they can be pinched and zoomed.
-                        if (att.isImage) viewing = attachments.filter { it.isImage }.map { it.path }
-                        else openAttachment(context, att)
+                        // Images stay in the app so they can be pinched and zoomed. The
+                        // viewer opens on the one that was tapped, not the first one.
+                        if (att.isImage) {
+                            val images = attachments.filter { it.isImage }
+                            viewing = images.map { it.path } to images.indexOf(att).coerceAtLeast(0)
+                        } else openAttachment(context, att)
                     },
                     color = MaterialTheme.colorScheme.primary,
                     style = MaterialTheme.typography.bodySmall
