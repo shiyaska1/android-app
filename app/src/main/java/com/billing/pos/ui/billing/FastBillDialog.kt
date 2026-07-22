@@ -19,6 +19,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Backspace
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
@@ -406,7 +407,9 @@ fun FastBillDialog(
 
     // Saved tapes: newest first, tap one to carry on adding to it.
     if (showSaved) {
-        val shown = savedCalcs.filter { listFilter.isBlank() || it.customerName == listFilter }
+        val shown = savedCalcs.filter {
+            listFilter.isBlank() || it.customerName.contains(listFilter.trim(), ignoreCase = true)
+        }
         val shownTotal = shown.sumOf { it.total }
         var filterMenu by remember { mutableStateOf(false) }
 
@@ -442,19 +445,28 @@ fun FastBillDialog(
 
                 // Filter by customer; "All customers" is the default.
                 Box(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
+                    // Type to narrow, or pick from the arrow — both work on the same box.
                     OutlinedTextField(
-                        readOnly = true,
-                        value = listFilter.ifBlank { "All customers" },
-                        onValueChange = {},
-                        label = { Text("Customer") },
+                        value = listFilter,
+                        onValueChange = { listFilter = it; filterMenu = it.isNotBlank() },
+                        label = { Text("Customer (all)") },
+                        placeholder = { Text("All customers") },
                         singleLine = true,
                         trailingIcon = {
-                            IconButton(onClick = { filterMenu = true }) {
-                                Icon(Icons.Filled.ArrowDropDown, "Filter by customer")
+                            Row {
+                                if (listFilter.isNotBlank()) IconButton(onClick = { listFilter = ""; filterMenu = false }) {
+                                    Icon(Icons.Filled.Close, "Show all")
+                                }
+                                IconButton(onClick = { filterMenu = !filterMenu }) {
+                                    Icon(Icons.Filled.ArrowDropDown, "Pick customer")
+                                }
                             }
                         },
                         modifier = Modifier.fillMaxWidth()
                     )
+                    val names = savedCalcs.map { it.customerName }.distinct()
+                        .filter { listFilter.isBlank() || it.contains(listFilter.trim(), ignoreCase = true) }
+                        .sorted()
                     androidx.compose.material3.DropdownMenu(
                         expanded = filterMenu, onDismissRequest = { filterMenu = false }
                     ) {
@@ -462,7 +474,7 @@ fun FastBillDialog(
                             text = { Text("All customers") },
                             onClick = { listFilter = ""; filterMenu = false }
                         )
-                        savedCalcs.map { it.customerName }.distinct().sorted().forEach { name ->
+                        names.forEach { name ->
                             androidx.compose.material3.DropdownMenuItem(
                                 text = { Text(name) },
                                 onClick = { listFilter = name; filterMenu = false }
@@ -531,12 +543,19 @@ fun FastBillDialog(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("TOTAL  (${shown.size})", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
-                    Text(
-                        Format.money(shownTotal),
-                        fontSize = 30.sp, fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
+                    Column {
+                        Text(
+                            "TOTAL  (${shown.size})",
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.outline
+                        )
+                        Text(
+                            Format.money(shownTotal),
+                            fontSize = 30.sp, fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
                 }
             }
         }

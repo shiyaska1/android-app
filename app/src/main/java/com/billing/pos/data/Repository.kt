@@ -282,6 +282,20 @@ class Repository(context: Context) {
     suspend fun quotationLines(id: Long): List<QuotationItem> = quotationDao.linesFor(id)
 
     // ---- payment attachments ----
+    private val customerAttachmentDao = db.customerAttachmentDao()
+
+    suspend fun customerAttachmentsFor(customerId: Long): List<CustomerAttachment> =
+        customerAttachmentDao.forCustomer(customerId)
+
+    /** Replaces the whole set, deleting the files of any row that was removed. */
+    suspend fun replaceCustomerAttachments(customerId: Long, list: List<CustomerAttachment>) {
+        val existing = customerAttachmentDao.forCustomer(customerId)
+        val keep = list.map { it.path }.toSet()
+        existing.filter { it.path !in keep }.forEach { runCatching { java.io.File(it.path).delete() } }
+        customerAttachmentDao.deleteForCustomer(customerId)
+        list.forEach { customerAttachmentDao.insert(it.copy(id = 0, customerId = customerId)) }
+    }
+
     private val savedCalcDao = db.savedCalcDao()
 
     /** Saved calculator tapes, newest first. */

@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -47,6 +49,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.billing.pos.data.Customer
+import com.billing.pos.data.CustomerAttachment
 import com.billing.pos.data.Repository
 import com.billing.pos.ui.billing.collectAsStateSafe
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -64,15 +67,25 @@ class CustomersViewModel(app: Application) : AndroidViewModel(app) {
     val message = MutableStateFlow<String?>(null)
     fun consumeMessage() { message.value = null }
 
-    fun save(existing: Customer?, name: String, phone: String, address: String, gstin: String, onDone: () -> Unit) {
+    fun save(
+        existing: Customer?, name: String, phone: String, address: String, gstin: String,
+        attachments: List<CustomerAttachment>, onDone: () -> Unit
+    ) {
         if (name.isBlank()) { message.value = "Enter a name"; return }
         viewModelScope.launch {
-            if (existing == null) repo.addCustomer(name, phone, address, gstin)
-            else repo.updateCustomer(existing.copy(name = name.trim(), phone = phone.trim(), address = address.trim(), gstin = gstin.trim()))
+            // A new customer has no id until it is saved, so the files are filed afterwards.
+            val id = if (existing == null) repo.addCustomer(name, phone, address, gstin)
+            else {
+                repo.updateCustomer(existing.copy(name = name.trim(), phone = phone.trim(), address = address.trim(), gstin = gstin.trim()))
+                existing.id
+            }
+            repo.replaceCustomerAttachments(id, attachments)
             message.value = "Saved"
             onDone()
         }
     }
+
+    suspend fun attachmentsFor(customerId: Long) = repo.customerAttachmentsFor(customerId)
 
     fun delete(customer: Customer) {
         viewModelScope.launch {
@@ -102,6 +115,12 @@ fun CustomersScreen(
     var selecting by remember { mutableStateOf(false) }
     val selected = remember { mutableStateListOf<Long>() }
     val context = androidx.compose.ui.platform.LocalContext.current
+    var query by remember { mutableStateOf("") }
+    // One box searches every field, so a part of a phone number finds the customer too.
+    val visible = customers.filter { c ->
+        val q = query.trim()
+        q.isBlank() || listOf(c.name, c.phone, c.address, c.gstin).any { it.contains(q, ignoreCase = true) }
+    }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
@@ -150,8 +169,21 @@ fun CustomersScreen(
             }
         }
     ) { pad ->
-        LazyColumn(Modifier.fillMaxSize().padding(pad).padding(horizontal = 12.dp)) {
-            items(customers, key = { it.id }) { c ->
+        Column(Modifier.fillMaxSize().padding(pad)) {
+        OutlinedTextField(
+            value = query,
+            onValueChange = { query = it },
+            label = { Text("Search name, phone, address or GSTIN") },
+            singleLine = true,
+            trailingIcon = {
+                if (query.isNotBlank()) IconButton(onClick = { query = "" }) {
+                    Icon(Icons.Filled.Close, "Clear search")
+                }
+            },
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)
+        )
+        LazyColumn(Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
+            items(visible, key = { it.id }) { c ->
                 Row(
                     Modifier.fillMaxWidth()
                         .clickable {
@@ -186,13 +218,18 @@ fun CustomersScreen(
                 Divider()
             }
         }
+        }
     }
 
     if (showDialog) {
         CustomerDialog(
             existing = editing,
+            loadAttachments = { id -> vm.attachmentsFor(id) },
+            onMessage = { vm.message.value = it },
             onDismiss = { showDialog = false },
-            onSave = { name, phone, addr, gstin -> vm.save(editing, name, phone, addr, gstin) { showDialog = false } }
+            onSave = { name, phone, addr, gstin, atts ->
+                vm.save(editing, name, phone, addr, gstin, atts) { showDialog = false }
+            }
         )
     }
     deleteFor?.let { c ->
@@ -209,18 +246,25 @@ fun CustomersScreen(
 @Composable
 private fun CustomerDialog(
     existing: Customer?,
+    loadAttachments: suspend (Long) -> List<CustomerAttachment>,
+    onMessage: (String) -> Unit,
     onDismiss: () -> Unit,
-    onSave: (String, String, String, String) -> Unit
+    onSave: (String, String, String, String, List<CustomerAttachment>) -> Unit
 ) {
     var name by remember { mutableStateOf(existing?.name ?: "") }
     var phone by remember { mutableStateOf(existing?.phone ?: "") }
     var address by remember { mutableStateOf(existing?.address ?: "") }
     var gstin by remember { mutableStateOf(existing?.gstin ?: "") }
+    val attachments = remember { mutableStateListOf<CustomerAttachment>() }
+    LaunchedEffect(existing?.id) {
+        attachments.clear()
+        existing?.id?.let { if (it > 0) attachments.addAll(loadAttachments(it)) }
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (existing == null) "New customer" else "Edit customer") },
         text = {
-            Column {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
                 OutlinedTextField(
                     value = name, onValueChange = { name = it },
                     label = { Text("Name *") }, singleLine = true,
@@ -242,9 +286,10 @@ private fun CustomerDialog(
                     label = { Text("Address") },
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
                 )
+                CustomerAttachments(attachments, onMessage)
             }
         },
-        confirmButton = { TextButton(onClick = { onSave(name, phone, address, gstin) }) { Text("Save") } },
+        confirmButton = { TextButton(onClick = { onSave(name, phone, address, gstin, attachments.toList()) }) { Text("Save") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
 }

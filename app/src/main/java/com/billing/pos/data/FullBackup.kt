@@ -94,6 +94,8 @@ object FullBackup {
         val expenseAtts = db.expenseAttachmentDao().all()
         root.put("expenseAttachments", JSONArray().apply { expenseAtts.forEach { put(expenseAttJson(it)) } })
         root.put("savedCalcs", JSONArray().apply { db.savedCalcDao().all().forEach { put(savedCalcJson(it)) } })
+        val custAtts = db.customerAttachmentDao().all()
+        root.put("customerAttachments", JSONArray().apply { custAtts.forEach { put(custAttJson(it)) } })
 
         val dir = File(context.cacheDir, "shared").apply { mkdirs() }
         val zip = File(dir, "pos-full-backup.zip")
@@ -143,6 +145,14 @@ object FullBackup {
                     zos.closeEntry()
                 }
             }
+            custAtts.forEach { att ->
+                val f = File(att.path)
+                if (f.exists()) {
+                    zos.putNextEntry(ZipEntry("customerfiles/" + f.name))
+                    f.inputStream().use { it.copyTo(zos) }
+                    zos.closeEntry()
+                }
+            }
         }
         return zip
     }
@@ -152,6 +162,7 @@ object FullBackup {
         val itemFilesDir = com.billing.pos.items.ItemAttachmentStore.dir(context)
         val billFilesDir = com.billing.pos.bills.BillAttachmentStore.dir(context)
         val expenseFilesDir = com.billing.pos.expenses.ExpenseAttachmentStore.dir(context)
+        val customerFilesDir = CustomerAttachmentStore.dir(context)
         var json: String? = null
         // Streamed, never loaded whole: a backup with photos and voice notes can be hundreds
         // of MB, and reading it into a ByteArray first is an instant OutOfMemory on a phone.
@@ -172,6 +183,10 @@ object FullBackup {
                         }
                         e.name.startsWith("expensefiles/") -> {
                             val out = File(expenseFilesDir, e.name.removePrefix("expensefiles/"))
+                            out.outputStream().use { zis.copyTo(it) }
+                        }
+                        e.name.startsWith("customerfiles/") -> {
+                            val out = File(customerFilesDir, e.name.removePrefix("customerfiles/"))
                             out.outputStream().use { zis.copyTo(it) }
                         }
                         e.name.startsWith("files/") -> {
@@ -330,6 +345,9 @@ object FullBackup {
         }
         root.optJSONArray("savedCalcs")?.let {
             for (i in 0 until it.length()) db.savedCalcDao().insert(readSavedCalc(it.getJSONObject(i)))
+        }
+        root.optJSONArray("customerAttachments")?.let {
+            for (i in 0 until it.length()) db.customerAttachmentDao().insert(readCustAtt(context, it.getJSONObject(i)))
         }
         root.optJSONArray("materialReceipts")?.let {
             for (i in 0 until it.length()) db.materialReceiptDao().insertHeader(readMatRec(it.getJSONObject(i)))
@@ -704,6 +722,14 @@ object FullBackup {
                 db.expenseAttachmentDao().insert(a.copy(id = 0, expenseId = ne))
             }
         }
+        // Customer documents follow whichever customer row they ended up attached to.
+        root.optJSONArray("customerAttachments")?.let {
+            for (i in 0 until it.length()) {
+                val a2 = readCustAtt(context, it.getJSONObject(i))
+                val nc = custMap[a2.customerId] ?: continue
+                db.customerAttachmentDao().insert(a2.copy(id = 0, customerId = nc))
+            }
+        }
         // Saved calculator tapes — standalone, so they merge by simply being added.
         root.optJSONArray("savedCalcs")?.let {
             for (i in 0 until it.length()) {
@@ -824,6 +850,16 @@ object FullBackup {
 
     private fun sizeJson(s: ItemSize) = JSONObject().put("id", s.id).put("itemId", s.itemId)
         .put("name", s.name).put("price", s.price)
+
+    private fun custAttJson(a: CustomerAttachment) = JSONObject().put("id", a.id)
+        .put("customerId", a.customerId).put("file", File(a.path).name)
+        .put("name", a.name).put("mime", a.mime)
+
+    private fun readCustAtt(context: Context, o: JSONObject) = CustomerAttachment(
+        id = o.optLong("id"), customerId = o.optLong("customerId"),
+        path = File(CustomerAttachmentStore.dir(context), o.optString("file")).absolutePath,
+        name = o.optString("name"), mime = o.optString("mime")
+    )
 
     private fun savedCalcJson(c: SavedCalc) = JSONObject().put("id", c.id)
         .put("dateMillis", c.dateMillis).put("amounts", c.amounts)

@@ -17,6 +17,16 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.Divider
 import androidx.compose.material3.LocalTextStyle
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Call
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.NoteAdd
+import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -159,12 +169,14 @@ fun MobileNumberDialog(
                             ).show()
                         }
                     },
-                    modifier = Modifier.weight(1f)
-                ) { Text("Copy") }
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(4.dp)
+                ) { Icon(Icons.Filled.ContentCopy, "Copy", Modifier.size(22.dp)) }
                 OutlinedButton(
                     onClick = { com.billing.pos.util.ShareText.share(context, number) },
-                    modifier = Modifier.weight(1f)
-                ) { Text("Share") }
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(4.dp)
+                ) { Icon(Icons.Filled.Share, "Share", Modifier.size(22.dp)) }
                 OutlinedButton(
                     // Opens the phone's dialer with the number filled in — the call itself is
                     // still started by you, so the app needs no calling permission.
@@ -178,17 +190,24 @@ fun MobileNumberDialog(
                             )
                         }
                     },
-                    modifier = Modifier.weight(1f)
-                ) { Text("Call") }
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(4.dp)
+                ) { Icon(Icons.Filled.Call, "Call", Modifier.size(22.dp)) }
                 OutlinedButton(
                     onClick = { if (number.isNotBlank()) saveCustomerFor = number },
-                    modifier = Modifier.weight(1.4f)
-                ) { Text("Save customer") }
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(4.dp)
+                ) { Icon(Icons.Filled.PersonAdd, "Save customer", Modifier.size(22.dp)) }
                 Button(
                     onClick = { if (number.isNotBlank()) noteFor = number },
-                    modifier = Modifier.weight(1.3f)
-                ) { Text("Add to diary") }
-                OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) { Text("Close") }
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(4.dp)
+                ) { Icon(Icons.Filled.NoteAdd, "Add to diary", Modifier.size(22.dp)) }
+                OutlinedButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(4.dp)
+                ) { Icon(Icons.Filled.Close, "Close", Modifier.size(22.dp)) }
             }
             Divider()
 
