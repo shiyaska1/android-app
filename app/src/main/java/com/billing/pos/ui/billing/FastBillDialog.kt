@@ -36,6 +36,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -115,7 +116,8 @@ fun FastBillDialog(
     }
 
     val repo = remember { com.billing.pos.data.Repository(context) }
-    val savedCalcs by repo.savedCalcs.collectAsStateSafe()
+    val savedCalcs: List<com.billing.pos.data.SavedCalc> by
+        repo.savedCalcs.collectAsState(initial = emptyList())
 
     /** Stores the tape, updating the one being edited rather than piling up copies. */
     fun storeTape(onDone: (String) -> Unit) {
