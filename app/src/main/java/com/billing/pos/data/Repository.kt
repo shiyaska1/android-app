@@ -285,6 +285,25 @@ class Repository(context: Context) {
     suspend fun quotationLines(id: Long): List<QuotationItem> = quotationDao.linesFor(id)
 
     // ---- payment attachments ----
+    private val custOrderDao = db.custOrderDao()
+
+    val custOrders: Flow<List<CustOrder>> = custOrderDao.observeAll()
+    val custOrderLinesFlow: Flow<List<CustOrderItem>> = custOrderDao.observeAllLines()
+    suspend fun nextOrderNo(): String = "ORD-" + (custOrderDao.count() + 1).toString().padStart(4, '0')
+    suspend fun saveOrder(o: CustOrder, lines: List<CustOrderItem>): Long = custOrderDao.save(o, lines)
+    suspend fun updateOrder(o: CustOrder, lines: List<CustOrderItem>) = custOrderDao.update(o, lines)
+    suspend fun deleteOrder(o: CustOrder) = custOrderDao.delete(o)
+    suspend fun orderById(id: Long): CustOrder? = custOrderDao.byId(id)
+    suspend fun orderLines(id: Long): List<CustOrderItem> = custOrderDao.linesFor(id)
+    suspend fun orderAttachmentsFor(id: Long): List<CustOrderAttachment> = custOrderDao.attachmentsFor(id)
+    suspend fun replaceOrderAttachments(orderId: Long, list: List<CustOrderAttachment>) {
+        val existing = custOrderDao.attachmentsFor(orderId)
+        val keep = list.map { it.path }.toSet()
+        existing.filter { it.path !in keep }.forEach { runCatching { java.io.File(it.path).delete() } }
+        custOrderDao.deleteAttachments(orderId)
+        list.forEach { custOrderDao.insertAttachment(it.copy(id = 0, orderId = orderId)) }
+    }
+
     private val customerAttachmentDao = db.customerAttachmentDao()
 
     suspend fun customerAttachmentsFor(customerId: Long): List<CustomerAttachment> =

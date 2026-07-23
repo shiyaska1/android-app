@@ -32,14 +32,15 @@ import androidx.room.TypeConverters
         LabDoctor::class, MaterialOut::class, MaterialOutItem::class,
         MaterialReceipt::class, MaterialReceiptItem::class,
         SavedCalc::class, CustomerAttachment::class,
-        PurchaseQuote::class, PurchaseQuoteItem::class
+        PurchaseQuote::class, PurchaseQuoteItem::class,
+        CustOrder::class, CustOrderItem::class, CustOrderAttachment::class
     ],
     // v25 quotations; v26 sales returns; v27 purchase returns; v28 purchase quotations (LPO);
     // v29 dual units; v30 rental; v31 medical lab; v32 lab masters + heading rows;
     // v33 page breaks, heading master, lab-bill payment; v34 lab balance receipts;
     // v35 doctor master + patient phone; v36 material out + movement;
     // v37 item purchase price; v38 material receipts + purchase stockReceived/lpoNo.
-    version = 49,
+    version = 50,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -79,6 +80,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun labReceiptDao(): LabReceiptDao
     abstract fun materialOutDao(): MaterialOutDao
     abstract fun materialReceiptDao(): MaterialReceiptDao
+    abstract fun custOrderDao(): CustOrderDao
 
     companion object {
         @Volatile private var INSTANCE: AppDatabase? = null
@@ -239,6 +241,29 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** Customer orders (stock-neutral copies of a bill). */
+        private val MIGRATION_49_50 = object : androidx.room.migration.Migration(49, 50) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS cust_orders (" +
+                        "id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, orderNo TEXT NOT NULL, " +
+                        "dateMillis INTEGER NOT NULL, customerId INTEGER NOT NULL, customerName TEXT NOT NULL, " +
+                        "remark TEXT NOT NULL DEFAULT '', latitude REAL NOT NULL DEFAULT 0, longitude REAL NOT NULL DEFAULT 0, " +
+                        "grandTotal REAL NOT NULL DEFAULT 0)"
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS cust_order_items (" +
+                        "id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, orderId INTEGER NOT NULL, itemId INTEGER NOT NULL DEFAULT 0, " +
+                        "name TEXT NOT NULL, qty REAL NOT NULL, price REAL NOT NULL, lineTotal REAL NOT NULL, unit TEXT NOT NULL DEFAULT '')"
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS cust_order_attachments (" +
+                        "id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, orderId INTEGER NOT NULL, " +
+                        "path TEXT NOT NULL, name TEXT NOT NULL, mime TEXT NOT NULL)"
+                )
+            }
+        }
+
         fun get(context: Context): AppDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -246,7 +271,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "pos_billing.db"
                 )
-                    .addMigrations(MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45, MIGRATION_45_46, MIGRATION_46_47, MIGRATION_47_48, MIGRATION_48_49)
+                    .addMigrations(MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45, MIGRATION_45_46, MIGRATION_46_47, MIGRATION_47_48, MIGRATION_48_49, MIGRATION_49_50)
                     .fallbackToDestructiveMigration()
                     .build()
                     .also { INSTANCE = it }

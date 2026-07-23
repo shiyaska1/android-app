@@ -116,6 +116,7 @@ object MergeCategories {
         "journalEntries" to "Journal entries",
         "accountHeads" to "Account heads",
         "diaryEntries" to "Diary entries",
+        "custOrders" to "Orders",
         "savedCalcs" to "Saved calculations",
         "users" to "Users"
     )
@@ -140,6 +141,7 @@ object MergeCategories {
         "labBills" -> "labbill/edit/{id}"
         "labTests" -> "labtest/edit/{id}"
         "items" -> "items/edit/{id}"
+        "custOrders" -> "order/edit/{id}"
         "diaryEntries" -> "diary/edit/{id}"
         else -> null
     }

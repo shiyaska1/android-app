@@ -98,6 +98,10 @@ object FullBackup {
         root.put("purchaseQuoteItems", JSONArray().apply { db.purchaseQuoteDao().allLines().forEach { put(pQuoteItemJson(it)) } })
         val custAtts = db.customerAttachmentDao().all()
         root.put("customerAttachments", JSONArray().apply { custAtts.forEach { put(custAttJson(it)) } })
+        root.put("custOrders", JSONArray().apply { db.custOrderDao().all().forEach { put(orderJson(it)) } })
+        root.put("custOrderItems", JSONArray().apply { db.custOrderDao().allLines().forEach { put(orderItemJson(it)) } })
+        val orderAtts = db.custOrderDao().allAttachments()
+        root.put("custOrderAttachments", JSONArray().apply { orderAtts.forEach { put(orderAttJson(it)) } })
 
         val dir = File(context.cacheDir, "shared").apply { mkdirs() }
         val zip = File(dir, "pos-full-backup.zip")
@@ -147,6 +151,10 @@ object FullBackup {
                     zos.closeEntry()
                 }
             }
+            orderAtts.forEach { att ->
+                val f = File(att.path)
+                if (f.exists()) { zos.putNextEntry(ZipEntry("orderfiles/" + f.name)); f.inputStream().use { it.copyTo(zos) }; zos.closeEntry() }
+            }
             custAtts.forEach { att ->
                 val f = File(att.path)
                 if (f.exists()) {
@@ -165,6 +173,7 @@ object FullBackup {
         val billFilesDir = com.billing.pos.bills.BillAttachmentStore.dir(context)
         val expenseFilesDir = com.billing.pos.expenses.ExpenseAttachmentStore.dir(context)
         val customerFilesDir = CustomerAttachmentStore.dir(context)
+        val orderFilesDir = OrderAttachmentStore.dir(context)
         var json: String? = null
         // Streamed, never loaded whole: a backup with photos and voice notes can be hundreds
         // of MB, and reading it into a ByteArray first is an instant OutOfMemory on a phone.
@@ -189,6 +198,10 @@ object FullBackup {
                         }
                         e.name.startsWith("customerfiles/") -> {
                             val out = File(customerFilesDir, e.name.removePrefix("customerfiles/"))
+                            out.outputStream().use { zis.copyTo(it) }
+                        }
+                        e.name.startsWith("orderfiles/") -> {
+                            val out = File(orderFilesDir, e.name.removePrefix("orderfiles/"))
                             out.outputStream().use { zis.copyTo(it) }
                         }
                         e.name.startsWith("files/") -> {
@@ -359,6 +372,12 @@ object FullBackup {
         root.optJSONArray("customerAttachments")?.let {
             for (i in 0 until it.length()) db.customerAttachmentDao().insert(readCustAtt(context, it.getJSONObject(i)))
         }
+        root.optJSONArray("custOrders")?.let { for (i in 0 until it.length()) db.custOrderDao().insertHeader(readOrder(it.getJSONObject(i))) }
+        root.optJSONArray("custOrderItems")?.let {
+            val ls = ArrayList<CustOrderItem>(); for (i in 0 until it.length()) ls.add(readOrderItem(it.getJSONObject(i)))
+            if (ls.isNotEmpty()) db.custOrderDao().insertLines(ls)
+        }
+        root.optJSONArray("custOrderAttachments")?.let { for (i in 0 until it.length()) db.custOrderDao().insertAttachment(readOrderAtt(context, it.getJSONObject(i))) }
         root.optJSONArray("materialReceipts")?.let {
             for (i in 0 until it.length()) db.materialReceiptDao().insertHeader(readMatRec(it.getJSONObject(i)))
         }
@@ -763,6 +782,26 @@ object FullBackup {
                     .also { nid -> log.add("savedCalcs", nid) }
             }
         }
+        // Customer orders, lines and attachments following the header's new id.
+        val orderMap = HashMap<Long, Long>()
+        root.optJSONArray("custOrders")?.let {
+            for (i in 0 until it.length()) {
+                val o = readOrder(it.getJSONObject(i))
+                orderMap[o.id] = db.custOrderDao().insertHeader(o.copy(id = 0)).also { nid -> log.add("custOrders", nid) }
+            }
+        }
+        root.optJSONArray("custOrderItems")?.let {
+            for (i in 0 until it.length()) {
+                val l = readOrderItem(it.getJSONObject(i)); val no = orderMap[l.orderId] ?: continue
+                db.custOrderDao().insertLines(listOf(l.copy(id = 0, orderId = no)))
+            }
+        }
+        root.optJSONArray("custOrderAttachments")?.let {
+            for (i in 0 until it.length()) {
+                val a = readOrderAtt(context, it.getJSONObject(i)); val no = orderMap[a.orderId] ?: continue
+                db.custOrderDao().insertAttachment(a.copy(id = 0, orderId = no))
+            }
+        }
         // Material receipts + lines
         val matRecMap = HashMap<Long, Long>()
         root.optJSONArray("materialReceipts")?.let {
@@ -925,6 +964,31 @@ object FullBackup {
         customerId = o.optLong("customerId"),
         customerName = o.optString("customerName", SavedCalc.DEFAULT_CUSTOMER),
         narration = o.optString("narration")
+    )
+
+    private fun orderJson(o: CustOrder) = JSONObject().put("id", o.id).put("orderNo", o.orderNo)
+        .put("dateMillis", o.dateMillis).put("customerId", o.customerId).put("customerName", o.customerName)
+        .put("remark", o.remark).put("latitude", o.latitude).put("longitude", o.longitude).put("grandTotal", o.grandTotal)
+    private fun readOrder(o: JSONObject) = CustOrder(
+        id = o.optLong("id"), orderNo = o.optString("orderNo"), dateMillis = o.optLong("dateMillis"),
+        customerId = o.optLong("customerId"), customerName = o.optString("customerName"),
+        remark = o.optString("remark"), latitude = o.optDouble("latitude", 0.0), longitude = o.optDouble("longitude", 0.0),
+        grandTotal = o.optDouble("grandTotal", 0.0)
+    )
+    private fun orderItemJson(l: CustOrderItem) = JSONObject().put("id", l.id).put("orderId", l.orderId)
+        .put("itemId", l.itemId).put("name", l.name).put("qty", l.qty).put("price", l.price)
+        .put("lineTotal", l.lineTotal).put("unit", l.unit)
+    private fun readOrderItem(o: JSONObject) = CustOrderItem(
+        id = o.optLong("id"), orderId = o.optLong("orderId"), itemId = o.optLong("itemId"),
+        name = o.optString("name"), qty = o.optDouble("qty", 0.0), price = o.optDouble("price", 0.0),
+        lineTotal = o.optDouble("lineTotal", 0.0), unit = o.optString("unit")
+    )
+    private fun orderAttJson(a: CustOrderAttachment) = JSONObject().put("id", a.id).put("orderId", a.orderId)
+        .put("file", File(a.path).name).put("name", a.name).put("mime", a.mime)
+    private fun readOrderAtt(context: Context, o: JSONObject) = CustOrderAttachment(
+        id = o.optLong("id"), orderId = o.optLong("orderId"),
+        path = File(OrderAttachmentStore.dir(context), o.optString("file")).absolutePath,
+        name = o.optString("name"), mime = o.optString("mime")
     )
 
     private fun quotationJson(q: Quotation) = JSONObject().put("id", q.id).put("quotationNo", q.quotationNo)

@@ -369,6 +369,7 @@ private fun AppNav() {
                 onStickyNote = { nav.navigate("stickynote") },
                 onNewBill = { nav.navigate("billing") },
                 onQuickBill = { nav.navigate("quickbill") },
+                onOrders = { nav.navigate("orders") },
                 onPriceSearch = { nav.navigate("pricesearch") },
                 onInvoices = { nav.navigate("invoices") },
                 onReceipts = { nav.navigate("receipts") },
@@ -492,6 +493,20 @@ private fun AppNav() {
         composable("quickbill") {
             QuickBillScreen(onBack = { nav.popBackStack() })
         }
+        composable("orders") {
+            com.billing.pos.ui.order.OrderListScreen(
+                onBack = { nav.popBackStack() },
+                onOpen = { id -> nav.navigate("order/edit/$id") },
+                onNew = { nav.navigate("order") },
+                onReport = { nav.navigate("orderreport") }
+            )
+        }
+        composable("order") { com.billing.pos.ui.order.OrderEntryScreen(editId = null, onBack = { nav.popBackStack() }) }
+        composable(
+            route = "order/edit/{id}",
+            arguments = listOf(navArgument("id") { type = NavType.LongType })
+        ) { entry -> com.billing.pos.ui.order.OrderEntryScreen(editId = entry.arguments?.getLong("id"), onBack = { nav.popBackStack() }) }
+        composable("orderreport") { com.billing.pos.ui.order.OrderReportScreen(onBack = { nav.popBackStack() }) }
         composable("customers") {
             CustomersScreen(onBack = { nav.popBackStack() })
         }

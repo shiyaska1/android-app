@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Campaign
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.ListAlt
 import androidx.compose.material.icons.filled.RequestQuote
 import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.EventBusy
@@ -114,6 +115,7 @@ fun DashboardScreen(
     onSalesReturns: () -> Unit,
     onPurchaseReturns: () -> Unit,
     onPurchaseQuotes: () -> Unit,
+    onOrders: () -> Unit,
     onOpenChart: (String) -> Unit,
     onOpenParked: (String) -> Unit,
     onLpos: () -> Unit,
@@ -166,6 +168,7 @@ fun DashboardScreen(
         if (Session.canViewInvoice) add(Tile("Purchase Return", Icons.Filled.AssignmentReturned, onPurchaseReturns, "Transactions"))
         add(Tile("Purchase Order", Icons.Filled.PlaylistAddCheck, onLpos, "Transactions"))
         add(Tile("Purchase Quotation", Icons.Filled.RequestQuote, onPurchaseQuotes, "Transactions"))
+        add(Tile("Orders", Icons.Filled.ListAlt, onOrders, "Transactions"))
         if (Session.canViewInvoice) add(Tile("Material Receipt", Icons.Filled.MoveToInbox, onMaterialReceipt, "Transactions"))
         if (isLab) {
             add(Tile("Lab Bill", Icons.Filled.Science, onLabBills, "Transactions"))
