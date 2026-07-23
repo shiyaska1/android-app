@@ -59,40 +59,34 @@ object MarketingMedia {
 
         val mime = mimeFor(context, files)
 
-        fun build(): Intent {
-            val i = if (files.size == 1) Intent(Intent.ACTION_SEND) else Intent(Intent.ACTION_SEND_MULTIPLE)
-            i.type = mime
-            if (files.size == 1) i.putExtra(Intent.EXTRA_STREAM, files[0])
-            else i.putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(files))
-            if (text.isNotBlank()) i.putExtra(Intent.EXTRA_TEXT, text)
-            // ClipData is what actually grants the target app read access to the shared files —
-            // without it WhatsApp receives no readable media and shows the text only.
-            val clip = android.content.ClipData.newUri(context.contentResolver, "media", files[0])
-            for (k in 1 until files.size) clip.addItem(android.content.ClipData.Item(files[k]))
-            i.clipData = clip
-            i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
-            return i
+        // Keep the caption on the clipboard so it can be pasted if WhatsApp drops it.
+        if (text.isNotBlank()) runCatching {
+            val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+            cm.setPrimaryClip(android.content.ClipData.newPlainText("message", text))
         }
 
-        // With a number, target that WhatsApp contact directly (jid). If media fails to attach
-        // that way on some builds, the no-jid share below still carries the files.
-        if (digits.isNotBlank()) {
-            for (pkg in listOf("com.whatsapp", "com.whatsapp.w4b")) {
-                val direct = build().setPackage(pkg).putExtra("jid", digits + "@s.whatsapp.net")
-                if (direct.resolveActivity(context.packageManager) != null) {
-                    runCatching { context.startActivity(direct) }.onSuccess { return }
-                }
-            }
-        }
+        // Media to a specific WhatsApp number cannot be done reliably — the "jid" trick opens
+        // the chat but drops the attachment. So media uses WhatsApp's normal media share, which
+        // always attaches the files; you pick the contact there. ClipData grants read access.
+        val send = if (files.size == 1) Intent(Intent.ACTION_SEND) else Intent(Intent.ACTION_SEND_MULTIPLE)
+        send.type = mime
+        if (files.size == 1) send.putExtra(Intent.EXTRA_STREAM, files[0])
+        else send.putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(files))
+        if (text.isNotBlank()) send.putExtra(Intent.EXTRA_TEXT, text)
+        val clip = android.content.ClipData.newUri(context.contentResolver, "media", files[0])
+        for (k in 1 until files.size) clip.addItem(android.content.ClipData.Item(files[k]))
+        send.clipData = clip
+        send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+
         for (pkg in listOf("com.whatsapp", "com.whatsapp.w4b")) {
-            val direct = build().setPackage(pkg)
+            val direct = Intent(send).setPackage(pkg)
             if (direct.resolveActivity(context.packageManager) != null) {
                 runCatching { context.startActivity(direct) }.onSuccess { return }
             }
         }
         // No WhatsApp installed — offer the media through the general share sheet.
         runCatching {
-            context.startActivity(Intent.createChooser(build(), "Send").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            context.startActivity(Intent.createChooser(send, "Send").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         }
     }
 

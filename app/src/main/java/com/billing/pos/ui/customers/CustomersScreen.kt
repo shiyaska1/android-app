@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Campaign
 import androidx.compose.material.icons.filled.Chat
+import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.UploadFile
 import androidx.compose.material3.AlertDialog
@@ -227,6 +228,8 @@ fun CustomersScreen(
         val filePick = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
             uris.forEach { u -> com.billing.pos.marketing.MarketingMedia.copyIn(context, u)?.let(marketMedia::add) }
         }
+        // Camera: the helper returns a shareable content URI already, so add it straight in.
+        val cameraCapture = com.billing.pos.ocr.rememberImageCamera { uri -> marketMedia.add(uri) }
 
         Column(Modifier.fillMaxSize().padding(pad)) {
         OutlinedTextField(
@@ -301,6 +304,9 @@ fun CustomersScreen(
             Divider()
             Column(Modifier.fillMaxWidth().padding(12.dp).navigationBarsPadding()) {
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedButton(onClick = { cameraCapture() }, modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Filled.PhotoCamera, "Camera", Modifier.size(18.dp))
+                    }
                     OutlinedButton(
                         onClick = { galleryPick.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)) },
                         modifier = Modifier.weight(1f)
@@ -351,7 +357,8 @@ fun CustomersScreen(
                     Text(cust.name, fontWeight = FontWeight.Bold)
                     Text(cust.phone, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
                     Text(
-                        "Open WhatsApp, send, then come back and tap Next.",
+                        "Open WhatsApp, pick this contact, send, then come back and tap Next. " +
+                            "The files are attached; the message is also on the clipboard to paste if needed.",
                         style = MaterialTheme.typography.bodySmall,
                         modifier = Modifier.padding(top = 8.dp)
                     )
