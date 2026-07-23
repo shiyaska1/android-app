@@ -623,7 +623,10 @@ fun StickyNoteScreen(onClose: () -> Unit, onOcrToSales: () -> Unit = {}, vm: Sti
                 cust.id, pagesSnapshot(), canvasSize.width, canvasSize.height,
                 images.toList(), audios.toList(), videos.toList()
             ) { paths ->
-                if (share) shareNoteFiles(context, cust.name, paths)
+                if (share) {
+                    val caption = if (cust.phone.isNotBlank()) cust.name + "\n" + cust.phone else cust.name
+                    shareNoteFiles(context, caption, paths)
+                }
             }
             addToCustomer = false
         }
@@ -815,8 +818,12 @@ fun StickyNoteScreen(onClose: () -> Unit, onOcrToSales: () -> Unit = {}, vm: Sti
 }
 
 /** The label nearest [off], within a generous radius so it is easy to grab. */
-/** Shares the note's files (rendered pages + media) to WhatsApp, captioned with the name. */
-private fun shareNoteFiles(context: android.content.Context, customerName: String, paths: List<String>) {
+/**
+ * Sends the note's files (rendered pages + media) straight to WhatsApp, with the customer's
+ * name and — when it exists — phone number as the caption. Falls back to the share sheet
+ * only if WhatsApp is not installed.
+ */
+private fun shareNoteFiles(context: android.content.Context, caption: String, paths: List<String>) {
     if (paths.isEmpty()) return
     runCatching {
         val uris = ArrayList<android.net.Uri>()
@@ -827,13 +834,19 @@ private fun shareNoteFiles(context: android.content.Context, customerName: Strin
             )
         }
         if (uris.isEmpty()) return
-        val send = Intent(Intent.ACTION_SEND_MULTIPLE).apply {
+        val base = Intent(Intent.ACTION_SEND_MULTIPLE).apply {
             type = "*/*"
             putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
-            putExtra(Intent.EXTRA_TEXT, customerName)
+            putExtra(Intent.EXTRA_TEXT, caption)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
         }
-        context.startActivity(Intent.createChooser(send, "Share note").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        for (pkg in listOf("com.whatsapp", "com.whatsapp.w4b")) {
+            val direct = Intent(base).setPackage(pkg)
+            if (direct.resolveActivity(context.packageManager) != null) {
+                runCatching { context.startActivity(direct) }.onSuccess { return }
+            }
+        }
+        context.startActivity(Intent.createChooser(base, "Share note").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
 }
 
