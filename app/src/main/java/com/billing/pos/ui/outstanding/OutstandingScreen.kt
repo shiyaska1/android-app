@@ -8,6 +8,13 @@ import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import com.billing.pos.data.XlsxWriter
+import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -83,12 +90,93 @@ class OutstandingViewModel(app: Application) : AndroidViewModel(app) {
         repo.customers.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val suppliers: StateFlow<List<com.billing.pos.data.Supplier>> =
         repo.suppliers.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val receipts: StateFlow<List<com.billing.pos.data.Receipt>> =
+        repo.allReceipts.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val salesReturns: StateFlow<List<com.billing.pos.data.SalesReturn>> =
+        repo.salesReturns.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val expenses: StateFlow<List<com.billing.pos.data.Expense>> =
+        repo.allExpenses.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val purchaseReturns: StateFlow<List<com.billing.pos.data.PurchaseReturn>> =
+        repo.purchaseReturns.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+}
+
+/** One movement in a party's account. [debit] raises the balance owed, [credit] lowers it. */
+data class LedgerRow(
+    val date: Long,
+    val kind: String,
+    val ref: String,
+    val debit: Double,
+    val credit: Double
+)
+
+/**
+ * Builds a party's running-balance statement and trims it to the last stretch that matters.
+ *
+ * Every sale is a debit; its upfront/cash payment, later receipts, and returns are credits.
+ * A cash sale carries an automatic receipt for the amount paid at the counter, so it nets
+ * to zero and does not inflate what is owed. The running balance is walked oldest-first,
+ * and everything up to and including the last moment it reached zero is dropped — so the
+ * statement begins at the point the current dues started building. The closing balance is
+ * unchanged by that trim, and equals the party's outstanding.
+ */
+fun buildLedger(
+    party: String,
+    isPayable: Boolean,
+    bills: List<Bill>,
+    receipts: List<com.billing.pos.data.Receipt>,
+    salesReturns: List<com.billing.pos.data.SalesReturn>,
+    purchases: List<Purchase>,
+    expenses: List<com.billing.pos.data.Expense>,
+    purchaseReturns: List<com.billing.pos.data.PurchaseReturn>
+): Pair<List<LedgerRow>, Double> {
+    val rows = ArrayList<LedgerRow>()
+    if (isPayable) {
+        val myPurchases = purchases.filter { it.supplierName.equals(party, true) }
+        myPurchases.forEach { p ->
+            rows.add(LedgerRow(p.dateMillis, "Purchase", p.purchaseNo, p.grandTotal, 0.0))
+            val paymentsAgainst = expenses.filter { it.purchaseId == p.id }.sumOf { it.amount }
+            val upfront = (p.paidAmount - paymentsAgainst).coerceAtLeast(0.0)
+            if (upfront > 0.001) rows.add(LedgerRow(p.dateMillis, "Cash purchase (auto)", p.purchaseNo, 0.0, upfront))
+        }
+        val myPurchaseIds = myPurchases.map { it.id }.toSet()
+        expenses.filter { it.purchaseId in myPurchaseIds }
+            .forEach { rows.add(LedgerRow(it.dateMillis, "Payment", it.voucherNo, 0.0, it.amount)) }
+        purchaseReturns.filter { it.supplierName.equals(party, true) }
+            .forEach { rows.add(LedgerRow(it.dateMillis, "Purchase return", it.returnNo, 0.0, it.grandTotal)) }
+    } else {
+        val myBills = bills.filter { it.customerName.equals(party, true) }
+        myBills.forEach { b ->
+            rows.add(LedgerRow(b.dateMillis, "Sale", b.billNo, b.grandTotal, 0.0))
+            val receiptsAgainst = receipts.filter { it.billId == b.id }.sumOf { it.amount }
+            val upfront = (b.paidAmount - receiptsAgainst).coerceAtLeast(0.0)
+            if (upfront > 0.001) rows.add(LedgerRow(b.dateMillis, "Cash sale (auto)", b.billNo, 0.0, upfront))
+        }
+        receipts.filter { r ->
+            myBills.any { it.id == r.billId } || (r.billId == 0L && r.payFrom.ifBlank { r.customerName }.equals(party, true))
+        }.distinctBy { it.id }
+            .forEach { rows.add(LedgerRow(it.dateMillis, "Receipt", it.receiptNo, 0.0, it.amount)) }
+        salesReturns.filter { it.customerName.equals(party, true) }
+            .forEach { rows.add(LedgerRow(it.dateMillis, "Sales return", it.returnNo, 0.0, it.grandTotal)) }
+    }
+
+    // Oldest first for the running balance; the reset point is the last time it hit zero.
+    val chrono = rows.sortedBy { it.date }
+    var running = 0.0
+    var resetAfter = -1
+    chrono.forEachIndexed { i, r ->
+        running += r.debit - r.credit
+        if (kotlin.math.abs(running) < 0.001) resetAfter = i
+    }
+    val closing = running
+    val kept = chrono.drop(resetAfter + 1)
+    // Shown newest first, as asked.
+    return kept.sortedByDescending { it.date } to closing
 }
 
 private data class DocDue(val no: String, val date: Long, val balance: Double)
 private data class PartyDue(val name: String, val total: Double, val docs: List<DocDue>)
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun OutstandingScreen(
     onBack: () -> Unit,
@@ -101,19 +189,31 @@ fun OutstandingScreen(
     val purchases by vm.purchases.collectAsStateSafe()
     val customers by vm.customers.collectAsStateSafe()
     val suppliers by vm.suppliers.collectAsStateSafe()
+    val receipts by vm.receipts.collectAsStateSafe()
+    val salesReturns by vm.salesReturns.collectAsStateSafe()
+    val expenses by vm.expenses.collectAsStateSafe()
+    val purchaseReturns by vm.purchaseReturns.collectAsStateSafe()
     var payable by remember { mutableStateOf(false) }   // false = receivable (customers)
     var nameQuery by remember { mutableStateOf("") }
     var expanded by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var ledgerFor by remember { mutableStateOf<String?>(null) }
 
-    val receivables = remember(bills) {
-        bills.filter { it.balance > 0.001 }.groupBy { it.customerName }
-            .map { (name, list) -> PartyDue(name, list.sumOf { it.balance }, list.map { DocDue(it.billNo, it.dateMillis, it.balance) }) }
-            .sortedByDescending { it.total }
+    // The party's real closing balance comes from its ledger (returns and advances netted
+    // in), so the list, the totals and each statement all agree.
+    fun closingFor(name: String, isPayable: Boolean): Double =
+        buildLedger(name, isPayable, bills, receipts, salesReturns, purchases, expenses, purchaseReturns).second
+
+    val receivables = remember(bills, receipts, salesReturns) {
+        bills.map { it.customerName }.filter { it.isNotBlank() }.distinct().map { name ->
+            val (rows, closing) = buildLedger(name, false, bills, receipts, salesReturns, purchases, expenses, purchaseReturns)
+            PartyDue(name, closing, rows.map { DocDue(it.ref, it.date, it.debit - it.credit) })
+        }.filter { it.total > 0.001 }.sortedByDescending { it.total }
     }
-    val payables = remember(purchases) {
-        purchases.filter { it.balance > 0.001 }.groupBy { it.supplierName }
-            .map { (name, list) -> PartyDue(name, list.sumOf { it.balance }, list.map { DocDue(it.purchaseNo, it.dateMillis, it.balance) }) }
-            .sortedByDescending { it.total }
+    val payables = remember(purchases, expenses, purchaseReturns) {
+        purchases.map { it.supplierName }.filter { it.isNotBlank() }.distinct().map { name ->
+            val (rows, closing) = buildLedger(name, true, bills, receipts, salesReturns, purchases, expenses, purchaseReturns)
+            PartyDue(name, closing, rows.map { DocDue(it.ref, it.date, it.debit - it.credit) })
+        }.filter { it.total > 0.001 }.sortedByDescending { it.total }
     }
 
     val list = (if (payable) payables else receivables)
@@ -228,22 +328,18 @@ fun OutstandingScreen(
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
             )
 
-            Card(Modifier.fillMaxWidth().padding(top = 12.dp)) {
-                Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text(if (payable) "Total payable" else "Total receivable", fontWeight = FontWeight.Bold)
-                    Text(Format.rupee(grandTotal), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
-                }
-            }
-
             if (list.isEmpty()) {
                 Text("Nothing outstanding.", color = MaterialTheme.colorScheme.outline, modifier = Modifier.padding(top = 16.dp))
             } else {
-                LazyColumn(Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                LazyColumn(Modifier.fillMaxWidth().weight(1f).padding(top = 8.dp)) {
                     items(list, key = { it.name }) { party ->
                         val isOpen = party.name in expanded
                         Row(
                             Modifier.fillMaxWidth()
-                                .clickable { expanded = if (isOpen) expanded - party.name else expanded + party.name }
+                                .combinedClickable(
+                                    onClick = { expanded = if (isOpen) expanded - party.name else expanded + party.name },
+                                    onLongClick = { ledgerFor = party.name }
+                                )
                                 .padding(vertical = 10.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
@@ -267,11 +363,207 @@ fun OutstandingScreen(
                                     Text(Format.rupee(d.balance), style = MaterialTheme.typography.bodySmall)
                                 }
                             }
+                            Text(
+                                "Long-press for full statement",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(start = 12.dp, bottom = 8.dp)
+                            )
                         }
                         Divider()
                     }
                 }
             }
+
+            // Grand total: the big figure, bottom-left, matching the parties above.
+            Divider(thickness = 2.dp)
+            Row(
+                Modifier.fillMaxWidth().padding(top = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Bottom
+            ) {
+                Column {
+                    Text(
+                        if (payable) "TOTAL PAYABLE" else "TOTAL RECEIVABLE",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.outline
+                    )
+                    Text(
+                        Format.money(grandTotal),
+                        fontSize = 34.sp, fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+                Text(
+                    "${list.size} ${if (payable) "supplier(s)" else "customer(s)"}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.outline
+                )
+            }
+        }
+    }
+
+    ledgerFor?.let { name ->
+        val (rows, closing) = buildLedger(name, payable, bills, receipts, salesReturns, purchases, expenses, purchaseReturns)
+        PartyStatementDialog(
+            party = name,
+            isPayable = payable,
+            rows = rows,
+            closing = closing,
+            phone = phoneFor(name),
+            onDismiss = { ledgerFor = null }
+        )
+    }
+}
+
+/**
+ * A party's full statement: every movement since dues last cleared, newest first, with a
+ * running balance and the closing figure. Print/PDF, Excel and WhatsApp from the top bar.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PartyStatementDialog(
+    party: String,
+    isPayable: Boolean,
+    rows: List<LedgerRow>,
+    closing: Double,
+    phone: String,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    // Running balance per row, computed oldest-first then shown newest-first.
+    val oldestFirst = rows.sortedBy { it.date }
+    val balanceByIndex = HashMap<Int, Double>()
+    var run = 0.0
+    oldestFirst.forEachIndexed { i, r -> run += r.debit - r.credit; balanceByIndex[i] = run }
+    val display = oldestFirst.indices.sortedByDescending { oldestFirst[it].date }
+
+    fun exportPdf(): File {
+        val heading = (if (isPayable) "Payable" else "Receivable") + " Statement"
+        val lines = oldestFirst.map { StatementPdf.Line(it.kind + " " + it.ref, it.date, it.debit - it.credit) }
+        return StatementPdf.generate(
+            context, AppPrefs(context).company, party.ifBlank { "(no name)" },
+            heading, phone, lines, closing
+        )
+    }
+
+    fun exportExcel(): File {
+        val rowsX = ArrayList<List<XlsxWriter.Cell>>()
+        rowsX.add(XlsxWriter.row(XlsxWriter.text("Date"), XlsxWriter.text("Type"), XlsxWriter.text("Ref"),
+            XlsxWriter.text("Debit"), XlsxWriter.text("Credit"), XlsxWriter.text("Balance")))
+        display.forEach { i ->
+            val r = oldestFirst[i]
+            rowsX.add(XlsxWriter.row(
+                XlsxWriter.text(Format.date(r.date)), XlsxWriter.text(r.kind), XlsxWriter.text(r.ref),
+                XlsxWriter.num(r.debit), XlsxWriter.num(r.credit), XlsxWriter.num(balanceByIndex[i] ?: 0.0)
+            ))
+        }
+        rowsX.add(XlsxWriter.row(XlsxWriter.text(""), XlsxWriter.text(""), XlsxWriter.text("CLOSING"),
+            XlsxWriter.text(""), XlsxWriter.text(""), XlsxWriter.num(closing)))
+        val safe = party.ifBlank { "party" }.replace(Regex("[^A-Za-z0-9_-]"), "_")
+        val file = File(File(context.cacheDir, "shared").apply { mkdirs() }, "statement_$safe.xlsx")
+        XlsxWriter.write(file, "Statement", rowsX)
+        return file
+    }
+
+    fun shareFile(file: File, mime: String) {
+        val uri = FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = mime
+            putExtra(Intent.EXTRA_STREAM, uri)
+            putExtra(Intent.EXTRA_TEXT, (if (isPayable) "Payable" else "Outstanding") + ": $party — ${Format.rupee(closing)}")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        runCatching { context.startActivity(Intent.createChooser(send, "Share statement").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+    }
+
+    androidx.compose.ui.window.Dialog(
+        onDismissRequest = onDismiss,
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+    ) {
+        Column(
+            Modifier.fillMaxSize()
+                .background(MaterialTheme.colorScheme.surface)
+                .androidx_safeDrawing()
+        ) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(party.ifBlank { "(no name)" }, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                    Text(
+                        (if (isPayable) "Payable statement" else "Receivable statement"),
+                        style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline
+                    )
+                }
+                IconButton(onClick = { scope.launch { withContext(Dispatchers.IO) { shareFile(exportPdf(), "application/pdf") } } }) {
+                    Icon(Icons.Filled.Share, "Share PDF", tint = MaterialTheme.colorScheme.primary)
+                }
+                IconButton(onClick = {
+                    scope.launch {
+                        val f = withContext(Dispatchers.IO) { exportExcel() }
+                        withContext(Dispatchers.IO) { DownloadSaver.save(context, f, f.name, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") }
+                        shareFile(f, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+                    }
+                }) {
+                    Icon(Icons.Filled.Download, "Excel")
+                }
+                androidx.compose.material3.TextButton(onClick = onDismiss) { Text("Close") }
+            }
+            Divider()
+
+            if (display.isEmpty()) {
+                Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    Text("Account is clear.", color = MaterialTheme.colorScheme.outline)
+                }
+            } else {
+                LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 12.dp)) {
+                    items(display) { i ->
+                        val r = oldestFirst[i]
+                        Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(r.kind + "  " + r.ref, fontWeight = FontWeight.SemiBold)
+                                Text(Format.date(r.date), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                            }
+                            Text(
+                                if (r.debit > 0) Format.money(r.debit) else "- " + Format.money(r.credit),
+                                color = if (r.debit > 0) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                Format.money(balanceByIndex[i] ?: 0.0),
+                                modifier = Modifier.padding(start = 12.dp),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.outline
+                            )
+                        }
+                        Divider()
+                    }
+                }
+            }
+
+            Divider(thickness = 2.dp)
+            Row(
+                Modifier.fillMaxWidth().padding(14.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.Bottom
+            ) {
+                Column {
+                    Text(
+                        if (isPayable) "CLOSING PAYABLE" else "CLOSING BALANCE",
+                        style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline
+                    )
+                    Text(Format.money(closing), fontSize = 32.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                }
+            }
         }
     }
 }
+
+/** safeDrawingPadding wrapper kept local so the import stays contained to this file. */
+private fun Modifier.androidx_safeDrawing(): Modifier = this.then(
+    androidx.compose.foundation.layout.safeDrawingPadding()
+)
