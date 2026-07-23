@@ -33,9 +33,9 @@ object MarketingMedia {
     /**
      * Opens a WhatsApp chat to [phone] with [files] attached and [text] as the caption below
      * them, ready to send. Two things make the attachment actually go through rather than a
-     * text-only message: the intent's MIME is set to the real media type (WhatsApp shows a
-     * plain "*\/*" as text only), and the caption is also copied to the clipboard so it can
-     * be pasted if WhatsApp drops it on a multi-image send.
+     * text-only message: the intent's MIME is set to the real media type (a wildcard type
+     * makes WhatsApp fall back to text only), and the caption is also copied to the clipboard
+     * so it can be pasted if WhatsApp drops it on a multi-image send.
      */
     fun sendToWhatsApp(context: Context, phone: String, text: String, files: List<Uri>) {
         val digits = phone.filter { it.isDigit() }
