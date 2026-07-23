@@ -21,8 +21,10 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Call
+import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Draw
 import androidx.compose.material.icons.filled.NoteAdd
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Share
@@ -32,6 +34,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -93,42 +96,60 @@ fun MobileNumberDialog(
         )
     }
 
-    // "Save customer": the number is already known, so only the name is asked for.
+    // "Save customer": the number is already known, so only the name is asked for. If this
+    // number already belongs to a customer, its name is filled in and there is nothing to save.
     saveCustomerFor?.let { num ->
         var name by remember(num) { mutableStateOf("") }
+        var existing by remember(num) { mutableStateOf<com.billing.pos.data.Customer?>(null) }
+        var draw by remember(num) { mutableStateOf(false) }
+        LaunchedEffect(num) {
+            val c = com.billing.pos.data.Repository(context).customerByPhone(num)
+            if (c != null) { existing = c; name = c.name }
+        }
+        if (draw) {
+            com.billing.pos.ui.common.HandwriteTextDialog(
+                onResult = { t -> if (t.isNotBlank()) name = t; draw = false },
+                onDismiss = { draw = false }
+            )
+        }
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { saveCustomerFor = null },
-            title = { Text("Save as customer") },
+            title = { Text(if (existing != null) "Customer" else "Save as customer") },
             text = {
                 Column {
-                    Text(
-                        num,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
+                    Text(num, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    if (existing != null) Text(
+                        "Already in your customers.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary
                     )
-                    OutlinedTextField(
-                        value = name, onValueChange = { name = it },
-                        label = { Text("Customer name") }, singleLine = true,
-                        modifier = Modifier.padding(top = 8.dp)
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedTextField(
+                            value = name, onValueChange = { name = it },
+                            label = { Text("Customer name") }, singleLine = true,
+                            modifier = Modifier.weight(1f).padding(top = 8.dp)
+                        )
+                        // Handwrite the name.
+                        androidx.compose.material3.IconButton(onClick = { draw = true }) {
+                            Icon(Icons.Filled.Draw, "Handwrite name")
+                        }
+                    }
                 }
             },
             confirmButton = {
-                androidx.compose.material3.TextButton(onClick = {
+                if (existing == null) androidx.compose.material3.TextButton(onClick = {
                     val typed = name.trim()
                     if (typed.isNotBlank()) {
-                        scope.launch {
-                            com.billing.pos.data.Repository(context).addCustomer(typed, num, "")
-                        }
-                        android.widget.Toast.makeText(
-                            context, "$typed saved to customers", android.widget.Toast.LENGTH_SHORT
-                        ).show()
+                        scope.launch { com.billing.pos.data.Repository(context).addCustomer(typed, num, "") }
+                        android.widget.Toast.makeText(context, "$typed saved to customers", android.widget.Toast.LENGTH_SHORT).show()
                         saveCustomerFor = null
                     }
                 }) { Text("Save") }
             },
             dismissButton = {
-                androidx.compose.material3.TextButton(onClick = { saveCustomerFor = null }) { Text("Cancel") }
+                androidx.compose.material3.TextButton(onClick = { saveCustomerFor = null }) {
+                    Text(if (existing != null) "Close" else "Cancel")
+                }
             }
         )
     }
@@ -173,10 +194,37 @@ fun MobileNumberDialog(
                     contentPadding = PaddingValues(4.dp)
                 ) { Icon(Icons.Filled.ContentCopy, "Copy", Modifier.size(22.dp)) }
                 OutlinedButton(
-                    onClick = { com.billing.pos.util.ShareText.share(context, number) },
+                    // Shares the contact — name (if known) and number — and quietly files the
+                    // customer if this number is not in the master yet.
+                    onClick = {
+                        if (number.isNotBlank()) scope.launch {
+                            val repo = com.billing.pos.data.Repository(context)
+                            val existing = repo.customerByPhone(number)
+                            val label = existing?.name ?: number
+                            if (existing == null) repo.addCustomer(label, number, "")
+                            val text = if (existing?.name?.isNotBlank() == true)
+                                existing.name + "\n" + number else number
+                            com.billing.pos.util.ShareText.share(context, text)
+                        }
+                    },
                     modifier = Modifier.weight(1f),
                     contentPadding = PaddingValues(4.dp)
                 ) { Icon(Icons.Filled.Share, "Share", Modifier.size(22.dp)) }
+                OutlinedButton(
+                    // Opens a WhatsApp chat to this number with "hi" ready to send.
+                    onClick = {
+                        if (number.isNotBlank()) runCatching {
+                            context.startActivity(
+                                android.content.Intent(
+                                    android.content.Intent.ACTION_VIEW,
+                                    android.net.Uri.parse("https://wa.me/" + number + "?text=hi")
+                                ).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                            )
+                        }
+                    },
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(4.dp)
+                ) { Icon(Icons.Filled.Chat, "WhatsApp", Modifier.size(22.dp)) }
                 OutlinedButton(
                     // Opens the phone's dialer with the number filled in — the call itself is
                     // still started by you, so the app needs no calling permission.

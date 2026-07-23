@@ -20,6 +20,9 @@ interface CustomerDao {
     @Query("SELECT * FROM customers WHERE name = :name COLLATE NOCASE LIMIT 1")
     suspend fun byName(name: String): Customer?
 
+    @Query("SELECT * FROM customers WHERE phone = :phone LIMIT 1")
+    suspend fun byPhone(phone: String): Customer?
+
     @Query("SELECT COUNT(*) FROM customers")
     suspend fun count(): Int
 

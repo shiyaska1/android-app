@@ -196,6 +196,9 @@ class Repository(context: Context) {
         return Customer(id = id, name = name.trim(), phone = phone.trim())
     }
 
+    suspend fun customerByPhone(phone: String): Customer? =
+        phone.trim().takeIf { it.isNotBlank() }?.let { customerDao.byPhone(it) }
+
     suspend fun updateCustomer(customer: Customer) = customerDao.update(customer)
 
     suspend fun customerHasTransactions(customer: Customer): Boolean =
@@ -293,6 +296,11 @@ class Repository(context: Context) {
         val keep = list.map { it.path }.toSet()
         existing.filter { it.path !in keep }.forEach { runCatching { java.io.File(it.path).delete() } }
         customerAttachmentDao.deleteForCustomer(customerId)
+        list.forEach { customerAttachmentDao.insert(it.copy(id = 0, customerId = customerId)) }
+    }
+
+    /** Adds attachments to a customer without touching the ones already there. */
+    suspend fun appendCustomerAttachments(customerId: Long, list: List<CustomerAttachment>) {
         list.forEach { customerAttachmentDao.insert(it.copy(id = 0, customerId = customerId)) }
     }
 

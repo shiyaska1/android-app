@@ -44,6 +44,7 @@ import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.Button
@@ -87,6 +88,7 @@ import com.billing.pos.diary.AttachmentStore
 import com.billing.pos.util.Format
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -154,8 +156,46 @@ data class PageData(
 
 class StickyNoteViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = DiaryRepository(app)
+    private val posRepo = com.billing.pos.data.Repository(app)
     val message = MutableStateFlow<String?>(null)
     fun consumeMessage() { message.value = null }
+
+    val customers = posRepo.customers.stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000), emptyList())
+
+    suspend fun addCustomer(name: String, phone: String): com.billing.pos.data.Customer =
+        posRepo.addCustomerReturning(name, phone)
+
+    /**
+     * Renders every page and files the whole note — pages, photos, voice and video — against a
+     * customer as attachments, without disturbing that customer's existing attachments.
+     * [onDone] receives the file paths written, for an optional share afterwards.
+     */
+    fun attachToCustomer(
+        customerId: Long, pages: List<PageData>, w: Int, h: Int,
+        images: List<String>, audios: List<String>, videos: List<String>,
+        onDone: (List<String>) -> Unit
+    ) {
+        val ctx = getApplication<Application>()
+        viewModelScope.launch {
+            val paths = withContext(Dispatchers.IO) {
+                val atts = ArrayList<com.billing.pos.data.CustomerAttachment>()
+                if (w > 0 && h > 0) pages.forEachIndexed { i, p ->
+                    if (p.strokes.isNotEmpty() || p.bg != null || p.texts.isNotEmpty()) {
+                        val bmp = renderPage(p, w, h)
+                        atts.add(com.billing.pos.data.CustomerAttachmentStore.saveBitmap(ctx, bmp, "note_page_${i + 1}.jpg"))
+                        bmp.recycle()
+                    }
+                }
+                images.forEach { com.billing.pos.data.CustomerAttachmentStore.importFrom(ctx, it, "image/jpeg")?.let(atts::add) }
+                videos.forEach { com.billing.pos.data.CustomerAttachmentStore.importFrom(ctx, it, "video/mp4")?.let(atts::add) }
+                audios.forEach { com.billing.pos.data.CustomerAttachmentStore.importFrom(ctx, it, "audio/mp4")?.let(atts::add) }
+                posRepo.appendCustomerAttachments(customerId, atts)
+                atts.map { it.path }
+            }
+            message.value = "${paths.size} attachment(s) saved to customer"
+            onDone(paths)
+        }
+    }
 
     var recording by mutableStateOf(false); private set
     private var recorder: MediaRecorder? = null
@@ -378,6 +418,8 @@ fun StickyNoteScreen(onClose: () -> Unit, onOcrToSales: () -> Unit = {}, vm: Sti
     var ocrResult by remember { mutableStateOf<List<com.billing.pos.ocr.ScannedItem>?>(null) }
     var ocrModeAsk by remember { mutableStateOf(false) }
     var ocrText by remember { mutableStateOf<String?>(null) }
+    var addToCustomer by remember { mutableStateOf(false) }
+    val customers by vm.customers.collectAsState()
 
     LaunchedEffect(message) { message?.let { android.widget.Toast.makeText(context, it, android.widget.Toast.LENGTH_SHORT).show(); vm.consumeMessage() } }
 
@@ -554,12 +596,99 @@ fun StickyNoteScreen(onClose: () -> Unit, onOcrToSales: () -> Unit = {}, vm: Sti
                 vm.save(pages.map { PageData(it.strokes.toList(), it.bg, null, it.texts.map { t -> t.snapshot() }) }, canvasSize.width, canvasSize.height, images.toList(), audios.toList(), videos.toList()) { }
             }, modifier = actBtn, contentPadding = noPad) { Icon(Icons.Filled.Share, "Share", modifier = bigIcon) }
             OutlinedButton(onClick = { ocrModeAsk = true }, modifier = actBtn, contentPadding = noPad) { Icon(Icons.Filled.TextFields, "Read", modifier = bigIcon) }
+            OutlinedButton(onClick = { addToCustomer = true }, modifier = actBtn, contentPadding = noPad) { Icon(Icons.Filled.PersonAdd, "Add to customer", modifier = bigIcon) }
         }
         // Row 3: close / save
         Row(Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             OutlinedButton(onClick = onClose, modifier = Modifier.weight(1f)) { Text("Close") }
             Button(onClick = { vm.save(pages.map { PageData(it.strokes.toList(), it.bg, null, it.texts.map { t -> t.snapshot() }) }, canvasSize.width, canvasSize.height, images.toList(), audios.toList(), videos.toList()) { onClose() } }, modifier = Modifier.weight(1f)) { Icon(Icons.Filled.Save, null); Text("Save") }
         }
+    }
+
+    // Add-to-customer: pick or create a customer, then file the whole note against them.
+    if (addToCustomer) {
+        var picked by remember { mutableStateOf<com.billing.pos.data.Customer?>(null) }
+        var typed by remember { mutableStateOf("") }
+        var newCust by remember { mutableStateOf(false) }
+        var newName by remember { mutableStateOf("") }
+        var newPhone by remember { mutableStateOf("") }
+        val scope = androidx.compose.runtime.rememberCoroutineScope()
+
+        fun pagesSnapshot() = pages.map { PageData(it.strokes.toList(), it.bg, null, it.texts.map { t -> t.snapshot() }) }
+
+        fun commit(share: Boolean) {
+            val cust = picked ?: customers.firstOrNull { it.name.equals(typed.trim(), true) }
+            if (cust == null) { vm.message.value = "Pick a customer, or use + to add one"; return }
+            vm.attachToCustomer(
+                cust.id, pagesSnapshot(), canvasSize.width, canvasSize.height,
+                images.toList(), audios.toList(), videos.toList()
+            ) { paths ->
+                if (share) shareNoteFiles(context, cust.name, paths)
+            }
+            addToCustomer = false
+        }
+
+        if (newCust) {
+            androidx.compose.material3.AlertDialog(
+                onDismissRequest = { newCust = false },
+                title = { Text("New customer") },
+                text = {
+                    Column {
+                        OutlinedTextField(value = newName, onValueChange = { newName = it }, label = { Text("Name") }, singleLine = true)
+                        OutlinedTextField(
+                            value = newPhone, onValueChange = { newPhone = it.filter { c -> c.isDigit() } },
+                            label = { Text("Mobile (optional — blank if none)") }, singleLine = true,
+                            modifier = Modifier.padding(top = 8.dp)
+                        )
+                    }
+                },
+                confirmButton = {
+                    androidx.compose.material3.TextButton(onClick = {
+                        val nm = newName.trim()
+                        if (nm.isNotBlank()) scope.launch {
+                            val c = vm.addCustomer(nm, newPhone.trim())
+                            picked = c; typed = c.name; newCust = false
+                        }
+                    }) { Text("Add") }
+                },
+                dismissButton = { androidx.compose.material3.TextButton(onClick = { newCust = false }) { Text("Cancel") } }
+            )
+        }
+
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { addToCustomer = false },
+            title = { Text("Add note to customer") },
+            text = {
+                Column {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        com.billing.pos.ui.common.CustomerPickField(
+                            customers = customers,
+                            selectedName = picked?.name ?: typed,
+                            onPick = { c -> picked = c; typed = c.name },
+                            allowFreeText = true,
+                            onTyped = { typed = it; picked = null },
+                            modifier = Modifier.weight(1f)
+                        )
+                        androidx.compose.material3.IconButton(onClick = { newName = typed; newCust = true }) {
+                            Icon(Icons.Filled.PersonAdd, "New customer", tint = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+                    Text(
+                        "Saves every page, photo, voice and video as attachments on the customer.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.outline,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                }
+            },
+            confirmButton = { androidx.compose.material3.TextButton(onClick = { commit(false) }) { Text("Save") } },
+            dismissButton = {
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    androidx.compose.material3.TextButton(onClick = { commit(true) }) { Text("Save & share") }
+                    androidx.compose.material3.TextButton(onClick = { addToCustomer = false }) { Text("Cancel") }
+                }
+            }
+        )
     }
 
     // OCR result — a list of scanned amounts with a big total, shareable, addable to a sale.
@@ -686,6 +815,28 @@ fun StickyNoteScreen(onClose: () -> Unit, onOcrToSales: () -> Unit = {}, vm: Sti
 }
 
 /** The label nearest [off], within a generous radius so it is easy to grab. */
+/** Shares the note's files (rendered pages + media) to WhatsApp, captioned with the name. */
+private fun shareNoteFiles(context: android.content.Context, customerName: String, paths: List<String>) {
+    if (paths.isEmpty()) return
+    runCatching {
+        val uris = ArrayList<android.net.Uri>()
+        paths.forEach { p ->
+            val f = File(p)
+            if (f.exists()) uris.add(
+                FileProvider.getUriForFile(context, "${context.packageName}.provider", f)
+            )
+        }
+        if (uris.isEmpty()) return
+        val send = Intent(Intent.ACTION_SEND_MULTIPLE).apply {
+            type = "*/*"
+            putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
+            putExtra(Intent.EXTRA_TEXT, customerName)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(Intent.createChooser(send, "Share note").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
+}
+
 private fun nearestText(page: NotePage?, off: Offset): NoteText? {
     val texts = page?.texts ?: return null
     return texts.minByOrNull { t ->

@@ -53,6 +53,22 @@ object CustomerAttachmentStore {
         CustomerAttachment(customerId = 0, path = target.absolutePath, name = name, mime = mime)
     }.getOrNull()
 
+    /** Writes a bitmap (a rendered sticky-note page) into the store as a JPEG. */
+    fun saveBitmap(context: Context, bmp: android.graphics.Bitmap, name: String): CustomerAttachment {
+        val target = File(dir(context), "note_" + System.nanoTime() + ".jpg")
+        target.outputStream().use { bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 90, it) }
+        return CustomerAttachment(customerId = 0, path = target.absolutePath, name = name, mime = "image/jpeg")
+    }
+
+    /** Copies an existing app file (a picked photo/voice/video) into the store. */
+    fun importFrom(context: Context, srcPath: String, mime: String): CustomerAttachment? = runCatching {
+        val src = File(srcPath)
+        if (!src.exists()) return null
+        val target = File(dir(context), "att_" + System.nanoTime() + "_" + src.name.take(40))
+        src.inputStream().use { input -> target.outputStream().use { input.copyTo(it) } }
+        CustomerAttachment(customerId = 0, path = target.absolutePath, name = src.name, mime = mime)
+    }.getOrNull()
+
     private fun displayName(context: Context, uri: Uri): String? = runCatching {
         context.contentResolver.query(uri, null, null, null, null)?.use { c ->
             val i = c.getColumnIndex(OpenableColumns.DISPLAY_NAME)
