@@ -85,6 +85,8 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
     var address by remember { mutableStateOf(prefs.companyAddress) }
     var phone by remember { mutableStateOf(prefs.companyPhone) }
     var gstin by remember { mutableStateOf(prefs.companyGstin) }
+    var upiId by remember { mutableStateOf(prefs.upiId) }
+    var upiName by remember { mutableStateOf(prefs.upiName) }
     var requireBatch by remember { mutableStateOf(prefs.requireItemBatch) }
     var businessType by remember { mutableStateOf(prefs.businessType) }
     var receiptWidth by remember { mutableStateOf(prefs.receiptWidth) }
@@ -202,12 +204,24 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
                 label = { Text("GSTIN / TIN") }, singleLine = true,
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
             )
+            OutlinedTextField(
+                value = upiId, onValueChange = { upiId = it },
+                label = { Text("UPI ID for payment QR (e.g. name@okaxis)") }, singleLine = true,
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+            )
+            OutlinedTextField(
+                value = upiName, onValueChange = { upiName = it },
+                label = { Text("Payee name on QR") }, singleLine = true,
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+            )
             Button(
                 onClick = {
                     prefs.companyName = name.trim().ifBlank { "My Shop" }
                     prefs.companyAddress = address.trim()
                     prefs.companyPhone = phone.trim()
                     prefs.companyGstin = gstin.trim()
+                    prefs.upiId = upiId.trim()
+                    prefs.upiName = upiName.trim()
                     scope.launch { snackbar.showSnackbar("Settings saved") }
                 },
                 modifier = Modifier.fillMaxWidth().padding(top = 16.dp)

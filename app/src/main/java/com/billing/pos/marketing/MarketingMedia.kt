@@ -31,16 +31,38 @@ object MarketingMedia {
     }.getOrNull()
 
     /**
-     * Opens a WhatsApp chat to [phone] with [text] and [files] attached, ready to send.
-     * The number goes in as a jid so WhatsApp lands directly on that contact.
+     * Opens a WhatsApp chat to [phone] with [files] attached and [text] as the caption below
+     * them, ready to send. Two things make the attachment actually go through rather than a
+     * text-only message: the intent's MIME is set to the real media type (WhatsApp shows a
+     * plain "*\/*" as text only), and the caption is also copied to the clipboard so it can
+     * be pasted if WhatsApp drops it on a multi-image send.
      */
     fun sendToWhatsApp(context: Context, phone: String, text: String, files: List<Uri>) {
         val digits = phone.filter { it.isDigit() }
-        val base = if (files.size <= 1) Intent(Intent.ACTION_SEND) else Intent(Intent.ACTION_SEND_MULTIPLE)
+
+        // With no files it is a plain text chat.
+        if (files.isEmpty()) {
+            if (digits.isNotBlank()) runCatching {
+                context.startActivity(
+                    Intent(Intent.ACTION_VIEW, Uri.parse("https://wa.me/" + digits + "?text=" + Uri.encode(text)))
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                )
+            }
+            return
+        }
+
+        // Keep the caption on the clipboard as a fallback for multi-image sends.
+        if (text.isNotBlank()) runCatching {
+            val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+            cm.setPrimaryClip(android.content.ClipData.newPlainText("message", text))
+        }
+
+        val mime = mimeFor(context, files)
+        val base = if (files.size == 1) Intent(Intent.ACTION_SEND) else Intent(Intent.ACTION_SEND_MULTIPLE)
         base.apply {
-            type = "*/*"
+            type = mime
             if (files.size == 1) putExtra(Intent.EXTRA_STREAM, files[0])
-            else if (files.isNotEmpty()) putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(files))
+            else putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(files))
             if (text.isNotBlank()) putExtra(Intent.EXTRA_TEXT, text)
             if (digits.isNotBlank()) putExtra("jid", digits + "@s.whatsapp.net")
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -51,12 +73,22 @@ object MarketingMedia {
                 runCatching { context.startActivity(direct) }.onSuccess { return }
             }
         }
-        // No WhatsApp — fall back to a text-only chat link if there is a number.
-        if (digits.isNotBlank()) runCatching {
-            context.startActivity(
-                Intent(Intent.ACTION_VIEW, Uri.parse("https://wa.me/" + digits + "?text=" + Uri.encode(text)))
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            )
+        // No WhatsApp installed — offer the media through the general share sheet.
+        runCatching {
+            context.startActivity(Intent.createChooser(base, "Send").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        }
+    }
+
+    /** A MIME that WhatsApp will treat as media: the shared type if all files match, else images. */
+    private fun mimeFor(context: Context, files: List<Uri>): String {
+        val types = files.mapNotNull { context.contentResolver.getType(it) }
+        val allImages = types.isNotEmpty() && types.all { it.startsWith("image/") }
+        val allVideos = types.isNotEmpty() && types.all { it.startsWith("video/") }
+        return when {
+            files.size == 1 -> types.firstOrNull() ?: "image/*"
+            allImages -> "image/*"
+            allVideos -> "video/*"
+            else -> "*/*"
         }
     }
 

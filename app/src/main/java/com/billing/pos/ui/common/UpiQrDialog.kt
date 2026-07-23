@@ -36,64 +36,33 @@ import com.billing.pos.util.UpiQr
 fun UpiQrDialog(amount: Double, onDismiss: () -> Unit) {
     val context = LocalContext.current
     val prefs = remember { AppPrefs(context) }
-    var vpa by remember { mutableStateOf(prefs.upiId) }
-    var name by remember { mutableStateOf(prefs.upiName.ifBlank { prefs.companyName }) }
-    var editing by remember { mutableStateOf(prefs.upiId.isBlank()) }
+    // Always read the UPI details from Settings — set them there, once.
+    val vpa = prefs.upiId
+    val name = prefs.upiName.ifBlank { prefs.companyName }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (editing) "Your UPI ID" else "Scan to pay") },
+        title = { Text(if (vpa.isBlank()) "UPI not set" else "Scan to pay") },
         text = {
             Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                if (editing) {
+                if (vpa.isBlank()) {
                     Text(
-                        "The UPI ID money is collected to, e.g. name@okaxis or 9961128378@ybl.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.outline
-                    )
-                    OutlinedTextField(
-                        value = vpa, onValueChange = { vpa = it.trim() },
-                        label = { Text("UPI ID (VPA)") }, singleLine = true,
-                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-                    )
-                    OutlinedTextField(
-                        value = name, onValueChange = { name = it },
-                        label = { Text("Payee name") }, singleLine = true,
-                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                        "Set your UPI ID in Settings first (Settings → UPI ID). It is used to build this payment QR.",
+                        style = MaterialTheme.typography.bodyMedium
                     )
                 } else {
-                    val qr = remember(vpa, name, amount) {
-                        UpiQr.bitmap(UpiQr.link(vpa, name, amount, "Bill"))
-                    }
+                    val qr = remember(vpa, name, amount) { UpiQr.bitmap(UpiQr.link(vpa, name, amount, "Bill")) }
                     Text(Format.rupee(amount), fontSize = 26.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                     if (qr != null) Image(
                         bitmap = qr.asImageBitmap(),
                         contentDescription = "UPI QR",
                         modifier = Modifier.size(240.dp).padding(top = 10.dp)
                     ) else Text("Could not make the QR", color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 12.dp))
-                    Text(
-                        vpa,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.outline,
-                        modifier = Modifier.padding(top = 8.dp)
-                    )
-                    Text(
-                        "Scan with any UPI app to pay.",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.outline
-                    )
+                    Text(vpa, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline, modifier = Modifier.padding(top = 8.dp))
+                    Text("Scan with any UPI app to pay.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
                 }
             }
         },
-        confirmButton = {
-            if (editing) TextButton(onClick = {
-                if (vpa.isNotBlank()) { prefs.upiId = vpa; prefs.upiName = name; editing = false }
-            }) { Text("Save") }
-            else TextButton(onClick = onDismiss) { Text("Done") }
-        },
-        dismissButton = {
-            if (editing) TextButton(onClick = onDismiss) { Text("Cancel") }
-            else TextButton(onClick = { editing = true }) { Text("Change UPI ID") }
-        }
+        confirmButton = { TextButton(onClick = onDismiss) { Text(if (vpa.isBlank()) "OK" else "Done") } }
     )
 }

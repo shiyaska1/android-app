@@ -23,6 +23,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Backspace
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.PointOfSale
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
@@ -178,13 +179,15 @@ fun FastBillDialog(
                 .background(MaterialTheme.colorScheme.surface)
                 .safeDrawingPadding()
         ) {
-            // ---- TOP BAR: actions always reachable ----
+            // ---- TOP BAR: icon-only, evenly spread so it never crowds ----
             Row(
-                Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) { Text("Close") }
+                IconButton(onClick = onDismiss) {
+                    Icon(Icons.Filled.Close, contentDescription = "Close")
+                }
                 IconButton(onClick = { showSaved = true }) {
                     Icon(Icons.Filled.ListAlt, contentDescription = "Saved calculations")
                 }
@@ -210,18 +213,17 @@ fun FastBillDialog(
                     },
                     enabled = entries.isNotEmpty() || (input.toDoubleOrNull() ?: 0.0) > 0.0
                 ) { Icon(Icons.Filled.QrCode2, contentDescription = "UPI QR") }
-                Button(
+                // Save the tape into the bill — the primary action, tinted so it stands out.
+                IconButton(
                     onClick = {
                         val pending = input.toDoubleOrNull()
                         val all = if (pending != null && pending > 0.0) entries + pending else entries.toList()
-                        // Kept in the diary too, so the tape survives after the bill is saved.
                         saveToDiary()
                         if (all.isNotEmpty()) onSave(all)
                         onDismiss()
                     },
-                    enabled = entries.isNotEmpty() || (input.toDoubleOrNull() ?: 0.0) > 0.0,
-                    modifier = Modifier.weight(1.4f)
-                ) { Text("Save to bill") }
+                    enabled = entries.isNotEmpty() || (input.toDoubleOrNull() ?: 0.0) > 0.0
+                ) { Icon(Icons.Filled.PointOfSale, contentDescription = "Save to bill", tint = MaterialTheme.colorScheme.primary) }
             }
             Divider()
 
