@@ -46,7 +46,17 @@ object ThermalPrinter {
     @SuppressLint("MissingPermission")
     fun printBill(context: Context, company: CompanyInfo, bill: Bill, lines: List<BillItem>, imagePaths: List<String> = emptyList(), title: String = "TAX INVOICE") {
         applyWidth(context)
-        sendBytes(context, buildReceipt(company, bill, lines, imagePaths, title))
+        val prefs = com.billing.pos.data.AppPrefs(context)
+        // Render the UPI QR to a temp PNG so the ESC/POS rasteriser can print it.
+        val qrPath = if (prefs.showUpiQrOnPrint && prefs.upiId.isNotBlank()) runCatching {
+            val bmp = com.billing.pos.util.UpiQr.bitmap(
+                com.billing.pos.util.UpiQr.link(prefs.upiId, prefs.upiName.ifBlank { company.name }, bill.grandTotal, bill.billNo), 360
+            ) ?: return@runCatching null
+            val f = java.io.File(context.cacheDir, "upi_qr_print.png")
+            f.outputStream().use { bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+            f.absolutePath
+        }.getOrNull() else null
+        sendBytes(context, buildReceipt(company, bill, lines, imagePaths, title, qrPath))
     }
 
     /** Prints a diary entry: type, title, body, with the date and time. */
@@ -265,7 +275,7 @@ object ThermalPrinter {
         ESC.toByte(), 'G'.code.toByte(), 1
     )
 
-    private fun buildReceipt(company: CompanyInfo, bill: Bill, lines: List<BillItem>, imagePaths: List<String> = emptyList(), title: String = "TAX INVOICE"): ByteArray {
+    private fun buildReceipt(company: CompanyInfo, bill: Bill, lines: List<BillItem>, imagePaths: List<String> = emptyList(), title: String = "TAX INVOICE", qrPath: String? = null): ByteArray {
         val sb = StringBuilder()
         sb.append(center(company.name)).append('\n')
         if (company.address.isNotBlank()) sb.append(center(company.address)).append('\n')
@@ -299,16 +309,18 @@ object ThermalPrinter {
             bill.remarks.chunked(COLS).forEach { sb.append(it).append('\n') }
             sb.append(line()).append('\n')
         }
+        if (qrPath != null) sb.append(center("Scan to pay " + Format.money(bill.grandTotal))).append('\n')
         sb.append(center("Thank you! Visit again.")).append('\n')
 
         val text = sb.toString().toByteArray(Charsets.US_ASCII)
-        // Attached photos, printed as raster after the thank-you line.
         val maxDots = COLS * 12
+        // The UPI QR (60% width, centred) then any attached photos, as raster.
+        val qrBytes = if (qrPath != null) escposImage(qrPath, maxDots * 3 / 5) else ByteArray(0)
         val imgBytes = imagePaths.fold(ByteArray(0)) { acc, p -> acc + escposImage(p, maxDots) }
         val feed = "\n\n\n".toByteArray(Charsets.US_ASCII)
         val init = byteArrayOf(ESC.toByte(), '@'.code.toByte())          // initialize
         val cut = byteArrayOf(GS.toByte(), 'V'.code.toByte(), 66, 0)      // partial cut (ignored if unsupported)
-        return init + BOLD_ON + text + imgBytes + feed + cut
+        return init + BOLD_ON + text + qrBytes + imgBytes + feed + cut
     }
 
     /** Converts an image file to a centred ESC/POS raster (GS v 0), banded so cheap printers cope. */

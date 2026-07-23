@@ -37,6 +37,10 @@ class AppPrefs(context: Context) {
     var upiName: String
         get() = p.getString("upi_name", "") ?: ""
         set(v) { p.edit().putString("upi_name", v.trim()).apply() }
+    /** When on, a UPI payment QR for the bill total is drawn at the foot of invoices. */
+    var showUpiQrOnPrint: Boolean
+        get() = p.getBoolean("upi_qr_print", false)
+        set(v) { p.edit().putBoolean("upi_qr_print", v).apply() }
 
     /** User-added customer types (a saved set, in addition to any already used by customers). */
     var customerTypes: List<String>

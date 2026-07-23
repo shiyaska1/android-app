@@ -58,24 +58,41 @@ object MarketingMedia {
         }
 
         val mime = mimeFor(context, files)
-        val base = if (files.size == 1) Intent(Intent.ACTION_SEND) else Intent(Intent.ACTION_SEND_MULTIPLE)
-        base.apply {
-            type = mime
-            if (files.size == 1) putExtra(Intent.EXTRA_STREAM, files[0])
-            else putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(files))
-            if (text.isNotBlank()) putExtra(Intent.EXTRA_TEXT, text)
-            if (digits.isNotBlank()) putExtra("jid", digits + "@s.whatsapp.net")
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+
+        fun build(): Intent {
+            val i = if (files.size == 1) Intent(Intent.ACTION_SEND) else Intent(Intent.ACTION_SEND_MULTIPLE)
+            i.type = mime
+            if (files.size == 1) i.putExtra(Intent.EXTRA_STREAM, files[0])
+            else i.putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(files))
+            if (text.isNotBlank()) i.putExtra(Intent.EXTRA_TEXT, text)
+            // ClipData is what actually grants the target app read access to the shared files —
+            // without it WhatsApp receives no readable media and shows the text only.
+            val clip = android.content.ClipData.newUri(context.contentResolver, "media", files[0])
+            for (k in 1 until files.size) clip.addItem(android.content.ClipData.Item(files[k]))
+            i.clipData = clip
+            i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+            return i
+        }
+
+        // With a number, target that WhatsApp contact directly (jid). If media fails to attach
+        // that way on some builds, the no-jid share below still carries the files.
+        if (digits.isNotBlank()) {
+            for (pkg in listOf("com.whatsapp", "com.whatsapp.w4b")) {
+                val direct = build().setPackage(pkg).putExtra("jid", digits + "@s.whatsapp.net")
+                if (direct.resolveActivity(context.packageManager) != null) {
+                    runCatching { context.startActivity(direct) }.onSuccess { return }
+                }
+            }
         }
         for (pkg in listOf("com.whatsapp", "com.whatsapp.w4b")) {
-            val direct = Intent(base).setPackage(pkg)
+            val direct = build().setPackage(pkg)
             if (direct.resolveActivity(context.packageManager) != null) {
                 runCatching { context.startActivity(direct) }.onSuccess { return }
             }
         }
         // No WhatsApp installed — offer the media through the general share sheet.
         runCatching {
-            context.startActivity(Intent.createChooser(base, "Send").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            context.startActivity(Intent.createChooser(build(), "Send").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         }
     }
 

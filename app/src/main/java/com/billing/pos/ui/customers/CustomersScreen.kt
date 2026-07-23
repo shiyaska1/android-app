@@ -319,8 +319,7 @@ fun CustomersScreen(
                     modifier = Modifier.fillMaxWidth().padding(top = 6.dp)
                 )
                 Row(Modifier.fillMaxWidth().padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("${selected.size} selected", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
-                    Spacer(Modifier.weight(1f))
+                    // Send on the left, as requested.
                     Button(
                         onClick = {
                             val chosen = customers.filter { it.id in selected && it.phone.isNotBlank() }
@@ -328,7 +327,9 @@ fun CustomersScreen(
                             else if (marketMedia.isEmpty() && marketText.isBlank()) { vm.message.value = "Add a file or a message" }
                             else { sendQueue = chosen; sendIndex = 0 }
                         }
-                    ) { Icon(Icons.Filled.Chat, "Send on WhatsApp") }
+                    ) { Icon(Icons.Filled.Chat, "Send on WhatsApp"); Text("  Send") }
+                    Spacer(Modifier.weight(1f))
+                    Text("${selected.size} selected", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
                 }
                 if (customers.any { it.id in selected && it.phone.isBlank() }) Text(
                     "Customers with no phone number are skipped.",

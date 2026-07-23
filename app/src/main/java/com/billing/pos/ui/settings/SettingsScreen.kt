@@ -87,6 +87,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
     var gstin by remember { mutableStateOf(prefs.companyGstin) }
     var upiId by remember { mutableStateOf(prefs.upiId) }
     var upiName by remember { mutableStateOf(prefs.upiName) }
+    var upiQrOnPrint by remember { mutableStateOf(prefs.showUpiQrOnPrint) }
     var requireBatch by remember { mutableStateOf(prefs.requireItemBatch) }
     var businessType by remember { mutableStateOf(prefs.businessType) }
     var receiptWidth by remember { mutableStateOf(prefs.receiptWidth) }
@@ -214,6 +215,10 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
                 label = { Text("Payee name on QR") }, singleLine = true,
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
             )
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
+                Checkbox(checked = upiQrOnPrint, onCheckedChange = { upiQrOnPrint = it; prefs.showUpiQrOnPrint = it })
+                Text("Print UPI QR at the bottom of invoices")
+            }
             Button(
                 onClick = {
                     prefs.companyName = name.trim().ifBlank { "My Shop" }
@@ -222,6 +227,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
                     prefs.companyGstin = gstin.trim()
                     prefs.upiId = upiId.trim()
                     prefs.upiName = upiName.trim()
+                    prefs.showUpiQrOnPrint = upiQrOnPrint
                     scope.launch { snackbar.showSnackbar("Settings saved") }
                 },
                 modifier = Modifier.fillMaxWidth().padding(top = 16.dp)

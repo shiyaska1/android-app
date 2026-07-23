@@ -156,6 +156,23 @@ object A4InvoicePdf {
             val note = Paint(cellBold).apply { textSize = 12f; color = 0xFF000000.toInt() }
             c.drawText("Note: ${clip(bill.remarks, 80)}", x0, y, note); y += 18f
         }
+
+        // Optional UPI payment QR for the bill total, at the foot.
+        val prefs = AppPrefs(context)
+        if (prefs.showUpiQrOnPrint && prefs.upiId.isNotBlank()) {
+            val qr = com.billing.pos.util.UpiQr.bitmap(
+                com.billing.pos.util.UpiQr.link(prefs.upiId, prefs.upiName.ifBlank { company.name }, bill.grandTotal, bill.billNo),
+                360
+            )
+            if (qr != null) {
+                val qs = 120f
+                val left = (PW - qs) / 2f
+                val top = PH - M - qs - 26f
+                c.drawBitmap(qr, null, android.graphics.RectF(left, top, left + qs, top + qs), null)
+                val cap = Paint(small).apply { textAlign = Paint.Align.CENTER }
+                c.drawText("Scan to pay " + Format.money(bill.grandTotal) + " · UPI", PW / 2f, top + qs + 12f, cap)
+            }
+        }
         c.drawText("Thank you for your business!", x0, PH - M, small)
 
         doc.finishPage(page)
