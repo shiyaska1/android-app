@@ -486,7 +486,7 @@ private fun PartyStatementDialog(
         Column(
             Modifier.fillMaxSize()
                 .background(MaterialTheme.colorScheme.surface)
-                .androidx_safeDrawing()
+                .safeDrawingPadding()
         ) {
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
@@ -563,7 +563,3 @@ private fun PartyStatementDialog(
     }
 }
 
-/** safeDrawingPadding wrapper kept local so the import stays contained to this file. */
-private fun Modifier.androidx_safeDrawing(): Modifier = this.then(
-    androidx.compose.foundation.layout.safeDrawingPadding()
-)
