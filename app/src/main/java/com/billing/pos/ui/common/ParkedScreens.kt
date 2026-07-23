@@ -55,18 +55,40 @@ object ParkedScreens {
             "labtest" -> "Lab test"
             "patients" -> "Patient"
             "diary" -> "Diary entry"
-            "items" -> "Item"
+            "items" -> "Items"
+            "invoices" -> "Sales list"
+            "purchases" -> "Purchases"
+            "quotations" -> "Quotations"
+            "estimates" -> "Estimates"
+            "customers" -> "Customers"
+            "suppliers" -> "Suppliers"
+            "receipts" -> "Receipts"
+            "expenses" -> "Payments"
+            "outstanding" -> "Outstanding"
+            "cashbook" -> "Cash book"
+            "reports" -> "Reports"
+            "vat" -> "VAT report"
+            "stockreport" -> "Stock report"
+            "salesprofit" -> "Sales profit"
+            "salesitemreport" -> "Sales by item"
+            "itemmovement" -> "Item movement"
+            "lpomaterialreport" -> "LPO material"
+            "accounts" -> "Accounts"
+            "journal" -> "Journal"
+            "pricesearch" -> "Price search"
             else -> base.replaceFirstChar { it.uppercase() }
         }
     }
 
-    /** Routes worth parking: the ones you fill in, not the lists and reports. */
+    // Screens that make no sense to park: the dashboard itself, and the system/one-shot
+    // screens. Everything else — every entry, list, master and report — can be minimised.
+    private val notMinimizable = setOf(
+        "boot", "dashboard", "license", "login", "changepassword",
+        "settings", "printer", "backup", "mergelog", "chart"
+    )
+
     fun isMinimizable(routePattern: String?): Boolean {
         val base = (routePattern ?: return false).substringBefore("/edit").substringBefore("/")
-        return base in setOf(
-            "billing", "estimate", "quotation", "purchase", "salesreturn", "purchasereturn",
-            "lpo", "pquote", "materialreceipt", "materialout", "hire", "hirereturn",
-            "labbill", "labtest", "patients", "diary"
-        )
+        return base.isNotBlank() && base !in notMinimizable
     }
 }
