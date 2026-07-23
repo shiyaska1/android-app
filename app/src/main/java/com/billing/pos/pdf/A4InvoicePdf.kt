@@ -158,7 +158,6 @@ object A4InvoicePdf {
         }
 
         // Optional UPI payment QR for the bill total, at the foot.
-        val prefs = AppPrefs(context)
         if (prefs.showUpiQrOnPrint && prefs.upiId.isNotBlank()) {
             val qr = com.billing.pos.util.UpiQr.bitmap(
                 com.billing.pos.util.UpiQr.link(prefs.upiId, prefs.upiName.ifBlank { company.name }, bill.grandTotal, bill.billNo),
