@@ -188,8 +188,8 @@ class Repository(context: Context) {
     suspend fun deleteUser(user: User) = userDao.delete(user)
 
     // ---- customers / items ----
-    suspend fun addCustomer(name: String, phone: String, address: String, gstin: String = ""): Long =
-        customerDao.insert(Customer(name = name.trim(), phone = phone.trim(), address = address.trim(), gstin = gstin.trim()))
+    suspend fun addCustomer(name: String, phone: String, address: String, gstin: String = "", customerType: String = "General"): Long =
+        customerDao.insert(Customer(name = name.trim(), phone = phone.trim(), address = address.trim(), gstin = gstin.trim(), customerType = customerType.trim().ifBlank { "General" }))
 
     suspend fun addCustomerReturning(name: String, phone: String): Customer {
         val id = customerDao.insert(Customer(name = name.trim(), phone = phone.trim()))

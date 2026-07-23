@@ -12,7 +12,8 @@ data class Customer(
     val phone: String = "",
     val address: String = "",
     val gstin: String = "",
-    val isDefault: Boolean = false
+    val isDefault: Boolean = false,
+    val customerType: String = "General"
 )
 
 /** A saleable item. taxPercent = 0.0 means "without tax". */

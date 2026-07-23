@@ -785,7 +785,7 @@ object FullBackup {
 
     // ---- serialisers ----
     private fun custJson(c: Customer) = JSONObject().put("id", c.id).put("name", c.name)
-        .put("phone", c.phone).put("address", c.address).put("gstin", c.gstin).put("isDefault", c.isDefault)
+        .put("phone", c.phone).put("address", c.address).put("gstin", c.gstin).put("isDefault", c.isDefault).put("customerType", c.customerType)
 
     private fun itemJson(i: Item) = JSONObject().put("id", i.id).put("name", i.name)
         .put("price", i.price).put("taxPercent", i.taxPercent).put("barcode", i.barcode).put("hsn", i.hsn)
@@ -1247,7 +1247,8 @@ object FullBackup {
     // ---- deserialisers ----
     private fun readCust(o: JSONObject) = Customer(
         id = o.optLong("id"), name = o.optString("name"), phone = o.optString("phone"),
-        address = o.optString("address"), gstin = o.optString("gstin"), isDefault = o.optBoolean("isDefault", false)
+        address = o.optString("address"), gstin = o.optString("gstin"), isDefault = o.optBoolean("isDefault", false),
+        customerType = o.optString("customerType", "General")
     )
 
     private fun readItem(o: JSONObject) = Item(

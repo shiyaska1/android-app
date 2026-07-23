@@ -30,6 +30,17 @@ class AppPrefs(context: Context) {
 
     val company: CompanyInfo get() = CompanyInfo(companyName, companyAddress, companyPhone, companyGstin)
 
+    /** User-added customer types (a saved set, in addition to any already used by customers). */
+    var customerTypes: List<String>
+        get() = (p.getString("customer_types", "") ?: "").split("|").map { it.trim() }.filter { it.isNotBlank() }
+        set(v) { p.edit().putString("customer_types", v.joinToString("|")).apply() }
+
+    fun addCustomerType(name: String) {
+        val n = name.trim()
+        if (n.isBlank()) return
+        if (customerTypes.none { it.equals(n, true) }) customerTypes = customerTypes + n
+    }
+
     // ---- licensing / trial ----
     var mobileNumber: String
         get() = p.getString("mobile", "") ?: ""
