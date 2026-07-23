@@ -214,10 +214,11 @@ fun MobileNumberDialog(
                     // Opens a WhatsApp chat to this number with "hi" ready to send.
                     onClick = {
                         if (number.isNotBlank()) runCatching {
+                            val wa = com.billing.pos.marketing.MarketingMedia.withCountryCode(number)
                             context.startActivity(
                                 android.content.Intent(
                                     android.content.Intent.ACTION_VIEW,
-                                    android.net.Uri.parse("https://wa.me/" + number + "?text=hi")
+                                    android.net.Uri.parse("https://wa.me/" + wa + "?text=hi")
                                 ).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
                             )
                         }

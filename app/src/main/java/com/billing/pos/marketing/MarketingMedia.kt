@@ -39,8 +39,18 @@ object MarketingMedia {
      * makes WhatsApp fall back to text only), and the caption is also copied to the clipboard
      * so it can be pasted if WhatsApp drops it on a multi-image send.
      */
+    /** Digits with a country code: a bare 10-digit number is assumed Indian and gets 91. */
+    fun withCountryCode(phone: String): String {
+        val d = phone.filter { it.isDigit() }
+        return when {
+            d.length == 10 -> "91$d"
+            d.length == 11 && d.startsWith("0") -> "91" + d.drop(1)
+            else -> d
+        }
+    }
+
     fun sendToWhatsApp(context: Context, phone: String, text: String, files: List<Uri>) {
-        val digits = phone.filter { it.isDigit() }
+        val digits = withCountryCode(phone)
 
         // With no files it is a plain text chat.
         if (files.isEmpty()) {
@@ -67,28 +77,39 @@ object MarketingMedia {
             cm.setPrimaryClip(android.content.ClipData.newPlainText("message", text))
         }
 
-        // Media to a specific WhatsApp number cannot be done reliably — the "jid" trick opens
-        // the chat but drops the attachment. So media uses WhatsApp's normal media share, which
-        // always attaches the files; you pick the contact there. ClipData grants read access.
-        val send = if (files.size == 1) Intent(Intent.ACTION_SEND) else Intent(Intent.ACTION_SEND_MULTIPLE)
-        send.type = mime
-        if (files.size == 1) send.putExtra(Intent.EXTRA_STREAM, files[0])
-        else send.putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(files))
-        if (text.isNotBlank()) send.putExtra(Intent.EXTRA_TEXT, text)
-        val clip = android.content.ClipData.newUri(context.contentResolver, "media", files[0])
-        for (k in 1 until files.size) clip.addItem(android.content.ClipData.Item(files[k]))
-        send.clipData = clip
-        send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+        fun build(): Intent {
+            val i = if (files.size == 1) Intent(Intent.ACTION_SEND) else Intent(Intent.ACTION_SEND_MULTIPLE)
+            i.type = mime
+            if (files.size == 1) i.putExtra(Intent.EXTRA_STREAM, files[0])
+            else i.putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(files))
+            if (text.isNotBlank()) i.putExtra(Intent.EXTRA_TEXT, text)
+            // ClipData grants WhatsApp read access to the shared files.
+            val clip = android.content.ClipData.newUri(context.contentResolver, "media", files[0])
+            for (k in 1 until files.size) clip.addItem(android.content.ClipData.Item(files[k]))
+            i.clipData = clip
+            i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+            return i
+        }
 
+        // Target the customer's chat directly with the jid. With the files now readable this
+        // lands on that contact with the media attached; the plain share below is the fallback.
+        if (digits.isNotBlank()) {
+            for (pkg in listOf("com.whatsapp", "com.whatsapp.w4b")) {
+                val direct = build().setPackage(pkg).putExtra("jid", digits + "@s.whatsapp.net")
+                if (direct.resolveActivity(context.packageManager) != null) {
+                    runCatching { context.startActivity(direct) }.onSuccess { return }
+                }
+            }
+        }
         for (pkg in listOf("com.whatsapp", "com.whatsapp.w4b")) {
-            val direct = Intent(send).setPackage(pkg)
+            val direct = build().setPackage(pkg)
             if (direct.resolveActivity(context.packageManager) != null) {
                 runCatching { context.startActivity(direct) }.onSuccess { return }
             }
         }
         // No WhatsApp installed — offer the media through the general share sheet.
         runCatching {
-            context.startActivity(Intent.createChooser(send, "Send").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            context.startActivity(Intent.createChooser(build(), "Send").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         }
     }
 
