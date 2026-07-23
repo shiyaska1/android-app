@@ -30,6 +30,14 @@ class AppPrefs(context: Context) {
 
     val company: CompanyInfo get() = CompanyInfo(companyName, companyAddress, companyPhone, companyGstin)
 
+    /** UPI ID (VPA) money is collected to, e.g. name@okaxis, and the payee name shown. */
+    var upiId: String
+        get() = p.getString("upi_id", "") ?: ""
+        set(v) { p.edit().putString("upi_id", v.trim()).apply() }
+    var upiName: String
+        get() = p.getString("upi_name", "") ?: ""
+        set(v) { p.edit().putString("upi_name", v.trim()).apply() }
+
     /** User-added customer types (a saved set, in addition to any already used by customers). */
     var customerTypes: List<String>
         get() = (p.getString("customer_types", "") ?: "").split("|").map { it.trim() }.filter { it.isNotBlank() }

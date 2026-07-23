@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.ListAlt
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.QrCode2
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -99,6 +100,7 @@ fun FastBillDialog(
     // Date range, off by default. When switched on it starts at one month back.
     var dateRangeOn by remember { mutableStateOf(false) }
     var editReceipt by remember { mutableStateOf<com.billing.pos.data.Receipt?>(null) }
+    var qrAmount by remember { mutableStateOf<Double?>(null) }
     var fromMillis by remember { mutableStateOf(defaultFromMillis()) }
     var toMillis by remember { mutableStateOf(System.currentTimeMillis()) }
     var editIndex by remember { mutableStateOf(-1) }
@@ -199,6 +201,15 @@ fun FastBillDialog(
                     },
                     enabled = entries.isNotEmpty()
                 ) { Icon(Icons.Filled.Share, contentDescription = "Share on WhatsApp") }
+                IconButton(
+                    // A UPI payment QR for the current total; the customer scans to pay.
+                    onClick = {
+                        val pending = input.toDoubleOrNull() ?: 0.0
+                        val amt = entries.sum() + if (pending > 0.0) pending else 0.0
+                        if (amt > 0.0) qrAmount = amt
+                    },
+                    enabled = entries.isNotEmpty() || (input.toDoubleOrNull() ?: 0.0) > 0.0
+                ) { Icon(Icons.Filled.QrCode2, contentDescription = "UPI QR") }
                 Button(
                     onClick = {
                         val pending = input.toDoubleOrNull()
@@ -637,6 +648,10 @@ fun FastBillDialog(
     }
 
     // Correcting a receipt straight from the calculation it was received against.
+    qrAmount?.let { amt ->
+        com.billing.pos.ui.common.UpiQrDialog(amount = amt, onDismiss = { qrAmount = null })
+    }
+
     editReceipt?.let { r ->
         var amountText by remember(r.id) { mutableStateOf(Format.money(r.amount)) }
         var mode by remember(r.id) { mutableStateOf(runCatching { com.billing.pos.data.PayMode.valueOf(r.paymentMode.uppercase()) }.getOrDefault(com.billing.pos.data.PayMode.CASH)) }
