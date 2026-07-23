@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -216,6 +217,12 @@ fun OrderReportScreen(onBack: () -> Unit, vm: OrderReportViewModel = viewModel()
             confirmButton = { TextButton(onClick = { detailFor = null }) { Text("Close") } }
         )
     }
+}
+
+private fun pickDate(context: android.content.Context, current: Long, onPicked: (Long) -> Unit) {
+    val c = Calendar.getInstance().apply { timeInMillis = current }
+    android.app.DatePickerDialog(context, { _, y, m, d -> c.set(Calendar.YEAR, y); c.set(Calendar.MONTH, m); c.set(Calendar.DAY_OF_MONTH, d); onPicked(c.timeInMillis) },
+        c.get(Calendar.YEAR), c.get(Calendar.MONTH), c.get(Calendar.DAY_OF_MONTH)).show()
 }
 
 @Composable
