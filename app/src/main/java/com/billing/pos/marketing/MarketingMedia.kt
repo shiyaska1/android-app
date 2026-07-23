@@ -16,8 +16,10 @@ import java.io.File
  */
 object MarketingMedia {
 
+    // Must live under cache/shared, the only cache path the FileProvider exposes — otherwise
+    // getUriForFile throws and the copied gallery/file never reaches WhatsApp.
     private fun dir(context: Context): File =
-        File(context.cacheDir, "marketing").apply { mkdirs() }
+        File(File(context.cacheDir, "shared"), "marketing").apply { mkdirs() }
 
     /** Copies a picked file in and returns its cache Uri, or null on failure. */
     fun copyIn(context: Context, uri: Uri): Uri? = runCatching {
