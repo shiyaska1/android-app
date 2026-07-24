@@ -233,6 +233,17 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
      * in the item master (deduplicated by name) using [sellingPrice] (or the line price).
      */
     /** Fast bill: each amount becomes its own cart line with no item name. */
+    /** Fills the bill from a customer's orders: sets the customer and every ordered line. */
+    fun loadFromOrders(customerId: Long, customerName: String, lines: List<BillPrefillLine>) {
+        val c = customers.value.firstOrNull { it.id == customerId }
+            ?: customers.value.firstOrNull { it.name.equals(customerName, true) }
+        selectedCustomer = c ?: Customer(id = customerId, name = customerName)
+        cart.clear()
+        lines.forEach { cart.add(CartLine(it.itemId, it.name, it.price, 0.0, it.qty, unit = it.unit)) }
+        dirty = true
+        _message.value = "Loaded ${lines.size} item(s) from orders"
+    }
+
     fun addPriceLines(prices: List<Double>) {
         val valid = prices.filter { it > 0.0 }
         if (valid.isEmpty()) return

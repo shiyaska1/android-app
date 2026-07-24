@@ -498,7 +498,8 @@ private fun AppNav() {
                 onBack = { nav.popBackStack() },
                 onOpen = { id -> nav.navigate("order/edit/$id") },
                 onNew = { nav.navigate("order") },
-                onReport = { nav.navigate("orderreport") }
+                onReport = { nav.navigate("orderreport") },
+                onConvertToBill = { nav.navigate("billing") }
             )
         }
         composable("order") { com.billing.pos.ui.order.OrderEntryScreen(editId = null, onBack = { nav.popBackStack() }) }

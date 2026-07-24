@@ -176,6 +176,13 @@ fun BillingScreen(
         val amounts = FastBillLink.take()
         if (amounts.isNotEmpty()) vm.addPriceLines(amounts)
     }
+    // Orders converted from the order list arrive here as a prefilled bill.
+    LaunchedEffect(items) {
+        if (OrderToBillLink.hasData) {
+            val (cid, cname, lines) = OrderToBillLink.take()
+            vm.loadFromOrders(cid, cname, lines)
+        }
+    }
 
     // Items ticked in price search and sent here with "To sale". Waits for the item list
     // to load, since the ids have to be resolved against it.

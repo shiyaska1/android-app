@@ -130,6 +130,32 @@ class OrderViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun delete(o: CustOrder) { viewModelScope.launch { repo.deleteOrder(o); message.value = "Order ${o.orderNo} deleted" } }
+
+    /**
+     * Gathers the ticked orders into a bill hand-off: one customer only, with identical
+     * item lines merged so the same product ordered twice becomes one line with the summed
+     * quantity. Stock is untouched until the bill itself is saved.
+     */
+    fun convertToBill(ids: List<Long>, onReady: () -> Unit) {
+        viewModelScope.launch {
+            val chosen = orders.value.filter { it.id in ids }
+            if (chosen.isEmpty()) { message.value = "Tick at least one order"; return@launch }
+            if (chosen.map { it.customerId }.distinct().size > 1) { message.value = "Tick orders of one customer only"; return@launch }
+            val custId = chosen.first().customerId; val custName = chosen.first().customerName
+            val agg = LinkedHashMap<String, com.billing.pos.ui.billing.BillPrefillLine>()
+            chosen.forEach { o ->
+                repo.orderLines(o.id).forEach { l ->
+                    val key = l.name.lowercase() + "|" + l.price + "|" + l.unit
+                    val ex = agg[key]
+                    agg[key] = if (ex == null) com.billing.pos.ui.billing.BillPrefillLine(l.itemId, l.name, l.qty, l.price, l.unit)
+                    else ex.copy(qty = ex.qty + l.qty)
+                }
+            }
+            if (agg.isEmpty()) { message.value = "These orders have no items"; return@launch }
+            com.billing.pos.ui.billing.OrderToBillLink.set(custId, custName, agg.values.toList())
+            onReady()
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -323,7 +349,7 @@ private fun captureLocation(context: android.content.Context, onGot: (Double, Do
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun OrderListScreen(onBack: () -> Unit, onOpen: (Long) -> Unit, onNew: () -> Unit, onReport: () -> Unit, vm: OrderViewModel = viewModel()) {
+fun OrderListScreen(onBack: () -> Unit, onOpen: (Long) -> Unit, onNew: () -> Unit, onReport: () -> Unit, onConvertToBill: () -> Unit, vm: OrderViewModel = viewModel()) {
     val snackbar = remember { SnackbarHostState() }
     val orders by vm.orders.collectAsStateSafe()
     val message by vm.message.collectAsStateSafe()
@@ -333,6 +359,9 @@ fun OrderListScreen(onBack: () -> Unit, onOpen: (Long) -> Unit, onNew: () -> Uni
     var dateOn by remember { mutableStateOf(true) }
     var dayMillis by remember { mutableStateOf(System.currentTimeMillis()) }
     val context = LocalContext.current
+    // Selecting orders to convert to one bill. Off by default so the list stays a plain list.
+    var selecting by remember { mutableStateOf(false) }
+    val selected = remember { mutableStateListOf<Long>() }
 
     fun sameDay(m: Long): Boolean {
         val a = Calendar.getInstance().apply { timeInMillis = m }
@@ -348,9 +377,16 @@ fun OrderListScreen(onBack: () -> Unit, onOpen: (Long) -> Unit, onNew: () -> Uni
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             TopAppBar(
-                title = { Text("Orders") },
+                title = { Text(if (selecting) "${selected.size} selected" else "Orders") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
-                actions = { IconButton(onClick = onReport) { Icon(Icons.Filled.NoteAdd, "Consolidated report") } },
+                actions = {
+                    if (selecting) {
+                        IconButton(onClick = { selecting = false; selected.clear() }) { Icon(Icons.Filled.Remove, "Cancel selection") }
+                    } else {
+                        IconButton(onClick = { selecting = true }) { Icon(Icons.Filled.Add, "Convert orders to a bill") }
+                        IconButton(onClick = onReport) { Icon(Icons.Filled.NoteAdd, "Consolidated report") }
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                     titleContentColor = MaterialTheme.colorScheme.onPrimary,
@@ -373,26 +409,41 @@ fun OrderListScreen(onBack: () -> Unit, onOpen: (Long) -> Unit, onNew: () -> Uni
             }
             LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 12.dp)) {
                 items(shown, key = { it.id }) { o ->
-                    Row(Modifier.fillMaxWidth().clickable { onOpen(o.id) }.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        Modifier.fillMaxWidth()
+                            .clickable { if (selecting) { if (o.id in selected) selected.remove(o.id) else selected.add(o.id) } else onOpen(o.id) }
+                            .padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (selecting) androidx.compose.material3.Checkbox(checked = o.id in selected, onCheckedChange = { if (o.id in selected) selected.remove(o.id) else selected.add(o.id) })
                         Column(Modifier.weight(1f)) {
                             Text(o.orderNo + "  •  " + o.customerName, fontWeight = FontWeight.Bold)
                             Text(Format.date(o.dateMillis) + (if (o.remark.isNotBlank()) "  •  " + o.remark.take(24) else ""), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
                         }
                         Text(Format.rupee(o.grandTotal), fontWeight = FontWeight.Bold)
-                        IconButton(onClick = { deleteFor = o }) { Icon(Icons.Filled.Delete, "Delete", tint = MaterialTheme.colorScheme.error) }
+                        if (!selecting) IconButton(onClick = { deleteFor = o }) { Icon(Icons.Filled.Delete, "Delete", tint = MaterialTheme.colorScheme.error) }
                     }
                     Divider()
                 }
                 if (shown.isEmpty()) item { Text("No orders.", color = MaterialTheme.colorScheme.outline, modifier = Modifier.padding(16.dp)) }
             }
             Divider(thickness = 2.dp)
-            Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.Bottom) {
-                Column {
-                    Text("TOTAL ORDERS", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
-                    Text(Format.money(total), fontSize = 30.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+            if (selecting) {
+                // Convert the ticked orders (one customer) into a prefilled sales bill.
+                Button(
+                    onClick = { vm.convertToBill(selected.toList()) { selecting = false; selected.clear(); onConvertToBill() } },
+                    enabled = selected.isNotEmpty(),
+                    modifier = Modifier.fillMaxWidth().padding(14.dp)
+                ) { Text("Convert ${selected.size} order(s) to a sales bill") }
+            } else {
+                Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.Bottom) {
+                    Column {
+                        Text("TOTAL ORDERS", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                        Text(Format.money(total), fontSize = 30.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                    }
+                    Spacer(Modifier.weight(1f))
+                    Text("${shown.size} order(s)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
                 }
-                Spacer(Modifier.weight(1f))
-                Text("${shown.size} order(s)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
             }
         }
     }
