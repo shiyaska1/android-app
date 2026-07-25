@@ -112,6 +112,12 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
     var topSkip by remember { mutableStateOf(prefs.labTopSkipLines.toString()) }
     var bottomSkip by remember { mutableStateOf(prefs.labBottomSkipLines.toString()) }
     var stickyNote by remember { mutableStateOf(prefs.stickyNoteOnLaunch) }
+    var autoVoiceDiary by remember { mutableStateOf(prefs.autoVoiceDiary) }
+    val micPermission = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) { autoVoiceDiary = true; com.billing.pos.audio.AutoDiaryService.start(context) }
+    }
     var appLock by remember { mutableStateOf(prefs.appLock) }
     var expiryAlert by remember { mutableStateOf(prefs.expiryAlert) }
     var expiryDays by remember { mutableStateOf(prefs.expiryAlertDays.toString()) }
@@ -267,6 +273,33 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
                     Text("Open a full-screen handwriting canvas each time the app starts; Save stores each page as a picture in My Diary.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
                 }
                 Checkbox(checked = stickyNote, onCheckedChange = { stickyNote = it; prefs.stickyNoteOnLaunch = it })
+            }
+
+            if (com.billing.pos.BuildConfig.DEBUG) {
+                Divider(Modifier.padding(vertical = 16.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Auto voice diary (hourly)", style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            "Records voice in the background and, once an hour, saves a diary entry (titled with the date-time, type \"voice\") with the recording attached. Only the parts where a voice is heard are kept. A notification stays on while it records.",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline
+                        )
+                    }
+                    Checkbox(checked = autoVoiceDiary, onCheckedChange = { on ->
+                        if (!on) {
+                            autoVoiceDiary = false
+                            com.billing.pos.audio.AutoDiaryService.stop(context)
+                        } else if (androidx.core.content.ContextCompat.checkSelfPermission(
+                                context, android.Manifest.permission.RECORD_AUDIO
+                            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                        ) {
+                            autoVoiceDiary = true
+                            com.billing.pos.audio.AutoDiaryService.start(context)
+                        } else {
+                            micPermission.launch(android.Manifest.permission.RECORD_AUDIO)
+                        }
+                    })
+                }
             }
 
             Divider(Modifier.padding(vertical = 16.dp))
