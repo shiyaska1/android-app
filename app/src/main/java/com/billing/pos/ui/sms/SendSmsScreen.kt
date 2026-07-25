@@ -1,6 +1,8 @@
 package com.billing.pos.ui.sms
 
 import android.app.Application
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -96,6 +98,25 @@ fun SendSmsScreen(onBack: () -> Unit, vm: SendSmsViewModel = viewModel()) {
     }
     fun refill() { rawTemplate?.let { message = SmsSender.fillTemplate(it, values()) } }
 
+    var pendingSend by remember { mutableStateOf<(() -> Unit)?>(null) }
+    val smsPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        val action = pendingSend; pendingSend = null
+        if (granted) action?.invoke() else vm.status.value = "SMS permission denied — can't send via SIM"
+    }
+    fun runSend() {
+        val numbers = contact?.let { SmsSender.splitNumbers(it.mobile) } ?: SmsSender.splitNumbers(manualNumber)
+        vm.send(numbers, message, channel, contact?.name ?: "")
+    }
+    fun onSendClick() {
+        if (channel == "SIM" && androidx.core.content.ContextCompat.checkSelfPermission(
+                context, android.Manifest.permission.SEND_SMS
+            ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            pendingSend = { runSend() }
+            smsPermission.launch(android.Manifest.permission.SEND_SMS)
+        } else runSend()
+    }
+
     Scaffold(
         topBar = {
             androidx.compose.material3.TopAppBar(
@@ -158,10 +179,7 @@ fun SendSmsScreen(onBack: () -> Unit, vm: SendSmsViewModel = viewModel()) {
             }
 
             Button(
-                onClick = {
-                    val numbers = contact?.let { SmsSender.splitNumbers(it.mobile) } ?: SmsSender.splitNumbers(manualNumber)
-                    vm.send(numbers, message, channel, contact?.name ?: "")
-                },
+                onClick = { onSendClick() },
                 enabled = !sending,
                 modifier = Modifier.padding(top = 16.dp)
             ) {

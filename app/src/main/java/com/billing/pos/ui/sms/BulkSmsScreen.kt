@@ -194,6 +194,20 @@ fun BulkSmsScreen(onBack: () -> Unit, vm: BulkSmsViewModel = viewModel()) {
     val importPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) vm.importMapping(context, uri)
     }
+    var pendingSend by remember { mutableStateOf<(() -> Unit)?>(null) }
+    val smsPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        val action = pendingSend; pendingSend = null
+        if (granted) action?.invoke() else vm.status.value = "SMS permission denied — can't send via SIM"
+    }
+    fun onBulkSend() {
+        if (channel == "WhatsApp") { waQueue = selectedContacts; waIndex = 0; return }
+        val action = { vm.sendBulk(context, selectedContacts, message, channel) }
+        if (channel == "SIM" && androidx.core.content.ContextCompat.checkSelfPermission(
+                context, android.Manifest.permission.SEND_SMS
+            ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) { pendingSend = action; smsPermission.launch(android.Manifest.permission.SEND_SMS) }
+        else action()
+    }
 
     if (waQueue.isNotEmpty()) {
         val current = waQueue.getOrNull(waIndex)
@@ -299,10 +313,7 @@ fun BulkSmsScreen(onBack: () -> Unit, vm: BulkSmsViewModel = viewModel()) {
                     }
                 }
                 Button(
-                    onClick = {
-                        if (channel == "WhatsApp") { waQueue = selectedContacts; waIndex = 0 }
-                        else vm.sendBulk(context, selectedContacts, message, channel)
-                    },
+                    onClick = { onBulkSend() },
                     enabled = !sending && selectedContacts.isNotEmpty() && message.isNotBlank(),
                     modifier = Modifier.padding(start = 8.dp)
                 ) { Text(if (sending) "Sending…" else "Send (${selectedContacts.size})") }

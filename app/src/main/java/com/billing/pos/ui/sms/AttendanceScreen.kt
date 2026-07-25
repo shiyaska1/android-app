@@ -2,6 +2,8 @@ package com.billing.pos.ui.sms
 
 import android.app.Application
 import android.content.Context
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -111,6 +113,12 @@ fun AttendanceScreen(onBack: () -> Unit, vm: AttendanceViewModel = viewModel()) 
     val presentCount = filtered.count { present[it.id] == true }
     val absentees = filtered.filter { present[it.id] != true }
 
+    var pendingSend by remember { mutableStateOf<(() -> Unit)?>(null) }
+    val smsPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        val action = pendingSend; pendingSend = null
+        if (granted) action?.invoke() else vm.status.value = "SMS permission denied — can't send via SIM"
+    }
+
     if (showSend) {
         var message by remember { mutableStateOf("") }
         var tplMenu by remember { mutableStateOf(false) }
@@ -168,7 +176,14 @@ fun AttendanceScreen(onBack: () -> Unit, vm: AttendanceViewModel = viewModel()) 
             confirmButton = {
                 TextButton(onClick = {
                     if (channel == "WhatsApp") { waQueue = absentees; waIndex = 0 }
-                    else { vm.sendTo(absentees, message, channel); showSend = false }
+                    else {
+                        val action = { vm.sendTo(absentees, message, channel); showSend = false }
+                        if (channel == "SIM" && androidx.core.content.ContextCompat.checkSelfPermission(
+                                context, android.Manifest.permission.SEND_SMS
+                            ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+                        ) { pendingSend = action; smsPermission.launch(android.Manifest.permission.SEND_SMS) }
+                        else action()
+                    }
                 }, enabled = !sending && message.isNotBlank()) { Text("Send") }
             },
             dismissButton = { TextButton(onClick = { showSend = false }) { Text("Close") } }
