@@ -379,6 +379,8 @@ private fun AppNav() {
                 onCustomers = { nav.navigate("customers") },
                 onContacts = { nav.navigate("contacts") },
                 onSendSms = { nav.navigate("sendsms") },
+                onBulkSms = { nav.navigate("bulksms") },
+                onAttendance = { nav.navigate("attendance") },
                 onSmsTemplates = { nav.navigate("smstemplates") },
                 onSmsReport = { nav.navigate("smsreport") },
                 onSmsSettings = { nav.navigate("smssettings") },
@@ -521,6 +523,12 @@ private fun AppNav() {
         }
         composable("sendsms") {
             com.billing.pos.ui.sms.SendSmsScreen(onBack = { nav.popBackStack() })
+        }
+        composable("bulksms") {
+            com.billing.pos.ui.sms.BulkSmsScreen(onBack = { nav.popBackStack() })
+        }
+        composable("attendance") {
+            com.billing.pos.ui.sms.AttendanceScreen(onBack = { nav.popBackStack() })
         }
         composable("smstemplates") {
             com.billing.pos.ui.sms.SmsTemplatesScreen(onBack = { nav.popBackStack() })

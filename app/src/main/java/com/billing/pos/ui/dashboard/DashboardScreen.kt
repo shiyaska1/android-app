@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.AssignmentReturn
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Biotech
 import androidx.compose.material.icons.filled.Contacts
+import androidx.compose.material.icons.filled.HowToReg
 import androidx.compose.material.icons.filled.Science
 import androidx.compose.material.icons.filled.AssignmentReturned
 import androidx.compose.material.icons.filled.Backup
@@ -93,7 +94,7 @@ private val PERSONAL_TILES = setOf(
 
 /** In Bulk SMS mode the dashboard shows only the SMS tools plus the requested keep-list. */
 private val BULK_SMS_TILES = setOf(
-    "Send SMS", "Contacts", "SMS Templates", "SMS Settings", "SMS Report",
+    "Send SMS", "Bulk SMS", "Attendance", "Contacts", "SMS Templates", "SMS Settings", "SMS Report",
     "Calculator", "Mobile number", "My Diary", "Poster maker",
     "Receipts", "Payments", "Cash Book", "Outstanding", "Accounts", "Journal",
     "Settings", "Backup"
@@ -116,6 +117,8 @@ fun DashboardScreen(
     onCustomers: () -> Unit,
     onContacts: () -> Unit,
     onSendSms: () -> Unit,
+    onBulkSms: () -> Unit,
+    onAttendance: () -> Unit,
     onSmsTemplates: () -> Unit,
     onSmsReport: () -> Unit,
     onSmsSettings: () -> Unit,
@@ -205,6 +208,8 @@ fun DashboardScreen(
         }
         if (isBulkSms) {
             add(Tile("Send SMS", Icons.AutoMirrored.Filled.Send, onSendSms, "Transactions"))
+            add(Tile("Bulk SMS", Icons.Filled.Campaign, onBulkSms, "Transactions"))
+            add(Tile("Attendance", Icons.Filled.HowToReg, onAttendance, "Transactions"))
             add(Tile("Contacts", Icons.Filled.Contacts, onContacts, "Masters"))
             add(Tile("SMS Templates", Icons.Filled.Description, onSmsTemplates, "Masters"))
             add(Tile("SMS Settings", Icons.Filled.Settings, onSmsSettings, "Masters"))
