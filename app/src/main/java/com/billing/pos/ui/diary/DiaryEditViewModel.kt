@@ -73,6 +73,8 @@ class DiaryEditViewModel(app: Application) : AndroidViewModel(app) {
     private var recorder: MediaRecorder? = null
     private var recordFile: File? = null
     private var recordStart = 0L
+    /** When true, the current recording is owned by the background foreground service (APK build). */
+    private var recordViaService = false
     private var createdAt = System.currentTimeMillis()
     private var loaded = false
 
@@ -304,6 +306,17 @@ class DiaryEditViewModel(app: Application) : AndroidViewModel(app) {
     fun startRecording(context: Context) {
         if (recording) return
         val file = File(AttachmentStore.dir(context), "voice_${System.nanoTime()}.m4a")
+        // In the APK (debug) build a foreground microphone service keeps recording alive while the
+        // app is minimised or the screen is off. The Play (release) AAB ships no such service, so it
+        // records in-process only — recording ends when the OS suspends the app, as before.
+        if (com.billing.pos.BuildConfig.DEBUG) {
+            recordFile = file
+            recordStart = System.currentTimeMillis()
+            recordViaService = true
+            recording = true
+            com.billing.pos.audio.AudioRecordService.start(context.applicationContext, file.absolutePath)
+            return
+        }
         val rec = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) MediaRecorder(context)
         else @Suppress("DEPRECATION") MediaRecorder()
         try {
@@ -316,6 +329,7 @@ class DiaryEditViewModel(app: Application) : AndroidViewModel(app) {
             recorder = rec
             recordFile = file
             recordStart = System.currentTimeMillis()
+            recordViaService = false
             recording = true
         } catch (e: Exception) {
             runCatching { rec.release() }
@@ -325,6 +339,29 @@ class DiaryEditViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun stopRecording() {
+        if (recordViaService) {
+            val f = recordFile
+            val dur = System.currentTimeMillis() - recordStart
+            recording = false
+            recordViaService = false
+            recordFile = null
+            com.billing.pos.audio.AudioRecordService.stop(getApplication())
+            // The service finalises the file asynchronously; wait briefly for it to flush before adding.
+            viewModelScope.launch {
+                var tries = 0
+                while (com.billing.pos.audio.AudioRecordService.recording && tries < 30) {
+                    kotlinx.coroutines.delay(100); tries++
+                }
+                f?.let {
+                    if (it.exists() && it.length() > 0) {
+                        blocks.add(BlockUi(0, BlockType.AUDIO, path = it.absolutePath, name = "Voice note.m4a", mime = "audio/mp4", durationMs = dur))
+                    } else {
+                        message.value = "Could not save recording"
+                    }
+                }
+            }
+            return
+        }
         val rec = recorder ?: return
         runCatching { rec.stop() }
         runCatching { rec.release() }

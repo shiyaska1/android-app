@@ -35,11 +35,13 @@
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
 
     <!--
-      WorkManager arrives transitively with ML Kit and declares a foreground service, which
-      makes Play demand a Foreground Service declaration even though nothing here uses one.
-      We never call WorkManager, so both the service and its permission are merged out.
+      WorkManager arrives transitively with ML Kit and declares a foreground service permission.
+      The FOREGROUND_SERVICE permission is handled per build variant:
+        - release (Play AAB): stripped in src/release/AndroidManifest.xml so Play needs no FGS declaration.
+        - debug (WhatsApp APK): kept, plus FOREGROUND_SERVICE_MICROPHONE, in src/debug/AndroidManifest.xml
+          for the diary's background voice-recording service.
+      The WorkManager service itself is unused and stays removed for both variants (below).
     -->
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" tools:node="remove" />
 
     <application
         android:allowBackup="true"
