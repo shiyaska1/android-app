@@ -32,7 +32,7 @@ object SmsSender {
     fun splitNumbers(mobile: String): List<String> =
         mobile.split(",").map { it.trim() }.filter { it.isNotBlank() }
 
-    private val VAR = Regex("\\{([a-zA-Z0-9_]+)}")
+    private val VAR = Regex("\\{([A-Za-z0-9_]+)\\}")
     /** Custom {variable} names in a template body, excluding the built-in name/mobile. */
     fun customVars(body: String): List<String> =
         VAR.findAll(body).map { it.groupValues[1] }.distinct().filter { it != "name" && it != "mobile" }.toList()
