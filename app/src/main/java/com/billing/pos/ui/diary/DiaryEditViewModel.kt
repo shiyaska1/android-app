@@ -453,8 +453,10 @@ class DiaryEditViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     override fun onCleared() {
-        runCatching { recorder?.release() }
-        recorder = null
+        val rec = voiceRec
+        voiceRec = null
+        // viewModelScope is already cancelled here; finalise on a detached IO coroutine.
+        if (rec != null) kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch { runCatching { rec.stop() } }
     }
 
     private fun DiaryBlock.toUi() = BlockUi(id, type, text, path, name, mime, durationMs)
