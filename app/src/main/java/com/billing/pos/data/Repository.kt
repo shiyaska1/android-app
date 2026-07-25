@@ -30,6 +30,13 @@ class Repository(context: Context) {
     private val purchaseDao = db.purchaseDao()
     private val accountDao = db.accountDao()
     private val journalDao = db.journalDao()
+    private val appPrefs = AppPrefs(context)
+
+    /** Device letter/name prefix for document numbers (e.g. "A-"), blank if not set. Keeps two synced phones from clashing. */
+    private fun tagPrefix(): String {
+        val t = appPrefs.deviceTag
+        return if (t.isBlank()) "" else "$t-"
+    }
 
     val customers: Flow<List<Customer>> = customerDao.observeAll()
     val items: Flow<List<Item>> = itemDao.observeAll()
@@ -583,10 +590,10 @@ class Repository(context: Context) {
         com.billing.pos.bills.BillAttachmentStore.delete(attachment)
     }
 
-    /** Bill number for the next locally-created bill, e.g. INV-0001. */
+    /** Bill number for the next locally-created bill, e.g. A-INV-0001 (the A- prefix is this device's tag). */
     suspend fun nextBillNo(): String {
         val n = billDao.localCount() + 1
-        return "INV-" + n.toString().padStart(4, '0')
+        return tagPrefix() + "INV-" + n.toString().padStart(4, '0')
     }
 
     // ---- bills ----
@@ -603,7 +610,7 @@ class Repository(context: Context) {
 
     // ---- receipts (money received against credit invoices) ----
     suspend fun nextReceiptNo(): String =
-        "RV-" + (receiptDao.localCount() + 1).toString().padStart(4, '0')
+        tagPrefix() + "RV-" + (receiptDao.localCount() + 1).toString().padStart(4, '0')
 
     /** Records a receipt against [bill] and increases the invoice's paid amount. */
     suspend fun addReceipt(bill: Bill, amount: Double, mode: PayMode, dateMillis: Long = System.currentTimeMillis()): Receipt {
@@ -644,7 +651,7 @@ class Repository(context: Context) {
 
     // ---- expenses / payment vouchers (money paid out) ----
     suspend fun nextVoucherNo(): String =
-        "PV-" + (expenseDao.localCount() + 1).toString().padStart(4, '0')
+        tagPrefix() + "PV-" + (expenseDao.localCount() + 1).toString().padStart(4, '0')
 
     suspend fun addExpense(description: String, amount: Double, mode: PayMode, dateMillis: Long = System.currentTimeMillis()): Expense {
         val expense = Expense(

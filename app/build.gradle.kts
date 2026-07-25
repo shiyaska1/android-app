@@ -13,8 +13,8 @@ android {
         applicationId = "com.billing.pos"
         minSdk = 26
         targetSdk = 36
-        versionCode = 103
-        versionName = "1.37.0"
+        versionCode = 104
+        versionName = "1.38.0"
         vectorDrawables { useSupportLibrary = true }
 
         // Real Android phones are arm. The x86/x86_64 native libs are emulator-only
@@ -140,6 +140,9 @@ dependencies {
 
     // Play in-app updates: prompt for a new version as soon as one is published.
     implementation("com.google.android.play:app-update-ktx:2.1.0")
+
+    // Tiny embedded HTTP server for offline LAN sync between two devices on the same WiFi.
+    implementation("org.nanohttpd:nanohttpd:2.3.1")
 
     // On-device image embeddings, for "find this item by photo" in price search.
     implementation("com.google.mediapipe:tasks-vision:0.10.35")

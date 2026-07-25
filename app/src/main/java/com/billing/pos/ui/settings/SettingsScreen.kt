@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -43,6 +44,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -113,6 +115,13 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
     var bottomSkip by remember { mutableStateOf(prefs.labBottomSkipLines.toString()) }
     var stickyNote by remember { mutableStateOf(prefs.stickyNoteOnLaunch) }
     var autoVoiceDiary by remember { mutableStateOf(prefs.autoVoiceDiary) }
+    // ---- LAN sync (two-counter over WiFi) ----
+    var deviceTag by remember { mutableStateOf(prefs.deviceTag) }
+    var hostMode by remember { mutableStateOf(com.billing.pos.sync.SyncManager.isHosting()) }
+    var hostIp by remember { mutableStateOf(prefs.syncHostIp) }
+    var autoSync by remember { mutableStateOf(prefs.syncAuto) }
+    val syncStatus by com.billing.pos.sync.SyncManager.status.collectAsState()
+    val myWifiIp = remember { com.billing.pos.sync.SyncManager.wifiIp(context) }
     val micPermission = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
     ) { granted ->
@@ -319,6 +328,63 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error
                 )
             }
+
+            Divider(Modifier.padding(vertical = 16.dp))
+            Text("Share over WiFi (two counters)", style = MaterialTheme.typography.titleSmall)
+            Text(
+                "Sync items, customers, sales, receipts and expenses between two phones on the same WiFi — fully offline. " +
+                    "One phone is the host (keep its app open); the other connects to it. Give each phone a short letter so " +
+                    "bill numbers don't clash (e.g. A makes A-INV-0001).",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline
+            )
+            OutlinedTextField(
+                value = deviceTag,
+                onValueChange = { deviceTag = it.take(6); prefs.deviceTag = deviceTag },
+                label = { Text("This phone's letter/name (e.g. A)") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+            )
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
+                Column(Modifier.weight(1f)) {
+                    Text("Act as host (server)", style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        if (hostMode) "Others connect to ${myWifiIp ?: "this phone"}:${prefs.syncPort}"
+                        else "Turn on for the main phone. Keep this app open while the other syncs.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline
+                    )
+                }
+                Switch(checked = hostMode, onCheckedChange = { on ->
+                    hostMode = on
+                    if (on) com.billing.pos.sync.SyncManager.startHost(context)
+                    else com.billing.pos.sync.SyncManager.stopHost(context)
+                })
+            }
+            OutlinedTextField(
+                value = hostIp,
+                onValueChange = { hostIp = it.trim() },
+                label = { Text("Host phone IP (from the host's screen above)") },
+                singleLine = true,
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Uri),
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+            )
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
+                Button(onClick = {
+                    prefs.syncHostIp = hostIp
+                    com.billing.pos.sync.SyncManager.syncWithHost(context, hostIp, prefs.syncPort)
+                }, enabled = hostIp.isNotBlank()) { Text("Sync now") }
+                Spacer(Modifier.width(12.dp))
+                Column {
+                    Text("Auto-sync", style = MaterialTheme.typography.bodyMedium)
+                    Text("every 20s while open", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                }
+                Spacer(Modifier.weight(1f))
+                Switch(checked = autoSync, onCheckedChange = { on ->
+                    autoSync = on; prefs.syncAuto = on
+                    if (on && hostIp.isNotBlank()) { prefs.syncHostIp = hostIp; com.billing.pos.sync.SyncManager.startAuto(context, hostIp, prefs.syncPort) }
+                    else com.billing.pos.sync.SyncManager.stopAuto()
+                })
+            }
+            Text(syncStatus, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 6.dp))
 
             Divider(Modifier.padding(vertical = 16.dp))
             // Which script the camera/gallery OCR reads. Applies to every scan in the app.

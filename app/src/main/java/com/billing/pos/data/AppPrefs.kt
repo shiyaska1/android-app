@@ -50,6 +50,28 @@ class AppPrefs(context: Context) {
         get() = p.getBoolean("auto_voice_diary", false)
         set(v) { p.edit().putBoolean("auto_voice_diary", v).apply() }
 
+    // ---- LAN sync (two-counter, offline over WiFi) ----
+    /** Short label for this device (e.g. "A"), prefixed onto bill numbers so two phones don't clash. */
+    var deviceTag: String
+        get() = (p.getString("sync_device_tag", "") ?: "").trim()
+        set(v) { p.edit().putString("sync_device_tag", v.trim()).apply() }
+    /** TCP port this device's sync server listens on when acting as host. */
+    var syncPort: Int
+        get() = p.getInt("sync_port", 8765)
+        set(v) { p.edit().putInt("sync_port", v).apply() }
+    /** Last host IP a client connected to, so "Sync now" is one tap next time. */
+    var syncHostIp: String
+        get() = (p.getString("sync_host_ip", "") ?: "").trim()
+        set(v) { p.edit().putString("sync_host_ip", v.trim()).apply() }
+    /** When on, this device runs the sync server so other phones can reach it. */
+    var syncHostMode: Boolean
+        get() = p.getBoolean("sync_host_mode", false)
+        set(v) { p.edit().putBoolean("sync_host_mode", v).apply() }
+    /** When on, a client re-syncs with the host automatically every few seconds while the app is open. */
+    var syncAuto: Boolean
+        get() = p.getBoolean("sync_auto", false)
+        set(v) { p.edit().putBoolean("sync_auto", v).apply() }
+
     /** User-added customer types (a saved set, in addition to any already used by customers). */
     var customerTypes: List<String>
         get() = (p.getString("customer_types", "") ?: "").split("|").map { it.trim() }.filter { it.isNotBlank() }
