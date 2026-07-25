@@ -82,6 +82,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
     androidResources {
         // Keep the Tesseract model uncompressed in the APK. A DEFLATED asset cannot be
