@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material.icons.filled.Assessment
 import androidx.compose.material.icons.filled.AssignmentReturn
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Biotech
 import androidx.compose.material.icons.filled.Contacts
 import androidx.compose.material.icons.filled.Science
@@ -92,7 +93,8 @@ private val PERSONAL_TILES = setOf(
 
 /** In Bulk SMS mode the dashboard shows only the SMS tools plus the requested keep-list. */
 private val BULK_SMS_TILES = setOf(
-    "Contacts", "Calculator", "Mobile number", "My Diary", "Poster maker",
+    "Send SMS", "Contacts", "SMS Templates", "SMS Settings", "SMS Report",
+    "Calculator", "Mobile number", "My Diary", "Poster maker",
     "Receipts", "Payments", "Cash Book", "Outstanding", "Accounts", "Journal",
     "Settings", "Backup"
 )
@@ -113,6 +115,10 @@ fun DashboardScreen(
     onReports: () -> Unit,
     onCustomers: () -> Unit,
     onContacts: () -> Unit,
+    onSendSms: () -> Unit,
+    onSmsTemplates: () -> Unit,
+    onSmsReport: () -> Unit,
+    onSmsSettings: () -> Unit,
     onItems: () -> Unit,
     onNewPurchase: () -> Unit,
     onPurchases: () -> Unit,
@@ -197,7 +203,13 @@ fun DashboardScreen(
             add(Tile("Patients", Icons.Filled.People, onPatients, "Masters"))
             add(Tile("Lab Tests", Icons.Filled.Biotech, onLabTests, "Masters"))
         }
-        if (isBulkSms) add(Tile("Contacts", Icons.Filled.Contacts, onContacts, "Masters"))
+        if (isBulkSms) {
+            add(Tile("Send SMS", Icons.AutoMirrored.Filled.Send, onSendSms, "Transactions"))
+            add(Tile("Contacts", Icons.Filled.Contacts, onContacts, "Masters"))
+            add(Tile("SMS Templates", Icons.Filled.Description, onSmsTemplates, "Masters"))
+            add(Tile("SMS Settings", Icons.Filled.Settings, onSmsSettings, "Masters"))
+            add(Tile("SMS Report", Icons.Filled.Assessment, onSmsReport, "Reports"))
+        }
         add(Tile("My Diary", Icons.Filled.MenuBook, onDiary, "Masters"))
         if (Session.canManageUsers) add(Tile("Users", Icons.Filled.ManageAccounts, onUsers, "Masters"))
         if (Session.canManageUsers) add(Tile("Settings", Icons.Filled.Settings, onSettings, "Masters"))

@@ -10,6 +10,10 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
 
+    <!-- Bulk SMS via the phone SIM. APK build only — Google Play bans SEND_SMS for this kind of app,
+         so the release AAB never contains it (gateway sending is used there instead). -->
+    <uses-permission android:name="android.permission.SEND_SMS" />
+
     <application>
         <service
             android:name="com.billing.pos.audio.AudioRecordService"

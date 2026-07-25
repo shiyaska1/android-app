@@ -72,6 +72,33 @@ class AppPrefs(context: Context) {
         get() = p.getBoolean("sync_auto", false)
         set(v) { p.edit().putBoolean("sync_auto", v).apply() }
 
+    // ---- Bulk SMS gateway (generic, provider-agnostic) ----
+    /**
+     * Send URL template with placeholders {number} {message} {apikey} {sender}. Example:
+     * https://api.msg91.com/api/v5/flow/?authkey={apikey}&mobiles={number}&message={message}&sender={sender}
+     */
+    var smsGatewayUrl: String
+        get() = (p.getString("sms_url", "") ?: "").trim()
+        set(v) { p.edit().putString("sms_url", v.trim()).apply() }
+    /** "GET" or "POST". */
+    var smsGatewayMethod: String
+        get() = (p.getString("sms_method", "GET") ?: "GET")
+        set(v) { p.edit().putString("sms_method", v).apply() }
+    var smsApiKey: String
+        get() = (p.getString("sms_apikey", "") ?: "").trim()
+        set(v) { p.edit().putString("sms_apikey", v.trim()).apply() }
+    var smsSenderId: String
+        get() = (p.getString("sms_sender", "") ?: "").trim()
+        set(v) { p.edit().putString("sms_sender", v.trim()).apply() }
+    /** Optional balance-check URL with {apikey} placeholder. */
+    var smsBalanceUrl: String
+        get() = (p.getString("sms_balance_url", "") ?: "").trim()
+        set(v) { p.edit().putString("sms_balance_url", v.trim()).apply() }
+    /** Default send channel: "Gateway" or "SIM" (SIM works in the APK build only). */
+    var smsChannel: String
+        get() = (p.getString("sms_channel", "Gateway") ?: "Gateway")
+        set(v) { p.edit().putString("sms_channel", v).apply() }
+
     /** User-added customer types (a saved set, in addition to any already used by customers). */
     var customerTypes: List<String>
         get() = (p.getString("customer_types", "") ?: "").split("|").map { it.trim() }.filter { it.isNotBlank() }

@@ -34,15 +34,15 @@ import androidx.room.TypeConverters
         SavedCalc::class, CustomerAttachment::class,
         PurchaseQuote::class, PurchaseQuoteItem::class,
         CustOrder::class, CustOrderItem::class, CustOrderAttachment::class,
-        Contact::class, ContactGroup::class, SmsLog::class
+        Contact::class, ContactGroup::class, SmsLog::class, SmsTemplate::class
     ],
     // v25 quotations; v26 sales returns; v27 purchase returns; v28 purchase quotations (LPO);
     // v29 dual units; v30 rental; v31 medical lab; v32 lab masters + heading rows;
     // v33 page breaks, heading master, lab-bill payment; v34 lab balance receipts;
     // v35 doctor master + patient phone; v36 material out + movement;
     // v37 item purchase price; v38 material receipts + purchase stockReceived/lpoNo.
-    // v50 customer orders; v51 Bulk SMS contacts + contact groups.
-    version = 51,
+    // v50 customer orders; v51 Bulk SMS contacts + contact groups; v52 SMS templates.
+    version = 52,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -86,6 +86,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun contactDao(): ContactDao
     abstract fun contactGroupDao(): ContactGroupDao
     abstract fun smsLogDao(): SmsLogDao
+    abstract fun smsTemplateDao(): SmsTemplateDao
 
     companion object {
         @Volatile private var INSTANCE: AppDatabase? = null
@@ -291,6 +292,16 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** Bulk SMS: reusable message templates. */
+        private val MIGRATION_51_52 = object : androidx.room.migration.Migration(51, 52) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS sms_templates (" +
+                        "id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, body TEXT NOT NULL)"
+                )
+            }
+        }
+
         fun get(context: Context): AppDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -298,7 +309,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "pos_billing.db"
                 )
-                    .addMigrations(MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45, MIGRATION_45_46, MIGRATION_46_47, MIGRATION_47_48, MIGRATION_48_49, MIGRATION_49_50, MIGRATION_50_51)
+                    .addMigrations(MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45, MIGRATION_45_46, MIGRATION_46_47, MIGRATION_47_48, MIGRATION_48_49, MIGRATION_49_50, MIGRATION_50_51, MIGRATION_51_52)
                     .fallbackToDestructiveMigration()
                     .build()
                     .also { INSTANCE = it }
