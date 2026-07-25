@@ -15,5 +15,10 @@
             android:name="com.billing.pos.audio.AudioRecordService"
             android:exported="false"
             android:foregroundServiceType="microphone" />
+
+        <service
+            android:name="com.billing.pos.audio.AutoDiaryService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
     </application>
 </manifest>

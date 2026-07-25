@@ -7,7 +7,6 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
-import android.media.MediaRecorder
 import android.os.Build
 import android.os.IBinder
 import androidx.core.content.ContextCompat
@@ -23,7 +22,7 @@ import androidx.core.content.ContextCompat
  */
 class AudioRecordService : Service() {
 
-    private var recorder: MediaRecorder? = null
+    private var recorder: VoiceRecorder? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -50,33 +49,23 @@ class AudioRecordService : Service() {
 
     private fun begin(path: String?) {
         if (path == null) { recording = false; return }
-        val rec = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) MediaRecorder(this)
-        else @Suppress("DEPRECATION") MediaRecorder()
         try {
-            rec.setAudioSource(MediaRecorder.AudioSource.MIC)
-            rec.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
-            rec.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-            rec.setOutputFile(path)
-            rec.prepare()
-            rec.start()
-            recorder = rec
+            recorder = VoiceRecorder(path).also { it.start() }
             recording = true
         } catch (e: Exception) {
-            runCatching { rec.release() }
             recording = false
         }
     }
 
     private fun end() {
         val rec = recorder ?: run { recording = false; return }
-        runCatching { rec.stop() }
-        runCatching { rec.release() }
+        runCatching { rec.stop() }   // blocks until the file is finalised
         recorder = null
-        recording = false   // set only after stop() has flushed the file
+        recording = false            // set only after stop() has flushed the file
     }
 
     override fun onDestroy() {
-        runCatching { recorder?.release() }
+        runCatching { recorder?.stop() }
         recorder = null
         recording = false
         super.onDestroy()

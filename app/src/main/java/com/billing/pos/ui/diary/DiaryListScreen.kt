@@ -15,6 +15,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.MicOff
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Divider
@@ -150,6 +152,27 @@ fun DiaryListScreen(
     val types by vm.types.collectAsStateSafe()
     var showTypePicker by remember { mutableStateOf(false) }
     val context = androidx.compose.ui.platform.LocalContext.current
+    // Hourly background voice diary — APK build only (the Play AAB ships no such service).
+    var autoVoice by remember { mutableStateOf(com.billing.pos.data.AppPrefs(context).autoVoiceDiary) }
+    val micPermission = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) { autoVoice = true; com.billing.pos.audio.AutoDiaryService.start(context) }
+    }
+    fun toggleAutoVoice() {
+        if (autoVoice) {
+            autoVoice = false
+            com.billing.pos.audio.AutoDiaryService.stop(context)
+        } else if (androidx.core.content.ContextCompat.checkSelfPermission(
+                context, android.Manifest.permission.RECORD_AUDIO
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            autoVoice = true
+            com.billing.pos.audio.AutoDiaryService.start(context)
+        } else {
+            micPermission.launch(android.Manifest.permission.RECORD_AUDIO)
+        }
+    }
 
     fun pickDate(current: Long, onPicked: (Long) -> Unit) {
         val cal = java.util.Calendar.getInstance().apply { timeInMillis = current }
@@ -173,6 +196,16 @@ fun DiaryListScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    if (com.billing.pos.BuildConfig.DEBUG) {
+                        IconButton(onClick = { toggleAutoVoice() }) {
+                            Icon(
+                                if (autoVoice) Icons.Filled.Mic else Icons.Filled.MicOff,
+                                contentDescription = if (autoVoice) "Hourly voice diary on" else "Hourly voice diary off"
+                            )
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(

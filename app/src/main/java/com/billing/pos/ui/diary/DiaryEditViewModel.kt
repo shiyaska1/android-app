@@ -2,9 +2,7 @@ package com.billing.pos.ui.diary
 
 import android.app.Application
 import android.content.Context
-import android.media.MediaRecorder
 import android.net.Uri
-import android.os.Build
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -70,7 +68,7 @@ class DiaryEditViewModel(app: Application) : AndroidViewModel(app) {
     private val removedFiles = mutableListOf<String>()
 
     var recording by mutableStateOf(false); private set
-    private var recorder: MediaRecorder? = null
+    private var voiceRec: com.billing.pos.audio.VoiceRecorder? = null
     private var recordFile: File? = null
     private var recordStart = 0L
     /** When true, the current recording is owned by the background foreground service (APK build). */
@@ -317,22 +315,14 @@ class DiaryEditViewModel(app: Application) : AndroidViewModel(app) {
             com.billing.pos.audio.AudioRecordService.start(context.applicationContext, file.absolutePath)
             return
         }
-        val rec = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) MediaRecorder(context)
-        else @Suppress("DEPRECATION") MediaRecorder()
         try {
-            rec.setAudioSource(MediaRecorder.AudioSource.MIC)
-            rec.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
-            rec.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-            rec.setOutputFile(file.absolutePath)
-            rec.prepare()
-            rec.start()
-            recorder = rec
+            voiceRec = com.billing.pos.audio.VoiceRecorder(file.absolutePath).also { it.start() }
             recordFile = file
             recordStart = System.currentTimeMillis()
             recordViaService = false
             recording = true
         } catch (e: Exception) {
-            runCatching { rec.release() }
+            voiceRec = null
             file.delete()
             message.value = "Could not start recording"
         }
@@ -356,24 +346,29 @@ class DiaryEditViewModel(app: Application) : AndroidViewModel(app) {
                     if (it.exists() && it.length() > 0) {
                         blocks.add(BlockUi(0, BlockType.AUDIO, path = it.absolutePath, name = "Voice note.m4a", mime = "audio/mp4", durationMs = dur))
                     } else {
-                        message.value = "Could not save recording"
+                        message.value = "No voice detected"
                     }
                 }
             }
             return
         }
-        val rec = recorder ?: return
-        runCatching { rec.stop() }
-        runCatching { rec.release() }
-        recorder = null
-        recording = false
+        val rec = voiceRec ?: return
+        val f = recordFile
         val dur = System.currentTimeMillis() - recordStart
-        recordFile?.let { f ->
-            if (f.exists() && f.length() > 0) {
-                blocks.add(BlockUi(0, BlockType.AUDIO, path = f.absolutePath, name = "Voice note.m4a", mime = "audio/mp4", durationMs = dur))
+        recording = false
+        voiceRec = null
+        recordFile = null
+        // VoiceRecorder.stop() blocks until the encoder flushes, so finalise off the main thread.
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { rec.stop() }
+            f?.let {
+                if (it.exists() && it.length() > 0) {
+                    blocks.add(BlockUi(0, BlockType.AUDIO, path = it.absolutePath, name = "Voice note.m4a", mime = "audio/mp4", durationMs = dur))
+                } else {
+                    message.value = "No voice detected"
+                }
             }
         }
-        recordFile = null
     }
 
     /** True while a voice note is being converted, so the UI can show progress. */

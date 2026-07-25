@@ -42,6 +42,14 @@ class AppPrefs(context: Context) {
         get() = p.getBoolean("upi_qr_print", false)
         set(v) { p.edit().putBoolean("upi_qr_print", v).apply() }
 
+    /**
+     * When on (APK build only), a background service voice-records continuously and, every hour,
+     * saves a diary entry titled with the date-time, of type "voice", with the recording attached.
+     */
+    var autoVoiceDiary: Boolean
+        get() = p.getBoolean("auto_voice_diary", false)
+        set(v) { p.edit().putBoolean("auto_voice_diary", v).apply() }
+
     /** User-added customer types (a saved set, in addition to any already used by customers). */
     var customerTypes: List<String>
         get() = (p.getString("customer_types", "") ?: "").split("|").map { it.trim() }.filter { it.isNotBlank() }
