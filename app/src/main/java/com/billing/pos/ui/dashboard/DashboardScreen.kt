@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material.icons.filled.Assessment
 import androidx.compose.material.icons.filled.AssignmentReturn
 import androidx.compose.material.icons.filled.Biotech
+import androidx.compose.material.icons.filled.Contacts
 import androidx.compose.material.icons.filled.Science
 import androidx.compose.material.icons.filled.AssignmentReturned
 import androidx.compose.material.icons.filled.Backup
@@ -89,6 +90,13 @@ private val PERSONAL_TILES = setOf(
     "Sticky Note", "Calculator", "My Diary", "Payments", "Receipts", "Cash Book", "Backup", "Settings"
 )
 
+/** In Bulk SMS mode the dashboard shows only the SMS tools plus the requested keep-list. */
+private val BULK_SMS_TILES = setOf(
+    "Contacts", "Calculator", "Mobile number", "My Diary", "Poster maker",
+    "Receipts", "Payments", "Cash Book", "Outstanding", "Accounts", "Journal",
+    "Settings", "Backup"
+)
+
 private val SECTION_ORDER = listOf("Transactions", "Masters", "Accounts", "Reports")
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -104,6 +112,7 @@ fun DashboardScreen(
     onCashbook: () -> Unit,
     onReports: () -> Unit,
     onCustomers: () -> Unit,
+    onContacts: () -> Unit,
     onItems: () -> Unit,
     onNewPurchase: () -> Unit,
     onPurchases: () -> Unit,
@@ -151,6 +160,7 @@ fun DashboardScreen(
     var showCalculator by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     var showMobileBoard by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     val isLab = businessType == "Medical lab"
+    val isBulkSms = businessType == "Bulk SMS"
     val tiles = buildList {
         // ---- Transactions ----
         add(Tile("Sticky Note", Icons.Filled.EditNote, onStickyNote, "Transactions"))
@@ -187,6 +197,7 @@ fun DashboardScreen(
             add(Tile("Patients", Icons.Filled.People, onPatients, "Masters"))
             add(Tile("Lab Tests", Icons.Filled.Biotech, onLabTests, "Masters"))
         }
+        if (isBulkSms) add(Tile("Contacts", Icons.Filled.Contacts, onContacts, "Masters"))
         add(Tile("My Diary", Icons.Filled.MenuBook, onDiary, "Masters"))
         if (Session.canManageUsers) add(Tile("Users", Icons.Filled.ManageAccounts, onUsers, "Masters"))
         if (Session.canManageUsers) add(Tile("Settings", Icons.Filled.Settings, onSettings, "Masters"))
@@ -228,7 +239,12 @@ fun DashboardScreen(
         }
     ) { pad ->
         var query by remember { mutableStateOf("") }
-        val shown = if (query.isBlank()) tiles else tiles.filter { it.label.contains(query, ignoreCase = true) }
+        val visibleTiles = when {
+            isPersonal -> tiles.filter { it.label in PERSONAL_TILES }
+            isBulkSms -> tiles.filter { it.label in BULK_SMS_TILES }
+            else -> tiles
+        }
+        val shown = if (query.isBlank()) visibleTiles else visibleTiles.filter { it.label.contains(query, ignoreCase = true) }
 
         // How often each tile has been opened, so the five most-used can sit on top.
         val usage = remember { context.getSharedPreferences("dashboard_usage", android.content.Context.MODE_PRIVATE) }
@@ -237,7 +253,6 @@ fun DashboardScreen(
             usage.edit().putInt(label, usage.getInt(label, 0) + 1).apply()
             useTick++
         }
-        val visibleTiles = if (isPersonal) tiles.filter { it.label in PERSONAL_TILES } else tiles
         val frequent = remember(useTick, visibleTiles.size) {
             visibleTiles.filter { usage.getInt(it.label, 0) > 0 }
                 .sortedByDescending { usage.getInt(it.label, 0) }

@@ -31,6 +31,13 @@ data class ImportedItemRow(
  */
 object SpreadsheetImport {
 
+    /** Raw rows (first row = headers) from an .xlsx or .csv file. Used by importers other than items. */
+    fun readRaw(context: Context, uri: Uri): List<List<String>> {
+        val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return emptyList()
+        val isXlsx = bytes.size > 1 && bytes[0] == 'P'.code.toByte() && bytes[1] == 'K'.code.toByte()
+        return if (isXlsx) parseXlsx(bytes) else parseCsv(bytes)
+    }
+
     fun read(context: Context, uri: Uri): List<ImportedItemRow> {
         val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: return emptyList()
         val isXlsx = bytes.size > 1 && bytes[0] == 'P'.code.toByte() && bytes[1] == 'K'.code.toByte()

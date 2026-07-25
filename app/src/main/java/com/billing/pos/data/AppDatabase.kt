@@ -33,14 +33,16 @@ import androidx.room.TypeConverters
         MaterialReceipt::class, MaterialReceiptItem::class,
         SavedCalc::class, CustomerAttachment::class,
         PurchaseQuote::class, PurchaseQuoteItem::class,
-        CustOrder::class, CustOrderItem::class, CustOrderAttachment::class
+        CustOrder::class, CustOrderItem::class, CustOrderAttachment::class,
+        Contact::class, ContactGroup::class, SmsLog::class
     ],
     // v25 quotations; v26 sales returns; v27 purchase returns; v28 purchase quotations (LPO);
     // v29 dual units; v30 rental; v31 medical lab; v32 lab masters + heading rows;
     // v33 page breaks, heading master, lab-bill payment; v34 lab balance receipts;
     // v35 doctor master + patient phone; v36 material out + movement;
     // v37 item purchase price; v38 material receipts + purchase stockReceived/lpoNo.
-    version = 50,
+    // v50 customer orders; v51 Bulk SMS contacts + contact groups.
+    version = 51,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -81,6 +83,9 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun materialOutDao(): MaterialOutDao
     abstract fun materialReceiptDao(): MaterialReceiptDao
     abstract fun custOrderDao(): CustOrderDao
+    abstract fun contactDao(): ContactDao
+    abstract fun contactGroupDao(): ContactGroupDao
+    abstract fun smsLogDao(): SmsLogDao
 
     companion object {
         @Volatile private var INSTANCE: AppDatabase? = null
@@ -264,6 +269,28 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** Bulk SMS: contacts + a self-referencing group tree (group / sub-group / sub-sub-group). */
+        private val MIGRATION_50_51 = object : androidx.room.migration.Migration(50, 51) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS contact_groups (" +
+                        "id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, " +
+                        "parentId INTEGER NOT NULL DEFAULT 0, level INTEGER NOT NULL DEFAULT 1)"
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS contacts (" +
+                        "id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, mobile TEXT NOT NULL, " +
+                        "groupId INTEGER NOT NULL DEFAULT 0, subGroupId INTEGER NOT NULL DEFAULT 0, subSubGroupId INTEGER NOT NULL DEFAULT 0)"
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS sms_log (" +
+                        "id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, dateMillis INTEGER NOT NULL, mobile TEXT NOT NULL, " +
+                        "contactName TEXT NOT NULL DEFAULT '', body TEXT NOT NULL, channel TEXT NOT NULL DEFAULT 'Gateway', " +
+                        "status TEXT NOT NULL DEFAULT 'QUEUED', response TEXT NOT NULL DEFAULT '', batchId INTEGER NOT NULL DEFAULT 0)"
+                )
+            }
+        }
+
         fun get(context: Context): AppDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -271,7 +298,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "pos_billing.db"
                 )
-                    .addMigrations(MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45, MIGRATION_45_46, MIGRATION_46_47, MIGRATION_47_48, MIGRATION_48_49, MIGRATION_49_50)
+                    .addMigrations(MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45, MIGRATION_45_46, MIGRATION_46_47, MIGRATION_47_48, MIGRATION_48_49, MIGRATION_49_50, MIGRATION_50_51)
                     .fallbackToDestructiveMigration()
                     .build()
                     .also { INSTANCE = it }

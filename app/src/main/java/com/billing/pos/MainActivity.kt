@@ -377,6 +377,7 @@ private fun AppNav() {
                 onCashbook = { nav.navigate("cashbook") },
                 onReports = { nav.navigate("reports") },
                 onCustomers = { nav.navigate("customers") },
+                onContacts = { nav.navigate("contacts") },
                 onItems = { nav.navigate("items") },
                 onNewPurchase = { nav.navigate("purchase") },
                 onPurchases = { nav.navigate("purchases") },
@@ -510,6 +511,9 @@ private fun AppNav() {
         composable("orderreport") { com.billing.pos.ui.order.OrderReportScreen(onBack = { nav.popBackStack() }) }
         composable("customers") {
             CustomersScreen(onBack = { nav.popBackStack() })
+        }
+        composable("contacts") {
+            com.billing.pos.ui.sms.ContactsScreen(onBack = { nav.popBackStack() })
         }
         composable("purchase") {
             PurchaseScreen(editPurchaseId = null, onBack = { nav.popBackStack() })
