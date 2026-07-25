@@ -90,7 +90,7 @@ class ContactViewModel(app: Application) : AndroidViewModel(app) {
                         XlsxWriter.text("Group"), XlsxWriter.text("Sub Group"), XlsxWriter.text("Sub Sub Group")
                     ),
                     XlsxWriter.row(
-                        XlsxWriter.text("John Doe"), XlsxWriter.text("9876543210"),
+                        XlsxWriter.text("John Doe"), XlsxWriter.text("9876543210, 9123456789"),
                         XlsxWriter.text("Customers"), XlsxWriter.text("VIP"), XlsxWriter.text("Gold")
                     )
                 )
@@ -147,7 +147,8 @@ class ContactViewModel(app: Application) : AndroidViewModel(app) {
                 raw.drop(1).mapNotNull { r ->
                     fun cell(i: Int) = if (i in 0 until r.size) r[i].trim() else ""
                     val name = if (iName >= 0) cell(iName) else r.firstOrNull()?.trim().orEmpty()
-                    val mobile = if (iMob >= 0) cell(iMob) else ""
+                    val mobile = (if (iMob >= 0) cell(iMob) else "")
+                        .split(",").map { it.trim() }.filter { it.isNotBlank() }.joinToString(", ")
                     if (name.isBlank() || mobile.isBlank()) return@mapNotNull null
                     ContactImportRow(
                         name = name, mobile = mobile,
@@ -327,7 +328,14 @@ private fun ContactEditor(
         text = {
             Column {
                 OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Contact name *") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(value = mobile, onValueChange = { mobile = it.filter { ch -> ch.isDigit() || ch == '+' } }, label = { Text("Mobile number *") }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
+                OutlinedTextField(
+                    value = mobile,
+                    onValueChange = { mobile = it.filter { ch -> ch.isDigit() || ch == '+' || ch == ',' || ch == ' ' } },
+                    label = { Text("Mobile number(s) *") },
+                    supportingText = { Text("Separate multiple numbers with a comma") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                )
 
                 GroupPicker("Group", groupId, groups.filter { it.level == 1 }, 0, 1, onAddGroup, Modifier.padding(top = 8.dp)) { groupId = it; subId = 0; subSubId = 0 }
                 GroupPicker("Sub group", subId, groups.filter { it.level == 2 && it.parentId == groupId }, groupId, 2, onAddGroup, Modifier.padding(top = 8.dp), enabled = groupId != 0L) { subId = it; subSubId = 0 }
@@ -338,10 +346,12 @@ private fun ContactEditor(
         },
         confirmButton = {
             TextButton(onClick = {
-                if (name.trim().isBlank() || mobile.trim().isBlank()) { error = "Name and mobile number are required"; return@TextButton }
+                // Clean up multiple numbers: trim each, drop blanks, rejoin with ", ".
+                val cleanMobile = mobile.split(",").map { it.trim() }.filter { it.isNotBlank() }.joinToString(", ")
+                if (name.trim().isBlank() || cleanMobile.isBlank()) { error = "Name and mobile number are required"; return@TextButton }
                 onSave(
                     (existing ?: Contact(name = "", mobile = "")).copy(
-                        name = name.trim(), mobile = mobile.trim(),
+                        name = name.trim(), mobile = cleanMobile,
                         groupId = groupId, subGroupId = subId, subSubGroupId = subSubId
                     )
                 )
