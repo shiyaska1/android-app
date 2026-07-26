@@ -65,6 +65,21 @@ class CoachingRepository(context: Context) {
         repo.addStandaloneReceipt("$studentName (Coaching)", amount, mode)
     }
 
+    // attendance
+    val attendance: Flow<List<CoachAttendance>> = dao.attendance()
+    suspend fun studentsInClass(classId: Long) = dao.studentsInClass(classId)
+    suspend fun attendanceForDay(classId: Long, subjectId: Long, dateMillis: Long): List<CoachAttendance> {
+        val ds = dayStart(dateMillis); val de = dayEnd(dateMillis)
+        return dao.attendanceFor(classId, subjectId, ds, de)
+    }
+    suspend fun saveAttendance(classId: Long, subjectId: Long, staffId: Long, dateMillis: Long, marks: Map<Long, Boolean>) {
+        val ds = dayStart(dateMillis); val de = dayEnd(dateMillis)
+        dao.clearAttendance(classId, subjectId, ds, de)
+        dao.insertAttendance(marks.map { CoachAttendance(dateMillis = dateMillis, classId = classId, subjectId = subjectId, staffId = staffId, studentId = it.key, present = it.value) })
+    }
+    private fun dayStart(ms: Long) = Calendar.getInstance().apply { timeInMillis = ms; set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0) }.timeInMillis
+    private fun dayEnd(ms: Long) = Calendar.getInstance().apply { timeInMillis = ms; set(Calendar.HOUR_OF_DAY, 23); set(Calendar.MINUTE, 59); set(Calendar.SECOND, 59); set(Calendar.MILLISECOND, 999) }.timeInMillis
+
     // enquiry
     suspend fun saveEnquiry(e: Enquiry): Long = dao.upsertEnquiry(e)
     suspend fun updateEnquiry(e: Enquiry) = dao.updateEnquiry(e)

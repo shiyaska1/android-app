@@ -114,7 +114,7 @@ private val GYM_TILES = setOf(
 
 /** In Coaching Center mode: students/enquiry/masters + the accounts module. */
 private val COACHING_TILES = setOf(
-    "Students", "Coaching Masters", "Enquiries", "Fees Due", "Calculator", "My Diary",
+    "Students", "Coaching Masters", "Enquiries", "Attendance", "Attendance Report", "Fees Due", "Calculator", "My Diary",
     "Receipts", "Payments", "Cash Book", "Outstanding", "Accounts", "Journal",
     "Ledger", "Trial Balance", "Profit & Loss", "Balance Sheet",
     "Settings", "Backup"
@@ -186,6 +186,8 @@ fun DashboardScreen(
     onCoachMasters: () -> Unit,
     onCoachEnquiry: () -> Unit,
     onCoachDue: () -> Unit,
+    onCoachAttendance: () -> Unit,
+    onCoachAttReport: () -> Unit,
     onDiary: () -> Unit,
     onUsers: () -> Unit,
     onSettings: () -> Unit,
@@ -213,7 +215,9 @@ fun DashboardScreen(
             add(Tile("Students", Icons.Filled.People, onCoachStudents, "Masters"))
             add(Tile("Coaching Masters", Icons.Filled.MenuBook, onCoachMasters, "Masters"))
             add(Tile("Enquiries", Icons.Filled.Contacts, onCoachEnquiry, "Transactions"))
+            add(Tile("Attendance", Icons.Filled.HowToReg, onCoachAttendance, "Transactions"))
             add(Tile("Fees Due", Icons.Filled.EventBusy, onCoachDue, "Reports"))
+            add(Tile("Attendance Report", Icons.Filled.Schedule, onCoachAttReport, "Reports"))
         }
         // ---- Transactions ----
         add(Tile("Sticky Note", Icons.Filled.EditNote, onStickyNote, "Transactions"))

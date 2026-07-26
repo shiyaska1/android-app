@@ -430,6 +430,8 @@ private fun AppNav() {
                 onCoachMasters = { nav.navigate("coach/masters") },
                 onCoachEnquiry = { nav.navigate("coach/enquiries") },
                 onCoachDue = { nav.navigate("coach/due") },
+                onCoachAttendance = { nav.navigate("coach/attendance") },
+                onCoachAttReport = { nav.navigate("coach/attreport") },
                 onDiary = { nav.navigate("diary") },
                 onUsers = { nav.navigate("users") },
                 onSettings = { nav.navigate("settings") },
@@ -837,6 +839,12 @@ private fun AppNav() {
         }
         composable("coach/due") {
             com.billing.pos.ui.coaching.CoachDueReportScreen(onBack = { nav.popBackStack() })
+        }
+        composable("coach/attendance") {
+            com.billing.pos.ui.coaching.CoachAttendanceScreen(onBack = { nav.popBackStack() })
+        }
+        composable("coach/attreport") {
+            com.billing.pos.ui.coaching.CoachAttendanceReportScreen(onBack = { nav.popBackStack() })
         }
         composable("journal") {
             JournalListScreen(

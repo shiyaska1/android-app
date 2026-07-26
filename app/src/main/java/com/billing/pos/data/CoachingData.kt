@@ -149,6 +149,7 @@ interface CoachingDao {
     // students
     @Query("SELECT * FROM coach_students ORDER BY name COLLATE NOCASE") fun students(): Flow<List<CoachStudent>>
     @Query("SELECT * FROM coach_students WHERE id = :id") suspend fun studentById(id: Long): CoachStudent?
+    @Query("SELECT * FROM coach_students WHERE classId = :c ORDER BY name COLLATE NOCASE") suspend fun studentsInClass(c: Long): List<CoachStudent>
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertStudent(s: CoachStudent): Long
     @Update suspend fun updateStudent(s: CoachStudent)
     @Delete suspend fun deleteStudent(s: CoachStudent)
