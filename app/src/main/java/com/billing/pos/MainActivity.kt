@@ -426,6 +426,10 @@ private fun AppNav() {
                 onGymMembers = { nav.navigate("gym/members") },
                 onGymDue = { nav.navigate("gym/due") },
                 onGymSlots = { nav.navigate("gym/slots") },
+                onCoachStudents = { nav.navigate("coach/students") },
+                onCoachMasters = { nav.navigate("coach/masters") },
+                onCoachEnquiry = { nav.navigate("coach/enquiries") },
+                onCoachDue = { nav.navigate("coach/due") },
                 onDiary = { nav.navigate("diary") },
                 onUsers = { nav.navigate("users") },
                 onSettings = { nav.navigate("settings") },
@@ -815,6 +819,24 @@ private fun AppNav() {
         }
         composable("gym/slots") {
             com.billing.pos.ui.gym.GymSlotReportScreen(onBack = { nav.popBackStack() })
+        }
+        composable("coach/students") {
+            com.billing.pos.ui.coaching.CoachingStudentsScreen(onBack = { nav.popBackStack() }, onOpen = { id -> nav.navigate("coach/student/$id") }, onNew = { nav.navigate("coach/student/0") })
+        }
+        composable("coach/student/{id}", arguments = listOf(navArgument("id") { type = NavType.LongType })) { e ->
+            com.billing.pos.ui.coaching.CoachStudentScreen(studentId = e.arguments?.getLong("id") ?: 0L, onBack = { nav.popBackStack() })
+        }
+        composable("coach/masters") {
+            com.billing.pos.ui.coaching.CoachingMastersScreen(onBack = { nav.popBackStack() })
+        }
+        composable("coach/enquiries") {
+            com.billing.pos.ui.coaching.CoachingEnquiryScreen(onBack = { nav.popBackStack() }, onOpen = { id -> nav.navigate("coach/enquiry/$id") }, onNew = { nav.navigate("coach/enquiry/0") })
+        }
+        composable("coach/enquiry/{id}", arguments = listOf(navArgument("id") { type = NavType.LongType })) { e ->
+            com.billing.pos.ui.coaching.CoachingEnquiryDetailScreen(enquiryId = e.arguments?.getLong("id") ?: 0L, onBack = { nav.popBackStack() }, onOpenStudent = { sid -> nav.navigate("coach/student/$sid") })
+        }
+        composable("coach/due") {
+            com.billing.pos.ui.coaching.CoachDueReportScreen(onBack = { nav.popBackStack() })
         }
         composable("journal") {
             JournalListScreen(

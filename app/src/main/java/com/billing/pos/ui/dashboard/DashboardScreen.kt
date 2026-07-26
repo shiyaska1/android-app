@@ -112,6 +112,14 @@ private val GYM_TILES = setOf(
     "Settings", "Backup"
 )
 
+/** In Coaching Center mode: students/enquiry/masters + the accounts module. */
+private val COACHING_TILES = setOf(
+    "Students", "Coaching Masters", "Enquiries", "Fees Due", "Calculator", "My Diary",
+    "Receipts", "Payments", "Cash Book", "Outstanding", "Accounts", "Journal",
+    "Ledger", "Trial Balance", "Profit & Loss", "Balance Sheet",
+    "Settings", "Backup"
+)
+
 private val SECTION_ORDER = listOf("Transactions", "Masters", "Accounts", "Reports")
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -174,6 +182,10 @@ fun DashboardScreen(
     onGymMembers: () -> Unit,
     onGymDue: () -> Unit,
     onGymSlots: () -> Unit,
+    onCoachStudents: () -> Unit,
+    onCoachMasters: () -> Unit,
+    onCoachEnquiry: () -> Unit,
+    onCoachDue: () -> Unit,
     onDiary: () -> Unit,
     onUsers: () -> Unit,
     onSettings: () -> Unit,
@@ -190,11 +202,18 @@ fun DashboardScreen(
     val isLab = businessType == "Medical lab"
     val isBulkSms = businessType == "Bulk SMS"
     val isGym = businessType == "Gym"
+    val isCoaching = businessType == "Coaching Center"
     val tiles = buildList {
         if (isGym) {
             add(Tile("Members", Icons.Filled.People, onGymMembers, "Masters"))
             add(Tile("Fees Due", Icons.Filled.EventBusy, onGymDue, "Reports"))
             add(Tile("Slots", Icons.Filled.Schedule, onGymSlots, "Reports"))
+        }
+        if (isCoaching) {
+            add(Tile("Students", Icons.Filled.People, onCoachStudents, "Masters"))
+            add(Tile("Coaching Masters", Icons.Filled.MenuBook, onCoachMasters, "Masters"))
+            add(Tile("Enquiries", Icons.Filled.Contacts, onCoachEnquiry, "Transactions"))
+            add(Tile("Fees Due", Icons.Filled.EventBusy, onCoachDue, "Reports"))
         }
         // ---- Transactions ----
         add(Tile("Sticky Note", Icons.Filled.EditNote, onStickyNote, "Transactions"))
@@ -291,6 +310,7 @@ fun DashboardScreen(
             isPersonal -> tiles.filter { it.label in PERSONAL_TILES }
             isBulkSms -> tiles.filter { it.label in BULK_SMS_TILES }
             isGym -> tiles.filter { it.label in GYM_TILES }
+            isCoaching -> tiles.filter { it.label in COACHING_TILES }
             else -> tiles
         }
         val shown = if (query.isBlank()) visibleTiles else visibleTiles.filter { it.label.contains(query, ignoreCase = true) }

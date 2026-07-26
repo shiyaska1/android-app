@@ -35,7 +35,10 @@ import androidx.room.TypeConverters
         PurchaseQuote::class, PurchaseQuoteItem::class,
         CustOrder::class, CustOrderItem::class, CustOrderAttachment::class,
         Contact::class, ContactGroup::class, SmsLog::class, SmsTemplate::class,
-        GymMember::class, GymFee::class
+        GymMember::class, GymFee::class,
+        Course::class, CoachingClass::class, CoachSubject::class, CoachStaff::class,
+        CoachStudent::class, StudentCourse::class, CoachFee::class, Enquiry::class,
+        EnquiryFollowup::class, CoachAttendance::class
     ],
     // v25 quotations; v26 sales returns; v27 purchase returns; v28 purchase quotations (LPO);
     // v29 dual units; v30 rental; v31 medical lab; v32 lab masters + heading rows;
@@ -43,8 +46,8 @@ import androidx.room.TypeConverters
     // v35 doctor master + patient phone; v36 material out + movement;
     // v37 item purchase price; v38 material receipts + purchase stockReceived/lpoNo.
     // v50 customer orders; v51 Bulk SMS contacts + contact groups; v52 SMS templates;
-    // v53 receipt/payment account links; v54 gym members + fees.
-    version = 54,
+    // v53 receipt/payment account links; v54 gym; v55 coaching centre.
+    version = 55,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -91,6 +94,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun smsTemplateDao(): SmsTemplateDao
     abstract fun gymMemberDao(): GymMemberDao
     abstract fun gymFeeDao(): GymFeeDao
+    abstract fun coachingDao(): CoachingDao
 
     companion object {
         @Volatile private var INSTANCE: AppDatabase? = null
@@ -334,6 +338,22 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** Coaching centre: masters, students, fees, enquiries, attendance. */
+        private val MIGRATION_54_55 = object : androidx.room.migration.Migration(54, 55) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS coach_courses (id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, durationMonths INTEGER NOT NULL DEFAULT 0, admissionFee REAL NOT NULL DEFAULT 0, totalFee REAL NOT NULL DEFAULT 0, description TEXT NOT NULL DEFAULT '')")
+                db.execSQL("CREATE TABLE IF NOT EXISTS coach_classes (id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL)")
+                db.execSQL("CREATE TABLE IF NOT EXISTS coach_subjects (id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, classId INTEGER NOT NULL DEFAULT 0, staffId INTEGER NOT NULL DEFAULT 0)")
+                db.execSQL("CREATE TABLE IF NOT EXISTS coach_staff (id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, phone TEXT NOT NULL DEFAULT '', designation TEXT NOT NULL DEFAULT '', address TEXT NOT NULL DEFAULT '')")
+                db.execSQL("CREATE TABLE IF NOT EXISTS coach_students (id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, phone TEXT NOT NULL DEFAULT '', gender TEXT NOT NULL DEFAULT '', guardian TEXT NOT NULL DEFAULT '', address TEXT NOT NULL DEFAULT '', photoPath TEXT NOT NULL DEFAULT '', classId INTEGER NOT NULL DEFAULT 0, joinDateMillis INTEGER NOT NULL, admissionFee REAL NOT NULL DEFAULT 0, totalFee REAL NOT NULL DEFAULT 0, installments INTEGER NOT NULL DEFAULT 1, active INTEGER NOT NULL DEFAULT 1)")
+                db.execSQL("CREATE TABLE IF NOT EXISTS coach_student_courses (id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, studentId INTEGER NOT NULL, courseId INTEGER NOT NULL, courseName TEXT NOT NULL DEFAULT '')")
+                db.execSQL("CREATE TABLE IF NOT EXISTS coach_fees (id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, studentId INTEGER NOT NULL, dueDateMillis INTEGER NOT NULL, amount REAL NOT NULL, paidAmount REAL NOT NULL DEFAULT 0, paidDateMillis INTEGER NOT NULL DEFAULT 0, kind TEXT NOT NULL DEFAULT 'Installment', note TEXT NOT NULL DEFAULT '')")
+                db.execSQL("CREATE TABLE IF NOT EXISTS coach_enquiries (id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, phone TEXT NOT NULL DEFAULT '', courseInterest TEXT NOT NULL DEFAULT '', dateMillis INTEGER NOT NULL, source TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'New', notes TEXT NOT NULL DEFAULT '', nextFollowupMillis INTEGER NOT NULL DEFAULT 0, convertedStudentId INTEGER NOT NULL DEFAULT 0)")
+                db.execSQL("CREATE TABLE IF NOT EXISTS coach_enquiry_followups (id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, enquiryId INTEGER NOT NULL, dateMillis INTEGER NOT NULL, note TEXT NOT NULL, status TEXT NOT NULL DEFAULT '')")
+                db.execSQL("CREATE TABLE IF NOT EXISTS coach_attendance (id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, dateMillis INTEGER NOT NULL, classId INTEGER NOT NULL, subjectId INTEGER NOT NULL, staffId INTEGER NOT NULL DEFAULT 0, studentId INTEGER NOT NULL, present INTEGER NOT NULL DEFAULT 1)")
+            }
+        }
+
         fun get(context: Context): AppDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -341,7 +361,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "pos_billing.db"
                 )
-                    .addMigrations(MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45, MIGRATION_45_46, MIGRATION_46_47, MIGRATION_47_48, MIGRATION_48_49, MIGRATION_49_50, MIGRATION_50_51, MIGRATION_51_52, MIGRATION_52_53, MIGRATION_53_54)
+                    .addMigrations(MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45, MIGRATION_45_46, MIGRATION_46_47, MIGRATION_47_48, MIGRATION_48_49, MIGRATION_49_50, MIGRATION_50_51, MIGRATION_51_52, MIGRATION_52_53, MIGRATION_53_54, MIGRATION_54_55)
                     .fallbackToDestructiveMigration()
                     .build()
                     .also { INSTANCE = it }
