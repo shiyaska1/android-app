@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalance
 import androidx.compose.material.icons.filled.AccountBalanceWallet
+import androidx.compose.material.icons.filled.Balance
 import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material.icons.filled.Assessment
 import androidx.compose.material.icons.filled.AssignmentReturn
@@ -157,6 +158,9 @@ fun DashboardScreen(
     onAccounts: () -> Unit,
     onJournal: () -> Unit,
     onLedger: () -> Unit,
+    onTrialBalance: () -> Unit,
+    onProfitLoss: () -> Unit,
+    onBalanceSheet: () -> Unit,
     onDiary: () -> Unit,
     onUsers: () -> Unit,
     onSettings: () -> Unit,
@@ -240,6 +244,11 @@ fun DashboardScreen(
         add(Tile("Item Movement", Icons.Filled.SwapVert, onItemMovement, "Reports"))
         add(Tile("Price Search", Icons.Filled.PriceCheck, onPriceSearch, "Reports"))
         if (Session.canViewInvoice) add(Tile("VAT Report", Icons.Filled.Description, onVatReport, "Reports"))
+        if (Session.canManageUsers) {
+            add(Tile("Trial Balance", Icons.Filled.Balance, onTrialBalance, "Reports"))
+            add(Tile("Profit & Loss", Icons.Filled.TrendingUp, onProfitLoss, "Reports"))
+            add(Tile("Balance Sheet", Icons.Filled.AccountBalance, onBalanceSheet, "Reports"))
+        }
         if (isRental) {
             add(Tile("Hire Item Report", Icons.Filled.Inventory2, onHireItemReport, "Reports"))
             add(Tile("Hire Expiry", Icons.Filled.EventBusy, onHireExpiryReport, "Reports"))

@@ -420,6 +420,9 @@ private fun AppNav() {
                 onAccounts = { nav.navigate("accounts") },
                 onJournal = { nav.navigate("journal") },
                 onLedger = { nav.navigate("ledger") },
+                onTrialBalance = { nav.navigate("trialbalance") },
+                onProfitLoss = { nav.navigate("profitloss") },
+                onBalanceSheet = { nav.navigate("balancesheet") },
                 onDiary = { nav.navigate("diary") },
                 onUsers = { nav.navigate("users") },
                 onSettings = { nav.navigate("settings") },
@@ -784,6 +787,15 @@ private fun AppNav() {
         }
         composable("ledger") {
             com.billing.pos.ui.ledger.LedgerReportScreen(onBack = { nav.popBackStack() })
+        }
+        composable("trialbalance") {
+            com.billing.pos.ui.report.TrialBalanceScreen(onBack = { nav.popBackStack() })
+        }
+        composable("profitloss") {
+            com.billing.pos.ui.report.ProfitLossScreen(onBack = { nav.popBackStack() })
+        }
+        composable("balancesheet") {
+            com.billing.pos.ui.report.BalanceSheetScreen(onBack = { nav.popBackStack() })
         }
         composable("journal") {
             JournalListScreen(
