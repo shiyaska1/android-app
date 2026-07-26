@@ -111,6 +111,16 @@ class AppPrefs(context: Context) {
         get() = p.getBoolean("sms_bearer", false)
         set(v) { p.edit().putBoolean("sms_bearer", v).apply() }
 
+    /** Gym training slots / batch times (a saved list, like customer types). */
+    var gymSlots: List<String>
+        get() = (p.getString("gym_slots", "") ?: "").split("|").map { it.trim() }.filter { it.isNotBlank() }
+        set(v) { p.edit().putString("gym_slots", v.joinToString("|")).apply() }
+    fun addGymSlot(name: String) {
+        val n = name.trim()
+        if (n.isBlank()) return
+        if (gymSlots.none { it.equals(n, true) }) gymSlots = gymSlots + n
+    }
+
     /** User-added customer types (a saved set, in addition to any already used by customers). */
     var customerTypes: List<String>
         get() = (p.getString("customer_types", "") ?: "").split("|").map { it.trim() }.filter { it.isNotBlank() }

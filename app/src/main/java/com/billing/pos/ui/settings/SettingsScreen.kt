@@ -72,7 +72,7 @@ private fun copyToAppFiles(context: android.content.Context, uri: android.net.Ur
 val BUSINESS_TYPES = listOf(
     "Personal",
     "General", "Textiles", "Mobile shop", "Electrical & plumbing",
-    "Automobiles", "Grocery", "Medical store", "Restaurant", "Rental", "Medical lab", "Bulk SMS"
+    "Automobiles", "Grocery", "Medical store", "Restaurant", "Rental", "Medical lab", "Bulk SMS", "Gym"
 )
 
 @OptIn(ExperimentalMaterial3Api::class)

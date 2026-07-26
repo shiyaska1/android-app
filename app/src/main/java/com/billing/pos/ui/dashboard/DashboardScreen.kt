@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.Biotech
 import androidx.compose.material.icons.filled.Contacts
 import androidx.compose.material.icons.filled.HowToReg
 import androidx.compose.material.icons.filled.Science
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.AssignmentReturned
 import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.Book
@@ -103,6 +104,14 @@ private val BULK_SMS_TILES = setOf(
     "Settings", "Backup"
 )
 
+/** In Gym mode: the fitness tools + the accounts module (as requested), nothing shop-related. */
+private val GYM_TILES = setOf(
+    "Members", "Fees Due", "Slots", "Calculator", "My Diary",
+    "Receipts", "Payments", "Cash Book", "Outstanding", "Accounts", "Journal",
+    "Ledger", "Trial Balance", "Profit & Loss", "Balance Sheet",
+    "Settings", "Backup"
+)
+
 private val SECTION_ORDER = listOf("Transactions", "Masters", "Accounts", "Reports")
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -162,6 +171,9 @@ fun DashboardScreen(
     onTrialBalance: () -> Unit,
     onProfitLoss: () -> Unit,
     onBalanceSheet: () -> Unit,
+    onGymMembers: () -> Unit,
+    onGymDue: () -> Unit,
+    onGymSlots: () -> Unit,
     onDiary: () -> Unit,
     onUsers: () -> Unit,
     onSettings: () -> Unit,
@@ -177,7 +189,13 @@ fun DashboardScreen(
     var showMobileBoard by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     val isLab = businessType == "Medical lab"
     val isBulkSms = businessType == "Bulk SMS"
+    val isGym = businessType == "Gym"
     val tiles = buildList {
+        if (isGym) {
+            add(Tile("Members", Icons.Filled.People, onGymMembers, "Masters"))
+            add(Tile("Fees Due", Icons.Filled.EventBusy, onGymDue, "Reports"))
+            add(Tile("Slots", Icons.Filled.Schedule, onGymSlots, "Reports"))
+        }
         // ---- Transactions ----
         add(Tile("Sticky Note", Icons.Filled.EditNote, onStickyNote, "Transactions"))
         add(Tile("New Bill", Icons.Filled.PointOfSale, onNewBill, "Transactions"))
@@ -272,6 +290,7 @@ fun DashboardScreen(
         val visibleTiles = when {
             isPersonal -> tiles.filter { it.label in PERSONAL_TILES }
             isBulkSms -> tiles.filter { it.label in BULK_SMS_TILES }
+            isGym -> tiles.filter { it.label in GYM_TILES }
             else -> tiles
         }
         val shown = if (query.isBlank()) visibleTiles else visibleTiles.filter { it.label.contains(query, ignoreCase = true) }

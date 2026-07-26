@@ -423,6 +423,9 @@ private fun AppNav() {
                 onTrialBalance = { nav.navigate("trialbalance") },
                 onProfitLoss = { nav.navigate("profitloss") },
                 onBalanceSheet = { nav.navigate("balancesheet") },
+                onGymMembers = { nav.navigate("gym/members") },
+                onGymDue = { nav.navigate("gym/due") },
+                onGymSlots = { nav.navigate("gym/slots") },
                 onDiary = { nav.navigate("diary") },
                 onUsers = { nav.navigate("users") },
                 onSettings = { nav.navigate("settings") },
@@ -796,6 +799,22 @@ private fun AppNav() {
         }
         composable("balancesheet") {
             com.billing.pos.ui.report.BalanceSheetScreen(onBack = { nav.popBackStack() })
+        }
+        composable("gym/members") {
+            com.billing.pos.ui.gym.GymMembersScreen(
+                onBack = { nav.popBackStack() },
+                onOpen = { id -> nav.navigate("gym/member/$id") },
+                onNew = { nav.navigate("gym/member/0") }
+            )
+        }
+        composable("gym/member/{id}", arguments = listOf(navArgument("id") { type = NavType.LongType })) { e ->
+            com.billing.pos.ui.gym.GymMemberScreen(memberId = e.arguments?.getLong("id") ?: 0L, onBack = { nav.popBackStack() })
+        }
+        composable("gym/due") {
+            com.billing.pos.ui.gym.GymDueReportScreen(onBack = { nav.popBackStack() })
+        }
+        composable("gym/slots") {
+            com.billing.pos.ui.gym.GymSlotReportScreen(onBack = { nav.popBackStack() })
         }
         composable("journal") {
             JournalListScreen(
