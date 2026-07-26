@@ -99,6 +99,7 @@ private val BULK_SMS_TILES = setOf(
     "Send SMS", "Bulk SMS", "Attendance", "Contacts", "SMS Templates", "SMS Settings", "SMS Report",
     "Calculator", "Mobile number", "My Diary", "Poster maker",
     "Receipts", "Payments", "Cash Book", "Outstanding", "Accounts", "Journal",
+    "Ledger", "Trial Balance", "Profit & Loss", "Balance Sheet",
     "Settings", "Backup"
 )
 
