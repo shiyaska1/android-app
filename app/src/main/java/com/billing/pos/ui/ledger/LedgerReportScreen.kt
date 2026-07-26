@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -200,17 +201,29 @@ fun LedgerReportScreen(onBack: () -> Unit, vm: LedgerReportViewModel = viewModel
                     groups.forEach { g -> DropdownMenuItem(text = { Text(g.name) }, onClick = { groupId = g.id; selected = null; groupMenu = false }) }
                 }
             }
-            // Account
-            Box(Modifier.padding(top = 8.dp)) {
-                OutlinedTextField(
-                    value = selected?.name ?: "", onValueChange = {}, readOnly = true, label = { Text("Account") },
-                    trailingIcon = { IconButton(onClick = { accMenu = true }) { Icon(Icons.Filled.ArrowDropDown, null) } },
-                    modifier = Modifier.fillMaxWidth()
-                )
-                DropdownMenu(expanded = accMenu, onDismissRequest = { accMenu = false }, modifier = Modifier.fillMaxWidth()) {
-                    refs.take(400).forEach { r ->
-                        DropdownMenuItem(text = { Text(r.name) }, onClick = { selected = r; accMenu = false })
-                    }
+            // Account — type to search, shows up to 5 suggestions
+            var accQuery by remember { mutableStateOf("") }
+            OutlinedTextField(
+                value = if (selected != null) selected!!.name else accQuery,
+                onValueChange = { accQuery = it; selected = null; result = null },
+                label = { Text("Account (type to search)") },
+                trailingIcon = {
+                    if (selected != null) IconButton(onClick = { selected = null; accQuery = "" }) { Icon(Icons.Filled.ArrowDropDown, "Clear") }
+                },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+            )
+            if (selected == null && accQuery.isNotBlank()) {
+                val matches = refs.filter { it.name.contains(accQuery, ignoreCase = true) }.take(5)
+                matches.forEach { r ->
+                    Text(
+                        r.name,
+                        modifier = Modifier.fillMaxWidth()
+                            .clickable { selected = r; accQuery = "" }
+                            .padding(vertical = 10.dp, horizontal = 8.dp),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    HorizontalDivider()
                 }
             }
             Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {

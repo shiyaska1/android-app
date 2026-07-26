@@ -58,6 +58,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.billing.pos.auth.Session
 import com.billing.pos.data.Expense
+import androidx.compose.material.icons.filled.Close
 import com.billing.pos.data.PayMode
 import com.billing.pos.data.Purchase
 import com.billing.pos.data.AppPrefs
@@ -83,16 +84,31 @@ class ExpensesViewModel(app: Application) : AndroidViewModel(app) {
     val purchases: StateFlow<List<com.billing.pos.data.Purchase>> =
         repo.allPurchases.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    private val customers = repo.customers.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    private val suppliers = repo.suppliers.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    private val sundry = repo.sundryHeads.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** Selectable "Paid to" parties: suppliers + customers + any Sundry ledger head. */
+    val partyNames: StateFlow<List<String>> =
+        kotlinx.coroutines.flow.combine(customers, suppliers, sundry) { c, s, h ->
+            (s.filter { !it.isDefault }.map { it.name } + c.filter { !it.isDefault }.map { it.name } + h.map { it.name })
+                .map { it.trim() }.filter { it.isNotBlank() }.distinctBy { it.lowercase() }.sortedBy { it.lowercase() }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     val message = MutableStateFlow<String?>(null)
     fun consumeMessage() { message.value = null }
 
     fun add(
         description: String, amount: Double, mode: PayMode, dateMillis: Long,
-        attachments: List<com.billing.pos.data.ExpenseAttachment> = emptyList()
+        attachments: List<com.billing.pos.data.ExpenseAttachment> = emptyList(),
+        payTo: String = ""
     ) {
         if (amount <= 0) { message.value = "Enter a valid amount"; return }
         viewModelScope.launch {
-            val saved = repo.addExpense(description, amount, mode, dateMillis)
+            val to = payTo.trim()
+            val isCustomer = to.isNotBlank() && customers.value.any { it.name.equals(to, true) }
+            val saved = if (to.isBlank()) repo.addExpense(description, amount, mode, dateMillis)
+            else repo.addExpenseFull(description, amount, mode, dateMillis, to, partyIsCustomer = isCustomer)
             if (attachments.isNotEmpty()) repo.replaceExpenseAttachments(saved.id, attachments)
             message.value = "Payment added"
         }
@@ -277,10 +293,12 @@ fun ExpensesScreen(
     if (showAdd) {
         val purchases by vm.purchases.collectAsStateSafe()
         val outstanding = purchases.filter { it.balance > 0.001 }
+        val partyNames by vm.partyNames.collectAsStateSafe()
         AddPaymentDialog(
             outstanding = outstanding,
+            partyNames = partyNames,
             onDismiss = { showAdd = false },
-            onGeneral = { desc, amt, mode, date, atts -> vm.add(desc, amt, mode, date, atts); showAdd = false },
+            onGeneral = { desc, amt, mode, date, atts, payTo -> vm.add(desc, amt, mode, date, atts, payTo); showAdd = false },
             onAgainstPurchase = { pur, amt, mode -> vm.addAgainstPurchase(pur, amt, mode); showAdd = false }
         )
     }
@@ -308,12 +326,15 @@ fun ExpensesScreen(
 @Composable
 private fun AddPaymentDialog(
     outstanding: List<Purchase>,
+    partyNames: List<String>,
     onDismiss: () -> Unit,
-    onGeneral: (String, Double, PayMode, Long, List<com.billing.pos.data.ExpenseAttachment>) -> Unit,
+    onGeneral: (String, Double, PayMode, Long, List<com.billing.pos.data.ExpenseAttachment>, String) -> Unit,
     onAgainstPurchase: (Purchase, Double, PayMode) -> Unit
 ) {
     val context = LocalContext.current
     var againstPurchase by remember { mutableStateOf(false) }
+    var payTo by remember { mutableStateOf("") }
+    var payToQuery by remember { mutableStateOf("") }
     var selected by remember { mutableStateOf(outstanding.firstOrNull()) }
     var description by remember { mutableStateOf("") }
     var amount by remember { mutableStateOf("") }
@@ -378,10 +399,26 @@ private fun AddPaymentDialog(
                         }
                     }
                 } else {
+                    // Paid to (party account) — type to search, up to 5 suggestions. Blank = no party.
+                    OutlinedTextField(
+                        value = payTo.ifBlank { payToQuery },
+                        onValueChange = { payToQuery = it; payTo = "" },
+                        label = { Text("Paid to (customer / supplier / account)") },
+                        singleLine = true,
+                        trailingIcon = { if (payTo.isNotBlank()) IconButton(onClick = { payTo = ""; payToQuery = "" }) { Icon(Icons.Filled.Close, "Clear") } },
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                    )
+                    if (payTo.isBlank() && payToQuery.isNotBlank()) {
+                        partyNames.filter { it.contains(payToQuery, true) }.take(5).forEach { nm ->
+                            Text(nm, modifier = Modifier.fillMaxWidth().clickable { payTo = nm; payToQuery = "" }.padding(vertical = 8.dp, horizontal = 8.dp),
+                                style = MaterialTheme.typography.bodyMedium)
+                            Divider()
+                        }
+                    }
                     OutlinedTextField(
                         value = description, onValueChange = { description = it },
-                        label = { Text("Description") },
-                        minLines = 3, maxLines = 6,
+                        label = { Text("Description / narration") },
+                        minLines = 2, maxLines = 6,
                         modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
                     )
                 }
@@ -432,7 +469,7 @@ private fun AddPaymentDialog(
             Button(onClick = {
                 val amt = amount.toDoubleOrNull() ?: 0.0
                 if (againstPurchase) selected?.let { onAgainstPurchase(it, amt.coerceAtMost(it.balance), mode) }
-                else onGeneral(description, amt, mode, dateMillis, attachments.toList())
+                else onGeneral(description, amt, mode, dateMillis, attachments.toList(), payTo.ifBlank { payToQuery })
             }) { Text("Add") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
