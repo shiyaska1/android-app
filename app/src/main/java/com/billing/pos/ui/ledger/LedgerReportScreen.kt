@@ -49,10 +49,10 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.stateIn
 import java.util.Calendar
 
-private enum class Kind { CUSTOMER, SUPPLIER, CASHBANK, GENERAL }
-private data class AccountRef(val name: String, val kind: Kind, val headId: Long, val groupId: Long)
-private data class LedgerRow(val date: Long, val particulars: String, val vch: String, val debit: Double, val credit: Double, val balance: Double)
-private data class LedgerResult(val opening: Double, val rows: List<LedgerRow>, val closing: Double)
+internal enum class Kind { CUSTOMER, SUPPLIER, CASHBANK, GENERAL }
+internal data class AccountRef(val name: String, val kind: Kind, val headId: Long, val groupId: Long)
+internal data class LedgerRow(val date: Long, val particulars: String, val vch: String, val debit: Double, val credit: Double, val balance: Double)
+internal data class LedgerResult(val opening: Double, val rows: List<LedgerRow>, val closing: Double)
 
 private fun drcr(v: Double): String = if (v >= 0) "${Format.money(v)} Dr" else "${Format.money(-v)} Cr"
 
@@ -81,7 +81,7 @@ class LedgerReportViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** All selectable accounts: every head, plus customers/suppliers that don't yet have a head. */
-    fun accountRefs(): List<AccountRef> {
+    internal fun accountRefs(): List<AccountRef> {
         val hs = heads.value
         val refs = hs.map { AccountRef(it.name, kindOf(it.groupId), it.id, it.groupId) }.toMutableList()
         val headNames = hs.map { it.name.lowercase() }.toSet()
@@ -132,7 +132,7 @@ class LedgerReportViewModel(app: Application) : AndroidViewModel(app) {
         return list
     }
 
-    fun build(ref: AccountRef, from: Long, to: Long): LedgerResult {
+    internal fun build(ref: AccountRef, from: Long, to: Long): LedgerResult {
         val head = heads.value.firstOrNull { it.id == ref.headId }
         var opening = if (head != null) (if (head.openingIsDebit) head.openingBalance else -head.openingBalance) else 0.0
         val all = rawRows(ref)
