@@ -138,6 +138,44 @@ class Repository(context: Context) {
 
     suspend fun updateAccountHead(head: AccountHead) = accountDao.updateHead(head)
 
+    // ---- party & cash/bank ledger helpers (used by receipts/payments) ----
+    private suspend fun groupIdByName(name: String): Long =
+        accountDao.allGroups().firstOrNull { it.name.equals(name, true) }?.id ?: 0
+
+    /** Ensure a ledger head [name] exists under [groupName]; returns its id (0 if group missing/blank). */
+    private suspend fun ensureHeadIn(name: String, groupName: String): Long {
+        val n = name.trim()
+        if (n.isBlank()) return 0
+        val gid = groupIdByName(groupName)
+        if (gid == 0L) return 0
+        return accountDao.headByNameGroup(n, gid)?.id ?: accountDao.insertHead(AccountHead(name = n, groupId = gid))
+    }
+    suspend fun ensureCustomerHead(name: String): Long = ensureHeadIn(name, "Sundry Debtors")
+    suspend fun ensureSupplierHead(name: String): Long = ensureHeadIn(name, "Sundry Creditors")
+
+    /** Cash/Bank head for a payment mode (e.g. UPI, Card, Cheque), created under Cash-in-hand if missing. */
+    suspend fun ensureModeAccount(modeLabel: String): Long {
+        val gid = groupIdByName("Cash-in-hand")
+        if (gid == 0L) return 0
+        return accountDao.headByNameGroup(modeLabel, gid)?.id
+            ?: accountDao.headByName(modeLabel)?.id
+            ?: accountDao.insertHead(AccountHead(name = modeLabel, groupId = gid))
+    }
+
+    /** Heads under Cash-in-hand + Bank Accounts groups — the "received to"/"from account" options. */
+    val cashBankHeads: Flow<List<AccountHead>> =
+        kotlinx.coroutines.flow.combine(accountDao.observeGroups(), accountDao.observeHeads()) { groups, heads ->
+            val ids = groups.filter { it.name == "Cash-in-hand" || it.name == "Bank Accounts" }.map { it.id }.toSet()
+            heads.filter { it.groupId in ids }
+        }
+
+    /** Heads under Sundry Debtors + Sundry Creditors groups — extra party options beyond customers/suppliers. */
+    val sundryHeads: Flow<List<AccountHead>> =
+        kotlinx.coroutines.flow.combine(accountDao.observeGroups(), accountDao.observeHeads()) { groups, heads ->
+            val ids = groups.filter { it.name == "Sundry Debtors" || it.name == "Sundry Creditors" }.map { it.id }.toSet()
+            heads.filter { it.groupId in ids }
+        }
+
     suspend fun deleteAccountHead(head: AccountHead): Result<Unit> {
         if (head.isSystem) return Result.failure(IllegalStateException("System head cannot be deleted"))
         accountDao.deleteHead(head)
@@ -613,7 +651,8 @@ class Repository(context: Context) {
         tagPrefix() + "RV-" + (receiptDao.localCount() + 1).toString().padStart(4, '0')
 
     /** Records a receipt against [bill] and increases the invoice's paid amount. */
-    suspend fun addReceipt(bill: Bill, amount: Double, mode: PayMode, dateMillis: Long = System.currentTimeMillis()): Receipt {
+    suspend fun addReceipt(bill: Bill, amount: Double, mode: PayMode, dateMillis: Long = System.currentTimeMillis(), toAccountId: Long = 0): Receipt {
+        ensureCustomerHead(bill.customerName)
         val receipt = Receipt(
             receiptNo = nextReceiptNo(),
             billId = bill.id,
@@ -622,7 +661,8 @@ class Repository(context: Context) {
             dateMillis = dateMillis,
             amount = amount,
             paymentMode = mode.label,
-            payFrom = bill.customerName
+            payFrom = bill.customerName,
+            toAccountId = if (toAccountId != 0L) toAccountId else ensureModeAccount(mode.label)
         )
         receiptDao.insert(receipt)
         val newPaid = (bill.paidAmount + amount).coerceAtMost(bill.grandTotal)
@@ -631,7 +671,8 @@ class Repository(context: Context) {
     }
 
     /** Records a receipt from any source (no invoice reference). */
-    suspend fun addStandaloneReceipt(payFrom: String, amount: Double, mode: PayMode, dateMillis: Long = System.currentTimeMillis()): Receipt {
+    suspend fun addStandaloneReceipt(payFrom: String, amount: Double, mode: PayMode, dateMillis: Long = System.currentTimeMillis(), toAccountId: Long = 0, partyIsSupplier: Boolean = false): Receipt {
+        if (payFrom.isNotBlank()) { if (partyIsSupplier) ensureSupplierHead(payFrom) else ensureCustomerHead(payFrom) }
         val receipt = Receipt(
             receiptNo = nextReceiptNo(),
             billId = 0,
@@ -640,7 +681,8 @@ class Repository(context: Context) {
             dateMillis = dateMillis,
             amount = amount,
             paymentMode = mode.label,
-            payFrom = payFrom.trim()
+            payFrom = payFrom.trim(),
+            toAccountId = if (toAccountId != 0L) toAccountId else ensureModeAccount(mode.label)
         )
         receiptDao.insert(receipt)
         return receipt
@@ -653,13 +695,14 @@ class Repository(context: Context) {
     suspend fun nextVoucherNo(): String =
         tagPrefix() + "PV-" + (expenseDao.localCount() + 1).toString().padStart(4, '0')
 
-    suspend fun addExpense(description: String, amount: Double, mode: PayMode, dateMillis: Long = System.currentTimeMillis()): Expense {
+    suspend fun addExpense(description: String, amount: Double, mode: PayMode, dateMillis: Long = System.currentTimeMillis(), fromAccountId: Long = 0): Expense {
         val expense = Expense(
             voucherNo = nextVoucherNo(),
             dateMillis = dateMillis,
             description = description.trim(),
             amount = amount,
-            paymentMode = mode.label
+            paymentMode = mode.label,
+            fromAccountId = if (fromAccountId != 0L) fromAccountId else ensureModeAccount(mode.label)
         )
         // Return the row with its generated id — callers attach files to it, and an id of 0
         // silently orphans them.
@@ -668,14 +711,16 @@ class Repository(context: Context) {
     }
 
     /** Like [addExpense] but also records the party paid to. */
-    suspend fun addExpenseFull(description: String, amount: Double, mode: PayMode, dateMillis: Long, payTo: String): Expense {
+    suspend fun addExpenseFull(description: String, amount: Double, mode: PayMode, dateMillis: Long, payTo: String, fromAccountId: Long = 0, partyIsCustomer: Boolean = false): Expense {
+        if (payTo.isNotBlank()) { if (partyIsCustomer) ensureCustomerHead(payTo) else ensureSupplierHead(payTo) }
         val expense = Expense(
             voucherNo = nextVoucherNo(),
             dateMillis = dateMillis,
             description = description.trim(),
             amount = amount,
             paymentMode = mode.label,
-            payTo = payTo.trim()
+            payTo = payTo.trim(),
+            fromAccountId = if (fromAccountId != 0L) fromAccountId else ensureModeAccount(mode.label)
         )
         // Return the row with its generated id — callers attach files to it, and an id of 0
         // silently orphans them.
@@ -707,7 +752,8 @@ class Repository(context: Context) {
     }
 
     /** Records a payment against a (credit) purchase and increases its paid amount. */
-    suspend fun addPaymentForPurchase(purchase: Purchase, amount: Double, mode: PayMode): Expense {
+    suspend fun addPaymentForPurchase(purchase: Purchase, amount: Double, mode: PayMode, fromAccountId: Long = 0): Expense {
+        ensureSupplierHead(purchase.supplierName)
         val expense = Expense(
             voucherNo = nextVoucherNo(),
             dateMillis = System.currentTimeMillis(),
@@ -716,7 +762,8 @@ class Repository(context: Context) {
             paymentMode = mode.label,
             purchaseId = purchase.id,
             purchaseNo = purchase.purchaseNo,
-            payTo = purchase.supplierName
+            payTo = purchase.supplierName,
+            fromAccountId = if (fromAccountId != 0L) fromAccountId else ensureModeAccount(mode.label)
         )
         val id = expenseDao.insert(expense)
         val newPaid = (purchase.paidAmount + amount).coerceAtMost(purchase.grandTotal)

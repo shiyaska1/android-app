@@ -145,7 +145,9 @@ data class Receipt(
     val amount: Double,
     val paymentMode: String,
     val payFrom: String = "",
-    val source: String = ""
+    val source: String = "",
+    /** Cash/Bank account head the money was received into (0 = unspecified/legacy). */
+    val toAccountId: Long = 0
 )
 
 /**
@@ -163,7 +165,9 @@ data class Expense(
     val purchaseId: Long = 0,
     val purchaseNo: String = "",
     val payTo: String = "",
-    val source: String = ""
+    val source: String = "",
+    /** Cash/Bank account head the money was paid from (0 = unspecified/legacy). */
+    val fromAccountId: Long = 0
 )
 
 enum class Role(val label: String) {
