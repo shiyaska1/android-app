@@ -98,6 +98,18 @@ class AppPrefs(context: Context) {
     var smsChannel: String
         get() = (p.getString("sms_channel", "Gateway") ?: "Gateway")
         set(v) { p.edit().putString("sms_channel", v).apply() }
+    /**
+     * Optional JSON request body for token-style APIs (e.g. LM6/gjinfotech). When non-blank the
+     * gateway POSTs this JSON (Content-Type application/json) with {number} {message} {sender}
+     * {apikey} filled in, instead of query/form parameters.
+     */
+    var smsJsonBody: String
+        get() = (p.getString("sms_json_body", "") ?: "")
+        set(v) { p.edit().putString("sms_json_body", v).apply() }
+    /** When on, send Authorization: Bearer <API key> header (token APIs). */
+    var smsBearer: Boolean
+        get() = p.getBoolean("sms_bearer", false)
+        set(v) { p.edit().putBoolean("sms_bearer", v).apply() }
 
     /** User-added customer types (a saved set, in addition to any already used by customers). */
     var customerTypes: List<String>

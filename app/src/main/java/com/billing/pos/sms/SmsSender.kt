@@ -61,27 +61,43 @@ object SmsSender {
 
     private suspend fun sendViaGateway(context: Context, number: String, message: String): SmsResult {
         val prefs = AppPrefs(context)
-        val tpl = prefs.smsGatewayUrl
-        if (tpl.isBlank()) return SmsResult(false, "No gateway URL set in SMS Settings")
+        val url = prefs.smsGatewayUrl
+        if (url.isBlank()) return SmsResult(false, "No gateway URL set in SMS Settings")
+
+        // JSON token API (e.g. LM6/gjinfotech): POST the JSON body with placeholders filled.
+        val jsonTpl = prefs.smsJsonBody
+        if (jsonTpl.isNotBlank()) {
+            val body = jsonTpl
+                .replace("{number}", jsonEsc(number))
+                .replace("{message}", jsonEsc(message))
+                .replace("{apikey}", jsonEsc(prefs.smsApiKey))
+                .replace("{sender}", jsonEsc(prefs.smsSenderId))
+            val bearer = if (prefs.smsBearer) prefs.smsApiKey else null
+            return withContext(Dispatchers.IO) { httpCall(url, "POST", body, "application/json", bearer) }
+        }
+
         val method = if (prefs.smsGatewayMethod.equals("POST", true)) "POST" else "GET"
-        fun subst(raw: Boolean): String = tpl
+        fun subst(raw: Boolean): String = url
             .replace("{number}", if (raw) number else enc(number))
             .replace("{message}", if (raw) message else enc(message))
             .replace("{apikey}", if (raw) prefs.smsApiKey else enc(prefs.smsApiKey))
             .replace("{sender}", if (raw) prefs.smsSenderId else enc(prefs.smsSenderId))
         return withContext(Dispatchers.IO) {
             if (method == "POST") {
-                // Split the template into base URL and query body at the first '?'.
                 val full = subst(false)
                 val q = full.indexOf('?')
                 val base = if (q >= 0) full.substring(0, q) else full
                 val body = if (q >= 0) full.substring(q + 1) else ""
-                httpCall(base, "POST", body, "application/x-www-form-urlencoded")
+                httpCall(base, "POST", body, "application/x-www-form-urlencoded", if (prefs.smsBearer) prefs.smsApiKey else null)
             } else {
-                httpCall(subst(false), "GET", null, null)
+                httpCall(subst(false), "GET", null, null, if (prefs.smsBearer) prefs.smsApiKey else null)
             }
         }
     }
+
+    /** Escape a value for safe inclusion inside a JSON string. */
+    private fun jsonEsc(s: String): String =
+        s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "")
 
     /** Phone-SIM sending. The SEND_SMS permission ships in the APK (debug) manifest only. */
     private fun sendViaSim(context: Context, number: String, message: String): SmsResult {
@@ -103,16 +119,19 @@ object SmsSender {
         val prefs = AppPrefs(context)
         val url = prefs.smsBalanceUrl.replace("{apikey}", enc(prefs.smsApiKey))
         if (url.isBlank()) return SmsResult(false, "No balance URL set in SMS Settings")
-        return withContext(Dispatchers.IO) { httpCall(url, "GET", null, null) }
+        val bearer = if (prefs.smsBearer) prefs.smsApiKey else null
+        return withContext(Dispatchers.IO) { httpCall(url, "GET", null, null, bearer) }
     }
 
-    private fun httpCall(urlStr: String, method: String, body: String?, contentType: String?): SmsResult {
+    private fun httpCall(urlStr: String, method: String, body: String?, contentType: String?, bearer: String? = null): SmsResult {
         return try {
             val conn = URL(urlStr).openConnection() as HttpURLConnection
             conn.requestMethod = method
             conn.connectTimeout = 10000
             conn.readTimeout = 20000
             conn.instanceFollowRedirects = true
+            conn.setRequestProperty("Accept", "application/json")
+            if (!bearer.isNullOrBlank()) conn.setRequestProperty("Authorization", "Bearer $bearer")
             if (method == "POST") {
                 conn.doOutput = true
                 if (contentType != null) conn.setRequestProperty("Content-Type", contentType)

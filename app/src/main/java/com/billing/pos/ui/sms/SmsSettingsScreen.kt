@@ -11,6 +11,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -49,6 +52,8 @@ fun SmsSettingsScreen(onBack: () -> Unit) {
     var sender by remember { mutableStateOf(prefs.smsSenderId) }
     var balanceUrl by remember { mutableStateOf(prefs.smsBalanceUrl) }
     var channel by remember { mutableStateOf(prefs.smsChannel) }
+    var jsonBody by remember { mutableStateOf(prefs.smsJsonBody) }
+    var bearer by remember { mutableStateOf(prefs.smsBearer) }
     var methodMenu by remember { mutableStateOf(false) }
     var channelMenu by remember { mutableStateOf(false) }
     var balanceMsg by remember { mutableStateOf("") }
@@ -103,6 +108,35 @@ fun SmsSettingsScreen(onBack: () -> Unit) {
                 }, enabled = !checking) { Text("Check balance") }
                 if (balanceMsg.isNotBlank()) Text("  $balanceMsg", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 8.dp))
             }
+
+            // Token / JSON API (e.g. LM6 / gjinfotech)
+            HorizontalDivider(Modifier.padding(vertical = 16.dp))
+            Text("Token API (JSON) — for providers like LM6", style = MaterialTheme.typography.titleSmall)
+            Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(checked = bearer, onCheckedChange = { bearer = it; prefs.smsBearer = it })
+                Column(Modifier.weight(1f)) {
+                    Text("Bearer token auth", style = MaterialTheme.typography.bodyMedium)
+                    Text("Sends the API key as Authorization: Bearer <key>", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                }
+            }
+            OutlinedTextField(
+                value = jsonBody, onValueChange = { jsonBody = it; prefs.smsJsonBody = it },
+                label = { Text("JSON body (optional) — use {number} {message} {sender} {apikey}") },
+                minLines = 2, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+            )
+            OutlinedButton(onClick = {
+                url = "http://lm6.gjinfotech.net/api/v1/sms/send"; prefs.smsGatewayUrl = url
+                method = "POST"; prefs.smsGatewayMethod = "POST"
+                bearer = true; prefs.smsBearer = true
+                sender = "ESSCHL"; prefs.smsSenderId = sender
+                jsonBody = "{\"sender_id\":\"{sender}\",\"message\":\"{message}\",\"recipient\":\"{number}\"}"; prefs.smsJsonBody = jsonBody
+                channel = "Gateway"; prefs.smsChannel = channel
+            }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) { Text("Load LM6 (gjinfotech) preset") }
+            Text(
+                "LM6 preset fills a best-guess endpoint + JSON body + Bearer auth. Enter your API key above. " +
+                    "If sending fails, correct the endpoint/field names from your panel's API documentation.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline, modifier = Modifier.padding(top = 4.dp)
+            )
 
             // Default channel
             androidx.compose.foundation.layout.Box(Modifier.padding(top = 16.dp)) {
