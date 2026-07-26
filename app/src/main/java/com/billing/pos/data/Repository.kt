@@ -71,6 +71,7 @@ class Repository(context: Context) {
             supplierDao.insert(Supplier(name = "Cash Supplier", isDefault = true))
         }
         if (accountDao.groupCount() == 0) seedChartOfAccounts()
+        runCatching { syncPartyHeads() }   // ensure every customer/supplier has a ledger head
         if (userDao.count() == 0) {
             userDao.insert(
                 User(
@@ -233,11 +234,15 @@ class Repository(context: Context) {
     suspend fun deleteUser(user: User) = userDao.delete(user)
 
     // ---- customers / items ----
-    suspend fun addCustomer(name: String, phone: String, address: String, gstin: String = "", customerType: String = "General"): Long =
-        customerDao.insert(Customer(name = name.trim(), phone = phone.trim(), address = address.trim(), gstin = gstin.trim(), customerType = customerType.trim().ifBlank { "General" }))
+    suspend fun addCustomer(name: String, phone: String, address: String, gstin: String = "", customerType: String = "General"): Long {
+        val id = customerDao.insert(Customer(name = name.trim(), phone = phone.trim(), address = address.trim(), gstin = gstin.trim(), customerType = customerType.trim().ifBlank { "General" }))
+        ensureCustomerHead(name)   // create the customer's ledger head immediately
+        return id
+    }
 
     suspend fun addCustomerReturning(name: String, phone: String): Customer {
         val id = customerDao.insert(Customer(name = name.trim(), phone = phone.trim()))
+        ensureCustomerHead(name)
         return Customer(id = id, name = name.trim(), phone = phone.trim())
     }
 
@@ -795,7 +800,14 @@ class Repository(context: Context) {
     suspend fun addSupplier(name: String, phone: String, address: String, gstin: String = ""): Supplier {
         val s = Supplier(name = name.trim(), phone = phone.trim(), address = address.trim(), gstin = gstin.trim())
         val id = supplierDao.insert(s)
+        ensureSupplierHead(name)   // create the supplier's ledger head immediately
         return s.copy(id = id)
+    }
+
+    /** One-time: make sure every existing customer/supplier has a ledger head. */
+    suspend fun syncPartyHeads() {
+        customerDao.all().filter { !it.isDefault }.forEach { ensureCustomerHead(it.name) }
+        supplierDao.all().filter { !it.isDefault }.forEach { ensureSupplierHead(it.name) }
     }
 
     // ---- VAT / tax report data ----

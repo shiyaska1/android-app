@@ -23,6 +23,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -34,12 +35,16 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.billing.pos.data.AccountGroup
 import com.billing.pos.data.AccountNature
 import com.billing.pos.data.Repository
 import com.billing.pos.report.AccountingEngine
 import com.billing.pos.report.Posting
 import com.billing.pos.util.Format
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import java.util.Calendar
 
@@ -47,59 +52,52 @@ data class TBRow(val head: String, val group: String, val debit: Double, val cre
 
 class FinancialReportViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = Repository(app)
-    private fun <T> f(flow: kotlinx.coroutines.flow.Flow<T>, initial: T) =
-        flow.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), initial)
 
-    private val heads = f(repo.accountHeads, emptyList())
-    private val groups = f(repo.accountGroups, emptyList())
-    private val bills = f(repo.allBills, emptyList())
-    private val purchases = f(repo.allPurchases, emptyList())
-    private val receipts = f(repo.allReceipts, emptyList())
-    private val expenses = f(repo.allExpenses, emptyList())
-    private val jEntries = f(repo.journalEntries, emptyList())
-    private val jLines = f(repo.journalLines, emptyList())
-    private val salesReturns = f(repo.salesReturns, emptyList())
-    private val purchaseReturns = f(repo.purchaseReturns, emptyList())
+    /** Unified account-transaction view — the ONE source for all statements. Collected by the UI. */
+    val postings: StateFlow<List<Posting>> =
+        combine(
+            listOf<Flow<Any?>>(
+                repo.accountHeads, repo.accountGroups, repo.allBills, repo.allPurchases, repo.allReceipts,
+                repo.allExpenses, repo.journalEntries, repo.journalLines, repo.salesReturns, repo.purchaseReturns
+            )
+        ) { a ->
+            @Suppress("UNCHECKED_CAST")
+            AccountingEngine.build(
+                a[0] as List<com.billing.pos.data.AccountHead>, a[1] as List<AccountGroup>,
+                a[2] as List<com.billing.pos.data.Bill>, a[3] as List<com.billing.pos.data.Purchase>,
+                a[4] as List<com.billing.pos.data.Receipt>, a[5] as List<com.billing.pos.data.Expense>,
+                a[6] as List<com.billing.pos.data.JournalEntry>, a[7] as List<com.billing.pos.data.JournalLine>,
+                a[8] as List<com.billing.pos.data.SalesReturn>, a[9] as List<com.billing.pos.data.PurchaseReturn>
+            )
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+}
 
-    private fun postings(): List<Posting> = AccountingEngine.build(
-        heads.value, groups.value, bills.value, purchases.value, receipts.value, expenses.value, jEntries.value, jLines.value,
-        salesReturns.value, purchaseReturns.value
-    )
+fun trialBalanceOf(p: List<Posting>, to: Long): List<TBRow> =
+    p.filter { it.date <= to }.groupBy { it.head to it.group }.map { (k, list) ->
+        val net = list.sumOf { it.debit } - list.sumOf { it.credit }
+        TBRow(k.first, k.second, if (net >= 0) net else 0.0, if (net < 0) -net else 0.0)
+    }.filter { it.debit != 0.0 || it.credit != 0.0 }.sortedWith(compareBy({ it.group }, { it.head }))
 
-    fun trialBalance(to: Long): List<TBRow> {
-        val p = postings().filter { it.date <= to }
-        return p.groupBy { it.head to it.group }.map { (k, list) ->
-            val net = list.sumOf { it.debit } - list.sumOf { it.credit }
-            TBRow(k.first, k.second, if (net >= 0) net else 0.0, if (net < 0) -net else 0.0)
-        }.filter { it.debit != 0.0 || it.credit != 0.0 }.sortedWith(compareBy({ it.group }, { it.head }))
-    }
+fun profitLossOf(p: List<Posting>, from: Long, to: Long): Triple<List<Pair<String, Double>>, List<Pair<String, Double>>, Double> {
+    val f = p.filter { it.date in from..to }
+    val inc = f.filter { it.nature == AccountNature.INCOME }.groupBy { it.head }
+        .map { (h, l) -> h to (l.sumOf { it.credit } - l.sumOf { it.debit }) }.filter { it.second != 0.0 }.sortedBy { it.first }
+    val exp = f.filter { it.nature == AccountNature.EXPENSE }.groupBy { it.head }
+        .map { (h, l) -> h to (l.sumOf { it.debit } - l.sumOf { it.credit }) }.filter { it.second != 0.0 }.sortedBy { it.first }
+    return Triple(inc, exp, inc.sumOf { it.second } - exp.sumOf { it.second })
+}
 
-    /** Returns income rows, expense rows, and net profit for the period. */
-    fun profitLoss(from: Long, to: Long): Triple<List<Pair<String, Double>>, List<Pair<String, Double>>, Double> {
-        val p = postings().filter { it.date in from..to }
-        val inc = p.filter { it.nature == AccountNature.INCOME }.groupBy { it.head }
-            .map { (h, l) -> h to (l.sumOf { it.credit } - l.sumOf { it.debit }) }.filter { it.second != 0.0 }.sortedBy { it.first }
-        val exp = p.filter { it.nature == AccountNature.EXPENSE }.groupBy { it.head }
-            .map { (h, l) -> h to (l.sumOf { it.debit } - l.sumOf { it.credit }) }.filter { it.second != 0.0 }.sortedBy { it.first }
-        val net = inc.sumOf { it.second } - exp.sumOf { it.second }
-        return Triple(inc, exp, net)
-    }
-
-    /** Returns asset rows, liability rows, net profit (to date), and any imbalance. */
-    fun balanceSheet(to: Long): List<Any> {
-        val p = postings().filter { it.date <= to }
-        val assets = p.filter { it.nature == AccountNature.ASSET }.groupBy { it.head }
-            .map { (h, l) -> h to (l.sumOf { it.debit } - l.sumOf { it.credit }) }.filter { it.second != 0.0 }.sortedBy { it.first }
-        val liab = p.filter { it.nature == AccountNature.LIABILITY }.groupBy { it.head }
-            .map { (h, l) -> h to (l.sumOf { it.credit } - l.sumOf { it.debit }) }.filter { it.second != 0.0 }.sortedBy { it.first }
-        val inc = p.filter { it.nature == AccountNature.INCOME }.sumOf { it.credit - it.debit }
-        val exp = p.filter { it.nature == AccountNature.EXPENSE }.sumOf { it.debit - it.credit }
-        val netProfit = inc - exp
-        val totalAssets = assets.sumOf { it.second }
-        val totalLiab = liab.sumOf { it.second } + netProfit
-        val diff = totalAssets - totalLiab
-        return listOf(assets, liab, netProfit, diff)
-    }
+fun balanceSheetOf(p: List<Posting>, to: Long): List<Any> {
+    val f = p.filter { it.date <= to }
+    val assets = f.filter { it.nature == AccountNature.ASSET }.groupBy { it.head }
+        .map { (h, l) -> h to (l.sumOf { it.debit } - l.sumOf { it.credit }) }.filter { it.second != 0.0 }.sortedBy { it.first }
+    val liab = f.filter { it.nature == AccountNature.LIABILITY }.groupBy { it.head }
+        .map { (h, l) -> h to (l.sumOf { it.credit } - l.sumOf { it.debit }) }.filter { it.second != 0.0 }.sortedBy { it.first }
+    val inc = f.filter { it.nature == AccountNature.INCOME }.sumOf { it.credit - it.debit }
+    val exp = f.filter { it.nature == AccountNature.EXPENSE }.sumOf { it.debit - it.credit }
+    val netProfit = inc - exp
+    val diff = assets.sumOf { it.second } - (liab.sumOf { it.second } + netProfit)
+    return listOf(assets, liab, netProfit, diff)
 }
 
 private fun monthAgo(): Long = Calendar.getInstance().apply { add(Calendar.MONTH, -1) }.timeInMillis
@@ -144,13 +142,14 @@ private fun ReportScaffold(title: String, onBack: () -> Unit, content: @Composab
 
 @Composable
 fun TrialBalanceScreen(onBack: () -> Unit, vm: FinancialReportViewModel = viewModel()) {
+    val postings by vm.postings.collectAsState()
     var to by remember { mutableStateOf(today()) }
     var rows by remember { mutableStateOf<List<TBRow>?>(null) }
     ReportScaffold("Trial Balance", onBack) { m ->
         Column(m) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 DateBtn("As on", to, { to = it }, Modifier.weight(1f))
-                Button(onClick = { rows = vm.trialBalance(com.billing.pos.ui.common.endOfDay(to)) }, modifier = Modifier.weight(1f)) { Text("View") }
+                Button(onClick = { rows = trialBalanceOf(postings, com.billing.pos.ui.common.endOfDay(to)) }, modifier = Modifier.weight(1f)) { Text("View") }
             }
             rows?.let { list ->
                 val tDr = list.sumOf { it.debit }; val tCr = list.sumOf { it.credit }
@@ -179,6 +178,7 @@ fun TrialBalanceScreen(onBack: () -> Unit, vm: FinancialReportViewModel = viewMo
                     Text(Format.money(tDr), Modifier.weight(1f), fontWeight = FontWeight.Bold)
                     Text(Format.money(tCr), Modifier.weight(1f), fontWeight = FontWeight.Bold)
                 }
+                if (list.isEmpty()) Text("No transactions yet.", color = MaterialTheme.colorScheme.outline, modifier = Modifier.padding(top = 8.dp))
             }
         }
     }
@@ -186,6 +186,7 @@ fun TrialBalanceScreen(onBack: () -> Unit, vm: FinancialReportViewModel = viewMo
 
 @Composable
 fun ProfitLossScreen(onBack: () -> Unit, vm: FinancialReportViewModel = viewModel()) {
+    val postings by vm.postings.collectAsState()
     var from by remember { mutableStateOf(monthAgo()) }
     var to by remember { mutableStateOf(today()) }
     var res by remember { mutableStateOf<Triple<List<Pair<String, Double>>, List<Pair<String, Double>>, Double>?>(null) }
@@ -195,7 +196,7 @@ fun ProfitLossScreen(onBack: () -> Unit, vm: FinancialReportViewModel = viewMode
                 DateBtn("From", from, { from = it }, Modifier.weight(1f))
                 DateBtn("To", to, { to = it }, Modifier.weight(1f))
             }
-            Button(onClick = { res = vm.profitLoss(com.billing.pos.ui.common.startOfDay(from), com.billing.pos.ui.common.endOfDay(to)) },
+            Button(onClick = { res = profitLossOf(postings, com.billing.pos.ui.common.startOfDay(from), com.billing.pos.ui.common.endOfDay(to)) },
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) { Text("View") }
             res?.let { (inc, exp, net) ->
                 LazyColumn(Modifier.weight(1f).padding(top = 8.dp)) {
@@ -217,13 +218,14 @@ fun ProfitLossScreen(onBack: () -> Unit, vm: FinancialReportViewModel = viewMode
 
 @Composable
 fun BalanceSheetScreen(onBack: () -> Unit, vm: FinancialReportViewModel = viewModel()) {
+    val postings by vm.postings.collectAsState()
     var to by remember { mutableStateOf(today()) }
     var res by remember { mutableStateOf<List<Any>?>(null) }
     ReportScaffold("Balance Sheet", onBack) { m ->
         Column(m) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 DateBtn("As on", to, { to = it }, Modifier.weight(1f))
-                Button(onClick = { res = vm.balanceSheet(com.billing.pos.ui.common.endOfDay(to)) }, modifier = Modifier.weight(1f)) { Text("View") }
+                Button(onClick = { res = balanceSheetOf(postings, com.billing.pos.ui.common.endOfDay(to)) }, modifier = Modifier.weight(1f)) { Text("View") }
             }
             res?.let { r ->
                 @Suppress("UNCHECKED_CAST") val assets = r[0] as List<Pair<String, Double>>

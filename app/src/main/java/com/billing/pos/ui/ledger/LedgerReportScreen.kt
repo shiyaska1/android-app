@@ -42,10 +42,14 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.billing.pos.data.AccountGroup
+import com.billing.pos.data.AppPrefs
 import com.billing.pos.data.Repository
+import com.billing.pos.data.XlsxWriter
+import com.billing.pos.pdf.TablePdf
 import com.billing.pos.report.AccountingEngine
 import com.billing.pos.report.Posting
 import com.billing.pos.util.Format
+import java.io.File
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.combine
@@ -84,6 +88,42 @@ class LedgerReportViewModel(app: Application) : AndroidViewModel(app) {
 private fun accountNames(postings: List<Posting>, groupName: String?): List<String> =
     postings.filter { groupName == null || it.group == groupName }
         .map { it.head }.filter { it.isNotBlank() }.distinct().sortedBy { it.lowercase() }
+
+private fun safeName(s: String): String = s.replace(Regex("[^A-Za-z0-9._-]"), "_").take(40)
+
+private fun shareFile(context: android.content.Context, file: File, mime: String) {
+    val shared = File(context.cacheDir, "shared").apply { mkdirs() }
+    val dest = if (file.parentFile == shared) file else File(shared, file.name).also { file.copyTo(it, overwrite = true) }
+    val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.provider", dest)
+    val i = android.content.Intent(android.content.Intent.ACTION_SEND).setType(mime)
+        .putExtra(android.content.Intent.EXTRA_STREAM, uri)
+        .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    context.startActivity(android.content.Intent.createChooser(i, "Share ledger"))
+}
+
+private fun shareLedger(context: android.content.Context, res: LedgerResult, name: String, from: Long, to: Long, asExcel: Boolean) {
+    val fname = safeName(name.ifBlank { "ledger" })
+    if (asExcel) {
+        val t = XlsxWriter::text; val n = XlsxWriter::num
+        val rows = ArrayList<List<XlsxWriter.Cell>>()
+        rows.add(XlsxWriter.row(t("Date"), t("Particulars"), t("Voucher"), t("Debit"), t("Credit"), t("Balance")))
+        rows.add(XlsxWriter.row(t(""), t("Opening Balance"), t(""), t(""), t(""), t(drcr(res.opening))))
+        res.rows.forEach { r -> rows.add(XlsxWriter.row(t(Format.date(r.date)), t(r.particulars), t(r.vch), n(r.debit), n(r.credit), t(drcr(r.balance)))) }
+        rows.add(XlsxWriter.row(t(""), t("Closing Balance"), t(""), t(""), t(""), t(drcr(res.closing))))
+        val f = File(File(context.cacheDir, "shared").apply { mkdirs() }, "ledger-$fname.xlsx")
+        XlsxWriter.write(f, "Ledger", rows)
+        shareFile(context, f, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    } else {
+        val cols = listOf(
+            TablePdf.Col("Date", 1.3f), TablePdf.Col("Particulars", 2.5f), TablePdf.Col("Vch", 1.2f),
+            TablePdf.Col("Debit", 1.2f, right = true), TablePdf.Col("Credit", 1.2f, right = true), TablePdf.Col("Balance", 1.5f, right = true)
+        )
+        val data = res.rows.map { listOf(Format.date(it.date), it.particulars, it.vch, if (it.debit != 0.0) Format.money(it.debit) else "", if (it.credit != 0.0) Format.money(it.credit) else "", drcr(it.balance)) }
+        val sub = "$name   ·   ${Format.date(from)} to ${Format.date(to)}   ·   Opening ${drcr(res.opening)}"
+        val f = TablePdf.generate(context, AppPrefs(context).company, "Ledger", sub, cols, data, listOf("Closing Balance" to drcr(res.closing)))
+        shareFile(context, f, "application/pdf")
+    }
+}
 
 private fun buildLedger(postings: List<Posting>, head: String, from: Long, to: Long): LedgerResult {
     val mine = postings.filter { it.head.equals(head, ignoreCase = true) }
@@ -174,7 +214,11 @@ fun LedgerReportScreen(onBack: () -> Unit, vm: LedgerReportViewModel = viewModel
 
             result?.let { res ->
                 HorizontalDivider(Modifier.padding(vertical = 8.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { selected?.let { shareLedger(context, res, it, com.billing.pos.ui.common.startOfDay(fromMillis), com.billing.pos.ui.common.endOfDay(toMillis), asExcel = false) } }, modifier = Modifier.weight(1f)) { Text("Share PDF") }
+                    OutlinedButton(onClick = { selected?.let { shareLedger(context, res, it, com.billing.pos.ui.common.startOfDay(fromMillis), com.billing.pos.ui.common.endOfDay(toMillis), asExcel = true) } }, modifier = Modifier.weight(1f)) { Text("Share Excel") }
+                }
+                Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text("Opening balance", fontWeight = FontWeight.Bold)
                     Text(drcr(res.opening), fontWeight = FontWeight.Bold)
                 }
