@@ -58,9 +58,12 @@ class FinancialReportViewModel(app: Application) : AndroidViewModel(app) {
     private val expenses = f(repo.allExpenses, emptyList())
     private val jEntries = f(repo.journalEntries, emptyList())
     private val jLines = f(repo.journalLines, emptyList())
+    private val salesReturns = f(repo.salesReturns, emptyList())
+    private val purchaseReturns = f(repo.purchaseReturns, emptyList())
 
     private fun postings(): List<Posting> = AccountingEngine.build(
-        heads.value, groups.value, bills.value, purchases.value, receipts.value, expenses.value, jEntries.value, jLines.value
+        heads.value, groups.value, bills.value, purchases.value, receipts.value, expenses.value, jEntries.value, jLines.value,
+        salesReturns.value, purchaseReturns.value
     )
 
     fun trialBalance(to: Long): List<TBRow> {

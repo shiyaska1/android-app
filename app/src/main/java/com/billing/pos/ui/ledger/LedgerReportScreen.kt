@@ -1,6 +1,7 @@
 package com.billing.pos.ui.ledger
 
 import android.app.Application
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -10,9 +11,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowDropDown
@@ -36,7 +34,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -44,14 +41,17 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.billing.pos.data.AccountGroup
 import com.billing.pos.data.Repository
+import com.billing.pos.report.AccountingEngine
+import com.billing.pos.report.Posting
 import com.billing.pos.util.Format
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import java.util.Calendar
 
-internal enum class Kind { CUSTOMER, SUPPLIER, CASHBANK, GENERAL }
-internal data class AccountRef(val name: String, val kind: Kind, val headId: Long, val groupId: Long)
 internal data class LedgerRow(val date: Long, val particulars: String, val vch: String, val debit: Double, val credit: Double, val balance: Double)
 internal data class LedgerResult(val opening: Double, val rows: List<LedgerRow>, val closing: Double)
 
@@ -59,92 +59,41 @@ private fun drcr(v: Double): String = if (v >= 0) "${Format.money(v)} Dr" else "
 
 class LedgerReportViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = Repository(app)
-    private fun <T> f(flow: kotlinx.coroutines.flow.Flow<T>, initial: T) =
-        flow.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), initial)
 
-    val groups = f(repo.accountGroups, emptyList())
-    val heads = f(repo.accountHeads, emptyList())
-    private val customers = f(repo.customers, emptyList())
-    private val suppliers = f(repo.suppliers, emptyList())
-    private val bills = f(repo.allBills, emptyList())
-    private val receipts = f(repo.allReceipts, emptyList())
-    private val expenses = f(repo.allExpenses, emptyList())
-    private val purchases = f(repo.allPurchases, emptyList())
-    private val jEntries = f(repo.journalEntries, emptyList())
-    private val jLines = f(repo.journalLines, emptyList())
+    val groups = repo.accountGroups.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    private fun gid(name: String) = groups.value.firstOrNull { it.name == name }?.id ?: 0L
-    private fun kindOf(groupId: Long): Kind = when (groupId) {
-        gid("Sundry Debtors") -> Kind.CUSTOMER
-        gid("Sundry Creditors") -> Kind.SUPPLIER
-        gid("Cash-in-hand"), gid("Bank Accounts") -> Kind.CASHBANK
-        else -> Kind.GENERAL
+    /** The unified account-transaction view — same source used by P&L / Balance Sheet. */
+    val postings: kotlinx.coroutines.flow.StateFlow<List<Posting>> =
+        combine(
+            listOf<Flow<Any?>>(
+                repo.accountHeads, repo.accountGroups, repo.allBills, repo.allPurchases, repo.allReceipts,
+                repo.allExpenses, repo.journalEntries, repo.journalLines, repo.salesReturns, repo.purchaseReturns
+            )
+        ) { a ->
+            @Suppress("UNCHECKED_CAST")
+            AccountingEngine.build(
+                a[0] as List<com.billing.pos.data.AccountHead>, a[1] as List<AccountGroup>,
+                a[2] as List<com.billing.pos.data.Bill>, a[3] as List<com.billing.pos.data.Purchase>,
+                a[4] as List<com.billing.pos.data.Receipt>, a[5] as List<com.billing.pos.data.Expense>,
+                a[6] as List<com.billing.pos.data.JournalEntry>, a[7] as List<com.billing.pos.data.JournalLine>,
+                a[8] as List<com.billing.pos.data.SalesReturn>, a[9] as List<com.billing.pos.data.PurchaseReturn>
+            )
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+}
+
+private fun accountNames(postings: List<Posting>, groupName: String?): List<String> =
+    postings.filter { groupName == null || it.group == groupName }
+        .map { it.head }.filter { it.isNotBlank() }.distinct().sortedBy { it.lowercase() }
+
+private fun buildLedger(postings: List<Posting>, head: String, from: Long, to: Long): LedgerResult {
+    val mine = postings.filter { it.head.equals(head, ignoreCase = true) }
+    var opening = mine.filter { it.date < from }.sumOf { it.debit - it.credit }
+    var running = opening
+    val rows = mine.filter { it.date in from..to }.sortedBy { it.date }.map { p ->
+        running += p.debit - p.credit
+        LedgerRow(p.date, p.particulars, p.vch, p.debit, p.credit, running)
     }
-
-    /** All selectable accounts: every head, plus customers/suppliers that don't yet have a head. */
-    internal fun accountRefs(): List<AccountRef> {
-        val hs = heads.value
-        val refs = hs.map { AccountRef(it.name, kindOf(it.groupId), it.id, it.groupId) }.toMutableList()
-        val headNames = hs.map { it.name.lowercase() }.toSet()
-        val dg = gid("Sundry Debtors"); val cg = gid("Sundry Creditors")
-        customers.value.filter { !it.isDefault && it.name.lowercase() !in headNames }
-            .forEach { refs.add(AccountRef(it.name, Kind.CUSTOMER, 0, dg)) }
-        suppliers.value.filter { !it.isDefault && it.name.lowercase() !in headNames }
-            .forEach { refs.add(AccountRef(it.name, Kind.SUPPLIER, 0, cg)) }
-        return refs.sortedBy { it.name.lowercase() }
-    }
-
-    private fun headLines(headId: Long): List<LedgerRow> {
-        if (headId == 0L) return emptyList()
-        val byId = jEntries.value.associateBy { it.id }
-        return jLines.value.filter { it.headId == headId }.mapNotNull { l ->
-            val e = byId[l.entryId] ?: return@mapNotNull null
-            LedgerRow(e.dateMillis, e.narration.ifBlank { "Journal" }, e.voucherNo,
-                if (l.isDebit) l.amount else 0.0, if (!l.isDebit) l.amount else 0.0, 0.0)
-        }
-    }
-
-    private fun rawRows(ref: AccountRef): List<LedgerRow> {
-        val list = ArrayList<LedgerRow>()
-        when (ref.kind) {
-            Kind.CUSTOMER -> {
-                bills.value.filter { it.customerName.equals(ref.name, true) }
-                    .forEach { list.add(LedgerRow(it.dateMillis, "Sales", it.billNo, it.grandTotal, 0.0, 0.0)) }
-                receipts.value.filter { (it.payFrom.ifBlank { it.customerName }).equals(ref.name, true) }
-                    .forEach { list.add(LedgerRow(it.dateMillis, "Receipt", it.receiptNo, 0.0, it.amount, 0.0)) }
-                list.addAll(headLines(ref.headId))
-            }
-            Kind.SUPPLIER -> {
-                purchases.value.filter { it.supplierName.equals(ref.name, true) }
-                    .forEach { list.add(LedgerRow(it.dateMillis, "Purchase", it.purchaseNo, 0.0, it.grandTotal, 0.0)) }
-                expenses.value.filter { it.payTo.equals(ref.name, true) }
-                    .forEach { list.add(LedgerRow(it.dateMillis, "Payment", it.voucherNo, it.amount, 0.0, 0.0)) }
-                list.addAll(headLines(ref.headId))
-            }
-            Kind.CASHBANK -> {
-                receipts.value.filter { it.toAccountId == ref.headId && ref.headId != 0L }
-                    .forEach { list.add(LedgerRow(it.dateMillis, "Receipt: " + it.payFrom.ifBlank { it.customerName }, it.receiptNo, it.amount, 0.0, 0.0)) }
-                expenses.value.filter { it.fromAccountId == ref.headId && ref.headId != 0L }
-                    .forEach { list.add(LedgerRow(it.dateMillis, "Payment: " + it.payTo, it.voucherNo, 0.0, it.amount, 0.0)) }
-                list.addAll(headLines(ref.headId))
-            }
-            Kind.GENERAL -> list.addAll(headLines(ref.headId))
-        }
-        return list
-    }
-
-    internal fun build(ref: AccountRef, from: Long, to: Long): LedgerResult {
-        val head = heads.value.firstOrNull { it.id == ref.headId }
-        var opening = if (head != null) (if (head.openingIsDebit) head.openingBalance else -head.openingBalance) else 0.0
-        val all = rawRows(ref)
-        all.filter { it.date < from }.forEach { opening += it.debit - it.credit }
-        var running = opening
-        val rows = all.filter { it.date in from..to }.sortedBy { it.date }.map { r ->
-            running += r.debit - r.credit
-            r.copy(balance = running)
-        }
-        return LedgerResult(opening, rows, running)
-    }
+    return LedgerResult(opening, rows, running)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -152,20 +101,19 @@ class LedgerReportViewModel(app: Application) : AndroidViewModel(app) {
 fun LedgerReportScreen(onBack: () -> Unit, vm: LedgerReportViewModel = viewModel()) {
     val context = LocalContext.current
     val groups by vm.groups.collectAsState()
-    val heads by vm.heads.collectAsState()
+    val postings by vm.postings.collectAsState()
 
     var groupId by remember { mutableStateOf(0L) }
     var groupMenu by remember { mutableStateOf(false) }
-    var accMenu by remember { mutableStateOf(false) }
-    var selected by remember { mutableStateOf<AccountRef?>(null) }
+    var selected by remember { mutableStateOf<String?>(null) }
+    var accQuery by remember { mutableStateOf("") }
     val cal = remember { Calendar.getInstance() }
     var toMillis by remember { mutableStateOf(cal.timeInMillis) }
     var fromMillis by remember { mutableStateOf(Calendar.getInstance().apply { add(Calendar.MONTH, -1) }.timeInMillis) }
     var result by remember { mutableStateOf<LedgerResult?>(null) }
 
-    val refs = remember(heads, groups, groupId) {
-        vm.accountRefs().let { list -> if (groupId == 0L) list else list.filter { it.groupId == groupId } }
-    }
+    val groupName = if (groupId == 0L) null else groups.firstOrNull { it.id == groupId }?.name
+    val names = remember(postings, groupName) { accountNames(postings, groupName) }
 
     fun pickDate(current: Long, onPicked: (Long) -> Unit) {
         val c = Calendar.getInstance().apply { timeInMillis = current }
@@ -188,41 +136,30 @@ fun LedgerReportScreen(onBack: () -> Unit, vm: LedgerReportViewModel = viewModel
         }
     ) { pad ->
         Column(Modifier.fillMaxSize().padding(pad).padding(12.dp)) {
-            // Group (optional)
             Box {
                 OutlinedTextField(
-                    value = if (groupId == 0L) "All groups" else groups.firstOrNull { it.id == groupId }?.name ?: "All groups",
+                    value = if (groupId == 0L) "All groups" else groupName ?: "All groups",
                     onValueChange = {}, readOnly = true, label = { Text("Account group (optional)") },
                     trailingIcon = { IconButton(onClick = { groupMenu = true }) { Icon(Icons.Filled.ArrowDropDown, null) } },
                     modifier = Modifier.fillMaxWidth()
                 )
                 DropdownMenu(expanded = groupMenu, onDismissRequest = { groupMenu = false }) {
-                    DropdownMenuItem(text = { Text("All groups") }, onClick = { groupId = 0; selected = null; groupMenu = false })
-                    groups.forEach { g -> DropdownMenuItem(text = { Text(g.name) }, onClick = { groupId = g.id; selected = null; groupMenu = false }) }
+                    DropdownMenuItem(text = { Text("All groups") }, onClick = { groupId = 0; selected = null; result = null; groupMenu = false })
+                    groups.forEach { g -> DropdownMenuItem(text = { Text(g.name) }, onClick = { groupId = g.id; selected = null; result = null; groupMenu = false }) }
                 }
             }
-            // Account — type to search, shows up to 5 suggestions
-            var accQuery by remember { mutableStateOf("") }
             OutlinedTextField(
-                value = if (selected != null) selected!!.name else accQuery,
+                value = if (selected != null) selected!! else accQuery,
                 onValueChange = { accQuery = it; selected = null; result = null },
                 label = { Text("Account (type to search)") },
-                trailingIcon = {
-                    if (selected != null) IconButton(onClick = { selected = null; accQuery = "" }) { Icon(Icons.Filled.ArrowDropDown, "Clear") }
-                },
+                trailingIcon = { if (selected != null) IconButton(onClick = { selected = null; accQuery = "" }) { Icon(Icons.Filled.ArrowDropDown, "Clear") } },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
             )
             if (selected == null && accQuery.isNotBlank()) {
-                val matches = refs.filter { it.name.contains(accQuery, ignoreCase = true) }.take(5)
-                matches.forEach { r ->
-                    Text(
-                        r.name,
-                        modifier = Modifier.fillMaxWidth()
-                            .clickable { selected = r; accQuery = "" }
-                            .padding(vertical = 10.dp, horizontal = 8.dp),
-                        style = MaterialTheme.typography.bodyMedium
-                    )
+                names.filter { it.contains(accQuery, ignoreCase = true) }.take(5).forEach { nm ->
+                    Text(nm, modifier = Modifier.fillMaxWidth().clickable { selected = nm; accQuery = "" }.padding(vertical = 10.dp, horizontal = 8.dp),
+                        style = MaterialTheme.typography.bodyMedium)
                     HorizontalDivider()
                 }
             }
@@ -231,7 +168,7 @@ fun LedgerReportScreen(onBack: () -> Unit, vm: LedgerReportViewModel = viewModel
                 OutlinedButton(onClick = { pickDate(toMillis) { toMillis = it } }, modifier = Modifier.weight(1f)) { Text("To: ${Format.date(toMillis)}") }
             }
             Button(
-                onClick = { selected?.let { result = vm.build(it, com.billing.pos.ui.common.startOfDay(fromMillis), com.billing.pos.ui.common.endOfDay(toMillis)) } },
+                onClick = { selected?.let { result = buildLedger(postings, it, com.billing.pos.ui.common.startOfDay(fromMillis), com.billing.pos.ui.common.endOfDay(toMillis)) } },
                 enabled = selected != null, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
             ) { Text("View ledger") }
 
@@ -241,12 +178,11 @@ fun LedgerReportScreen(onBack: () -> Unit, vm: LedgerReportViewModel = viewModel
                     Text("Opening balance", fontWeight = FontWeight.Bold)
                     Text(drcr(res.opening), fontWeight = FontWeight.Bold)
                 }
-                // Header
                 Row(Modifier.fillMaxWidth().padding(top = 8.dp)) {
                     Text("Date", Modifier.weight(1.2f), style = MaterialTheme.typography.labelSmall)
                     Text("Particulars", Modifier.weight(2f), style = MaterialTheme.typography.labelSmall)
-                    Text("Debit", Modifier.weight(1.2f), style = MaterialTheme.typography.labelSmall)
-                    Text("Credit", Modifier.weight(1.2f), style = MaterialTheme.typography.labelSmall)
+                    Text("Debit", Modifier.weight(1.1f), style = MaterialTheme.typography.labelSmall)
+                    Text("Credit", Modifier.weight(1.1f), style = MaterialTheme.typography.labelSmall)
                     Text("Balance", Modifier.weight(1.4f), style = MaterialTheme.typography.labelSmall)
                 }
                 HorizontalDivider()
@@ -258,8 +194,8 @@ fun LedgerReportScreen(onBack: () -> Unit, vm: LedgerReportViewModel = viewModel
                                 Text(r.particulars, style = MaterialTheme.typography.bodySmall)
                                 if (r.vch.isNotBlank()) Text(r.vch, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
                             }
-                            Text(if (r.debit != 0.0) Format.money(r.debit) else "", Modifier.weight(1.2f), style = MaterialTheme.typography.bodySmall)
-                            Text(if (r.credit != 0.0) Format.money(r.credit) else "", Modifier.weight(1.2f), style = MaterialTheme.typography.bodySmall)
+                            Text(if (r.debit != 0.0) Format.money(r.debit) else "", Modifier.weight(1.1f), style = MaterialTheme.typography.bodySmall)
+                            Text(if (r.credit != 0.0) Format.money(r.credit) else "", Modifier.weight(1.1f), style = MaterialTheme.typography.bodySmall)
                             Text(drcr(r.balance), Modifier.weight(1.4f), style = MaterialTheme.typography.bodySmall)
                         }
                         HorizontalDivider()
