@@ -419,6 +419,7 @@ private fun AppNav() {
                 onOutstanding = { nav.navigate("outstanding") },
                 onAccounts = { nav.navigate("accounts") },
                 onJournal = { nav.navigate("journal") },
+                onLedger = { nav.navigate("ledger") },
                 onDiary = { nav.navigate("diary") },
                 onUsers = { nav.navigate("users") },
                 onSettings = { nav.navigate("settings") },
@@ -780,6 +781,9 @@ private fun AppNav() {
         }
         composable("accounts") {
             ChartOfAccountsScreen(onBack = { nav.popBackStack() })
+        }
+        composable("ledger") {
+            com.billing.pos.ui.ledger.LedgerReportScreen(onBack = { nav.popBackStack() })
         }
         composable("journal") {
             JournalListScreen(

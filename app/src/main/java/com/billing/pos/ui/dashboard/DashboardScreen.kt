@@ -49,6 +49,7 @@ import androidx.compose.material.icons.filled.MoneyOff
 import androidx.compose.material.icons.filled.MoveDown
 import androidx.compose.material.icons.filled.MoveToInbox
 import androidx.compose.material.icons.filled.SwapVert
+import androidx.compose.material.icons.filled.Summarize
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.PlaylistAddCheck
 import androidx.compose.material.icons.filled.People
@@ -155,6 +156,7 @@ fun DashboardScreen(
     onOutstanding: () -> Unit,
     onAccounts: () -> Unit,
     onJournal: () -> Unit,
+    onLedger: () -> Unit,
     onDiary: () -> Unit,
     onUsers: () -> Unit,
     onSettings: () -> Unit,
@@ -227,6 +229,7 @@ fun DashboardScreen(
         if (Session.canViewInvoice) add(Tile("Outstanding", Icons.Filled.AccountBalance, onOutstanding, "Accounts"))
         if (Session.canManageUsers) add(Tile("Accounts", Icons.Filled.AccountTree, onAccounts, "Accounts"))
         if (Session.canManageUsers) add(Tile("Journal", Icons.Filled.Book, onJournal, "Accounts"))
+        if (Session.canViewCashbook) add(Tile("Ledger", Icons.Filled.Summarize, onLedger, "Accounts"))
 
         // ---- Reports ----
         if (Session.canViewInvoice) add(Tile("Sales Report", Icons.Filled.Assessment, onReports, "Reports"))
