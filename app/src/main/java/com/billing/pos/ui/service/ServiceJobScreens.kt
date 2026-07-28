@@ -134,6 +134,7 @@ class ServiceJobViewModel(app: Application) : AndroidViewModel(app) {
     val statuses: StateFlow<List<ServiceStatus>> = repo.statuses.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val jobsMaster: StateFlow<List<ServiceJobMaster>> = repo.jobs.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val employees: StateFlow<List<ServiceEmployee>> = repo.employees.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val models: StateFlow<List<com.billing.pos.data.ServiceModel>> = repo.models.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val cards: StateFlow<List<ServiceJobCard>> = repo.cards.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // form state
@@ -144,6 +145,8 @@ class ServiceJobViewModel(app: Application) : AndroidViewModel(app) {
     var customerPhone by mutableStateOf("")
     var typeId by mutableStateOf(0L)
     var typeName by mutableStateOf("")
+    var modelId by mutableStateOf(0L)
+    var modelName by mutableStateOf("")
     var employeeId by mutableStateOf(0L)
     var employeeName by mutableStateOf("")
     var priority by mutableStateOf("Medium")
@@ -186,6 +189,13 @@ class ServiceJobViewModel(app: Application) : AndroidViewModel(app) {
             if (id > 0) { typeId = id; typeName = name.trim() }
         }
     }
+    /** Adds the typed model to the master and selects it. */
+    fun addModel(name: String) {
+        viewModelScope.launch {
+            val id = repo.saveModel(name)
+            if (id > 0) { modelId = id; modelName = name.trim() }
+        }
+    }
     fun saveEmployee(e: ServiceEmployee) {
         viewModelScope.launch {
             val id = repo.saveEmployee(e)
@@ -215,6 +225,7 @@ class ServiceJobViewModel(app: Application) : AndroidViewModel(app) {
             val c = repo.cardById(id) ?: return@launch
             editingId = c.id; jobNo = c.jobNo; cardName = c.name; dateMillis = c.dateMillis
             typeId = c.typeId; typeName = c.typeName; status = c.status; expectedMillis = c.expectedMillis
+            modelId = c.modelId; modelName = c.modelName
             employeeId = c.employeeId; employeeName = c.employeeName; priority = c.priority
             advanceText = if (c.advance != 0.0) Format.money(c.advance) else ""
             otherChargesText = if (c.otherCharges != 0.0) Format.money(c.otherCharges) else ""
@@ -232,25 +243,35 @@ class ServiceJobViewModel(app: Application) : AndroidViewModel(app) {
     fun newCard() {
         cardName = ""; lines.clear(); attachments.clear()
         advanceText = ""; otherChargesText = ""; otherChargesNote = ""; remarks = ""
-        typeId = 0; typeName = ""; status = "Pending"; expectedMillis = 0
+        typeId = 0; typeName = ""; modelId = 0; modelName = ""; status = "Pending"; expectedMillis = 0
         employeeId = 0; employeeName = ""; customerPhone = ""; priority = "Medium"
         dateMillis = System.currentTimeMillis(); editingId = null; selectedCustomer = null
         viewModelScope.launch { jobNo = repo.nextJobNo() }
     }
 
     fun save(onDone: () -> Unit) {
-        val customer = selectedCustomer
-        if (customer == null) { message.value = "Select a customer"; return }
+        if (selectedCustomer == null) { message.value = "Select a customer"; return }
         if (lines.isEmpty()) { message.value = "Add at least one job"; return }
         viewModelScope.launch {
+            // A different number typed against the default cash customer is a real person:
+            // switch to (or create) "Cash Customer - <number>" so the card is identifiable.
+            var customer = selectedCustomer!!
+            val phone = customerPhone.trim()
+            if (customer.isDefault && phone.isNotBlank() && phone != customer.phone.trim()) {
+                customer = repo.resolveCashCustomer(phone)
+                selectedCustomer = customer
+                message.value = "Customer: ${customer.name}"
+            }
             // A card whose jobs are all completed or rejected is itself completed.
             val allDone = lines.isNotEmpty() &&
                 lines.all { it.status.equals("Completed", true) || it.status.equals("Rejected", true) }
             if (allDone) status = "Completed"
+            if (modelName.isNotBlank() && modelId == 0L) modelId = repo.saveModel(modelName)
             val c = ServiceJobCard(
                 id = editingId ?: 0, jobNo = jobNo, name = cardName.trim(), dateMillis = dateMillis,
-                customerId = customer.id, customerName = customer.name, customerPhone = customerPhone.trim(),
-                typeId = typeId, typeName = typeName, employeeId = employeeId, employeeName = employeeName,
+                customerId = customer.id, customerName = customer.name, customerPhone = phone,
+                typeId = typeId, typeName = typeName, modelId = modelId, modelName = modelName.trim(),
+                employeeId = employeeId, employeeName = employeeName,
                 status = status, priority = priority, expectedMillis = expectedMillis,
                 jobsTotal = jobsTotal, otherCharges = otherCharges, otherChargesNote = otherChargesNote.trim(),
                 grandTotal = grandTotal, advance = advance, remarks = remarks.trim()
@@ -276,7 +297,7 @@ class ServiceJobViewModel(app: Application) : AndroidViewModel(app) {
     /** The current form as an A4 document. */
     fun pdfDocFromForm(): PdfDoc = pdfDoc(
         jobNo, dateMillis, selectedCustomer?.name ?: "", customerPhone, cardName, typeName,
-        employeeName, status, priority, expectedMillis,
+        modelName, employeeName, status, priority, expectedMillis,
         lines.map { Triple(it.name, it.price, it.status to it.expectedMillis) },
         jobsTotal, otherCharges, grandTotal, advance, remarks
     )
@@ -284,14 +305,14 @@ class ServiceJobViewModel(app: Application) : AndroidViewModel(app) {
     /** A saved card as an A4 document, lines fetched from the DB. */
     suspend fun pdfDocFor(c: ServiceJobCard): PdfDoc = pdfDoc(
         c.jobNo, c.dateMillis, c.customerName, c.customerPhone, c.name, c.typeName,
-        c.employeeName, c.status, c.priority, c.expectedMillis,
+        c.modelName, c.employeeName, c.status, c.priority, c.expectedMillis,
         repo.linesFor(c.id).map { Triple(it.name, it.price, it.status to it.expectedMillis) },
         c.jobsTotal, c.otherCharges, c.grandTotal, c.advance, c.remarks
     )
 
     private fun pdfDoc(
         no: String, date: Long, customer: String, phone: String, card: String, type: String,
-        employee: String, cardStatus: String, prio: String, expected: Long,
+        model: String, employee: String, cardStatus: String, prio: String, expected: Long,
         jobLines: List<Triple<String, Double, Pair<String, Long>>>,
         jobs: Double, other: Double, grand: Double, adv: Double, rem: String
     ): PdfDoc {
@@ -299,6 +320,7 @@ class ServiceJobViewModel(app: Application) : AndroidViewModel(app) {
             if (card.isNotBlank()) add("Job card: $card")
             if (phone.isNotBlank()) add("Ph: $phone")
             if (type.isNotBlank()) add("Type: $type")
+            if (model.isNotBlank()) add("Model: $model")
             if (employee.isNotBlank()) add("Employee: $employee")
             add("Status: $cardStatus")
             if (!prio.equals("Medium", true)) add("Priority: $prio")
@@ -325,6 +347,7 @@ class ServiceJobViewModel(app: Application) : AndroidViewModel(app) {
     fun thermalFromForm(): ThermalPrinter.JobCardPrint = ThermalPrinter.JobCardPrint(
         jobNo = jobNo, dateMillis = dateMillis, name = cardName.trim(),
         customerName = selectedCustomer?.name ?: "", customerPhone = customerPhone.trim(),
+        modelName = modelName.trim(),
         employeeName = employeeName, typeName = typeName, status = status,
         expectedMillis = expectedMillis,
         lines = lines.map { Triple(it.name, it.price, it.status) },
@@ -336,6 +359,7 @@ class ServiceJobViewModel(app: Application) : AndroidViewModel(app) {
     suspend fun thermalFor(c: ServiceJobCard): ThermalPrinter.JobCardPrint = ThermalPrinter.JobCardPrint(
         jobNo = c.jobNo, dateMillis = c.dateMillis, name = c.name,
         customerName = c.customerName, customerPhone = c.customerPhone,
+        modelName = c.modelName,
         employeeName = c.employeeName, typeName = c.typeName, status = c.status,
         expectedMillis = c.expectedMillis,
         lines = repo.linesFor(c.id).map { Triple(it.name, it.price, it.status) },
@@ -389,6 +413,7 @@ fun ServiceJobScreen(editId: Long?, onBack: () -> Unit, vm: ServiceJobViewModel 
     val statuses by vm.statuses.collectAsStateSafe()
     val jobsMaster by vm.jobsMaster.collectAsStateSafe()
     val employees by vm.employees.collectAsStateSafe()
+    val models by vm.models.collectAsStateSafe()
     val message by vm.message.collectAsStateSafe()
     LaunchedEffect(Unit) { if (editId != null && editId > 0) vm.load(editId) }
     LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); vm.consumeMessage() } }
@@ -463,11 +488,40 @@ fun ServiceJobScreen(editId: Long?, onBack: () -> Unit, vm: ServiceJobViewModel 
                 IconButton(onClick = { showNewCustomer = true }) { Icon(Icons.Filled.PersonAdd, "New customer") }
             }
             OutlinedTextField(
-                value = vm.customerPhone, onValueChange = { vm.customerPhone = it },
+                value = vm.customerPhone, onValueChange = { vm.customerPhone = it.filter { c -> c.isDigit() } },
                 label = { Text("Phone number") }, singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 modifier = Modifier.fillMaxWidth().padding(top = 6.dp)
             )
+
+            // Model / vehicle / item being serviced: type to search the master (five
+            // suggestions), or add what was typed as a new master entry.
+            var modelMenu by remember { mutableStateOf(false) }
+            ExposedDropdownMenuBox(expanded = modelMenu, onExpandedChange = { modelMenu = it }, modifier = Modifier.padding(top = 6.dp)) {
+                OutlinedTextField(
+                    value = vm.modelName,
+                    onValueChange = { vm.modelName = it; vm.modelId = 0; modelMenu = true },
+                    label = { Text("Model / Vehicle / Item") },
+                    placeholder = { Text("Search or type new") },
+                    singleLine = true,
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(modelMenu) },
+                    modifier = Modifier.menuAnchor().fillMaxWidth()
+                )
+                val matches = models.filter { vm.modelName.isBlank() || it.name.contains(vm.modelName, true) }.take(5)
+                val exact = models.any { it.name.equals(vm.modelName.trim(), true) }
+                ExposedDropdownMenu(expanded = modelMenu, onDismissRequest = { modelMenu = false }) {
+                    matches.forEach { m ->
+                        DropdownMenuItem(text = { Text(m.name) }, onClick = { vm.modelId = m.id; vm.modelName = m.name; modelMenu = false })
+                    }
+                    if (vm.modelName.isNotBlank() && !exact) {
+                        DropdownMenuItem(
+                            text = { Text("Add \"${vm.modelName.trim()}\"") },
+                            leadingIcon = { Icon(Icons.Filled.Add, null) },
+                            onClick = { vm.addModel(vm.modelName); modelMenu = false }
+                        )
+                    }
+                }
+            }
             Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 var empMenu by remember { mutableStateOf(false) }
                 ExposedDropdownMenuBox(expanded = empMenu, onExpandedChange = { empMenu = !empMenu }, modifier = Modifier.weight(1f)) {
@@ -822,6 +876,7 @@ fun ServiceJobListScreen(
     val cards by vm.cards.collectAsStateSafe()
     val statuses by vm.statuses.collectAsStateSafe()
     val types by vm.types.collectAsStateSafe()
+    val models by vm.models.collectAsStateSafe()
     val message by vm.message.collectAsStateSafe()
     LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); vm.consumeMessage() } }
     val downloadPdf = rememberPdfDownloader { msg -> scope.launch { snackbar.showSnackbar(msg) } }
@@ -854,15 +909,18 @@ fun ServiceJobListScreen(
     var toMillis by remember { mutableStateOf(System.currentTimeMillis()) }
     var statusFilter by remember { mutableStateOf("") }
     var typeFilter by remember { mutableStateOf("") }
+    var modelFilter by remember { mutableStateOf("") }
     var deleteFor by remember { mutableStateOf<ServiceJobCard?>(null) }
     var jobsFor by remember { mutableStateOf<ServiceJobCard?>(null) }
 
     // High priority floats to the top, newest first within each priority.
     val filtered = cards.filter { c ->
         (query.isBlank() || c.jobNo.contains(query, true) || c.name.contains(query, true) ||
-            c.customerName.contains(query, true) || c.customerPhone.contains(query)) &&
+            c.customerName.contains(query, true) || c.customerPhone.contains(query) ||
+            c.modelName.contains(query, true)) &&
             (statusFilter.isBlank() || c.status.equals(statusFilter, true)) &&
             (typeFilter.isBlank() || c.typeName.equals(typeFilter, true)) &&
+            (modelFilter.isBlank() || c.modelName.equals(modelFilter, true)) &&
             c.dateMillis >= jcStartOfDay(fromMillis) && c.dateMillis <= jcEndOfDay(toMillis)
     }.sortedWith(compareBy({ priorityRank(it.priority) }, { -it.dateMillis }))
 
@@ -920,6 +978,18 @@ fun ServiceJobListScreen(
                         types.forEach { t -> DropdownMenuItem(text = { Text(t.name) }, onClick = { typeFilter = t.name; typeMenu = false }) }
                     }
                 }
+                var modelMenu by remember { mutableStateOf(false) }
+                ExposedDropdownMenuBox(expanded = modelMenu, onExpandedChange = { modelMenu = !modelMenu }, modifier = Modifier.weight(1f)) {
+                    OutlinedTextField(
+                        readOnly = true, value = modelFilter.ifBlank { "All models" }, onValueChange = {},
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(modelMenu) },
+                        modifier = Modifier.menuAnchor().fillMaxWidth()
+                    )
+                    ExposedDropdownMenu(expanded = modelMenu, onDismissRequest = { modelMenu = false }) {
+                        DropdownMenuItem(text = { Text("All models") }, onClick = { modelFilter = ""; modelMenu = false })
+                        models.forEach { m -> DropdownMenuItem(text = { Text(m.name) }, onClick = { modelFilter = m.name; modelMenu = false }) }
+                    }
+                }
             }
             Divider(Modifier.padding(top = 6.dp))
 
@@ -955,7 +1025,7 @@ fun ServiceJobListScreen(
                         Text(
                             listOfNotNull(
                                 c.customerName.ifBlank { null }, c.typeName.ifBlank { null },
-                                c.employeeName.ifBlank { null },
+                                c.modelName.ifBlank { null }, c.employeeName.ifBlank { null },
                                 Format.date(c.dateMillis),
                                 if (c.expectedMillis > 0) "exp ${Format.date(c.expectedMillis)}" else null
                             ).joinToString("  •  "),

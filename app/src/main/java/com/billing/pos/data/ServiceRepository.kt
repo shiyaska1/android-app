@@ -11,6 +11,7 @@ class ServiceRepository(context: Context) {
     val statuses: Flow<List<ServiceStatus>> = dao.statuses()
     val jobs: Flow<List<ServiceJobMaster>> = dao.jobs()
     val employees: Flow<List<ServiceEmployee>> = dao.employees()
+    val models: Flow<List<ServiceModel>> = dao.models()
     val cards: Flow<List<ServiceJobCard>> = dao.cards()
     val allLines: Flow<List<ServiceJobLine>> = dao.allLines()
 
@@ -30,6 +31,15 @@ class ServiceRepository(context: Context) {
     suspend fun deleteStatus(s: ServiceStatus) = dao.deleteStatus(s)
     suspend fun saveJob(j: ServiceJobMaster) { if (j.name.isNotBlank()) dao.upsertJob(j.copy(name = j.name.trim())) }
     suspend fun deleteJob(j: ServiceJobMaster) = dao.deleteJob(j)
+    /** Upserts a model by name (reuses an existing row on a case-insensitive match). */
+    suspend fun saveModel(name: String): Long {
+        val n = name.trim()
+        if (n.isBlank()) return 0
+        dao.modelByName(n)?.let { return it.id }
+        return dao.upsertModel(ServiceModel(name = n))
+    }
+    suspend fun deleteModel(m: ServiceModel) = dao.deleteModel(m)
+
     suspend fun saveEmployee(e: ServiceEmployee): Long =
         if (e.name.isBlank()) 0 else dao.upsertEmployee(e.copy(name = e.name.trim(), phone = e.phone.trim()))
     suspend fun deleteEmployee(e: ServiceEmployee) = dao.deleteEmployee(e)
@@ -110,5 +120,14 @@ class ServiceRepository(context: Context) {
     suspend fun addCustomer(name: String, phone: String, address: String): Customer {
         val id = repo.addCustomer(name, phone, address)
         return Customer(id = id, name = name.trim(), phone = phone.trim(), address = address.trim())
+    }
+
+    /**
+     * A mobile number typed against the default cash customer identifies a real person:
+     * reuse the customer who already has that number, else create "Cash Customer - <no>".
+     */
+    suspend fun resolveCashCustomer(phone: String): Customer {
+        repo.customerByPhone(phone)?.let { return it }
+        return repo.addCustomerReturning("Cash Customer - $phone", phone)
     }
 }

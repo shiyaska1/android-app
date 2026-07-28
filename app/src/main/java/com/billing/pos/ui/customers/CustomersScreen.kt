@@ -478,9 +478,9 @@ private fun CustomerDialog(
                     }
                 }
                 OutlinedTextField(
-                    value = phone, onValueChange = { phone = it },
+                    value = phone, onValueChange = { phone = it.filter { c -> c.isDigit() } },
                     label = { Text("Phone / WhatsApp") }, singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
                 )
                 OutlinedTextField(

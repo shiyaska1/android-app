@@ -99,9 +99,9 @@ fun NewCustomerDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
                 OutlinedTextField(
-                    value = phone, onValueChange = { phone = it },
+                    value = phone, onValueChange = { phone = it.filter { c -> c.isDigit() } },
                     label = { Text("Phone") }, singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth()
                 )
                 OutlinedTextField(

@@ -33,6 +33,13 @@ data class ServiceStatus(
     val name: String
 )
 
+/** A model / vehicle / item the shop services ("iPhone 12", "Activa 5G"…). */
+@Entity(tableName = "service_models")
+data class ServiceModel(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String
+)
+
 /** A workshop employee/technician who can be assigned a job card. */
 @Entity(tableName = "service_employees")
 data class ServiceEmployee(
@@ -66,6 +73,8 @@ data class ServiceJobCard(
     val customerPhone: String = "",
     val typeId: Long = 0,
     val typeName: String = "",
+    val modelId: Long = 0,
+    val modelName: String = "",
     val employeeId: Long = 0,
     val employeeName: String = "",
     val status: String = "Pending",
@@ -120,6 +129,12 @@ interface ServiceDao {
     @Query("SELECT COUNT(*) FROM service_statuses") suspend fun statusCount(): Int
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsertStatus(s: ServiceStatus): Long
     @Delete suspend fun deleteStatus(s: ServiceStatus)
+
+    // models / vehicles / items
+    @Query("SELECT * FROM service_models ORDER BY name COLLATE NOCASE") fun models(): Flow<List<ServiceModel>>
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsertModel(m: ServiceModel): Long
+    @Delete suspend fun deleteModel(m: ServiceModel)
+    @Query("SELECT * FROM service_models WHERE name = :name COLLATE NOCASE LIMIT 1") suspend fun modelByName(name: String): ServiceModel?
 
     // employees
     @Query("SELECT * FROM service_employees ORDER BY name COLLATE NOCASE") fun employees(): Flow<List<ServiceEmployee>>

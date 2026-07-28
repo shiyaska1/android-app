@@ -94,6 +94,7 @@ object ThermalPrinter {
         val name: String,
         val customerName: String,
         val customerPhone: String,
+        val modelName: String = "",
         val employeeName: String,
         val typeName: String,
         val status: String,
@@ -435,6 +436,7 @@ object ThermalPrinter {
         if (jc.name.isNotBlank()) sb.append("Card: ${clip(jc.name, COLS - 6)}\n")
         sb.append("Cust: ${clip(jc.customerName, COLS - 6)}\n")
         if (jc.customerPhone.isNotBlank()) sb.append("Ph  : ${jc.customerPhone}\n")
+        if (jc.modelName.isNotBlank()) sb.append("Modl: ${clip(jc.modelName, COLS - 6)}\n")
         if (jc.employeeName.isNotBlank()) sb.append("Emp : ${clip(jc.employeeName, COLS - 6)}\n")
         if (jc.typeName.isNotBlank()) sb.append("Type: ${clip(jc.typeName, COLS - 6)}\n")
         sb.append("Stat: ${jc.status}\n")

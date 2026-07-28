@@ -59,6 +59,7 @@ class ServiceMasterViewModel(app: Application) : AndroidViewModel(app) {
     val statuses: StateFlow<List<ServiceStatus>> = repo.statuses.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val jobs: StateFlow<List<ServiceJobMaster>> = repo.jobs.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val employees: StateFlow<List<ServiceEmployee>> = repo.employees.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val models: StateFlow<List<com.billing.pos.data.ServiceModel>> = repo.models.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     init { viewModelScope.launch { repo.ensureDefaults() } }
 
@@ -70,6 +71,12 @@ class ServiceMasterViewModel(app: Application) : AndroidViewModel(app) {
     fun deleteJob(j: ServiceJobMaster) { viewModelScope.launch { repo.deleteJob(j) } }
     fun saveEmployee(e: ServiceEmployee) { viewModelScope.launch { repo.saveEmployee(e) } }
     fun deleteEmployee(e: ServiceEmployee) { viewModelScope.launch { repo.deleteEmployee(e) } }
+    fun addModel(name: String) { viewModelScope.launch { repo.saveModel(name) } }
+    fun renameModel(m: com.billing.pos.data.ServiceModel, name: String) {
+        if (name.isBlank()) return
+        viewModelScope.launch { com.billing.pos.data.AppDatabase.get(getApplication()).serviceDao().upsertModel(m.copy(name = name.trim())) }
+    }
+    fun deleteModel(m: com.billing.pos.data.ServiceModel) { viewModelScope.launch { repo.deleteModel(m) } }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -87,6 +94,9 @@ fun ServiceMastersScreen(onBack: () -> Unit, vm: ServiceMasterViewModel = viewMo
     var showNewJob by remember { mutableStateOf(false) }
     var editEmployee by remember { mutableStateOf<ServiceEmployee?>(null) }
     var showNewEmployee by remember { mutableStateOf(false) }
+    val models by vm.models.collectAsStateSafe()
+    var newModel by remember { mutableStateOf("") }
+    var editModel by remember { mutableStateOf<com.billing.pos.data.ServiceModel?>(null) }
 
     Scaffold(
         topBar = {
@@ -160,6 +170,20 @@ fun ServiceMastersScreen(onBack: () -> Unit, vm: ServiceMasterViewModel = viewMo
                 }
                 Divider()
             }
+            item {
+                Text("Models / Vehicles / Items", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 16.dp))
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(value = newModel, onValueChange = { newModel = it }, label = { Text("New model") }, singleLine = true, modifier = Modifier.weight(1f))
+                    OutlinedButton(onClick = { if (newModel.isNotBlank()) { vm.addModel(newModel); newModel = "" } }) { Text("Add") }
+                }
+            }
+            items(models, key = { "m" + it.id }) { m ->
+                Row(Modifier.fillMaxWidth().clickable { editModel = m }.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(m.name, Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
+                    IconButton(onClick = { vm.deleteModel(m) }) { Icon(Icons.Filled.Delete, "Delete", tint = MaterialTheme.colorScheme.error) }
+                }
+                Divider()
+            }
         }
     }
 
@@ -177,6 +201,11 @@ fun ServiceMastersScreen(onBack: () -> Unit, vm: ServiceMasterViewModel = viewMo
     editJob?.let { j -> JobMasterDialog(j, onDismiss = { editJob = null }, onSave = { vm.saveJob(it); editJob = null }) }
     if (showNewEmployee) EmployeeDialog(null, onDismiss = { showNewEmployee = false }, onSave = { vm.saveEmployee(it); showNewEmployee = false })
     editEmployee?.let { e -> EmployeeDialog(e, onDismiss = { editEmployee = null }, onSave = { vm.saveEmployee(it); editEmployee = null }) }
+    editModel?.let { m ->
+        NameEditDialog(title = "Edit model", initial = m.name, onDismiss = { editModel = null }) {
+            vm.renameModel(m, it); editModel = null
+        }
+    }
 }
 
 /** One dialog serves add and edit of an employee with their contact number. */
@@ -191,9 +220,9 @@ fun EmployeeDialog(existing: ServiceEmployee?, onDismiss: () -> Unit, onSave: (S
             Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Name *") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 OutlinedTextField(
-                    value = phone, onValueChange = { phone = it },
+                    value = phone, onValueChange = { phone = it.filter { c -> c.isDigit() } },
                     label = { Text("Contact number") }, singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone), modifier = Modifier.fillMaxWidth()
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth()
                 )
             }
         },
