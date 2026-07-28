@@ -436,6 +436,7 @@ private fun AppNav() {
                 onServiceMasters = { nav.navigate("service/masters") },
                 onServiceStatusReport = { nav.navigate("service/statusreport") },
                 onServicePendingReport = { nav.navigate("service/pending") },
+                onRpReport = { nav.navigate("rpreport") },
                 onDiary = { nav.navigate("diary") },
                 onUsers = { nav.navigate("users") },
                 onSettings = { nav.navigate("settings") },
@@ -869,6 +870,9 @@ private fun AppNav() {
         }
         composable("service/masters") {
             com.billing.pos.ui.service.ServiceMastersScreen(onBack = { nav.popBackStack() })
+        }
+        composable("rpreport") {
+            com.billing.pos.ui.reports.ReceiptPaymentReportScreen(onBack = { nav.popBackStack() })
         }
         composable("service/statusreport") {
             com.billing.pos.ui.service.ServiceStatusReportScreen(

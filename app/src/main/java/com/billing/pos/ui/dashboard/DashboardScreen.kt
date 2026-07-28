@@ -98,7 +98,7 @@ private val PERSONAL_TILES = setOf(
 )
 
 /** The service job-card tiles, shown for every business type except Personal. */
-private val SERVICE_TILES = setOf("Job Cards", "Service Masters", "Job Status Report", "Pending Jobs")
+private val SERVICE_TILES = setOf("Job Cards", "Service Masters", "Job Status Report", "Pending Jobs", "Receipt & Payment")
 
 /** In Bulk SMS mode the dashboard shows only the SMS tools plus the requested keep-list. */
 private val BULK_SMS_TILES = setOf(
@@ -197,6 +197,7 @@ fun DashboardScreen(
     onServiceMasters: () -> Unit,
     onServiceStatusReport: () -> Unit,
     onServicePendingReport: () -> Unit,
+    onRpReport: () -> Unit,
     onDiary: () -> Unit,
     onUsers: () -> Unit,
     onSettings: () -> Unit,
@@ -293,6 +294,7 @@ fun DashboardScreen(
         if (Session.canManageUsers) add(Tile("Accounts", Icons.Filled.AccountTree, onAccounts, "Accounts"))
         if (Session.canManageUsers) add(Tile("Journal", Icons.Filled.Book, onJournal, "Accounts"))
         if (Session.canViewCashbook) add(Tile("Ledger", Icons.Filled.Summarize, onLedger, "Accounts"))
+        if (Session.canViewCashbook) add(Tile("Receipt & Payment", Icons.Filled.Summarize, onRpReport, "Accounts"))
 
         // ---- Reports ----
         if (Session.canViewInvoice) add(Tile("Sales Report", Icons.Filled.Assessment, onReports, "Reports"))

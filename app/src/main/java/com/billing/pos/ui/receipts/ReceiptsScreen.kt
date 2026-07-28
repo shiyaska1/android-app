@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
@@ -23,8 +24,11 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.LibraryAdd
+import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Print
+import androidx.compose.material.icons.filled.UploadFile
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -121,19 +125,26 @@ class ReceiptsViewModel(app: Application) : AndroidViewModel(app) {
 
     init { viewModelScope.launch { refreshPayFrom() } }
 
-    fun addAgainstInvoice(bill: Bill, amount: Double, mode: PayMode, dateMillis: Long) {
-        if (amount <= 0) { message.value = "Enter a valid amount"; return }
-        viewModelScope.launch { repo.addReceipt(bill, amount, mode, dateMillis); message.value = "Receipt added" }
-    }
-
-    fun addStandalone(payFrom: String, amount: Double, mode: PayMode, dateMillis: Long) {
+    fun addAgainstInvoice(bill: Bill, amount: Double, mode: PayMode, dateMillis: Long, attachments: List<com.billing.pos.data.ReceiptAttachment> = emptyList()) {
         if (amount <= 0) { message.value = "Enter a valid amount"; return }
         viewModelScope.launch {
-            repo.addStandaloneReceipt(payFrom.trim().ifBlank { "Cash receipt" }, amount, mode, dateMillis)
+            val r = repo.addReceipt(bill, amount, mode, dateMillis)
+            if (attachments.isNotEmpty()) repo.replaceReceiptAttachments(r.id, attachments)
+            message.value = "Receipt added"
+        }
+    }
+
+    fun addStandalone(payFrom: String, amount: Double, mode: PayMode, dateMillis: Long, attachments: List<com.billing.pos.data.ReceiptAttachment> = emptyList()) {
+        if (amount <= 0) { message.value = "Enter a valid amount"; return }
+        viewModelScope.launch {
+            val r = repo.addStandaloneReceipt(payFrom.trim().ifBlank { "Cash receipt" }, amount, mode, dateMillis)
+            if (attachments.isNotEmpty()) repo.replaceReceiptAttachments(r.id, attachments)
             refreshPayFrom()
             message.value = "Receipt added"
         }
     }
+
+    suspend fun attachmentsFor(receiptId: Long) = repo.receiptAttachmentsFor(receiptId)
 
     fun addBulk(mode: PayMode, rows: List<com.billing.pos.ui.common.BulkEntryRow>) {
         if (rows.isEmpty()) { message.value = "Nothing to save"; return }
@@ -341,8 +352,8 @@ fun ReceiptsScreen(
             customers = customers,
             payFromOptions = payFromOptions,
             onDismiss = { showAdd = false },
-            onAddInvoice = { bill, amt, mode, date -> vm.addAgainstInvoice(bill, amt, mode, date); showAdd = false },
-            onAddOther = { payFrom, amt, mode, date -> vm.addStandalone(payFrom, amt, mode, date); showAdd = false }
+            onAddInvoice = { bill, amt, mode, date, atts -> vm.addAgainstInvoice(bill, amt, mode, date, atts); showAdd = false },
+            onAddOther = { payFrom, amt, mode, date, atts -> vm.addStandalone(payFrom, amt, mode, date, atts); showAdd = false }
         )
     }
     editFor?.let { r ->
@@ -403,8 +414,8 @@ private fun AddReceiptDialog(
     customers: List<com.billing.pos.data.Customer>,
     payFromOptions: List<String>,
     onDismiss: () -> Unit,
-    onAddInvoice: (Bill, Double, PayMode, Long) -> Unit,
-    onAddOther: (String, Double, PayMode, Long) -> Unit
+    onAddInvoice: (Bill, Double, PayMode, Long, List<com.billing.pos.data.ReceiptAttachment>) -> Unit,
+    onAddOther: (String, Double, PayMode, Long, List<com.billing.pos.data.ReceiptAttachment>) -> Unit
 ) {
     val context = LocalContext.current
     var againstInvoice by remember { mutableStateOf(outstanding.isNotEmpty()) }
@@ -415,6 +426,18 @@ private fun AddReceiptDialog(
     var dateMillis by remember { mutableStateOf(System.currentTimeMillis()) }
     var billExpanded by remember { mutableStateOf(false) }
     var payFromExpanded by remember { mutableStateOf(false) }
+    val attachments = remember { androidx.compose.runtime.mutableStateListOf<com.billing.pos.data.ReceiptAttachment>() }
+    fun addAttachment(uri: android.net.Uri?) {
+        if (uri == null) return
+        com.billing.pos.data.ReceiptAttachmentStore.copyIn(context, uri)?.let { attachments.add(it) }
+    }
+    val attCamera = com.billing.pos.ocr.rememberImageCamera { u -> addAttachment(u) }
+    val attGallery = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia()
+    ) { addAttachment(it) }
+    val attFile = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
+    ) { addAttachment(it) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -486,15 +509,44 @@ private fun AddReceiptDialog(
                     onClick = { pickReceiptDate(context, dateMillis) { dateMillis = it } },
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
                 ) { Text("Date: ${Format.date(dateMillis)}") }
+
+                // Proof of payment: photos or any file, filed against the receipt.
+                Text("Attachments", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 10.dp))
+                Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    OutlinedButton(onClick = { attCamera() }, modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Filled.PhotoCamera, "Camera", Modifier.size(18.dp))
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            attGallery.launch(
+                                androidx.activity.result.PickVisualMediaRequest(
+                                    androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly
+                                )
+                            )
+                        },
+                        modifier = Modifier.weight(1f)
+                    ) { Icon(Icons.Filled.PhotoLibrary, "Gallery", Modifier.size(18.dp)) }
+                    OutlinedButton(onClick = { attFile.launch(arrayOf("*/*")) }, modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Filled.UploadFile, "File", Modifier.size(18.dp))
+                    }
+                }
+                attachments.forEachIndexed { i, att ->
+                    Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text(att.name, Modifier.weight(1f), maxLines = 1, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall)
+                        IconButton(onClick = { attachments.removeAt(i) }) {
+                            Icon(Icons.Filled.Delete, "Remove", Modifier.size(20.dp), tint = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                }
             }
         },
         confirmButton = {
             Button(onClick = {
                 val amt = amount.toDoubleOrNull() ?: 0.0
                 if (againstInvoice) {
-                    selected?.let { onAddInvoice(it, amt.coerceAtMost(it.balance), mode, dateMillis) }
+                    selected?.let { onAddInvoice(it, amt.coerceAtMost(it.balance), mode, dateMillis, attachments.toList()) }
                 } else {
-                    onAddOther(payFrom.trim(), amt, mode, dateMillis)
+                    onAddOther(payFrom.trim(), amt, mode, dateMillis, attachments.toList())
                 }
             }) { Text("Add") }
         },
@@ -530,6 +582,27 @@ private fun ReceiptDialog(
                 Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     PayMode.values().forEach { m ->
                         FilterChip(selected = mode == m, onClick = { if (canSave) mode = m }, label = { Text(m.label) })
+                    }
+                }
+
+                // Files attached when the receipt was made; tap to open.
+                val attCtx = LocalContext.current
+                var atts by remember(receipt.id) { mutableStateOf<List<com.billing.pos.data.ReceiptAttachment>>(emptyList()) }
+                LaunchedEffect(receipt.id) {
+                    atts = com.billing.pos.data.Repository(attCtx).receiptAttachmentsFor(receipt.id)
+                }
+                if (atts.isNotEmpty()) {
+                    Text("Attachments", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 10.dp))
+                    atts.forEach { a ->
+                        Text(
+                            a.name,
+                            color = MaterialTheme.colorScheme.primary,
+                            style = MaterialTheme.typography.bodySmall,
+                            maxLines = 1,
+                            modifier = Modifier.fillMaxWidth()
+                                .clickable { com.billing.pos.data.ReceiptAttachmentStore.open(attCtx, a) }
+                                .padding(top = 6.dp)
+                        )
                     }
                 }
             }

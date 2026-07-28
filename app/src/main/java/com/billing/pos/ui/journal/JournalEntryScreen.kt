@@ -46,8 +46,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateList
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -81,6 +84,19 @@ class JournalEntryViewModel(app: Application) : AndroidViewModel(app) {
 
     val heads: StateFlow<List<AccountHead>> =
         repo.accountHeads.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val groups: StateFlow<List<com.billing.pos.data.AccountGroup>> =
+        repo.accountGroups.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** Creates a head from the inline "+" dialog and puts it straight on the line. */
+    fun createHead(index: Int, name: String, groupId: Long, opening: Double, isDebit: Boolean) {
+        if (name.isBlank()) { message.value = "Enter an account name"; return }
+        if (groupId <= 0) { message.value = "Pick an account group"; return }
+        viewModelScope.launch {
+            val id = repo.addAccountHead(name, groupId, opening, isDebit)
+            setHead(index, AccountHead(id = id, name = name.trim(), groupId = groupId, openingBalance = opening, openingIsDebit = isDebit))
+            message.value = "Account created"
+        }
+    }
 
     var voucherNo by mutableStateOf("JV-0001"); private set
     var dateMillis by mutableStateOf(System.currentTimeMillis())
@@ -166,10 +182,25 @@ fun JournalEntryScreen(
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
     val heads by vm.heads.collectAsStateSafe()
+    val groups by vm.groups.collectAsStateSafe()
     val message by vm.message.collectAsStateSafe()
+    var newHeadFor by remember { mutableStateOf(-1) }
+    var newHeadName by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) { vm.load(entryId) }
     LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); vm.consumeMessage() } }
+
+    if (newHeadFor >= 0) {
+        NewAccountHeadDialog(
+            initialName = newHeadName,
+            groups = groups,
+            onDismiss = { newHeadFor = -1 },
+            onSave = { name, groupId, opening, isDebit ->
+                vm.createHead(newHeadFor, name, groupId, opening, isDebit)
+                newHeadFor = -1
+            }
+        )
+    }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
@@ -201,20 +232,32 @@ fun JournalEntryScreen(
                 key(line.uid) {
                     var amtText by remember(line.uid) { mutableStateOf(if (line.amount != 0.0) Format.money(line.amount) else "") }
                     var expanded by remember { mutableStateOf(false) }
+                    var headQuery by remember(line.uid) { mutableStateOf(line.headName) }
+                    LaunchedEffect(line.headName) { if (!expanded) headQuery = line.headName }
                     Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
+                            // Type to search (five suggestions), or "+" to create the account.
                             ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }, modifier = Modifier.weight(1f)) {
                                 OutlinedTextField(
-                                    readOnly = true, value = line.headName.ifBlank { "Select account" }, onValueChange = {},
+                                    value = headQuery,
+                                    onValueChange = { headQuery = it; expanded = true },
                                     label = { Text("Account head") },
+                                    placeholder = { Text("Search account") },
+                                    singleLine = true,
                                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
                                     modifier = Modifier.menuAnchor().fillMaxWidth()
+                                        .onFocusChanged { fs -> if (!fs.isFocused && !expanded) headQuery = line.headName }
                                 )
-                                ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                                    heads.forEach { h ->
-                                        DropdownMenuItem(text = { Text(h.name) }, onClick = { vm.setHead(index, h); expanded = false })
+                                val matches = heads.filter { headQuery.isBlank() || it.name.contains(headQuery, true) }.take(5)
+                                ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false; headQuery = line.headName }) {
+                                    matches.forEach { h ->
+                                        DropdownMenuItem(text = { Text(h.name) }, onClick = { vm.setHead(index, h); headQuery = h.name; expanded = false })
                                     }
+                                    if (matches.isEmpty()) DropdownMenuItem(text = { Text("No match") }, onClick = { expanded = false })
                                 }
+                            }
+                            IconButton(onClick = { newHeadFor = index; newHeadName = headQuery.trim() }) {
+                                Icon(Icons.Filled.Add, "New account", tint = MaterialTheme.colorScheme.primary)
                             }
                             IconButton(onClick = { vm.removeLine(index) }) { Icon(Icons.Filled.Delete, "Remove", tint = MaterialTheme.colorScheme.error) }
                         }
@@ -288,4 +331,59 @@ private fun pickDate(context: Context, current: Long, onPicked: (Long) -> Unit) 
         { _, y, m, d -> c.set(Calendar.YEAR, y); c.set(Calendar.MONTH, m); c.set(Calendar.DAY_OF_MONTH, d); onPicked(c.timeInMillis) },
         c.get(Calendar.YEAR), c.get(Calendar.MONTH), c.get(Calendar.DAY_OF_MONTH)
     ).show()
+}
+
+/** New account head from inside a journal line: name, group, opening balance. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun NewAccountHeadDialog(
+    initialName: String,
+    groups: List<com.billing.pos.data.AccountGroup>,
+    onDismiss: () -> Unit,
+    onSave: (name: String, groupId: Long, opening: Double, isDebit: Boolean) -> Unit
+) {
+    var name by remember { mutableStateOf(initialName) }
+    var groupId by remember { mutableStateOf(0L) }
+    var groupMenu by remember { mutableStateOf(false) }
+    var opening by remember { mutableStateOf("") }
+    var isDebit by remember { mutableStateOf(true) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("New account") },
+        text = {
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Account name *") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                ExposedDropdownMenuBox(expanded = groupMenu, onExpandedChange = { groupMenu = !groupMenu }) {
+                    OutlinedTextField(
+                        readOnly = true,
+                        value = groups.firstOrNull { it.id == groupId }?.name ?: "Select group *",
+                        onValueChange = {},
+                        label = { Text("Account group") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(groupMenu) },
+                        modifier = Modifier.menuAnchor().fillMaxWidth()
+                    )
+                    ExposedDropdownMenu(expanded = groupMenu, onDismissRequest = { groupMenu = false }) {
+                        groups.forEach { g ->
+                            DropdownMenuItem(text = { Text(g.name) }, onClick = { groupId = g.id; groupMenu = false })
+                        }
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = opening,
+                        onValueChange = { v -> opening = v.filter { it.isDigit() || it == '.' } },
+                        label = { Text("Opening balance") }, singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        modifier = Modifier.weight(1f)
+                    )
+                    OutlinedButton(onClick = { isDebit = !isDebit }) { Text(if (isDebit) "Dr" else "Cr") }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onSave(name.trim(), groupId, opening.toDoubleOrNull() ?: 0.0, isDebit) }) { Text("Create") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
 }

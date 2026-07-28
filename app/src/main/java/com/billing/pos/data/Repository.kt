@@ -396,6 +396,20 @@ class Repository(context: Context) {
         list.forEach { expenseAttachmentDao.insert(it.copy(id = 0, expenseId = expenseId)) }
     }
 
+    // ---- receipt attachments ----
+    private val receiptAttachmentDao = db.receiptAttachmentDao()
+    suspend fun receiptAttachmentsFor(receiptId: Long): List<ReceiptAttachment> =
+        receiptAttachmentDao.forReceipt(receiptId)
+
+    /** Replaces the attachment rows for a receipt, deleting files that were removed. */
+    suspend fun replaceReceiptAttachments(receiptId: Long, list: List<ReceiptAttachment>) {
+        val existing = receiptAttachmentDao.forReceipt(receiptId)
+        val keep = list.map { it.path }.toSet()
+        existing.filter { it.path !in keep }.forEach { ReceiptAttachmentStore.delete(it) }
+        receiptAttachmentDao.deleteForReceipt(receiptId)
+        receiptAttachmentDao.insertAll(list.map { it.copy(id = 0, receiptId = receiptId) })
+    }
+
     // ---- estimates ----
     // Deliberately absent from stockByName: an estimate never moves stock.
     private val estimateDao = db.estimateDao()
@@ -669,10 +683,10 @@ class Repository(context: Context) {
             payFrom = bill.customerName,
             toAccountId = if (toAccountId != 0L) toAccountId else ensureModeAccount(mode.label)
         )
-        receiptDao.insert(receipt)
+        val newId = receiptDao.insert(receipt)
         val newPaid = (bill.paidAmount + amount).coerceAtMost(bill.grandTotal)
         billDao.updateBillHeader(bill.copy(paidAmount = newPaid))
-        return receipt
+        return receipt.copy(id = newId)
     }
 
     /** Records a receipt from any source (no invoice link; [refNo] labels it, e.g. a job card no). */
@@ -689,8 +703,8 @@ class Repository(context: Context) {
             payFrom = payFrom.trim(),
             toAccountId = if (toAccountId != 0L) toAccountId else ensureModeAccount(mode.label)
         )
-        receiptDao.insert(receipt)
-        return receipt
+        val newId = receiptDao.insert(receipt)
+        return receipt.copy(id = newId)
     }
 
     /** Distinct "pay from" names previously used, for the dropdown. */
@@ -753,6 +767,8 @@ class Repository(context: Context) {
                 billDao.updateBillHeader(bill.copy(paidAmount = adjusted))
             }
         }
+        receiptAttachmentDao.forReceipt(receipt.id).forEach { ReceiptAttachmentStore.delete(it) }
+        receiptAttachmentDao.deleteForReceipt(receipt.id)
         receiptDao.delete(receipt)
     }
 

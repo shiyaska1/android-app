@@ -41,7 +41,8 @@ import androidx.room.TypeConverters
         EnquiryFollowup::class, CoachAttendance::class,
         ServiceType::class, ServiceStatus::class, ServiceJobMaster::class,
         ServiceJobCard::class, ServiceJobLine::class, ServiceJobAttachment::class,
-        ServiceEmployee::class, ServiceModel::class
+        ServiceEmployee::class, ServiceModel::class,
+        ReceiptAttachment::class
     ],
     // v25 quotations; v26 sales returns; v27 purchase returns; v28 purchase quotations (LPO);
     // v29 dual units; v30 rental; v31 medical lab; v32 lab masters + heading rows;
@@ -52,8 +53,8 @@ import androidx.room.TypeConverters
     // v53 receipt/payment account links; v54 gym; v55 coaching centre;
     // v56 service center job cards; v57 service employees + card assignment;
     // v58 job card priority; v59 model/vehicle master on job cards;
-    // v60 diary entry customer link.
-    version = 60,
+    // v60 diary entry customer link; v61 receipt attachments.
+    version = 61,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -102,6 +103,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun gymFeeDao(): GymFeeDao
     abstract fun coachingDao(): CoachingDao
     abstract fun serviceDao(): ServiceDao
+    abstract fun receiptAttachmentDao(): ReceiptAttachmentDao
 
     companion object {
         @Volatile private var INSTANCE: AppDatabase? = null
@@ -406,6 +408,17 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** Files attached to a receipt voucher. */
+        private val MIGRATION_60_61 = object : androidx.room.migration.Migration(60, 61) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS receipt_attachments (" +
+                        "id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, receiptId INTEGER NOT NULL, " +
+                        "path TEXT NOT NULL, name TEXT NOT NULL, mime TEXT NOT NULL)"
+                )
+            }
+        }
+
         fun get(context: Context): AppDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -413,7 +426,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "pos_billing.db"
                 )
-                    .addMigrations(MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45, MIGRATION_45_46, MIGRATION_46_47, MIGRATION_47_48, MIGRATION_48_49, MIGRATION_49_50, MIGRATION_50_51, MIGRATION_51_52, MIGRATION_52_53, MIGRATION_53_54, MIGRATION_54_55, MIGRATION_55_56, MIGRATION_56_57, MIGRATION_57_58, MIGRATION_58_59, MIGRATION_59_60)
+                    .addMigrations(MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45, MIGRATION_45_46, MIGRATION_46_47, MIGRATION_47_48, MIGRATION_48_49, MIGRATION_49_50, MIGRATION_50_51, MIGRATION_51_52, MIGRATION_52_53, MIGRATION_53_54, MIGRATION_54_55, MIGRATION_55_56, MIGRATION_56_57, MIGRATION_57_58, MIGRATION_58_59, MIGRATION_59_60, MIGRATION_60_61)
                     .fallbackToDestructiveMigration()
                     .build()
                     .also { INSTANCE = it }
