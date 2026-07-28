@@ -69,6 +69,8 @@ data class ServiceJobCard(
     val employeeId: Long = 0,
     val employeeName: String = "",
     val status: String = "Pending",
+    /** High / Medium / Low — drives list ordering and the red/orange highlight. */
+    val priority: String = "Medium",
     /** Expected date the whole card is done. */
     val expectedMillis: Long = 0,
     val jobsTotal: Double = 0.0,
@@ -143,6 +145,7 @@ interface ServiceDao {
     @Update suspend fun updateCard(c: ServiceJobCard)
     @Delete suspend fun deleteCard(c: ServiceJobCard)
     @Insert suspend fun insertLines(lines: List<ServiceJobLine>)
+    @Update suspend fun updateLine(l: ServiceJobLine)
     @Query("DELETE FROM service_job_lines WHERE cardId = :id") suspend fun deleteLines(id: Long)
 
     @Transaction suspend fun save(c: ServiceJobCard, lines: List<ServiceJobLine>): Long {

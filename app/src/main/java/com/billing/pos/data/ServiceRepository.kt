@@ -23,7 +23,8 @@ class ServiceRepository(context: Context) {
     }
 
     // masters
-    suspend fun saveType(t: ServiceType) { if (t.name.isNotBlank()) dao.upsertType(t.copy(name = t.name.trim())) }
+    suspend fun saveType(t: ServiceType): Long =
+        if (t.name.isBlank()) 0 else dao.upsertType(t.copy(name = t.name.trim()))
     suspend fun deleteType(t: ServiceType) = dao.deleteType(t)
     suspend fun saveStatus(s: ServiceStatus) { if (s.name.isNotBlank()) dao.upsertStatus(s.copy(name = s.name.trim())) }
     suspend fun deleteStatus(s: ServiceStatus) = dao.deleteStatus(s)
@@ -61,6 +62,34 @@ class ServiceRepository(context: Context) {
         }
     }
     suspend fun setCardStatus(id: Long, status: String) = dao.setCardStatus(id, status)
+
+    suspend fun setCardExpected(id: Long, millis: Long) {
+        dao.cardById(id)?.let { dao.updateCard(it.copy(expectedMillis = millis)) }
+    }
+
+    /** Updates one job on a card, then refreshes the card's money and status. */
+    suspend fun updateLine(l: ServiceJobLine) {
+        dao.updateLine(l)
+        refreshCard(l.cardId)
+    }
+
+    /**
+     * Rejected jobs don't count toward the total, and a card whose jobs are all
+     * completed or rejected is itself Completed. Reopening a job undoes that.
+     */
+    private suspend fun refreshCard(cardId: Long) {
+        val c = dao.cardById(cardId) ?: return
+        val lines = dao.linesFor(cardId)
+        val jobsTotal = lines.filter { !it.status.equals("Rejected", true) }.sumOf { it.price }
+        val allDone = lines.isNotEmpty() &&
+            lines.all { it.status.equals("Completed", true) || it.status.equals("Rejected", true) }
+        val status = when {
+            allDone -> "Completed"
+            c.status.equals("Completed", true) -> "Pending"
+            else -> c.status
+        }
+        dao.updateCard(c.copy(jobsTotal = jobsTotal, grandTotal = jobsTotal + c.otherCharges, status = status))
+    }
 
     suspend fun deleteCard(c: ServiceJobCard) {
         dao.attachmentsFor(c.id).forEach { ServiceAttachmentStore.delete(it) }

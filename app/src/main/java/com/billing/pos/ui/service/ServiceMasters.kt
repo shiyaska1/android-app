@@ -207,7 +207,7 @@ fun EmployeeDialog(existing: ServiceEmployee?, onDismiss: () -> Unit, onSave: (S
 }
 
 @Composable
-private fun NameEditDialog(title: String, initial: String, onDismiss: () -> Unit, onSave: (String) -> Unit) {
+fun NameEditDialog(title: String, initial: String, onDismiss: () -> Unit, onSave: (String) -> Unit) {
     var name by remember { mutableStateOf(initial) }
     AlertDialog(
         onDismissRequest = onDismiss,

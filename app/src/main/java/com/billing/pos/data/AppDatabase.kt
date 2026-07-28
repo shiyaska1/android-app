@@ -50,8 +50,9 @@ import androidx.room.TypeConverters
     // v37 item purchase price; v38 material receipts + purchase stockReceived/lpoNo.
     // v50 customer orders; v51 Bulk SMS contacts + contact groups; v52 SMS templates;
     // v53 receipt/payment account links; v54 gym; v55 coaching centre;
-    // v56 service center job cards; v57 service employees + card assignment.
-    version = 57,
+    // v56 service center job cards; v57 service employees + card assignment;
+    // v58 job card priority.
+    version = 58,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -380,6 +381,13 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** Service center: High/Medium/Low priority on job cards. */
+        private val MIGRATION_57_58 = object : androidx.room.migration.Migration(57, 58) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE service_job_cards ADD COLUMN priority TEXT NOT NULL DEFAULT 'Medium'")
+            }
+        }
+
         fun get(context: Context): AppDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -387,7 +395,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "pos_billing.db"
                 )
-                    .addMigrations(MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45, MIGRATION_45_46, MIGRATION_46_47, MIGRATION_47_48, MIGRATION_48_49, MIGRATION_49_50, MIGRATION_50_51, MIGRATION_51_52, MIGRATION_52_53, MIGRATION_53_54, MIGRATION_54_55, MIGRATION_55_56, MIGRATION_56_57)
+                    .addMigrations(MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45, MIGRATION_45_46, MIGRATION_46_47, MIGRATION_47_48, MIGRATION_48_49, MIGRATION_49_50, MIGRATION_50_51, MIGRATION_51_52, MIGRATION_52_53, MIGRATION_53_54, MIGRATION_54_55, MIGRATION_55_56, MIGRATION_56_57, MIGRATION_57_58)
                     .fallbackToDestructiveMigration()
                     .build()
                     .also { INSTANCE = it }

@@ -44,6 +44,9 @@ data class PdfDoc(
     val remarks: String = "",
     /** Terms and conditions, printed under the totals. Accepts the same formatting as notes. */
     val terms: String = "",
+    /** When non-zero, an extra paid row and a BALANCE row print under the grand total. */
+    val paid: Double = 0.0,
+    val paidLabel: String = "Paid",
     val filePrefix: String         // used for the pdf file name, e.g. "quotation"
 )
 
@@ -207,6 +210,12 @@ object DocumentPdf {
         c.drawText(doc.grandLabel, labelR, y + 4f, gt)
         c.drawText(Format.money(doc.grandTotal), valueR, y + 4f, gt)
         y += 30f
+
+        if (doc.paid != 0.0) {
+            total(doc.paidLabel, Format.money(doc.paid))
+            total("BALANCE", Format.money(doc.grandTotal - doc.paid), bold = true)
+            y += 6f
+        }
 
         if (doc.remarks.isNotBlank()) {
             val note = Paint(cellBold).apply { textSize = 12f; color = 0xFF000000.toInt() }

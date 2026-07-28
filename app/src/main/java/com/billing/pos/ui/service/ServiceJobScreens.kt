@@ -29,7 +29,9 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CalendarMonth
+import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.automirrored.filled.ListAlt
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.NoteAdd
 import androidx.compose.material.icons.filled.PersonAdd
@@ -48,6 +50,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -143,6 +146,7 @@ class ServiceJobViewModel(app: Application) : AndroidViewModel(app) {
     var typeName by mutableStateOf("")
     var employeeId by mutableStateOf(0L)
     var employeeName by mutableStateOf("")
+    var priority by mutableStateOf("Medium")
     var status by mutableStateOf("Pending")
     var expectedMillis by mutableStateOf(0L)
     var advanceText by mutableStateOf("")
@@ -160,7 +164,8 @@ class ServiceJobViewModel(app: Application) : AndroidViewModel(app) {
 
     init { viewModelScope.launch { repo.ensureDefaults(); jobNo = repo.nextJobNo() } }
 
-    val jobsTotal get() = lines.sumOf { it.price }
+    // Rejected jobs stay on the card for the record but don't count toward the money.
+    val jobsTotal get() = lines.filter { !it.status.equals("Rejected", true) }.sumOf { it.price }
     val otherCharges get() = otherChargesText.toDoubleOrNull() ?: 0.0
     val advance get() = advanceText.toDoubleOrNull() ?: 0.0
     val grandTotal get() = jobsTotal + otherCharges
@@ -175,6 +180,12 @@ class ServiceJobViewModel(app: Application) : AndroidViewModel(app) {
     fun removeLine(i: Int) { lines.removeAt(i) }
 
     fun saveJobMaster(j: ServiceJobMaster) { viewModelScope.launch { repo.saveJob(j) } }
+    fun addServiceType(name: String) {
+        viewModelScope.launch {
+            val id = repo.saveType(com.billing.pos.data.ServiceType(name = name))
+            if (id > 0) { typeId = id; typeName = name.trim() }
+        }
+    }
     fun saveEmployee(e: ServiceEmployee) {
         viewModelScope.launch {
             val id = repo.saveEmployee(e)
@@ -204,7 +215,7 @@ class ServiceJobViewModel(app: Application) : AndroidViewModel(app) {
             val c = repo.cardById(id) ?: return@launch
             editingId = c.id; jobNo = c.jobNo; cardName = c.name; dateMillis = c.dateMillis
             typeId = c.typeId; typeName = c.typeName; status = c.status; expectedMillis = c.expectedMillis
-            employeeId = c.employeeId; employeeName = c.employeeName
+            employeeId = c.employeeId; employeeName = c.employeeName; priority = c.priority
             advanceText = if (c.advance != 0.0) Format.money(c.advance) else ""
             otherChargesText = if (c.otherCharges != 0.0) Format.money(c.otherCharges) else ""
             otherChargesNote = c.otherChargesNote; remarks = c.remarks
@@ -222,7 +233,7 @@ class ServiceJobViewModel(app: Application) : AndroidViewModel(app) {
         cardName = ""; lines.clear(); attachments.clear()
         advanceText = ""; otherChargesText = ""; otherChargesNote = ""; remarks = ""
         typeId = 0; typeName = ""; status = "Pending"; expectedMillis = 0
-        employeeId = 0; employeeName = ""; customerPhone = ""
+        employeeId = 0; employeeName = ""; customerPhone = ""; priority = "Medium"
         dateMillis = System.currentTimeMillis(); editingId = null; selectedCustomer = null
         viewModelScope.launch { jobNo = repo.nextJobNo() }
     }
@@ -232,11 +243,15 @@ class ServiceJobViewModel(app: Application) : AndroidViewModel(app) {
         if (customer == null) { message.value = "Select a customer"; return }
         if (lines.isEmpty()) { message.value = "Add at least one job"; return }
         viewModelScope.launch {
+            // A card whose jobs are all completed or rejected is itself completed.
+            val allDone = lines.isNotEmpty() &&
+                lines.all { it.status.equals("Completed", true) || it.status.equals("Rejected", true) }
+            if (allDone) status = "Completed"
             val c = ServiceJobCard(
                 id = editingId ?: 0, jobNo = jobNo, name = cardName.trim(), dateMillis = dateMillis,
                 customerId = customer.id, customerName = customer.name, customerPhone = customerPhone.trim(),
                 typeId = typeId, typeName = typeName, employeeId = employeeId, employeeName = employeeName,
-                status = status, expectedMillis = expectedMillis,
+                status = status, priority = priority, expectedMillis = expectedMillis,
                 jobsTotal = jobsTotal, otherCharges = otherCharges, otherChargesNote = otherChargesNote.trim(),
                 grandTotal = grandTotal, advance = advance, remarks = remarks.trim()
             )
@@ -251,13 +266,17 @@ class ServiceJobViewModel(app: Application) : AndroidViewModel(app) {
 
     fun delete(c: ServiceJobCard) { viewModelScope.launch { repo.deleteCard(c); message.value = "Job card ${c.jobNo} deleted" } }
     fun setCardStatus(c: ServiceJobCard, s: String) { viewModelScope.launch { repo.setCardStatus(c.id, s); message.value = "${c.jobNo}: $s" } }
+    fun setCardExpected(c: ServiceJobCard, millis: Long) {
+        viewModelScope.launch { repo.setCardExpected(c.id, millis); message.value = "${c.jobNo}: expected ${Format.date(millis)}" }
+    }
+    fun updateLine(l: ServiceJobLine) { viewModelScope.launch { repo.updateLine(l) } }
 
     suspend fun linesForCard(id: Long): List<ServiceJobLine> = repo.linesFor(id)
 
     /** The current form as an A4 document. */
     fun pdfDocFromForm(): PdfDoc = pdfDoc(
         jobNo, dateMillis, selectedCustomer?.name ?: "", customerPhone, cardName, typeName,
-        employeeName, status, expectedMillis,
+        employeeName, status, priority, expectedMillis,
         lines.map { Triple(it.name, it.price, it.status to it.expectedMillis) },
         jobsTotal, otherCharges, grandTotal, advance, remarks
     )
@@ -265,14 +284,14 @@ class ServiceJobViewModel(app: Application) : AndroidViewModel(app) {
     /** A saved card as an A4 document, lines fetched from the DB. */
     suspend fun pdfDocFor(c: ServiceJobCard): PdfDoc = pdfDoc(
         c.jobNo, c.dateMillis, c.customerName, c.customerPhone, c.name, c.typeName,
-        c.employeeName, c.status, c.expectedMillis,
+        c.employeeName, c.status, c.priority, c.expectedMillis,
         repo.linesFor(c.id).map { Triple(it.name, it.price, it.status to it.expectedMillis) },
         c.jobsTotal, c.otherCharges, c.grandTotal, c.advance, c.remarks
     )
 
     private fun pdfDoc(
         no: String, date: Long, customer: String, phone: String, card: String, type: String,
-        employee: String, cardStatus: String, expected: Long,
+        employee: String, cardStatus: String, prio: String, expected: Long,
         jobLines: List<Triple<String, Double, Pair<String, Long>>>,
         jobs: Double, other: Double, grand: Double, adv: Double, rem: String
     ): PdfDoc {
@@ -282,18 +301,23 @@ class ServiceJobViewModel(app: Application) : AndroidViewModel(app) {
             if (type.isNotBlank()) add("Type: $type")
             if (employee.isNotBlank()) add("Employee: $employee")
             add("Status: $cardStatus")
+            if (!prio.equals("Medium", true)) add("Priority: $prio")
             if (expected > 0) add("Expected: ${Format.date(expected)}")
-            if (adv > 0) { add("Advance: ${Format.money(adv)}"); add("Balance: ${Format.money(grand - adv)}") }
         }.joinToString("  ·  ")
         return PdfDoc(
             docTitle = "JOB CARD", docNo = no, dateMillis = date,
             partyLabel = "Customer", partyName = customer, extraMeta = meta,
+            // Status prints inline with the job name; a rejected job stays on the card
+            // for the record but contributes nothing to the amount column.
             lines = jobLines.map { (name, price, st) ->
                 val (s, exp) = st
-                PdfLine(name, 1.0, price, price, note = s + if (exp > 0) " · by ${Format.date(exp)}" else "")
+                val rejected = s.equals("Rejected", true)
+                val label = "$name  [$s" + (if (exp > 0) " · by ${Format.date(exp)}" else "") + "]"
+                PdfLine(label, 1.0, price, if (rejected) 0.0 else price)
             },
             subTotal = jobs, taxTotal = 0.0, additionalCharge = other, discount = 0.0,
-            grandTotal = grand, grandLabel = "TOTAL", remarks = rem, filePrefix = "jobcard"
+            grandTotal = grand, grandLabel = "TOTAL", remarks = rem,
+            paid = adv, paidLabel = "Advance Received", filePrefix = "jobcard"
         )
     }
 
@@ -373,6 +397,7 @@ fun ServiceJobScreen(editId: Long?, onBack: () -> Unit, vm: ServiceJobViewModel 
     var showNewJob by remember { mutableStateOf(false) }
     var showNewCustomer by remember { mutableStateOf(false) }
     var showNewEmployee by remember { mutableStateOf(false) }
+    var showNewType by remember { mutableStateOf(false) }
 
     // Thermal print, same permission dance as the sales entry.
     fun doPrint() {
@@ -479,6 +504,9 @@ fun ServiceJobScreen(editId: Long?, onBack: () -> Unit, vm: ServiceJobViewModel 
                         types.forEach { t -> DropdownMenuItem(text = { Text(t.name) }, onClick = { vm.typeId = t.id; vm.typeName = t.name; typeMenu = false }) }
                     }
                 }
+                IconButton(onClick = { showNewType = true }, modifier = Modifier.align(Alignment.CenterVertically)) {
+                    Icon(Icons.Filled.Add, "New service type")
+                }
                 var statusMenu by remember { mutableStateOf(false) }
                 ExposedDropdownMenuBox(expanded = statusMenu, onExpandedChange = { statusMenu = !statusMenu }, modifier = Modifier.weight(1f)) {
                     OutlinedTextField(
@@ -495,6 +523,18 @@ fun ServiceJobScreen(editId: Long?, onBack: () -> Unit, vm: ServiceJobViewModel 
             OutlinedButton(onClick = { pickDate(context, vm.expectedMillis) { vm.expectedMillis = it } }, modifier = Modifier.fillMaxWidth().padding(top = 6.dp)) {
                 Icon(Icons.Filled.CalendarMonth, null)
                 Text(if (vm.expectedMillis > 0) " Expected completion: ${Format.date(vm.expectedMillis)}" else " Expected completion date", maxLines = 1)
+            }
+
+            // Priority: high jobs jump to the top of the list, coloured to match.
+            Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("Priority", style = MaterialTheme.typography.labelLarge)
+                listOf("High", "Medium", "Low").forEach { p ->
+                    FilterChip(
+                        selected = vm.priority == p,
+                        onClick = { vm.priority = p },
+                        label = { Text(p, color = priorityColor(p), fontWeight = if (vm.priority == p) FontWeight.Bold else FontWeight.Normal) }
+                    )
+                }
             }
 
             Button(onClick = { showJobPicker = true }, modifier = Modifier.fillMaxWidth().padding(top = 6.dp)) { Icon(Icons.Filled.Add, null); Text("  Add job") }
@@ -623,6 +663,24 @@ fun ServiceJobScreen(editId: Long?, onBack: () -> Unit, vm: ServiceJobViewModel 
             vm.saveEmployee(it); showNewEmployee = false
         })
     }
+    if (showNewType) {
+        NameEditDialog(title = "New service type", initial = "", onDismiss = { showNewType = false }) {
+            vm.addServiceType(it); showNewType = false
+        }
+    }
+}
+
+@Composable
+fun priorityColor(p: String) = when {
+    p.equals("High", true) -> MaterialTheme.colorScheme.error
+    p.equals("Medium", true) -> androidx.compose.ui.graphics.Color(0xFFE65100)
+    else -> androidx.compose.ui.graphics.Color.Unspecified
+}
+
+private fun priorityRank(p: String) = when {
+    p.equals("High", true) -> 0
+    p.equals("Medium", true) -> 1
+    else -> 2
 }
 
 /** Pick a job from the master, or jump to creating a new one. */
@@ -797,14 +855,16 @@ fun ServiceJobListScreen(
     var statusFilter by remember { mutableStateOf("") }
     var typeFilter by remember { mutableStateOf("") }
     var deleteFor by remember { mutableStateOf<ServiceJobCard?>(null) }
+    var jobsFor by remember { mutableStateOf<ServiceJobCard?>(null) }
 
+    // High priority floats to the top, newest first within each priority.
     val filtered = cards.filter { c ->
         (query.isBlank() || c.jobNo.contains(query, true) || c.name.contains(query, true) ||
             c.customerName.contains(query, true) || c.customerPhone.contains(query)) &&
             (statusFilter.isBlank() || c.status.equals(statusFilter, true)) &&
             (typeFilter.isBlank() || c.typeName.equals(typeFilter, true)) &&
             c.dateMillis >= jcStartOfDay(fromMillis) && c.dateMillis <= jcEndOfDay(toMillis)
-    }
+    }.sortedWith(compareBy({ priorityRank(it.priority) }, { -it.dateMillis }))
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
@@ -870,7 +930,11 @@ fun ServiceJobListScreen(
                 items(filtered, key = { it.id }) { c ->
                     Column(Modifier.fillMaxWidth().clickable { onOpen(c.id) }.padding(vertical = 8.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(c.jobNo + if (c.name.isNotBlank()) "  ${c.name}" else "", Modifier.weight(1f), fontWeight = FontWeight.Bold, maxLines = 1)
+                            Text(
+                                c.jobNo + if (c.name.isNotBlank()) "  ${c.name}" else "",
+                                Modifier.weight(1f), fontWeight = FontWeight.Bold, maxLines = 1,
+                                color = priorityColor(c.priority)
+                            )
                             // Tap the status to move the card along without opening it.
                             var statusMenu by remember(c.id) { mutableStateOf(false) }
                             Box {
@@ -902,6 +966,19 @@ fun ServiceJobListScreen(
                                 "Adv ${Format.rupee(c.advance)}  •  Bal ${Format.rupee(c.balance)}",
                                 Modifier.weight(1f), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold
                             )
+                            if (c.customerPhone.isNotBlank()) {
+                                IconButton(onClick = {
+                                    runCatching {
+                                        context.startActivity(
+                                            Intent(Intent.ACTION_DIAL, android.net.Uri.parse("tel:${c.customerPhone}"))
+                                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                        )
+                                    }
+                                }) { Icon(Icons.Filled.Call, "Call customer", Modifier.size(20.dp)) }
+                            }
+                            IconButton(onClick = { jobsFor = c }) {
+                                Icon(Icons.AutoMirrored.Filled.ListAlt, "Jobs / expected date", Modifier.size(20.dp))
+                            }
                             var pdfMenu by remember(c.id) { mutableStateOf(false) }
                             Box {
                                 IconButton(onClick = { pdfMenu = true }) { Icon(Icons.Filled.PictureAsPdf, "PDF", Modifier.size(20.dp)) }
@@ -951,4 +1028,79 @@ fun ServiceJobListScreen(
             dismissButton = { TextButton(onClick = { deleteFor = null }) { Text("Cancel") } }
         )
     }
+    jobsFor?.let { c -> JobsQuickDialog(card = c, statuses = statuses.map { it.name }, vm = vm, onDismiss = { jobsFor = null }) }
+}
+
+/**
+ * Job-wise updates without opening the card: each job's status and expected date,
+ * plus the card's own expected date. Changes save immediately; totals and the card
+ * status refresh themselves (all jobs completed/rejected → card Completed).
+ */
+@Composable
+private fun JobsQuickDialog(
+    card: ServiceJobCard,
+    statuses: List<String>,
+    vm: ServiceJobViewModel,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    var dlgLines by remember(card.id) { mutableStateOf<List<ServiceJobLine>>(emptyList()) }
+    var expected by remember(card.id) { mutableStateOf(card.expectedMillis) }
+    LaunchedEffect(card.id) { dlgLines = vm.linesForCard(card.id) }
+
+    fun change(updated: ServiceJobLine) {
+        dlgLines = dlgLines.map { if (it.id == updated.id) updated else it }
+        vm.updateLine(updated)
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("${card.jobNo} — jobs") },
+        text = {
+            Column(Modifier.fillMaxWidth()) {
+                OutlinedButton(onClick = { pickDate(context, expected) { m -> expected = m; vm.setCardExpected(card, m) } }, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Filled.CalendarMonth, null, Modifier.size(16.dp))
+                    Text(if (expected > 0) " Card expected: ${Format.date(expected)}" else " Set card expected date", maxLines = 1)
+                }
+                LazyColumn(Modifier.fillMaxWidth().heightIn(max = 320.dp).padding(top = 6.dp)) {
+                    items(dlgLines, key = { it.id }) { l ->
+                        Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(l.name, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                                Text(
+                                    Format.rupee(l.price) + if (l.expectedMillis > 0) "  •  by ${Format.date(l.expectedMillis)}" else "",
+                                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline
+                                )
+                            }
+                            var menu by remember(l.id) { mutableStateOf(false) }
+                            Box {
+                                Text(
+                                    l.status,
+                                    color = statusColor(l.status),
+                                    fontWeight = FontWeight.SemiBold,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    modifier = Modifier.clickable { menu = true }.padding(horizontal = 6.dp, vertical = 4.dp)
+                                )
+                                DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                                    statuses.forEach { s ->
+                                        DropdownMenuItem(text = { Text(s) }, onClick = { change(l.copy(status = s)); menu = false })
+                                    }
+                                }
+                            }
+                            IconButton(onClick = { pickDate(context, l.expectedMillis) { m -> change(l.copy(expectedMillis = m)) } }) {
+                                Icon(Icons.Filled.CalendarMonth, "Expected date", Modifier.size(18.dp))
+                            }
+                        }
+                        Divider()
+                    }
+                    if (dlgLines.isEmpty()) item {
+                        Box(Modifier.fillMaxWidth().padding(vertical = 16.dp), contentAlignment = Alignment.Center) {
+                            Text("No jobs on this card", color = MaterialTheme.colorScheme.outline)
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } }
+    )
 }
