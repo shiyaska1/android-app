@@ -279,7 +279,7 @@ fun DiaryListScreen(
                         trailingIcon = { androidx.compose.material3.ExposedDropdownMenuDefaults.TrailingIcon(custMenu) },
                         modifier = Modifier.menuAnchor().fillMaxWidth()
                     )
-                    androidx.compose.material3.ExposedDropdownMenu(expanded = custMenu, onDismissRequest = { custMenu = false }) {
+                    ExposedDropdownMenu(expanded = custMenu, onDismissRequest = { custMenu = false }) {
                         androidx.compose.material3.DropdownMenuItem(text = { Text("All customers") }, onClick = { vm.customerFilter.value = ""; custMenu = false })
                         customers.forEach { c ->
                             androidx.compose.material3.DropdownMenuItem(text = { Text(c.name) }, onClick = { vm.customerFilter.value = c.name; custMenu = false })
@@ -296,7 +296,7 @@ fun DiaryListScreen(
                         trailingIcon = { androidx.compose.material3.ExposedDropdownMenuDefaults.TrailingIcon(ctMenu) },
                         modifier = Modifier.menuAnchor().fillMaxWidth()
                     )
-                    androidx.compose.material3.ExposedDropdownMenu(expanded = ctMenu, onDismissRequest = { ctMenu = false }) {
+                    ExposedDropdownMenu(expanded = ctMenu, onDismissRequest = { ctMenu = false }) {
                         androidx.compose.material3.DropdownMenuItem(text = { Text("All cust. types") }, onClick = { vm.customerTypeFilter.value = ""; ctMenu = false })
                         custTypes.forEach { t ->
                             androidx.compose.material3.DropdownMenuItem(text = { Text(t) }, onClick = { vm.customerTypeFilter.value = t; ctMenu = false })
