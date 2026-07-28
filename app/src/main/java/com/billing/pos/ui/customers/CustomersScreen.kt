@@ -2,6 +2,7 @@ package com.billing.pos.ui.customers
 
 import android.app.Application
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -130,7 +131,7 @@ class CustomersViewModel(app: Application) : AndroidViewModel(app) {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun CustomersScreen(
     onBack: () -> Unit,
@@ -145,6 +146,7 @@ fun CustomersScreen(
     var showDialog by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<Customer?>(null) }
     var deleteFor by remember { mutableStateOf<Customer?>(null) }
+    var historyFor by remember { mutableStateOf<Customer?>(null) }
     // Picking customers to share. Off by default so the list stays a plain list.
     var selecting by remember { mutableStateOf(false) }
     val selected = remember { mutableStateListOf<Long>() }
@@ -267,11 +269,15 @@ fun CustomersScreen(
             items(visible, key = { it.id }) { c ->
                 Row(
                     Modifier.fillMaxWidth()
-                        .clickable {
-                            if (pickMode) {
-                                if (c.id in selected) selected.remove(c.id) else selected.add(c.id)
-                            } else { editing = c; showDialog = true }
-                        }
+                        .combinedClickable(
+                            onClick = {
+                                if (pickMode) {
+                                    if (c.id in selected) selected.remove(c.id) else selected.add(c.id)
+                                } else { editing = c; showDialog = true }
+                            },
+                            // Long press: the customer's full history, grouped.
+                            onLongClick = { historyFor = c }
+                        )
                         .padding(vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -403,6 +409,7 @@ fun CustomersScreen(
             dismissButton = { TextButton(onClick = { deleteFor = null }) { Text("Cancel") } }
         )
     }
+    historyFor?.let { c -> CustomerHistoryDialog(customer = c, onDismiss = { historyFor = null }) }
 }
 
 @Composable

@@ -43,12 +43,19 @@ class BlockUi(
 
 class DiaryEditViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = DiaryRepository(app)
+    private val posRepo = com.billing.pos.data.Repository(app)
 
     var loadedId by mutableStateOf(0L); private set
     var title by mutableStateOf("")
 
     /** Diary category (master row id); 0 = none. */
     var typeId by mutableStateOf(0L)
+
+    /** Optional customer this note is about; blank = personal note. */
+    var customerId by mutableStateOf(0L)
+    var customerName by mutableStateOf("")
+    val customers: kotlinx.coroutines.flow.StateFlow<List<com.billing.pos.data.Customer>> =
+        posRepo.customers.stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000), emptyList())
     var reminderEnabled by mutableStateOf(false)
     var reminderDaily by mutableStateOf(false)
     var reminderAt by mutableStateOf(System.currentTimeMillis())
@@ -111,6 +118,8 @@ class DiaryEditViewModel(app: Application) : AndroidViewModel(app) {
             loadedId = entry.id
             title = entry.title
             typeId = entry.typeId
+            customerId = entry.customerId
+            customerName = entry.customerName
             reminderEnabled = entry.reminderEnabled
             reminderDaily = entry.reminderDaily
             reminderAt = if (entry.reminderAt > 0) entry.reminderAt else System.currentTimeMillis()
@@ -421,6 +430,8 @@ class DiaryEditViewModel(app: Application) : AndroidViewModel(app) {
                 createdAt = if (loadedId == 0L) now else createdAt,
                 updatedAt = now,
                 typeId = typeId,
+                customerId = customerId,
+                customerName = customerName.trim(),
                 reminderEnabled = reminderEnabled,
                 reminderAt = if (reminderEnabled) reminderAt else 0L,
                 reminderDaily = reminderDaily,

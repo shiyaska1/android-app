@@ -15,6 +15,9 @@ data class DiaryEntry(
     val updatedAt: Long,
     /** Diary category, from the diary_types master. 0 = none. */
     val typeId: Long = 0,
+    /** Optional customer this entry is about. 0/blank = personal note. */
+    val customerId: Long = 0,
+    val customerName: String = "",
     val reminderEnabled: Boolean = false,
     /** For one-time reminders: exact date+time. For daily: the time-of-day used. */
     val reminderAt: Long = 0,

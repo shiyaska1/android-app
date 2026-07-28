@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.automirrored.filled.ListAlt
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Gesture
 import androidx.compose.material.icons.filled.NoteAdd
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.PhotoCamera
@@ -165,7 +166,15 @@ class ServiceJobViewModel(app: Application) : AndroidViewModel(app) {
     val message = MutableStateFlow<String?>(null)
     fun consumeMessage() { message.value = null }
 
-    init { viewModelScope.launch { repo.ensureDefaults(); jobNo = repo.nextJobNo() } }
+    init {
+        viewModelScope.launch { repo.ensureDefaults(); jobNo = repo.nextJobNo() }
+        // Walk-in work is mostly cash: start on the default cash customer.
+        viewModelScope.launch {
+            customers.collect { list ->
+                if (selectedCustomer == null) list.firstOrNull { it.isDefault }?.let { pickCustomer(it) }
+            }
+        }
+    }
 
     // Rejected jobs stay on the card for the record but don't count toward the money.
     val jobsTotal get() = lines.filter { !it.status.equals("Rejected", true) }.sumOf { it.price }
@@ -209,10 +218,10 @@ class ServiceJobViewModel(app: Application) : AndroidViewModel(app) {
         customerPhone = c.phone
     }
 
-    fun addCustomer(name: String, phone: String, address: String, onCreated: () -> Unit) {
+    fun addCustomer(name: String, phone: String, address: String, type: String = "General", onCreated: () -> Unit) {
         if (name.isBlank()) { message.value = "Enter customer name"; return }
         viewModelScope.launch {
-            pickCustomer(repo.addCustomer(name, phone, address))
+            pickCustomer(repo.addCustomer(name, phone, address, type))
             message.value = "Customer added"
             onCreated()
         }
@@ -251,7 +260,7 @@ class ServiceJobViewModel(app: Application) : AndroidViewModel(app) {
 
     fun save(onDone: () -> Unit) {
         if (selectedCustomer == null) { message.value = "Select a customer"; return }
-        if (lines.isEmpty()) { message.value = "Add at least one job"; return }
+        // A card may be opened before any job is agreed — jobs are not mandatory.
         viewModelScope.launch {
             // A different number typed against the default cash customer is a real person:
             // switch to (or create) "Cash Customer - <number>" so the card is identifiable.
@@ -316,26 +325,24 @@ class ServiceJobViewModel(app: Application) : AndroidViewModel(app) {
         jobLines: List<Triple<String, Double, Pair<String, Long>>>,
         jobs: Double, other: Double, grand: Double, adv: Double, rem: String
     ): PdfDoc {
+        // One detail per line — a single crowded meta row is unreadable on paper.
         val meta = buildList {
             if (card.isNotBlank()) add("Job card: $card")
-            if (phone.isNotBlank()) add("Ph: $phone")
-            if (type.isNotBlank()) add("Type: $type")
+            if (phone.isNotBlank()) add("Phone: $phone")
+            if (type.isNotBlank()) add("Service type: $type")
             if (model.isNotBlank()) add("Model: $model")
             if (employee.isNotBlank()) add("Employee: $employee")
-            add("Status: $cardStatus")
             if (!prio.equals("Medium", true)) add("Priority: $prio")
             if (expected > 0) add("Expected: ${Format.date(expected)}")
-        }.joinToString("  ·  ")
+        }
         return PdfDoc(
             docTitle = "JOB CARD", docNo = no, dateMillis = date,
-            partyLabel = "Customer", partyName = customer, extraMeta = meta,
-            // Status prints inline with the job name; a rejected job stays on the card
-            // for the record but contributes nothing to the amount column.
+            partyLabel = "Customer", partyName = customer, metaLines = meta,
+            // Jobs print one per row, no status; a rejected job stays listed for the
+            // record but contributes nothing to the amount column.
             lines = jobLines.map { (name, price, st) ->
-                val (s, exp) = st
-                val rejected = s.equals("Rejected", true)
-                val label = "$name  [$s" + (if (exp > 0) " · by ${Format.date(exp)}" else "") + "]"
-                PdfLine(label, 1.0, price, if (rejected) 0.0 else price)
+                val rejected = st.first.equals("Rejected", true)
+                PdfLine(if (rejected) "$name (rejected)" else name, 1.0, price, if (rejected) 0.0 else price)
             },
             subTotal = jobs, taxTotal = 0.0, additionalCharge = other, discount = 0.0,
             grandTotal = grand, grandLabel = "TOTAL", remarks = rem,
@@ -439,7 +446,6 @@ fun ServiceJobScreen(editId: Long?, onBack: () -> Unit, vm: ServiceJobViewModel 
         if (granted) doPrint() else vm.message.value = "Bluetooth permission denied"
     }
     fun printCard() {
-        if (vm.lines.isEmpty()) { vm.message.value = "Add at least one job"; return }
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S && !ThermalPrinter.hasConnectPermission(context)) {
             btPerm.launch(android.Manifest.permission.BLUETOOTH_CONNECT)
         } else doPrint()
@@ -453,10 +459,7 @@ fun ServiceJobScreen(editId: Long?, onBack: () -> Unit, vm: ServiceJobViewModel 
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
                 actions = {
                     IconButton(onClick = { printCard() }) { Icon(Icons.Filled.Print, "Print") }
-                    DocumentPdfAction(onMessage = { vm.message.value = it }) {
-                        if (vm.lines.isEmpty()) { vm.message.value = "Add at least one job"; null }
-                        else vm.pdfDocFromForm()
-                    }
+                    DocumentPdfAction(onMessage = { vm.message.value = it }) { vm.pdfDocFromForm() }
                     IconButton(onClick = { vm.newCard() }) { Icon(Icons.Filled.NoteAdd, "New") }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -470,10 +473,25 @@ fun ServiceJobScreen(editId: Long?, onBack: () -> Unit, vm: ServiceJobViewModel 
     ) { pad ->
         Column(Modifier.fillMaxSize().padding(pad).padding(12.dp).verticalScroll(rememberScrollState())) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    value = vm.cardName, onValueChange = { vm.cardName = it },
-                    label = { Text("Job card name") }, singleLine = true, modifier = Modifier.weight(1f)
-                )
+                // Card name with suggestions from names already used (five at a time);
+                // anything new typed simply becomes a new name.
+                val cards by vm.cards.collectAsStateSafe()
+                var nameMenu by remember { mutableStateOf(false) }
+                ExposedDropdownMenuBox(expanded = nameMenu, onExpandedChange = { nameMenu = it }, modifier = Modifier.weight(1f)) {
+                    OutlinedTextField(
+                        value = vm.cardName, onValueChange = { vm.cardName = it; nameMenu = true },
+                        label = { Text("Job card name") }, singleLine = true,
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(nameMenu) },
+                        modifier = Modifier.menuAnchor().fillMaxWidth()
+                    )
+                    val nameSuggestions = cards.map { it.name }.filter { it.isNotBlank() }.distinct()
+                        .filter { vm.cardName.isBlank() || it.contains(vm.cardName, true) }.take(5)
+                    if (nameSuggestions.isNotEmpty()) ExposedDropdownMenu(expanded = nameMenu, onDismissRequest = { nameMenu = false }) {
+                        nameSuggestions.forEach { n ->
+                            DropdownMenuItem(text = { Text(n) }, onClick = { vm.cardName = n; nameMenu = false })
+                        }
+                    }
+                }
                 OutlinedButton(onClick = { pickDate(context, vm.dateMillis) { vm.dateMillis = it } }, modifier = Modifier.align(Alignment.CenterVertically)) {
                     Icon(Icons.Filled.CalendarMonth, null); Text(" ${Format.date(vm.dateMillis)}", maxLines = 1)
                 }
@@ -684,9 +702,18 @@ fun ServiceJobScreen(editId: Long?, onBack: () -> Unit, vm: ServiceJobViewModel 
                 }
             }
 
+            var drawRemarks by remember { mutableStateOf(false) }
+            if (drawRemarks) {
+                com.billing.pos.ui.common.HandwriteTextDialog(
+                    onResult = { t -> if (t.isNotBlank()) vm.remarks = (vm.remarks.trimEnd() + " " + t).trim(); drawRemarks = false },
+                    onDismiss = { drawRemarks = false }
+                )
+            }
             OutlinedTextField(
                 value = vm.remarks, onValueChange = { vm.remarks = it },
-                label = { Text("Remarks") }, modifier = Modifier.fillMaxWidth().padding(top = 6.dp)
+                label = { Text("Remarks") },
+                trailingIcon = { IconButton(onClick = { drawRemarks = true }) { Icon(Icons.Filled.Gesture, "Write remarks") } },
+                modifier = Modifier.fillMaxWidth().padding(top = 6.dp)
             )
 
             ServiceJobAttachments(vm.attachments, onMessage = { vm.message.value = it })
@@ -709,7 +736,7 @@ fun ServiceJobScreen(editId: Long?, onBack: () -> Unit, vm: ServiceJobViewModel 
     if (showNewCustomer) {
         NewCustomerDialog(
             onDismiss = { showNewCustomer = false },
-            onSave = { n, p, a -> vm.addCustomer(n, p, a) { showNewCustomer = false } }
+            onSave = { n, p, a, t -> vm.addCustomer(n, p, a, t) { showNewCustomer = false } }
         )
     }
     if (showNewEmployee) {

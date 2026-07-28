@@ -34,6 +34,8 @@ data class PdfDoc(
     val partyLabel: String,        // e.g. "Bill To", "Return From", "Order To"
     val partyName: String,
     val extraMeta: String = "",    // optional second-line meta, e.g. "Against: INV-0007"
+    /** Longer meta printed one item per line under the party (a single row won't fit). */
+    val metaLines: List<String> = emptyList(),
     val lines: List<PdfLine>,
     val subTotal: Double,
     val taxTotal: Double,
@@ -128,6 +130,7 @@ object DocumentPdf {
         y += 15f
         c.drawText("${doc.partyLabel}: ${doc.partyName}", x0, y, sub)
         if (doc.extraMeta.isNotBlank()) c.drawText(doc.extraMeta, cRate - 40f, y, sub)
+        doc.metaLines.forEach { ml -> y += 14f; c.drawText(ml, x0, y, sub) }
         y += 12f
 
         // ---- Table header ----

@@ -426,6 +426,18 @@ fun DiaryEditScreen(
                 }
             }
 
+            // ---- Optional customer this note is about ----
+            val diaryCustomers by vm.customers.collectAsStateSafe()
+            com.billing.pos.ui.common.CustomerPickField(
+                customers = diaryCustomers,
+                selectedName = vm.customerName,
+                onPick = { c -> vm.customerId = c.id; vm.customerName = c.name },
+                label = "Customer (optional)",
+                allowFreeText = true,
+                onTyped = { t -> vm.customerName = t; vm.customerId = 0L },
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+            )
+
             OutlinedTextField(
                 value = vm.title, onValueChange = { vm.title = it },
                 label = { Text("Title") }, singleLine = true,

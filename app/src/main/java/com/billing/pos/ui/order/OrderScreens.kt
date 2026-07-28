@@ -103,7 +103,7 @@ class OrderViewModel(app: Application) : AndroidViewModel(app) {
     val message = MutableStateFlow<String?>(null)
     fun consumeMessage() { message.value = null }
 
-    suspend fun addCustomer(name: String, phone: String) = repo.addCustomerReturning(name, phone)
+    suspend fun addCustomer(name: String, phone: String, type: String = "General") = repo.addCustomerReturning(name, phone, type)
     suspend fun load(id: Long): CustOrder? = repo.orderById(id)
     suspend fun linesFor(id: Long) = repo.orderLines(id)
     suspend fun attachmentsFor(id: Long) = repo.orderAttachmentsFor(id)
@@ -208,6 +208,7 @@ fun OrderEntryScreen(editId: Long?, onBack: () -> Unit, vm: OrderViewModel = vie
     if (newCust) {
         var nm by remember { mutableStateOf("") }
         var ph by remember { mutableStateOf("") }
+        var ctype by remember { mutableStateOf("General") }
         var drawNm by remember { mutableStateOf(false) }
         if (drawNm) {
             com.billing.pos.ui.common.HandwriteTextDialog(
@@ -224,10 +225,11 @@ fun OrderEntryScreen(editId: Long?, onBack: () -> Unit, vm: OrderViewModel = vie
                         value = nm, onValueChange = { nm = it }, label = { Text("Name") }, singleLine = true,
                         trailingIcon = { IconButton(onClick = { drawNm = true }) { Icon(Icons.Filled.Gesture, "Write name") } }
                     )
-                    OutlinedTextField(value = ph, onValueChange = { ph = it.filter { c -> c.isDigit() } }, label = { Text("Phone") }, singleLine = true, modifier = Modifier.padding(top = 8.dp))
+                    OutlinedTextField(value = ph, onValueChange = { ph = it.filter { c -> c.isDigit() } }, label = { Text("Phone") }, singleLine = true, keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number), modifier = Modifier.padding(top = 8.dp))
+                    com.billing.pos.ui.common.CustomerTypeField(value = ctype, onValue = { ctype = it }, modifier = Modifier.padding(top = 8.dp))
                 }
             },
-            confirmButton = { TextButton(onClick = { if (nm.isNotBlank()) scope.launch { selectedCustomer = vm.addCustomer(nm.trim(), ph.trim()); newCust = false } }) { Text("Add") } },
+            confirmButton = { TextButton(onClick = { if (nm.isNotBlank()) scope.launch { selectedCustomer = vm.addCustomer(nm.trim(), ph.trim(), ctype); newCust = false } }) { Text("Add") } },
             dismissButton = { TextButton(onClick = { newCust = false }) { Text("Cancel") } }
         )
     }

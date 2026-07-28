@@ -240,10 +240,10 @@ class Repository(context: Context) {
         return id
     }
 
-    suspend fun addCustomerReturning(name: String, phone: String): Customer {
-        val id = customerDao.insert(Customer(name = name.trim(), phone = phone.trim()))
+    suspend fun addCustomerReturning(name: String, phone: String, customerType: String = "General"): Customer {
+        val id = customerDao.insert(Customer(name = name.trim(), phone = phone.trim(), customerType = customerType.trim().ifBlank { "General" }))
         ensureCustomerHead(name)
-        return Customer(id = id, name = name.trim(), phone = phone.trim())
+        return Customer(id = id, name = name.trim(), phone = phone.trim(), customerType = customerType.trim().ifBlank { "General" })
     }
 
     suspend fun customerByPhone(phone: String): Customer? =

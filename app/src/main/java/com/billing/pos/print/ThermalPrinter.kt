@@ -439,14 +439,13 @@ object ThermalPrinter {
         if (jc.modelName.isNotBlank()) sb.append("Modl: ${clip(jc.modelName, COLS - 6)}\n")
         if (jc.employeeName.isNotBlank()) sb.append("Emp : ${clip(jc.employeeName, COLS - 6)}\n")
         if (jc.typeName.isNotBlank()) sb.append("Type: ${clip(jc.typeName, COLS - 6)}\n")
-        sb.append("Stat: ${jc.status}\n")
         if (jc.expectedMillis > 0) sb.append("Exp : ${Format.date(jc.expectedMillis)}\n")
         sb.append(line()).append('\n')
         sb.append(kv("Job", "Amount")).append('\n')
         sb.append(line()).append('\n')
-        for ((name, price, status) in jc.lines) {
-            sb.append(clip(name, COLS)).append('\n')
-            sb.append(kv("  [$status]", Format.money(price))).append('\n')
+        // One job per row: name left, amount right. No statuses on the slip.
+        for ((name, price, _) in jc.lines) {
+            sb.append(kv(clip(name, COLS - 10), Format.money(price))).append('\n')
         }
         sb.append(line()).append('\n')
         sb.append(kv("Jobs Total", Format.money(jc.jobsTotal))).append('\n')

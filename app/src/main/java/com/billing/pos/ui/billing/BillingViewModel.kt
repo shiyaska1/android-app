@@ -348,11 +348,11 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
         dirty = true
     }
 
-    fun addCustomer(name: String, phone: String, address: String, onCreated: () -> Unit) {
+    fun addCustomer(name: String, phone: String, address: String, type: String = "General", onCreated: () -> Unit) {
         if (name.isBlank()) { _message.value = "Enter customer name"; return }
         viewModelScope.launch {
-            val id = repo.addCustomer(name, phone, address)
-            selectedCustomer = Customer(id, name.trim(), phone.trim(), address.trim())
+            val id = repo.addCustomer(name, phone, address, customerType = type)
+            selectedCustomer = Customer(id, name.trim(), phone.trim(), address.trim(), customerType = type.trim().ifBlank { "General" })
             dirty = true
             _message.value = "Customer added"
             onCreated()

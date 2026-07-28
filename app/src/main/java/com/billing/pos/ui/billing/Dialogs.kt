@@ -82,11 +82,12 @@ import com.journeyapps.barcodescanner.ScanOptions
 @Composable
 fun NewCustomerDialog(
     onDismiss: () -> Unit,
-    onSave: (name: String, phone: String, address: String) -> Unit
+    onSave: (name: String, phone: String, address: String, type: String) -> Unit
 ) {
     var name by remember { mutableStateOf("") }
     var phone by remember { mutableStateOf("") }
     var address by remember { mutableStateOf("") }
+    var custType by remember { mutableStateOf("General") }
     var drawName by remember { mutableStateOf(false) }
     if (drawName) {
         com.billing.pos.ui.common.HandwriteTextDialog(
@@ -117,9 +118,10 @@ fun NewCustomerDialog(
                     label = { Text("Address") },
                     modifier = Modifier.fillMaxWidth()
                 )
+                com.billing.pos.ui.common.CustomerTypeField(value = custType, onValue = { custType = it })
             }
         },
-        confirmButton = { TextButton(onClick = { onSave(name, phone, address) }) { Text("Save") } },
+        confirmButton = { TextButton(onClick = { onSave(name, phone, address, custType) }) { Text("Save") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
 }

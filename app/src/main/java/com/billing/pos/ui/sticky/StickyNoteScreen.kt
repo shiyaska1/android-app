@@ -163,8 +163,8 @@ class StickyNoteViewModel(app: Application) : AndroidViewModel(app) {
 
     val customers = posRepo.customers.stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000), emptyList())
 
-    suspend fun addCustomer(name: String, phone: String): com.billing.pos.data.Customer =
-        posRepo.addCustomerReturning(name, phone)
+    suspend fun addCustomer(name: String, phone: String, type: String = "General"): com.billing.pos.data.Customer =
+        posRepo.addCustomerReturning(name, phone, type)
 
     /**
      * Renders every page and files the whole note — pages, photos, voice and video — against a
@@ -408,7 +408,7 @@ fun StickyNoteScreen(onClose: () -> Unit, onOcrToSales: () -> Unit = {}, vm: Sti
     val images = remember { mutableStateListOf<String>() }   // non-background photos
     val audios = remember { mutableStateListOf<String>() }
     val videos = remember { mutableStateListOf<String>() }
-    var bgMode by remember { mutableStateOf(false) }
+    var bgMode by remember { mutableStateOf(true) }
     // When on, dragging draws an OCR selection box (instead of ink); Read reads only inside it.
     var regionMode by remember { mutableStateOf(false) }
     // Text mode: drags move the nearest label instead of drawing ink.
@@ -613,6 +613,7 @@ fun StickyNoteScreen(onClose: () -> Unit, onOcrToSales: () -> Unit = {}, vm: Sti
         var newCust by remember { mutableStateOf(false) }
         var newName by remember { mutableStateOf("") }
         var newPhone by remember { mutableStateOf("") }
+        var newCType by remember { mutableStateOf("General") }
         val scope = androidx.compose.runtime.rememberCoroutineScope()
 
         fun pagesSnapshot() = pages.map { PageData(it.strokes.toList(), it.bg, null, it.texts.map { t -> t.snapshot() }) }
@@ -656,15 +657,17 @@ fun StickyNoteScreen(onClose: () -> Unit, onOcrToSales: () -> Unit = {}, vm: Sti
                         OutlinedTextField(
                             value = newPhone, onValueChange = { newPhone = it.filter { c -> c.isDigit() } },
                             label = { Text("Mobile (optional — blank if none)") }, singleLine = true,
+                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
                             modifier = Modifier.padding(top = 8.dp)
                         )
+                        com.billing.pos.ui.common.CustomerTypeField(value = newCType, onValue = { newCType = it }, modifier = Modifier.padding(top = 8.dp))
                     }
                 },
                 confirmButton = {
                     androidx.compose.material3.TextButton(onClick = {
                         val nm = newName.trim()
                         if (nm.isNotBlank()) scope.launch {
-                            val c = vm.addCustomer(nm, newPhone.trim())
+                            val c = vm.addCustomer(nm, newPhone.trim(), newCType)
                             picked = c; typed = c.name; newCust = false
                         }
                     }) { Text("Add") }

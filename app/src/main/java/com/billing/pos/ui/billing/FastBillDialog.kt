@@ -95,6 +95,7 @@ fun FastBillDialog(
     var askSave by remember { mutableStateOf(false) }
     var custName by remember { mutableStateOf(com.billing.pos.data.SavedCalc.DEFAULT_CUSTOMER) }
     var custId by remember { mutableStateOf(0L) }
+    var custPhone by remember { mutableStateOf("") }
     var narration by remember { mutableStateOf("") }
     // Which customer the saved list is filtered to; blank means all of them.
     var listFilter by remember { mutableStateOf("") }
@@ -199,7 +200,10 @@ fun FastBillDialog(
                     onClick = {
                         if (entries.isNotEmpty()) {
                             saveToDiary()
-                            shareTapeToWhatsApp(context, tapeText())
+                            // The customer (with mobile number) goes out with the tape.
+                            val header = if (custName.isNotBlank() && custName != com.billing.pos.data.SavedCalc.DEFAULT_CUSTOMER)
+                                custName + (if (custPhone.isNotBlank()) " - $custPhone" else "") + "\n\n" else ""
+                            shareTapeToWhatsApp(context, header + tapeText())
                         }
                     },
                     enabled = entries.isNotEmpty()
@@ -355,7 +359,7 @@ fun FastBillDialog(
                         if (name.isNotBlank()) scope.launch {
                             // Added to the customer list proper, so it is there next time too.
                             val c = repo.addCustomerReturning(name, "")
-                            custId = c.id; custName = c.name
+                            custId = c.id; custName = c.name; custPhone = c.phone
                         }
                         newCustName = ""; newCust = false
                     }) { Text("Add") }
@@ -373,11 +377,11 @@ fun FastBillDialog(
                         com.billing.pos.ui.common.CustomerPickField(
                             customers = customers,
                             selectedName = custName,
-                            onPick = { c -> custName = c.name; custId = c.id },
+                            onPick = { c -> custName = c.name; custId = c.id; custPhone = c.phone },
                             allowFreeText = true,
-                            onTyped = { custName = it; custId = 0L },
+                            onTyped = { custName = it; custId = 0L; custPhone = "" },
                             extraOptions = listOf(com.billing.pos.data.SavedCalc.DEFAULT_CUSTOMER),
-                            onPickExtra = { custName = it; custId = 0L },
+                            onPickExtra = { custName = it; custId = 0L; custPhone = "" },
                             modifier = Modifier.weight(1f)
                         )
                         IconButton(onClick = { newCust = true }) {
@@ -543,6 +547,7 @@ fun FastBillDialog(
                                         savedId = calc.id
                                         custId = calc.customerId
                                         custName = calc.customerName
+                                        custPhone = customers.firstOrNull { it.id == calc.customerId }?.phone ?: ""
                                         narration = calc.narration
                                         input = ""
                                         showSaved = false

@@ -91,7 +91,7 @@ class DiaryListViewModel(app: Application) : AndroidViewModel(app) {
      * nothing in the range, the date filter is dropped and the search runs over all dates —
      * so a match outside the window is still found, and the UI can say the filter was ignored.
      */
-    val result: StateFlow<DiaryListResult> = filter
+    private val baseResult = filter
         .flatMapLatest { f ->
             val anyType = f.typeId == 0L
             repo.searchFiltered(f.q, anyType, f.typeId, f.useDate, f.from, f.to)
@@ -105,7 +105,28 @@ class DiaryListViewModel(app: Application) : AndroidViewModel(app) {
                     }
                 }
         }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), DiaryListResult(emptyList(), false))
+
+    // ---- customer filters (default: all) ----
+    private val posRepo = com.billing.pos.data.Repository(app)
+    val customers: StateFlow<List<com.billing.pos.data.Customer>> =
+        posRepo.customers.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val customerFilter = MutableStateFlow("")
+    val customerTypeFilter = MutableStateFlow("")
+
+    val result: StateFlow<DiaryListResult> =
+        combine(baseResult, customerFilter, customerTypeFilter, customers) { r, cf, ctf, custs ->
+            if (cf.isBlank() && ctf.isBlank()) r
+            else {
+                val typeOf = custs.associate { it.name.lowercase() to it.customerType }
+                DiaryListResult(
+                    r.entries.filter { e ->
+                        (cf.isBlank() || e.customerName.equals(cf, true)) &&
+                            (ctf.isBlank() || (typeOf[e.customerName.lowercase()] ?: "").equals(ctf, true))
+                    },
+                    r.dateFilterBypassed
+                )
+            }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), DiaryListResult(emptyList(), false))
 
     fun setTypeId(id: Long) { typeId.value = id }
     fun setUseDateRange(on: Boolean) { useDateRange.value = on }
@@ -242,6 +263,46 @@ fun DiaryListScreen(
                 modifier = Modifier.fillMaxWidth().padding(top = 6.dp)
             ) {
                 Text("Type: " + (types.firstOrNull { it.id == typeId }?.name ?: "All"), maxLines = 1)
+            }
+
+            // Customer / customer-type filters — All by default.
+            val customers by vm.customers.collectAsStateSafe()
+            val custFilter by vm.customerFilter.collectAsStateSafe()
+            val custTypeFilter by vm.customerTypeFilter.collectAsStateSafe()
+            Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                var custMenu by remember { mutableStateOf(false) }
+                androidx.compose.material3.ExposedDropdownMenuBox(
+                    expanded = custMenu, onExpandedChange = { custMenu = !custMenu }, modifier = Modifier.weight(1f)
+                ) {
+                    OutlinedTextField(
+                        readOnly = true, value = custFilter.ifBlank { "All customers" }, onValueChange = {},
+                        trailingIcon = { androidx.compose.material3.ExposedDropdownMenuDefaults.TrailingIcon(custMenu) },
+                        modifier = Modifier.menuAnchor().fillMaxWidth()
+                    )
+                    androidx.compose.material3.ExposedDropdownMenu(expanded = custMenu, onDismissRequest = { custMenu = false }) {
+                        androidx.compose.material3.DropdownMenuItem(text = { Text("All customers") }, onClick = { vm.customerFilter.value = ""; custMenu = false })
+                        customers.forEach { c ->
+                            androidx.compose.material3.DropdownMenuItem(text = { Text(c.name) }, onClick = { vm.customerFilter.value = c.name; custMenu = false })
+                        }
+                    }
+                }
+                var ctMenu by remember { mutableStateOf(false) }
+                val custTypes = remember(customers) { customers.map { it.customerType }.filter { it.isNotBlank() }.distinct().sorted() }
+                androidx.compose.material3.ExposedDropdownMenuBox(
+                    expanded = ctMenu, onExpandedChange = { ctMenu = !ctMenu }, modifier = Modifier.weight(1f)
+                ) {
+                    OutlinedTextField(
+                        readOnly = true, value = custTypeFilter.ifBlank { "All cust. types" }, onValueChange = {},
+                        trailingIcon = { androidx.compose.material3.ExposedDropdownMenuDefaults.TrailingIcon(ctMenu) },
+                        modifier = Modifier.menuAnchor().fillMaxWidth()
+                    )
+                    androidx.compose.material3.ExposedDropdownMenu(expanded = ctMenu, onDismissRequest = { ctMenu = false }) {
+                        androidx.compose.material3.DropdownMenuItem(text = { Text("All cust. types") }, onClick = { vm.customerTypeFilter.value = ""; ctMenu = false })
+                        custTypes.forEach { t ->
+                            androidx.compose.material3.DropdownMenuItem(text = { Text(t) }, onClick = { vm.customerTypeFilter.value = t; ctMenu = false })
+                        }
+                    }
+                }
             }
 
             // Untick to ignore the dates entirely.

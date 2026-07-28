@@ -379,7 +379,7 @@ fun QuickBillScreen(
     if (showNewCustomer) {
         NewCustomerDialog(
             onDismiss = { showNewCustomer = false },
-            onSave = { n, p, a -> vm.addCustomer(n, p, a) { showNewCustomer = false } }
+            onSave = { n, p, a, t -> vm.addCustomer(n, p, a, t) { showNewCustomer = false } }
         )
     }
 }

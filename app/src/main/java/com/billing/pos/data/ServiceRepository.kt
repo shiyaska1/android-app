@@ -117,9 +117,9 @@ class ServiceRepository(context: Context) {
 
     // customers (shared master)
     val customers: Flow<List<Customer>> = repo.customers
-    suspend fun addCustomer(name: String, phone: String, address: String): Customer {
-        val id = repo.addCustomer(name, phone, address)
-        return Customer(id = id, name = name.trim(), phone = phone.trim(), address = address.trim())
+    suspend fun addCustomer(name: String, phone: String, address: String, type: String = "General"): Customer {
+        val id = repo.addCustomer(name, phone, address, customerType = type)
+        return Customer(id = id, name = name.trim(), phone = phone.trim(), address = address.trim(), customerType = type.trim().ifBlank { "General" })
     }
 
     /**
