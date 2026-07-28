@@ -97,6 +97,9 @@ private val PERSONAL_TILES = setOf(
     "Sticky Note", "Calculator", "My Diary", "Payments", "Receipts", "Cash Book", "Backup", "Settings"
 )
 
+/** The service job-card tiles, shown for every business type except Personal. */
+private val SERVICE_TILES = setOf("Job Cards", "Service Masters", "Job Status Report", "Pending Jobs")
+
 /** In Bulk SMS mode the dashboard shows only the SMS tools plus the requested keep-list. */
 private val BULK_SMS_TILES = setOf(
     "Send SMS", "Bulk SMS", "Attendance", "Contacts", "SMS Templates", "SMS Settings", "SMS Report",
@@ -104,7 +107,7 @@ private val BULK_SMS_TILES = setOf(
     "Receipts", "Payments", "Cash Book", "Outstanding", "Accounts", "Journal",
     "Ledger", "Trial Balance", "Profit & Loss", "Balance Sheet",
     "Settings", "Backup"
-)
+) + SERVICE_TILES
 
 /** In Gym mode: the fitness tools + the accounts module (as requested), nothing shop-related. */
 private val GYM_TILES = setOf(
@@ -112,7 +115,7 @@ private val GYM_TILES = setOf(
     "Receipts", "Payments", "Cash Book", "Outstanding", "Accounts", "Journal",
     "Ledger", "Trial Balance", "Profit & Loss", "Balance Sheet",
     "Settings", "Backup"
-)
+) + SERVICE_TILES
 
 /** In Coaching Center mode: students/enquiry/masters + the accounts module. */
 private val COACHING_TILES = setOf(
@@ -120,7 +123,7 @@ private val COACHING_TILES = setOf(
     "Receipts", "Payments", "Cash Book", "Outstanding", "Accounts", "Journal",
     "Ledger", "Trial Balance", "Profit & Loss", "Balance Sheet",
     "Settings", "Backup"
-)
+) + SERVICE_TILES
 
 private val SECTION_ORDER = listOf("Transactions", "Masters", "Accounts", "Reports")
 
@@ -211,7 +214,6 @@ fun DashboardScreen(
     val isBulkSms = businessType == "Bulk SMS"
     val isGym = businessType == "Gym"
     val isCoaching = businessType == "Coaching Center"
-    val isService = businessType == "Service Center"
     val tiles = buildList {
         if (isGym) {
             add(Tile("Members", Icons.Filled.People, onGymMembers, "Masters"))
@@ -252,7 +254,9 @@ fun DashboardScreen(
             add(Tile("Hire Invoice", Icons.Filled.Handshake, onHireInvoices, "Transactions"))
             add(Tile("Hire Return", Icons.Filled.AssignmentReturn, onHireReturns, "Transactions"))
         }
-        if (isService) {
+        // Job cards are useful to any shop that takes in service work, so every
+        // business type gets them except Personal (which has no shop tools at all).
+        if (!isPersonal) {
             add(Tile("Job Cards", Icons.Filled.Build, onServiceJobs, "Transactions"))
             add(Tile("Service Masters", Icons.Filled.Handyman, onServiceMasters, "Masters"))
             add(Tile("Job Status Report", Icons.Filled.Assessment, onServiceStatusReport, "Reports"))
