@@ -24,7 +24,10 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Divider
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -319,17 +322,41 @@ fun CashBookScreen(
                 }
             }
 
-            // Payment mode filter
-            Row(Modifier.horizontalScroll(rememberScrollState()).padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf("All", "Cash", "UPI", "Card", "Cheque").forEach { m ->
-                    FilterChip(selected = modeFilter == m, onClick = { modeFilter = m }, label = { Text(m) })
+            // Payment mode + voucher type as two dropdowns on one row, so the
+            // entry list below gets the space the two chip rows used to take.
+            Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                var modeMenu by remember { mutableStateOf(false) }
+                ExposedDropdownMenuBox(expanded = modeMenu, onExpandedChange = { modeMenu = !modeMenu }, modifier = Modifier.weight(1f)) {
+                    OutlinedTextField(
+                        readOnly = true, value = if (modeFilter == "All") "All modes" else modeFilter, onValueChange = {},
+                        singleLine = true,
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(modeMenu) },
+                        modifier = Modifier.menuAnchor().fillMaxWidth()
+                    )
+                    ExposedDropdownMenu(expanded = modeMenu, onDismissRequest = { modeMenu = false }) {
+                        listOf("All", "Cash", "UPI", "Card", "Cheque").forEach { m ->
+                            DropdownMenuItem(text = { Text(if (m == "All") "All modes" else m) }, onClick = { modeFilter = m; modeMenu = false })
+                        }
+                    }
                 }
-            }
-
-            // Voucher type filter
-            Row(Modifier.horizontalScroll(rememberScrollState()).padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf("All", "Sale", "Lab", "Receipt", "Payment", "Purchase", "Journal").forEach { t ->
-                    FilterChip(selected = typeFilter == t, onClick = { typeFilter = t }, label = { Text(t) })
+                var typeMenu by remember { mutableStateOf(false) }
+                val isLabType = remember { com.billing.pos.data.AppPrefs(context).businessType == "Medical lab" }
+                val typeOptions = remember(isLabType) {
+                    listOf("All", "Sale") + (if (isLabType) listOf("Lab") else emptyList()) +
+                        listOf("Receipt", "Payment", "Purchase", "Journal")
+                }
+                ExposedDropdownMenuBox(expanded = typeMenu, onExpandedChange = { typeMenu = !typeMenu }, modifier = Modifier.weight(1f)) {
+                    OutlinedTextField(
+                        readOnly = true, value = if (typeFilter == "All") "All types" else typeFilter, onValueChange = {},
+                        singleLine = true,
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(typeMenu) },
+                        modifier = Modifier.menuAnchor().fillMaxWidth()
+                    )
+                    ExposedDropdownMenu(expanded = typeMenu, onDismissRequest = { typeMenu = false }) {
+                        typeOptions.forEach { t ->
+                            DropdownMenuItem(text = { Text(if (t == "All") "All types" else t) }, onClick = { typeFilter = t; typeMenu = false })
+                        }
+                    }
                 }
             }
 
