@@ -354,18 +354,43 @@ fun DiaryEditScreen(
                     actionIconContentColor = MaterialTheme.colorScheme.onPrimary
                 ),
                 actions = {
-                    // Print / share the entry: type, title, body, with the date and time.
+                    // Share the entry: the attached photos go as files; the customer's
+                    // name, the title and the notes travel as the message text. With no
+                    // photos the entry goes as a PDF with the same message.
                     IconButton(onClick = {
-                        val type = vm.types.value.firstOrNull { it.id == vm.typeId }?.name.orEmpty()
-                        val uri = com.billing.pos.pdf.DiaryPdf.make(
-                            context, type, vm.title, vm.notesText(), System.currentTimeMillis()
-                        )
-                        if (uri == null) vm.message.value = "Could not create the PDF"
-                        else runCatching {
-                            val send = Intent(Intent.ACTION_SEND).apply {
-                                setType("application/pdf")
-                                putExtra(Intent.EXTRA_STREAM, uri)
-                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        val photoFiles = vm.blocks
+                            .filter { it.type == com.billing.pos.data.BlockType.IMAGE && it.path.isNotBlank() }
+                            .map { java.io.File(it.path) }.filter { it.exists() }
+                        val messageText = buildString {
+                            if (vm.customerName.isNotBlank()) appendLine(vm.customerName)
+                            if (vm.title.isNotBlank()) appendLine(vm.title)
+                            val notes = vm.notesText().trim()
+                            if (notes.isNotBlank()) append(notes)
+                        }.trim()
+                        runCatching {
+                            val send: Intent
+                            if (photoFiles.isNotEmpty()) {
+                                val uris = ArrayList<android.net.Uri>()
+                                photoFiles.forEach { f ->
+                                    uris.add(androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.provider", f))
+                                }
+                                send = Intent(Intent.ACTION_SEND_MULTIPLE).apply {
+                                    setType("image/*")
+                                    putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
+                                    if (messageText.isNotBlank()) putExtra(Intent.EXTRA_TEXT, messageText)
+                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                }
+                            } else {
+                                val type = vm.types.value.firstOrNull { it.id == vm.typeId }?.name.orEmpty()
+                                val uri = com.billing.pos.pdf.DiaryPdf.make(
+                                    context, type, vm.title, vm.notesText(), System.currentTimeMillis()
+                                ) ?: error("no pdf")
+                                send = Intent(Intent.ACTION_SEND).apply {
+                                    setType("application/pdf")
+                                    putExtra(Intent.EXTRA_STREAM, uri)
+                                    if (messageText.isNotBlank()) putExtra(Intent.EXTRA_TEXT, messageText)
+                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                }
                             }
                             val wa = Intent(send).setPackage("com.whatsapp")
                             val target = if (wa.resolveActivity(context.packageManager) != null) wa
@@ -373,7 +398,7 @@ fun DiaryEditScreen(
                             context.startActivity(target.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                         }.onFailure { vm.message.value = "Could not share" }
                     }) {
-                        Icon(Icons.Filled.Share, contentDescription = "Share as PDF")
+                        Icon(Icons.Filled.Share, contentDescription = "Share entry")
                     }
                     IconButton(onClick = {
                         val type = vm.types.value.firstOrNull { it.id == vm.typeId }?.name.orEmpty()
