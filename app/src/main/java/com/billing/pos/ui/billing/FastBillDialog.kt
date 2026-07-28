@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.ListAlt
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.QrCode2
+import androidx.compose.material.icons.filled.Gesture
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -344,21 +345,49 @@ fun FastBillDialog(
         var newCustName by remember { mutableStateOf("") }
 
         if (newCust) {
+            var newCustPhone by remember { mutableStateOf("") }
+            var newCustType by remember { mutableStateOf("General") }
+            var drawCustName by remember { mutableStateOf(false) }
+            if (drawCustName) {
+                com.billing.pos.ui.common.HandwriteTextDialog(
+                    onResult = { if (it.isNotBlank()) newCustName = it; drawCustName = false },
+                    onDismiss = { drawCustName = false }
+                )
+            }
             AlertDialog(
                 onDismissRequest = { newCust = false },
                 title = { Text("New customer") },
                 text = {
-                    OutlinedTextField(
-                        value = newCustName, onValueChange = { newCustName = it },
-                        label = { Text("Customer name") }, singleLine = true
-                    )
+                    Column {
+                        OutlinedTextField(
+                            value = newCustName, onValueChange = { newCustName = it },
+                            label = { Text("Customer name") }, singleLine = true,
+                            trailingIcon = {
+                                IconButton(onClick = { drawCustName = true }) {
+                                    Icon(Icons.Filled.Gesture, "Write name")
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = newCustPhone,
+                            onValueChange = { v -> newCustPhone = v.filter { it.isDigit() } },
+                            label = { Text("Mobile number (optional)") }, singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                        )
+                        com.billing.pos.ui.common.CustomerTypeField(
+                            value = newCustType, onValue = { newCustType = it },
+                            modifier = Modifier.padding(top = 8.dp)
+                        )
+                    }
                 },
                 confirmButton = {
                     TextButton(onClick = {
                         val name = newCustName.trim()
                         if (name.isNotBlank()) scope.launch {
                             // Added to the customer list proper, so it is there next time too.
-                            val c = repo.addCustomerReturning(name, "")
+                            val c = repo.addCustomerReturning(name, newCustPhone.trim(), newCustType)
                             custId = c.id; custName = c.name; custPhone = c.phone
                         }
                         newCustName = ""; newCust = false
