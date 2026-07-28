@@ -675,13 +675,13 @@ class Repository(context: Context) {
         return receipt
     }
 
-    /** Records a receipt from any source (no invoice reference). */
-    suspend fun addStandaloneReceipt(payFrom: String, amount: Double, mode: PayMode, dateMillis: Long = System.currentTimeMillis(), toAccountId: Long = 0, partyIsSupplier: Boolean = false): Receipt {
+    /** Records a receipt from any source (no invoice link; [refNo] labels it, e.g. a job card no). */
+    suspend fun addStandaloneReceipt(payFrom: String, amount: Double, mode: PayMode, dateMillis: Long = System.currentTimeMillis(), toAccountId: Long = 0, partyIsSupplier: Boolean = false, refNo: String = ""): Receipt {
         if (payFrom.isNotBlank()) { if (partyIsSupplier) ensureSupplierHead(payFrom) else ensureCustomerHead(payFrom) }
         val receipt = Receipt(
             receiptNo = nextReceiptNo(),
             billId = 0,
-            billNo = "",
+            billNo = refNo,
             customerName = payFrom.trim(),
             dateMillis = dateMillis,
             amount = amount,

@@ -87,6 +87,33 @@ object ThermalPrinter {
         sendBytes(context, buildPurchase(company, purchase, lines))
     }
 
+    /** Everything a service job card slip needs; lines are (job name, price, status). */
+    data class JobCardPrint(
+        val jobNo: String,
+        val dateMillis: Long,
+        val name: String,
+        val customerName: String,
+        val customerPhone: String,
+        val employeeName: String,
+        val typeName: String,
+        val status: String,
+        val expectedMillis: Long,
+        val lines: List<Triple<String, Double, String>>,
+        val jobsTotal: Double,
+        val otherCharges: Double,
+        val otherChargesNote: String,
+        val grandTotal: Double,
+        val advance: Double,
+        val remarks: String
+    )
+
+    /** Prints a service job card, same slip style as a sales bill. */
+    @SuppressLint("MissingPermission")
+    fun printJobCard(context: Context, company: CompanyInfo, jc: JobCardPrint) {
+        applyWidth(context)
+        sendBytes(context, buildJobCard(company, jc))
+    }
+
     @SuppressLint("MissingPermission")
     private fun sendBytes(context: Context, bytes: ByteArray) {
         if (!hasConnectPermission(context)) throw PrinterException("Bluetooth permission not granted")
@@ -388,6 +415,54 @@ object ThermalPrinter {
         sb.append(line()).append('\n')
         sb.append(kv("GRAND TOTAL", Format.money(pur.grandTotal))).append('\n')
         sb.append(line()).append('\n')
+        sb.append("\n\n\n")
+
+        val text = sb.toString().toByteArray(Charsets.US_ASCII)
+        val init = byteArrayOf(ESC.toByte(), '@'.code.toByte())
+        val cut = byteArrayOf(GS.toByte(), 'V'.code.toByte(), 66, 0)
+        return init + BOLD_ON + text + cut
+    }
+
+    private fun buildJobCard(company: CompanyInfo, jc: JobCardPrint): ByteArray {
+        val sb = StringBuilder()
+        sb.append(center(company.name)).append('\n')
+        if (company.address.isNotBlank()) sb.append(center(company.address)).append('\n')
+        if (company.phone.isNotBlank()) sb.append(center("Ph: ${company.phone}")).append('\n')
+        sb.append(center("JOB CARD")).append('\n')
+        sb.append(line()).append('\n')
+        sb.append("No  : ${jc.jobNo}\n")
+        sb.append("Date: ${Format.dateTime(jc.dateMillis)}\n")
+        if (jc.name.isNotBlank()) sb.append("Card: ${clip(jc.name, COLS - 6)}\n")
+        sb.append("Cust: ${clip(jc.customerName, COLS - 6)}\n")
+        if (jc.customerPhone.isNotBlank()) sb.append("Ph  : ${jc.customerPhone}\n")
+        if (jc.employeeName.isNotBlank()) sb.append("Emp : ${clip(jc.employeeName, COLS - 6)}\n")
+        if (jc.typeName.isNotBlank()) sb.append("Type: ${clip(jc.typeName, COLS - 6)}\n")
+        sb.append("Stat: ${jc.status}\n")
+        if (jc.expectedMillis > 0) sb.append("Exp : ${Format.date(jc.expectedMillis)}\n")
+        sb.append(line()).append('\n')
+        sb.append(kv("Job", "Amount")).append('\n')
+        sb.append(line()).append('\n')
+        for ((name, price, status) in jc.lines) {
+            sb.append(clip(name, COLS)).append('\n')
+            sb.append(kv("  [$status]", Format.money(price))).append('\n')
+        }
+        sb.append(line()).append('\n')
+        sb.append(kv("Jobs Total", Format.money(jc.jobsTotal))).append('\n')
+        if (jc.otherCharges != 0.0)
+            sb.append(kv(jc.otherChargesNote.ifBlank { "Other charges" }.take(COLS - 12), Format.money(jc.otherCharges))).append('\n')
+        sb.append(line()).append('\n')
+        sb.append(kv("TOTAL", Format.money(jc.grandTotal))).append('\n')
+        if (jc.advance != 0.0) {
+            sb.append(kv("Advance", Format.money(jc.advance))).append('\n')
+            sb.append(kv("BALANCE", Format.money(jc.grandTotal - jc.advance))).append('\n')
+        }
+        sb.append(line()).append('\n')
+        if (jc.remarks.isNotBlank()) {
+            sb.append("Note:\n")
+            jc.remarks.chunked(COLS).forEach { sb.append(it).append('\n') }
+            sb.append(line()).append('\n')
+        }
+        sb.append(center("Thank you!")).append('\n')
         sb.append("\n\n\n")
 
         val text = sb.toString().toByteArray(Charsets.US_ASCII)

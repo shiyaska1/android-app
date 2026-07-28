@@ -41,6 +41,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.billing.pos.data.ServiceEmployee
 import com.billing.pos.data.ServiceJobMaster
 import com.billing.pos.data.ServiceRepository
 import com.billing.pos.data.ServiceStatus
@@ -57,6 +58,7 @@ class ServiceMasterViewModel(app: Application) : AndroidViewModel(app) {
     val types: StateFlow<List<ServiceType>> = repo.types.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val statuses: StateFlow<List<ServiceStatus>> = repo.statuses.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val jobs: StateFlow<List<ServiceJobMaster>> = repo.jobs.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val employees: StateFlow<List<ServiceEmployee>> = repo.employees.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     init { viewModelScope.launch { repo.ensureDefaults() } }
 
@@ -66,6 +68,8 @@ class ServiceMasterViewModel(app: Application) : AndroidViewModel(app) {
     fun deleteStatus(s: ServiceStatus) { viewModelScope.launch { repo.deleteStatus(s) } }
     fun saveJob(j: ServiceJobMaster) { viewModelScope.launch { repo.saveJob(j) } }
     fun deleteJob(j: ServiceJobMaster) { viewModelScope.launch { repo.deleteJob(j) } }
+    fun saveEmployee(e: ServiceEmployee) { viewModelScope.launch { repo.saveEmployee(e) } }
+    fun deleteEmployee(e: ServiceEmployee) { viewModelScope.launch { repo.deleteEmployee(e) } }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -74,12 +78,15 @@ fun ServiceMastersScreen(onBack: () -> Unit, vm: ServiceMasterViewModel = viewMo
     val types by vm.types.collectAsStateSafe()
     val statuses by vm.statuses.collectAsStateSafe()
     val jobs by vm.jobs.collectAsStateSafe()
+    val employees by vm.employees.collectAsStateSafe()
     var newType by remember { mutableStateOf("") }
     var newStatus by remember { mutableStateOf("") }
     var editType by remember { mutableStateOf<ServiceType?>(null) }
     var editStatus by remember { mutableStateOf<ServiceStatus?>(null) }
     var editJob by remember { mutableStateOf<ServiceJobMaster?>(null) }
     var showNewJob by remember { mutableStateOf(false) }
+    var editEmployee by remember { mutableStateOf<ServiceEmployee?>(null) }
+    var showNewEmployee by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -137,6 +144,22 @@ fun ServiceMastersScreen(onBack: () -> Unit, vm: ServiceMasterViewModel = viewMo
                 }
                 Divider()
             }
+            item {
+                Row(Modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Text("Employees", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                    OutlinedButton(onClick = { showNewEmployee = true }) { Icon(Icons.Filled.Add, null); Text(" Add") }
+                }
+            }
+            items(employees, key = { "emp" + it.id }) { e ->
+                Row(Modifier.fillMaxWidth().clickable { editEmployee = e }.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(e.name, fontWeight = FontWeight.SemiBold)
+                        if (e.phone.isNotBlank()) Text(e.phone, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                    }
+                    IconButton(onClick = { vm.deleteEmployee(e) }) { Icon(Icons.Filled.Delete, "Delete", tint = MaterialTheme.colorScheme.error) }
+                }
+                Divider()
+            }
         }
     }
 
@@ -152,6 +175,35 @@ fun ServiceMastersScreen(onBack: () -> Unit, vm: ServiceMasterViewModel = viewMo
     }
     if (showNewJob) JobMasterDialog(null, onDismiss = { showNewJob = false }, onSave = { vm.saveJob(it); showNewJob = false })
     editJob?.let { j -> JobMasterDialog(j, onDismiss = { editJob = null }, onSave = { vm.saveJob(it); editJob = null }) }
+    if (showNewEmployee) EmployeeDialog(null, onDismiss = { showNewEmployee = false }, onSave = { vm.saveEmployee(it); showNewEmployee = false })
+    editEmployee?.let { e -> EmployeeDialog(e, onDismiss = { editEmployee = null }, onSave = { vm.saveEmployee(it); editEmployee = null }) }
+}
+
+/** One dialog serves add and edit of an employee with their contact number. */
+@Composable
+fun EmployeeDialog(existing: ServiceEmployee?, onDismiss: () -> Unit, onSave: (ServiceEmployee) -> Unit) {
+    var name by remember { mutableStateOf(existing?.name ?: "") }
+    var phone by remember { mutableStateOf(existing?.phone ?: "") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (existing == null) "New employee" else "Edit employee") },
+        text = {
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Name *") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(
+                    value = phone, onValueChange = { phone = it },
+                    label = { Text("Contact number") }, singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone), modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                if (name.isNotBlank()) onSave((existing ?: ServiceEmployee(name = "")).copy(name = name.trim(), phone = phone.trim()))
+            }) { Text("Save") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
 }
 
 @Composable

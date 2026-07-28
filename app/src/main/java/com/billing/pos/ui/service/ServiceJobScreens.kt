@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.PictureAsPdf
+import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.UploadFile
 import androidx.compose.material3.AlertDialog
@@ -82,6 +83,7 @@ import com.billing.pos.data.AppPrefs
 import com.billing.pos.data.Customer
 import com.billing.pos.data.DownloadSaver
 import com.billing.pos.data.ServiceAttachmentStore
+import com.billing.pos.data.ServiceEmployee
 import com.billing.pos.data.ServiceJobAttachment
 import com.billing.pos.data.ServiceJobCard
 import com.billing.pos.data.ServiceJobLine
@@ -90,6 +92,7 @@ import com.billing.pos.data.ServiceRepository
 import com.billing.pos.data.ServiceStatus
 import com.billing.pos.data.ServiceType
 import com.billing.pos.pdf.DocumentPdf
+import com.billing.pos.print.ThermalPrinter
 import com.billing.pos.pdf.PdfDoc
 import com.billing.pos.pdf.PdfLine
 import com.billing.pos.ui.billing.BillPrefillLine
@@ -100,11 +103,13 @@ import com.billing.pos.ui.common.CustomerPickField
 import com.billing.pos.ui.common.DocumentPdfAction
 import com.billing.pos.ui.common.rememberPdfDownloader
 import com.billing.pos.util.Format
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.Calendar
 
@@ -125,6 +130,7 @@ class ServiceJobViewModel(app: Application) : AndroidViewModel(app) {
     val types: StateFlow<List<ServiceType>> = repo.types.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val statuses: StateFlow<List<ServiceStatus>> = repo.statuses.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val jobsMaster: StateFlow<List<ServiceJobMaster>> = repo.jobs.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val employees: StateFlow<List<ServiceEmployee>> = repo.employees.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val cards: StateFlow<List<ServiceJobCard>> = repo.cards.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // form state
@@ -132,8 +138,11 @@ class ServiceJobViewModel(app: Application) : AndroidViewModel(app) {
     var cardName by mutableStateOf("")
     var dateMillis by mutableStateOf(System.currentTimeMillis())
     var selectedCustomer by mutableStateOf<Customer?>(null)
+    var customerPhone by mutableStateOf("")
     var typeId by mutableStateOf(0L)
     var typeName by mutableStateOf("")
+    var employeeId by mutableStateOf(0L)
+    var employeeName by mutableStateOf("")
     var status by mutableStateOf("Pending")
     var expectedMillis by mutableStateOf(0L)
     var advanceText by mutableStateOf("")
@@ -166,10 +175,23 @@ class ServiceJobViewModel(app: Application) : AndroidViewModel(app) {
     fun removeLine(i: Int) { lines.removeAt(i) }
 
     fun saveJobMaster(j: ServiceJobMaster) { viewModelScope.launch { repo.saveJob(j) } }
+    fun saveEmployee(e: ServiceEmployee) {
+        viewModelScope.launch {
+            val id = repo.saveEmployee(e)
+            if (id > 0) { employeeId = id; employeeName = e.name.trim() }
+        }
+    }
+
+    /** Selecting a customer fills the phone field; it stays editable for one-off numbers. */
+    fun pickCustomer(c: Customer) {
+        selectedCustomer = c
+        customerPhone = c.phone
+    }
+
     fun addCustomer(name: String, phone: String, address: String, onCreated: () -> Unit) {
         if (name.isBlank()) { message.value = "Enter customer name"; return }
         viewModelScope.launch {
-            selectedCustomer = repo.addCustomer(name, phone, address)
+            pickCustomer(repo.addCustomer(name, phone, address))
             message.value = "Customer added"
             onCreated()
         }
@@ -182,11 +204,13 @@ class ServiceJobViewModel(app: Application) : AndroidViewModel(app) {
             val c = repo.cardById(id) ?: return@launch
             editingId = c.id; jobNo = c.jobNo; cardName = c.name; dateMillis = c.dateMillis
             typeId = c.typeId; typeName = c.typeName; status = c.status; expectedMillis = c.expectedMillis
+            employeeId = c.employeeId; employeeName = c.employeeName
             advanceText = if (c.advance != 0.0) Format.money(c.advance) else ""
             otherChargesText = if (c.otherCharges != 0.0) Format.money(c.otherCharges) else ""
             otherChargesNote = c.otherChargesNote; remarks = c.remarks
             selectedCustomer = customers.value.firstOrNull { it.id == c.customerId }
                 ?: Customer(c.customerId, c.customerName, c.customerPhone)
+            customerPhone = c.customerPhone
             lines.clear()
             repo.linesFor(id).forEach { lines.add(JobLineDraft(++uidSeq, it.jobId, it.name, it.price, it.status, it.expectedMillis)) }
             attachments.clear()
@@ -198,6 +222,7 @@ class ServiceJobViewModel(app: Application) : AndroidViewModel(app) {
         cardName = ""; lines.clear(); attachments.clear()
         advanceText = ""; otherChargesText = ""; otherChargesNote = ""; remarks = ""
         typeId = 0; typeName = ""; status = "Pending"; expectedMillis = 0
+        employeeId = 0; employeeName = ""; customerPhone = ""
         dateMillis = System.currentTimeMillis(); editingId = null; selectedCustomer = null
         viewModelScope.launch { jobNo = repo.nextJobNo() }
     }
@@ -209,15 +234,16 @@ class ServiceJobViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val c = ServiceJobCard(
                 id = editingId ?: 0, jobNo = jobNo, name = cardName.trim(), dateMillis = dateMillis,
-                customerId = customer.id, customerName = customer.name, customerPhone = customer.phone,
-                typeId = typeId, typeName = typeName, status = status, expectedMillis = expectedMillis,
+                customerId = customer.id, customerName = customer.name, customerPhone = customerPhone.trim(),
+                typeId = typeId, typeName = typeName, employeeId = employeeId, employeeName = employeeName,
+                status = status, expectedMillis = expectedMillis,
                 jobsTotal = jobsTotal, otherCharges = otherCharges, otherChargesNote = otherChargesNote.trim(),
                 grandTotal = grandTotal, advance = advance, remarks = remarks.trim()
             )
             val ls = lines.map { ServiceJobLine(0, c.id, it.jobId, it.name, it.price, it.status, it.expectedMillis) }
             val id: Long
             if (editingId != null) { repo.updateCard(c, ls); id = c.id; message.value = "Job card $jobNo updated" }
-            else { id = repo.saveCard(c, ls); editingId = id; message.value = "Job card $jobNo saved" }
+            else { id = repo.saveCard(c, ls); editingId = id; message.value = "Job card $jobNo saved" + if (advance > 0) " • advance receipt posted" else "" }
             repo.replaceAttachments(id, attachments.toList())
             onDone()
         }
@@ -230,26 +256,31 @@ class ServiceJobViewModel(app: Application) : AndroidViewModel(app) {
 
     /** The current form as an A4 document. */
     fun pdfDocFromForm(): PdfDoc = pdfDoc(
-        jobNo, dateMillis, selectedCustomer?.name ?: "", cardName, typeName, status, expectedMillis,
+        jobNo, dateMillis, selectedCustomer?.name ?: "", customerPhone, cardName, typeName,
+        employeeName, status, expectedMillis,
         lines.map { Triple(it.name, it.price, it.status to it.expectedMillis) },
         jobsTotal, otherCharges, grandTotal, advance, remarks
     )
 
     /** A saved card as an A4 document, lines fetched from the DB. */
     suspend fun pdfDocFor(c: ServiceJobCard): PdfDoc = pdfDoc(
-        c.jobNo, c.dateMillis, c.customerName, c.name, c.typeName, c.status, c.expectedMillis,
+        c.jobNo, c.dateMillis, c.customerName, c.customerPhone, c.name, c.typeName,
+        c.employeeName, c.status, c.expectedMillis,
         repo.linesFor(c.id).map { Triple(it.name, it.price, it.status to it.expectedMillis) },
         c.jobsTotal, c.otherCharges, c.grandTotal, c.advance, c.remarks
     )
 
     private fun pdfDoc(
-        no: String, date: Long, customer: String, card: String, type: String, cardStatus: String,
-        expected: Long, jobLines: List<Triple<String, Double, Pair<String, Long>>>,
+        no: String, date: Long, customer: String, phone: String, card: String, type: String,
+        employee: String, cardStatus: String, expected: Long,
+        jobLines: List<Triple<String, Double, Pair<String, Long>>>,
         jobs: Double, other: Double, grand: Double, adv: Double, rem: String
     ): PdfDoc {
         val meta = buildList {
             if (card.isNotBlank()) add("Job card: $card")
+            if (phone.isNotBlank()) add("Ph: $phone")
             if (type.isNotBlank()) add("Type: $type")
+            if (employee.isNotBlank()) add("Employee: $employee")
             add("Status: $cardStatus")
             if (expected > 0) add("Expected: ${Format.date(expected)}")
             if (adv > 0) { add("Advance: ${Format.money(adv)}"); add("Balance: ${Format.money(grand - adv)}") }
@@ -265,6 +296,28 @@ class ServiceJobViewModel(app: Application) : AndroidViewModel(app) {
             grandTotal = grand, grandLabel = "TOTAL", remarks = rem, filePrefix = "jobcard"
         )
     }
+
+    /** The current form as a thermal slip. */
+    fun thermalFromForm(): ThermalPrinter.JobCardPrint = ThermalPrinter.JobCardPrint(
+        jobNo = jobNo, dateMillis = dateMillis, name = cardName.trim(),
+        customerName = selectedCustomer?.name ?: "", customerPhone = customerPhone.trim(),
+        employeeName = employeeName, typeName = typeName, status = status,
+        expectedMillis = expectedMillis,
+        lines = lines.map { Triple(it.name, it.price, it.status) },
+        jobsTotal = jobsTotal, otherCharges = otherCharges, otherChargesNote = otherChargesNote.trim(),
+        grandTotal = grandTotal, advance = advance, remarks = remarks.trim()
+    )
+
+    /** A saved card as a thermal slip, lines fetched from the DB. */
+    suspend fun thermalFor(c: ServiceJobCard): ThermalPrinter.JobCardPrint = ThermalPrinter.JobCardPrint(
+        jobNo = c.jobNo, dateMillis = c.dateMillis, name = c.name,
+        customerName = c.customerName, customerPhone = c.customerPhone,
+        employeeName = c.employeeName, typeName = c.typeName, status = c.status,
+        expectedMillis = c.expectedMillis,
+        lines = repo.linesFor(c.id).map { Triple(it.name, it.price, it.status) },
+        jobsTotal = c.jobsTotal, otherCharges = c.otherCharges, otherChargesNote = c.otherChargesNote,
+        grandTotal = c.grandTotal, advance = c.advance, remarks = c.remarks
+    )
 }
 
 private fun pickDate(context: Context, current: Long, onPicked: (Long) -> Unit) {
@@ -306,10 +359,12 @@ private fun sharePdf(context: Context, doc: PdfDoc) {
 fun ServiceJobScreen(editId: Long?, onBack: () -> Unit, vm: ServiceJobViewModel = viewModel()) {
     val context = LocalContext.current
     val snackbar = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
     val customers by vm.customers.collectAsStateSafe()
     val types by vm.types.collectAsStateSafe()
     val statuses by vm.statuses.collectAsStateSafe()
     val jobsMaster by vm.jobsMaster.collectAsStateSafe()
+    val employees by vm.employees.collectAsStateSafe()
     val message by vm.message.collectAsStateSafe()
     LaunchedEffect(Unit) { if (editId != null && editId > 0) vm.load(editId) }
     LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); vm.consumeMessage() } }
@@ -317,6 +372,28 @@ fun ServiceJobScreen(editId: Long?, onBack: () -> Unit, vm: ServiceJobViewModel 
     var showJobPicker by remember { mutableStateOf(false) }
     var showNewJob by remember { mutableStateOf(false) }
     var showNewCustomer by remember { mutableStateOf(false) }
+    var showNewEmployee by remember { mutableStateOf(false) }
+
+    // Thermal print, same permission dance as the sales entry.
+    fun doPrint() {
+        val jc = vm.thermalFromForm()
+        scope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching { ThermalPrinter.printJobCard(context, AppPrefs(context).company, jc) }
+            }
+            vm.message.value = if (result.isSuccess) "Printed ${jc.jobNo}"
+            else result.exceptionOrNull()?.message ?: "Print failed"
+        }
+    }
+    val btPerm = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) doPrint() else vm.message.value = "Bluetooth permission denied"
+    }
+    fun printCard() {
+        if (vm.lines.isEmpty()) { vm.message.value = "Add at least one job"; return }
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S && !ThermalPrinter.hasConnectPermission(context)) {
+            btPerm.launch(android.Manifest.permission.BLUETOOTH_CONNECT)
+        } else doPrint()
+    }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
@@ -325,6 +402,7 @@ fun ServiceJobScreen(editId: Long?, onBack: () -> Unit, vm: ServiceJobViewModel 
                 title = { Text(if (vm.editingId != null) "Edit ${vm.jobNo}" else "Job Card ${vm.jobNo}") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
                 actions = {
+                    IconButton(onClick = { printCard() }) { Icon(Icons.Filled.Print, "Print") }
                     DocumentPdfAction(onMessage = { vm.message.value = it }) {
                         if (vm.lines.isEmpty()) { vm.message.value = "Add at least one job"; null }
                         else vm.pdfDocFromForm()
@@ -354,10 +432,37 @@ fun ServiceJobScreen(editId: Long?, onBack: () -> Unit, vm: ServiceJobViewModel 
                 CustomerPickField(
                     customers = customers,
                     selectedName = vm.selectedCustomer?.name ?: "",
-                    onPick = { vm.selectedCustomer = it },
+                    onPick = { vm.pickCustomer(it) },
                     modifier = Modifier.weight(1f)
                 )
                 IconButton(onClick = { showNewCustomer = true }) { Icon(Icons.Filled.PersonAdd, "New customer") }
+            }
+            OutlinedTextField(
+                value = vm.customerPhone, onValueChange = { vm.customerPhone = it },
+                label = { Text("Phone number") }, singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                modifier = Modifier.fillMaxWidth().padding(top = 6.dp)
+            )
+            Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                var empMenu by remember { mutableStateOf(false) }
+                ExposedDropdownMenuBox(expanded = empMenu, onExpandedChange = { empMenu = !empMenu }, modifier = Modifier.weight(1f)) {
+                    OutlinedTextField(
+                        readOnly = true, value = vm.employeeName, onValueChange = {},
+                        label = { Text("Assigned employee") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(empMenu) },
+                        modifier = Modifier.menuAnchor().fillMaxWidth()
+                    )
+                    ExposedDropdownMenu(expanded = empMenu, onDismissRequest = { empMenu = false }) {
+                        DropdownMenuItem(text = { Text("— none —") }, onClick = { vm.employeeId = 0; vm.employeeName = ""; empMenu = false })
+                        employees.forEach { e ->
+                            DropdownMenuItem(
+                                text = { Text(e.name + if (e.phone.isNotBlank()) "  (${e.phone})" else "") },
+                                onClick = { vm.employeeId = e.id; vm.employeeName = e.name; empMenu = false }
+                            )
+                        }
+                    }
+                }
+                IconButton(onClick = { showNewEmployee = true }) { Icon(Icons.Filled.PersonAdd, "New employee") }
             }
 
             Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -513,6 +618,11 @@ fun ServiceJobScreen(editId: Long?, onBack: () -> Unit, vm: ServiceJobViewModel 
             onSave = { n, p, a -> vm.addCustomer(n, p, a) { showNewCustomer = false } }
         )
     }
+    if (showNewEmployee) {
+        EmployeeDialog(null, onDismiss = { showNewEmployee = false }, onSave = {
+            vm.saveEmployee(it); showNewEmployee = false
+        })
+    }
 }
 
 /** Pick a job from the master, or jump to creating a new one. */
@@ -658,6 +768,28 @@ fun ServiceJobListScreen(
     LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); vm.consumeMessage() } }
     val downloadPdf = rememberPdfDownloader { msg -> scope.launch { snackbar.showSnackbar(msg) } }
 
+    // Thermal print from the list; permission asked once, then the queued card prints.
+    var printQueued by remember { mutableStateOf<ServiceJobCard?>(null) }
+    fun doPrint(c: ServiceJobCard) {
+        scope.launch {
+            val jc = vm.thermalFor(c)
+            val result = withContext(Dispatchers.IO) {
+                runCatching { ThermalPrinter.printJobCard(context, AppPrefs(context).company, jc) }
+            }
+            vm.message.value = if (result.isSuccess) "Printed ${c.jobNo}"
+            else result.exceptionOrNull()?.message ?: "Print failed"
+        }
+    }
+    val btPerm = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        val c = printQueued; printQueued = null
+        if (granted && c != null) doPrint(c) else if (!granted) vm.message.value = "Bluetooth permission denied"
+    }
+    fun requestPrint(c: ServiceJobCard) {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S && !ThermalPrinter.hasConnectPermission(context)) {
+            printQueued = c; btPerm.launch(android.Manifest.permission.BLUETOOTH_CONNECT)
+        } else doPrint(c)
+    }
+
     // Filters: text (job no / card name / customer / mobile), date range, status, service type.
     var query by remember { mutableStateOf("") }
     var fromMillis by remember { mutableStateOf(Calendar.getInstance().apply { add(Calendar.MONTH, -3) }.timeInMillis) }
@@ -759,6 +891,7 @@ fun ServiceJobListScreen(
                         Text(
                             listOfNotNull(
                                 c.customerName.ifBlank { null }, c.typeName.ifBlank { null },
+                                c.employeeName.ifBlank { null },
                                 Format.date(c.dateMillis),
                                 if (c.expectedMillis > 0) "exp ${Format.date(c.expectedMillis)}" else null
                             ).joinToString("  •  "),
@@ -773,6 +906,10 @@ fun ServiceJobListScreen(
                             Box {
                                 IconButton(onClick = { pdfMenu = true }) { Icon(Icons.Filled.PictureAsPdf, "PDF", Modifier.size(20.dp)) }
                                 DropdownMenu(expanded = pdfMenu, onDismissRequest = { pdfMenu = false }) {
+                                    DropdownMenuItem(text = { Text("Print (thermal)") }, onClick = {
+                                        pdfMenu = false
+                                        requestPrint(c)
+                                    })
                                     DropdownMenuItem(text = { Text("Share / Print PDF") }, onClick = {
                                         pdfMenu = false
                                         scope.launch { sharePdf(context, vm.pdfDocFor(c)) }

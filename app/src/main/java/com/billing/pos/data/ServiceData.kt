@@ -33,6 +33,14 @@ data class ServiceStatus(
     val name: String
 )
 
+/** A workshop employee/technician who can be assigned a job card. */
+@Entity(tableName = "service_employees")
+data class ServiceEmployee(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val phone: String = ""
+)
+
 /** A job the workshop offers, with its usual price ("Screen replacement", "Oil change"…). */
 @Entity(tableName = "service_jobs_master")
 data class ServiceJobMaster(
@@ -58,6 +66,8 @@ data class ServiceJobCard(
     val customerPhone: String = "",
     val typeId: Long = 0,
     val typeName: String = "",
+    val employeeId: Long = 0,
+    val employeeName: String = "",
     val status: String = "Pending",
     /** Expected date the whole card is done. */
     val expectedMillis: Long = 0,
@@ -108,6 +118,12 @@ interface ServiceDao {
     @Query("SELECT COUNT(*) FROM service_statuses") suspend fun statusCount(): Int
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsertStatus(s: ServiceStatus): Long
     @Delete suspend fun deleteStatus(s: ServiceStatus)
+
+    // employees
+    @Query("SELECT * FROM service_employees ORDER BY name COLLATE NOCASE") fun employees(): Flow<List<ServiceEmployee>>
+    @Query("SELECT * FROM service_employees") suspend fun employeesOnce(): List<ServiceEmployee>
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsertEmployee(e: ServiceEmployee): Long
+    @Delete suspend fun deleteEmployee(e: ServiceEmployee)
 
     // jobs master
     @Query("SELECT * FROM service_jobs_master ORDER BY name COLLATE NOCASE") fun jobs(): Flow<List<ServiceJobMaster>>

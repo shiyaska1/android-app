@@ -466,6 +466,8 @@ private fun AddReceiptDialog(
                         onPickExtra = { payFrom = it },
                         modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
                     )
+                    // Anything still owed on this payer's open job cards (Service Center).
+                    com.billing.pos.ui.service.JobCardBalanceNote(customerId = 0L, customerName = payFrom)
                 }
 
                 OutlinedTextField(

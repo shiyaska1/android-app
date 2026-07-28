@@ -417,6 +417,12 @@ fun BillingScreen(
                 }
             }
 
+            // Anything still owed on this customer's open job cards (Service Center).
+            com.billing.pos.ui.service.JobCardBalanceNote(
+                customerId = vm.selectedCustomer?.id ?: 0L,
+                customerName = vm.selectedCustomer?.name ?: ""
+            )
+
             // --- Item actions (one line) ---
             Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
                 ToolAction(Icons.Filled.Add, "Item") { showItemPicker = true }

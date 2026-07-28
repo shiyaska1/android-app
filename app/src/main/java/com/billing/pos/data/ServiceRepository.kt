@@ -10,6 +10,7 @@ class ServiceRepository(context: Context) {
     val types: Flow<List<ServiceType>> = dao.types()
     val statuses: Flow<List<ServiceStatus>> = dao.statuses()
     val jobs: Flow<List<ServiceJobMaster>> = dao.jobs()
+    val employees: Flow<List<ServiceEmployee>> = dao.employees()
     val cards: Flow<List<ServiceJobCard>> = dao.cards()
     val allLines: Flow<List<ServiceJobLine>> = dao.allLines()
 
@@ -28,13 +29,37 @@ class ServiceRepository(context: Context) {
     suspend fun deleteStatus(s: ServiceStatus) = dao.deleteStatus(s)
     suspend fun saveJob(j: ServiceJobMaster) { if (j.name.isNotBlank()) dao.upsertJob(j.copy(name = j.name.trim())) }
     suspend fun deleteJob(j: ServiceJobMaster) = dao.deleteJob(j)
+    suspend fun saveEmployee(e: ServiceEmployee): Long =
+        if (e.name.isBlank()) 0 else dao.upsertEmployee(e.copy(name = e.name.trim(), phone = e.phone.trim()))
+    suspend fun deleteEmployee(e: ServiceEmployee) = dao.deleteEmployee(e)
 
     // job cards
     suspend fun nextJobNo(): String = "JC-" + (dao.cardCount() + 1).toString().padStart(4, '0')
     suspend fun cardById(id: Long): ServiceJobCard? = dao.cardById(id)
     suspend fun linesFor(id: Long): List<ServiceJobLine> = dao.linesFor(id)
-    suspend fun saveCard(c: ServiceJobCard, lines: List<ServiceJobLine>): Long = dao.save(c, lines)
-    suspend fun updateCard(c: ServiceJobCard, lines: List<ServiceJobLine>) = dao.update(c, lines)
+    suspend fun saveCard(c: ServiceJobCard, lines: List<ServiceJobLine>): Long {
+        val id = dao.save(c, lines)
+        postAdvanceReceipt(c, previousAdvance = 0.0)
+        return id
+    }
+
+    suspend fun updateCard(c: ServiceJobCard, lines: List<ServiceJobLine>) {
+        val old = dao.cardById(c.id)
+        dao.update(c, lines)
+        postAdvanceReceipt(c, previousAdvance = old?.advance ?: 0.0)
+    }
+
+    /**
+     * Advance money is real money: any increase posts a receipt automatically (into the
+     * customer's ledger, tagged with the job no). Only the increase — editing a card
+     * without touching the advance posts nothing, so nothing is ever double-counted.
+     */
+    private suspend fun postAdvanceReceipt(c: ServiceJobCard, previousAdvance: Double) {
+        val delta = c.advance - previousAdvance
+        if (delta > 0.005 && c.customerName.isNotBlank()) {
+            repo.addStandaloneReceipt(c.customerName, delta, PayMode.CASH, refNo = c.jobNo)
+        }
+    }
     suspend fun setCardStatus(id: Long, status: String) = dao.setCardStatus(id, status)
 
     suspend fun deleteCard(c: ServiceJobCard) {
