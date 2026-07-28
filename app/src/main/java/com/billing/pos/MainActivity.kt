@@ -432,6 +432,10 @@ private fun AppNav() {
                 onCoachDue = { nav.navigate("coach/due") },
                 onCoachAttendance = { nav.navigate("coach/attendance") },
                 onCoachAttReport = { nav.navigate("coach/attreport") },
+                onServiceJobs = { nav.navigate("service/jobs") },
+                onServiceMasters = { nav.navigate("service/masters") },
+                onServiceStatusReport = { nav.navigate("service/statusreport") },
+                onServicePendingReport = { nav.navigate("service/pending") },
                 onDiary = { nav.navigate("diary") },
                 onUsers = { nav.navigate("users") },
                 onSettings = { nav.navigate("settings") },
@@ -845,6 +849,38 @@ private fun AppNav() {
         }
         composable("coach/attreport") {
             com.billing.pos.ui.coaching.CoachAttendanceReportScreen(onBack = { nav.popBackStack() })
+        }
+        composable("service/jobs") {
+            com.billing.pos.ui.service.ServiceJobListScreen(
+                onBack = { nav.popBackStack() },
+                onOpen = { id -> nav.navigate("service/job/$id") },
+                onNew = { nav.navigate("service/job/0") },
+                onConvertToBill = { nav.navigate("billing") }
+            )
+        }
+        composable(
+            route = "service/job/{id}",
+            arguments = listOf(navArgument("id") { type = NavType.LongType })
+        ) { entry ->
+            com.billing.pos.ui.service.ServiceJobScreen(
+                editId = entry.arguments?.getLong("id"),
+                onBack = { nav.popBackStack() }
+            )
+        }
+        composable("service/masters") {
+            com.billing.pos.ui.service.ServiceMastersScreen(onBack = { nav.popBackStack() })
+        }
+        composable("service/statusreport") {
+            com.billing.pos.ui.service.ServiceStatusReportScreen(
+                onBack = { nav.popBackStack() },
+                onOpenCard = { id -> nav.navigate("service/job/$id") }
+            )
+        }
+        composable("service/pending") {
+            com.billing.pos.ui.service.ServiceDueReportScreen(
+                onBack = { nav.popBackStack() },
+                onOpenCard = { id -> nav.navigate("service/job/$id") }
+            )
         }
         composable("journal") {
             JournalListScreen(

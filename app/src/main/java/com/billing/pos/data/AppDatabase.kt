@@ -38,7 +38,9 @@ import androidx.room.TypeConverters
         GymMember::class, GymFee::class,
         Course::class, CoachingClass::class, CoachSubject::class, CoachStaff::class,
         CoachStudent::class, StudentCourse::class, CoachFee::class, Enquiry::class,
-        EnquiryFollowup::class, CoachAttendance::class
+        EnquiryFollowup::class, CoachAttendance::class,
+        ServiceType::class, ServiceStatus::class, ServiceJobMaster::class,
+        ServiceJobCard::class, ServiceJobLine::class, ServiceJobAttachment::class
     ],
     // v25 quotations; v26 sales returns; v27 purchase returns; v28 purchase quotations (LPO);
     // v29 dual units; v30 rental; v31 medical lab; v32 lab masters + heading rows;
@@ -46,8 +48,9 @@ import androidx.room.TypeConverters
     // v35 doctor master + patient phone; v36 material out + movement;
     // v37 item purchase price; v38 material receipts + purchase stockReceived/lpoNo.
     // v50 customer orders; v51 Bulk SMS contacts + contact groups; v52 SMS templates;
-    // v53 receipt/payment account links; v54 gym; v55 coaching centre.
-    version = 55,
+    // v53 receipt/payment account links; v54 gym; v55 coaching centre;
+    // v56 service center job cards.
+    version = 56,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -95,6 +98,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun gymMemberDao(): GymMemberDao
     abstract fun gymFeeDao(): GymFeeDao
     abstract fun coachingDao(): CoachingDao
+    abstract fun serviceDao(): ServiceDao
 
     companion object {
         @Volatile private var INSTANCE: AppDatabase? = null
@@ -354,6 +358,18 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** Service center: masters + job cards with per-job lines and attachments. */
+        private val MIGRATION_55_56 = object : androidx.room.migration.Migration(55, 56) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS service_types (id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL)")
+                db.execSQL("CREATE TABLE IF NOT EXISTS service_statuses (id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL)")
+                db.execSQL("CREATE TABLE IF NOT EXISTS service_jobs_master (id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, price REAL NOT NULL DEFAULT 0)")
+                db.execSQL("CREATE TABLE IF NOT EXISTS service_job_cards (id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, jobNo TEXT NOT NULL, name TEXT NOT NULL DEFAULT '', dateMillis INTEGER NOT NULL, customerId INTEGER NOT NULL DEFAULT 0, customerName TEXT NOT NULL DEFAULT '', customerPhone TEXT NOT NULL DEFAULT '', typeId INTEGER NOT NULL DEFAULT 0, typeName TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'Pending', expectedMillis INTEGER NOT NULL DEFAULT 0, jobsTotal REAL NOT NULL DEFAULT 0, otherCharges REAL NOT NULL DEFAULT 0, otherChargesNote TEXT NOT NULL DEFAULT '', grandTotal REAL NOT NULL DEFAULT 0, advance REAL NOT NULL DEFAULT 0, remarks TEXT NOT NULL DEFAULT '')")
+                db.execSQL("CREATE TABLE IF NOT EXISTS service_job_lines (id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, cardId INTEGER NOT NULL, jobId INTEGER NOT NULL DEFAULT 0, name TEXT NOT NULL, price REAL NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'Pending', expectedMillis INTEGER NOT NULL DEFAULT 0)")
+                db.execSQL("CREATE TABLE IF NOT EXISTS service_job_attachments (id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, cardId INTEGER NOT NULL, path TEXT NOT NULL, name TEXT NOT NULL, mime TEXT NOT NULL)")
+            }
+        }
+
         fun get(context: Context): AppDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -361,7 +377,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "pos_billing.db"
                 )
-                    .addMigrations(MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45, MIGRATION_45_46, MIGRATION_46_47, MIGRATION_47_48, MIGRATION_48_49, MIGRATION_49_50, MIGRATION_50_51, MIGRATION_51_52, MIGRATION_52_53, MIGRATION_53_54, MIGRATION_54_55)
+                    .addMigrations(MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45, MIGRATION_45_46, MIGRATION_46_47, MIGRATION_47_48, MIGRATION_48_49, MIGRATION_49_50, MIGRATION_50_51, MIGRATION_51_52, MIGRATION_52_53, MIGRATION_53_54, MIGRATION_54_55, MIGRATION_55_56)
                     .fallbackToDestructiveMigration()
                     .build()
                     .also { INSTANCE = it }

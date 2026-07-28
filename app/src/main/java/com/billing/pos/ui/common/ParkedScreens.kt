@@ -76,6 +76,7 @@ object ParkedScreens {
             "accounts" -> "Accounts"
             "journal" -> "Journal"
             "pricesearch" -> "Price search"
+            "service" -> "Job cards"
             else -> base.replaceFirstChar { it.uppercase() }
         }
     }

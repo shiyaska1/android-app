@@ -21,6 +21,8 @@ import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.Balance
 import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material.icons.filled.Assessment
+import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.Handyman
 import androidx.compose.material.icons.filled.AssignmentReturn
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Biotech
@@ -188,6 +190,10 @@ fun DashboardScreen(
     onCoachDue: () -> Unit,
     onCoachAttendance: () -> Unit,
     onCoachAttReport: () -> Unit,
+    onServiceJobs: () -> Unit,
+    onServiceMasters: () -> Unit,
+    onServiceStatusReport: () -> Unit,
+    onServicePendingReport: () -> Unit,
     onDiary: () -> Unit,
     onUsers: () -> Unit,
     onSettings: () -> Unit,
@@ -205,6 +211,7 @@ fun DashboardScreen(
     val isBulkSms = businessType == "Bulk SMS"
     val isGym = businessType == "Gym"
     val isCoaching = businessType == "Coaching Center"
+    val isService = businessType == "Service Center"
     val tiles = buildList {
         if (isGym) {
             add(Tile("Members", Icons.Filled.People, onGymMembers, "Masters"))
@@ -244,6 +251,12 @@ fun DashboardScreen(
         if (isRental) {
             add(Tile("Hire Invoice", Icons.Filled.Handshake, onHireInvoices, "Transactions"))
             add(Tile("Hire Return", Icons.Filled.AssignmentReturn, onHireReturns, "Transactions"))
+        }
+        if (isService) {
+            add(Tile("Job Cards", Icons.Filled.Build, onServiceJobs, "Transactions"))
+            add(Tile("Service Masters", Icons.Filled.Handyman, onServiceMasters, "Masters"))
+            add(Tile("Job Status Report", Icons.Filled.Assessment, onServiceStatusReport, "Reports"))
+            add(Tile("Pending Jobs", Icons.Filled.EventBusy, onServicePendingReport, "Reports"))
         }
 
         // ---- Masters ----
