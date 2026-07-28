@@ -25,6 +25,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Gesture
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.NoteAdd
@@ -207,12 +208,22 @@ fun OrderEntryScreen(editId: Long?, onBack: () -> Unit, vm: OrderViewModel = vie
     if (newCust) {
         var nm by remember { mutableStateOf("") }
         var ph by remember { mutableStateOf("") }
+        var drawNm by remember { mutableStateOf(false) }
+        if (drawNm) {
+            com.billing.pos.ui.common.HandwriteTextDialog(
+                onResult = { if (it.isNotBlank()) nm = it; drawNm = false },
+                onDismiss = { drawNm = false }
+            )
+        }
         AlertDialog(
             onDismissRequest = { newCust = false },
             title = { Text("New customer") },
             text = {
                 Column {
-                    OutlinedTextField(value = nm, onValueChange = { nm = it }, label = { Text("Name") }, singleLine = true)
+                    OutlinedTextField(
+                        value = nm, onValueChange = { nm = it }, label = { Text("Name") }, singleLine = true,
+                        trailingIcon = { IconButton(onClick = { drawNm = true }) { Icon(Icons.Filled.Gesture, "Write name") } }
+                    )
                     OutlinedTextField(value = ph, onValueChange = { ph = it.filter { c -> c.isDigit() } }, label = { Text("Phone") }, singleLine = true, modifier = Modifier.padding(top = 8.dp))
                 }
             },

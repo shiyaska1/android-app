@@ -87,6 +87,13 @@ fun NewCustomerDialog(
     var name by remember { mutableStateOf("") }
     var phone by remember { mutableStateOf("") }
     var address by remember { mutableStateOf("") }
+    var drawName by remember { mutableStateOf(false) }
+    if (drawName) {
+        com.billing.pos.ui.common.HandwriteTextDialog(
+            onResult = { if (it.isNotBlank()) name = it; drawName = false },
+            onDismiss = { drawName = false }
+        )
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -96,6 +103,7 @@ fun NewCustomerDialog(
                 OutlinedTextField(
                     value = name, onValueChange = { name = it },
                     label = { Text("Name *") }, singleLine = true,
+                    trailingIcon = { IconButton(onClick = { drawName = true }) { Icon(Icons.Filled.Gesture, "Write name") } },
                     modifier = Modifier.fillMaxWidth()
                 )
                 OutlinedTextField(

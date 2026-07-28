@@ -45,6 +45,7 @@ import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material.icons.filled.Gesture
 import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.Button
@@ -636,8 +637,22 @@ fun StickyNoteScreen(onClose: () -> Unit, onOcrToSales: () -> Unit = {}, vm: Sti
                 onDismissRequest = { newCust = false },
                 title = { Text("New customer") },
                 text = {
+                    var drawNm by remember { mutableStateOf(false) }
+                    if (drawNm) {
+                        com.billing.pos.ui.common.HandwriteTextDialog(
+                            onResult = { if (it.isNotBlank()) newName = it; drawNm = false },
+                            onDismiss = { drawNm = false }
+                        )
+                    }
                     Column {
-                        OutlinedTextField(value = newName, onValueChange = { newName = it }, label = { Text("Name") }, singleLine = true)
+                        OutlinedTextField(
+                            value = newName, onValueChange = { newName = it }, label = { Text("Name") }, singleLine = true,
+                            trailingIcon = {
+                                androidx.compose.material3.IconButton(onClick = { drawNm = true }) {
+                                    androidx.compose.material3.Icon(Icons.Filled.Gesture, "Write name")
+                                }
+                            }
+                        )
                         OutlinedTextField(
                             value = newPhone, onValueChange = { newPhone = it.filter { c -> c.isDigit() } },
                             label = { Text("Mobile (optional — blank if none)") }, singleLine = true,

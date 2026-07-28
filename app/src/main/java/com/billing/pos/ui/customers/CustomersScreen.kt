@@ -15,6 +15,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Gesture
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Delete
@@ -446,6 +447,14 @@ private fun CustomerDialog(
         )
     }
 
+    var drawName by remember { mutableStateOf(false) }
+    if (drawName) {
+        com.billing.pos.ui.common.HandwriteTextDialog(
+            onResult = { if (it.isNotBlank()) name = it; drawName = false },
+            onDismiss = { drawName = false }
+        )
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (existing == null) "New customer" else "Edit customer") },
@@ -454,6 +463,9 @@ private fun CustomerDialog(
                 OutlinedTextField(
                     value = name, onValueChange = { name = it },
                     label = { Text("Name *") }, singleLine = true,
+                    trailingIcon = {
+                        IconButton(onClick = { drawName = true }) { Icon(Icons.Filled.Gesture, "Write name") }
+                    },
                     modifier = Modifier.fillMaxWidth()
                 )
                 // Customer type: pick from the list, or "+" to add a new one.
