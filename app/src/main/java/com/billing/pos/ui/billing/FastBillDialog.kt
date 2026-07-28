@@ -417,6 +417,7 @@ fun FastBillDialog(
                 (!dateRangeOn || (it.dateMillis >= startOfDayMillis(fromMillis) && it.dateMillis <= endOfDayMillis(toMillis)))
         }
         val receipts by repo.allReceipts.collectAsState(initial = emptyList<com.billing.pos.data.Receipt>())
+        val savedCustomers by repo.customers.collectAsState(initial = emptyList<com.billing.pos.data.Customer>())
         val shownTotal = shown.sumOf { it.total }
 
         // Money already received from a customer since a tape was saved, up to the next
@@ -547,7 +548,7 @@ fun FastBillDialog(
                                         savedId = calc.id
                                         custId = calc.customerId
                                         custName = calc.customerName
-                                        custPhone = customers.firstOrNull { it.id == calc.customerId }?.phone ?: ""
+                                        custPhone = savedCustomers.firstOrNull { it.id == calc.customerId }?.phone ?: ""
                                         narration = calc.narration
                                         input = ""
                                         showSaved = false
