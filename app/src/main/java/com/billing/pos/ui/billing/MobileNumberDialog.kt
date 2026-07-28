@@ -82,10 +82,13 @@ fun MobileNumberDialog(
             onSave = { note ->
                 val stamp = com.billing.pos.util.Format.dateTime(System.currentTimeMillis())
                 scope.launch {
+                    val cust = com.billing.pos.data.Repository(context).customerByPhone(num)
                     com.billing.pos.diary.QuickDiaryNote.save(
                         context,
-                        title = "$num — $stamp",
-                        body = if (note.isBlank()) num else "$num\n$note"
+                        title = (cust?.name?.let { "$it — " } ?: "") + "$num — $stamp",
+                        body = if (note.isBlank()) num else "$num\n$note",
+                        customerId = cust?.id ?: 0,
+                        customerName = cust?.name ?: ""
                     )
                 }
                 android.widget.Toast.makeText(context, "Saved to diary", android.widget.Toast.LENGTH_SHORT).show()
@@ -102,6 +105,7 @@ fun MobileNumberDialog(
         var name by remember(num) { mutableStateOf("") }
         var existing by remember(num) { mutableStateOf<com.billing.pos.data.Customer?>(null) }
         var draw by remember(num) { mutableStateOf(false) }
+        var ctype by remember(num) { mutableStateOf("General") }
         LaunchedEffect(num) {
             val c = com.billing.pos.data.Repository(context).customerByPhone(num)
             if (c != null) { existing = c; name = c.name }
@@ -134,13 +138,19 @@ fun MobileNumberDialog(
                             Icon(Icons.Filled.Draw, "Handwrite name")
                         }
                     }
+                    if (existing == null) {
+                        com.billing.pos.ui.common.CustomerTypeField(
+                            value = ctype, onValue = { ctype = it },
+                            modifier = Modifier.padding(top = 8.dp)
+                        )
+                    }
                 }
             },
             confirmButton = {
                 if (existing == null) androidx.compose.material3.TextButton(onClick = {
                     val typed = name.trim()
                     if (typed.isNotBlank()) {
-                        scope.launch { com.billing.pos.data.Repository(context).addCustomer(typed, num, "") }
+                        scope.launch { com.billing.pos.data.Repository(context).addCustomer(typed, num, "", customerType = ctype) }
                         android.widget.Toast.makeText(context, "$typed saved to customers", android.widget.Toast.LENGTH_SHORT).show()
                         saveCustomerFor = null
                     }
@@ -176,13 +186,16 @@ fun MobileNumberDialog(
                     onClick = {
                         if (number.isNotBlank()) {
                             clipboard.setText(AnnotatedString(number))
-                            // Also kept in the diary, so the number survives closing the popup.
+                            // Also kept in the diary; a known customer's note links to them.
                             val saved = number
                             scope.launch {
+                                val cust = com.billing.pos.data.Repository(context).customerByPhone(saved)
                                 com.billing.pos.diary.QuickDiaryNote.save(
                                     context,
-                                    title = "Mobile number $saved",
-                                    body = saved
+                                    title = if (cust != null) "${cust.name} — $saved" else "Mobile number $saved",
+                                    body = if (cust != null) "${cust.name}\n$saved" else saved,
+                                    customerId = cust?.id ?: 0,
+                                    customerName = cust?.name ?: ""
                                 )
                             }
                             android.widget.Toast.makeText(

@@ -12,15 +12,20 @@ import com.billing.pos.data.DiaryRepository
  */
 object QuickDiaryNote {
 
-    /** Writes [title] / [body] as a new diary entry and returns its id (0 on failure). */
-    suspend fun save(context: Context, title: String, body: String): Long = runCatching {
+    /** Writes [title] / [body] as a new diary entry, optionally linked to a customer. */
+    suspend fun save(
+        context: Context, title: String, body: String,
+        customerId: Long = 0, customerName: String = ""
+    ): Long = runCatching {
         val now = System.currentTimeMillis()
         DiaryRepository(context).upsert(
             DiaryEntry(
                 title = title.take(120),
                 remarks = body,
                 createdAt = now,
-                updatedAt = now
+                updatedAt = now,
+                customerId = customerId,
+                customerName = customerName.trim()
             )
         )
     }.getOrDefault(0L)

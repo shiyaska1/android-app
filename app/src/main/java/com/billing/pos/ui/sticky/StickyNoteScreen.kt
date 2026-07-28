@@ -207,6 +207,9 @@ class StickyNoteViewModel(app: Application) : AndroidViewModel(app) {
     private var savedCreatedAt: Long = 0
     private var lastPagePaths: List<String> = emptyList()
 
+    /** The customer this note was filed against; shares and the diary entry carry them. */
+    var attachedCustomer by mutableStateOf<com.billing.pos.data.Customer?>(null)
+
     fun startRecording() {
         if (recording) return
         val ctx = getApplication<Application>()
@@ -250,7 +253,11 @@ class StickyNoteViewModel(app: Application) : AndroidViewModel(app) {
             withContext(Dispatchers.IO) { lastPagePaths.forEach { runCatching { File(it).delete() } } }
             val now = System.currentTimeMillis()
             if (savedCreatedAt == 0L) savedCreatedAt = now
-            val id = repo.upsert(DiaryEntry(id = savedEntryId, title = "Sticky note - ${Format.dateTime(savedCreatedAt)}", remarks = "", createdAt = savedCreatedAt, updatedAt = now))
+            val id = repo.upsert(DiaryEntry(
+                id = savedEntryId, title = "Sticky note - ${Format.dateTime(savedCreatedAt)}", remarks = "",
+                createdAt = savedCreatedAt, updatedAt = now,
+                customerId = attachedCustomer?.id ?: 0, customerName = attachedCustomer?.name ?: ""
+            ))
             savedEntryId = id
             val blocks = ArrayList<DiaryBlock>()
             pagePaths.forEach { blocks.add(DiaryBlock(entryId = id, position = 0, type = BlockType.IMAGE, path = it, name = "Sticky note.jpg", mime = "image/jpeg")) }
@@ -472,7 +479,15 @@ fun StickyNoteScreen(onClose: () -> Unit, onOcrToSales: () -> Unit = {}, vm: Sti
         val f = File(dir, "stickynote_${System.nanoTime()}.jpg")
         f.outputStream().use { bmp.compress(Bitmap.CompressFormat.JPEG, 90, it) }
         val uri = FileProvider.getUriForFile(context, "${context.packageName}.provider", f)
-        val intent = Intent(Intent.ACTION_SEND).apply { type = "image/jpeg"; putExtra(Intent.EXTRA_STREAM, uri); addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "image/jpeg"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            // The attached customer travels with the note, so the receiver knows who it is about.
+            vm.attachedCustomer?.let { c ->
+                putExtra(Intent.EXTRA_TEXT, c.name + if (c.phone.isNotBlank()) " - ${c.phone}" else "")
+            }
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
         runCatching { context.startActivity(Intent.createChooser(intent, "Share note").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
     }
 
@@ -621,6 +636,7 @@ fun StickyNoteScreen(onClose: () -> Unit, onOcrToSales: () -> Unit = {}, vm: Sti
         fun commit(share: Boolean) {
             val cust = picked ?: customers.firstOrNull { it.name.equals(typed.trim(), true) }
             if (cust == null) { vm.message.value = "Pick a customer, or use + to add one"; return }
+            vm.attachedCustomer = cust
             vm.attachToCustomer(
                 cust.id, pagesSnapshot(), canvasSize.width, canvasSize.height,
                 images.toList(), audios.toList(), videos.toList()
