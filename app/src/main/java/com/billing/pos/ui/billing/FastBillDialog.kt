@@ -120,6 +120,7 @@ fun FastBillDialog(
     var mulDivFactor by remember { mutableStateOf("") }
     var showNoAmountAlert by remember { mutableStateOf(false) }
     var showDivByZeroAlert by remember { mutableStateOf(false) }
+    var confirmDeleteCalc by remember { mutableStateOf<com.billing.pos.data.SavedCalc?>(null) }
 
     /** [sign] is +1 for the "+" key and -1 for "−"; a minus entry is stored negative. */
     fun addNow(sign: Int = 1) {
@@ -307,6 +308,7 @@ fun FastBillDialog(
 
             // ---- Entry + running total ----
             Column(Modifier.fillMaxWidth().padding(12.dp).navigationBarsPadding()) {
+                // Amount box and remove-last share their own row...
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(
                         value = input,
@@ -324,24 +326,38 @@ fun FastBillDialog(
                     IconButton(onClick = { if (input.isNotEmpty()) input = "" else if (entries.isNotEmpty()) confirmRemoveLast = true }) {
                         Icon(Icons.Filled.Backspace, contentDescription = "Remove last")
                     }
-                    // Multiplication button
-                    OutlinedButton(onClick = {
-                        val cur = input.toDoubleOrNull()
-                        if (cur == null) { showNoAmountAlert = true; return@OutlinedButton }
-                        mulDivOp = '*'
-                        mulDivFactor = ""
-                        showMulDivDialog = true
-                    }) { Text("×", fontSize = 20.sp, fontWeight = FontWeight.Bold) }
-                    // Division button
-                    OutlinedButton(onClick = {
-                        val cur = input.toDoubleOrNull()
-                        if (cur == null) { showNoAmountAlert = true; return@OutlinedButton }
-                        mulDivOp = '/'
-                        mulDivFactor = ""
-                        showMulDivDialog = true
-                    }) { Text("÷", fontSize = 20.sp, fontWeight = FontWeight.Bold) }
-                    OutlinedButton(onClick = { addNow(-1) }) { Text("−", fontSize = 26.sp, fontWeight = FontWeight.Bold) }
-                    Button(onClick = { addNow(1) }) { Text("+", fontSize = 26.sp, fontWeight = FontWeight.Bold) }
+                }
+                // ...×, ÷, − and + get their own row below, so neither row is crowded.
+                Row(
+                    Modifier.fillMaxWidth().padding(top = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        modifier = Modifier.weight(1f),
+                        onClick = {
+                            val cur = input.toDoubleOrNull()
+                            if (cur == null) { showNoAmountAlert = true; return@OutlinedButton }
+                            mulDivOp = '*'
+                            mulDivFactor = ""
+                            showMulDivDialog = true
+                        }
+                    ) { Text("×", fontSize = 20.sp, fontWeight = FontWeight.Bold) }
+                    OutlinedButton(
+                        modifier = Modifier.weight(1f),
+                        onClick = {
+                            val cur = input.toDoubleOrNull()
+                            if (cur == null) { showNoAmountAlert = true; return@OutlinedButton }
+                            mulDivOp = '/'
+                            mulDivFactor = ""
+                            showMulDivDialog = true
+                        }
+                    ) { Text("÷", fontSize = 20.sp, fontWeight = FontWeight.Bold) }
+                    OutlinedButton(modifier = Modifier.weight(1f), onClick = { addNow(-1) }) {
+                        Text("−", fontSize = 26.sp, fontWeight = FontWeight.Bold)
+                    }
+                    Button(modifier = Modifier.weight(1f), onClick = { addNow(1) }) {
+                        Text("+", fontSize = 26.sp, fontWeight = FontWeight.Bold)
+                    }
                 }
                 Row(
                     Modifier.fillMaxWidth().padding(top = 8.dp),
@@ -635,7 +651,7 @@ fun FastBillDialog(
                                         color = MaterialTheme.colorScheme.primary
                                     )
                                 }
-                                IconButton(onClick = { scope.launch { repo.deleteCalc(calc.id) } }) {
+                                IconButton(onClick = { confirmDeleteCalc = calc }) {
                                     Icon(Icons.Filled.Delete, "Delete", tint = MaterialTheme.colorScheme.error)
                                 }
                             }
@@ -704,6 +720,22 @@ fun FastBillDialog(
                 }
             }
         }
+    }
+
+    // Delete a saved calculation only after the user confirms — it can't be undone.
+    confirmDeleteCalc?.let { calc ->
+        AlertDialog(
+            onDismissRequest = { confirmDeleteCalc = null },
+            title = { Text("Delete this calculation?") },
+            text = { Text(calc.customerName + "  •  " + Format.money(calc.total) + "\nThis cannot be undone.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    scope.launch { repo.deleteCalc(calc.id) }
+                    confirmDeleteCalc = null
+                }) { Text("Delete") }
+            },
+            dismissButton = { TextButton(onClick = { confirmDeleteCalc = null }) { Text("Cancel") } }
+        )
     }
 
     // Correcting a receipt straight from the calculation it was received against.
