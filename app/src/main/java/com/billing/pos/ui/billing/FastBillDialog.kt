@@ -880,8 +880,105 @@ fun FastBillDialog(
     }
 
     // ---- end of dialog file helpers ----
+}
 
-    // ---- Saved calc helpers: buildPdf/share are below (unchanged) ----
-    // ... rest of file: buildCalcListPdf, shareCalcList, utility functions
+/** Shares the calculator tape as text, preferring WhatsApp and falling back to a chooser. */
+private fun shareTapeToWhatsApp(context: android.content.Context, text: String) {
+    val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+        type = "text/plain"
+        putExtra(android.content.Intent.EXTRA_TEXT, text)
+    }
+    for (pkg in listOf("com.whatsapp", "com.whatsapp.w4b")) {
+        val direct = android.content.Intent(send).setPackage(pkg)
+        if (direct.resolveActivity(context.packageManager) != null) {
+            runCatching { context.startActivity(direct) }.onSuccess { return }
+        }
+    }
+    runCatching {
+        context.startActivity(
+            android.content.Intent.createChooser(send, "Share total")
+                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
+    }
+}
 
+/** The saved-calculation list as a PDF: one row per tape, filtered exactly as shown. */
+private fun buildCalcListPdf(
+    context: android.content.Context,
+    rows: List<com.billing.pos.data.SavedCalc>,
+    customerFilter: String
+): java.io.File {
+    val cols = listOf(
+        com.billing.pos.pdf.TablePdf.Col("Date", 1.5f),
+        com.billing.pos.pdf.TablePdf.Col("Customer", 1.6f),
+        com.billing.pos.pdf.TablePdf.Col("Narration", 2.4f),
+        com.billing.pos.pdf.TablePdf.Col("Amounts", 0.8f, right = true),
+        com.billing.pos.pdf.TablePdf.Col("Total", 1.2f, right = true)
+    )
+    val data = rows.map {
+        listOf(
+            Format.dateTime(it.dateMillis), it.customerName, it.narration,
+            it.amountList.size.toString(), Format.money(it.total)
+        )
+    }
+    return com.billing.pos.pdf.TablePdf.generate(
+        context,
+        com.billing.pos.data.AppPrefs(context).company,
+        "Saved Calculations",
+        if (customerFilter.isBlank()) "All customers" else "Customer: " + customerFilter,
+        cols, data,
+        listOf("Total" to Format.money(rows.sumOf { it.total }))
+    )
+}
+
+/** Shares that same list as a PDF attachment. */
+private fun shareCalcList(
+    context: android.content.Context,
+    rows: List<com.billing.pos.data.SavedCalc>,
+    customerFilter: String
+) {
+    runCatching {
+        val file = buildCalcListPdf(context, rows, customerFilter)
+        val uri = androidx.core.content.FileProvider.getUriForFile(
+            context, context.packageName + ".provider", file
+        )
+        val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+            type = "application/pdf"
+            putExtra(android.content.Intent.EXTRA_STREAM, uri)
+            addFlags(
+                android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                    android.content.Intent.FLAG_ACTIVITY_NEW_TASK
+            )
+        }
+        context.startActivity(
+            android.content.Intent.createChooser(send, "Share calculations")
+                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
+    }
+}
+
+/** The date the range starts on when it is first switched on: one month back. */
+private fun defaultFromMillis(): Long = java.util.Calendar.getInstance().apply {
+    add(java.util.Calendar.MONTH, -1)
+}.timeInMillis
+
+private fun startOfDayMillis(m: Long): Long = java.util.Calendar.getInstance().apply {
+    timeInMillis = m
+    set(java.util.Calendar.HOUR_OF_DAY, 0); set(java.util.Calendar.MINUTE, 0)
+    set(java.util.Calendar.SECOND, 0); set(java.util.Calendar.MILLISECOND, 0)
+}.timeInMillis
+
+private fun endOfDayMillis(m: Long): Long = startOfDayMillis(m) + 24L * 60 * 60 * 1000 - 1
+
+private fun pickCalcDate(context: android.content.Context, current: Long, onPicked: (Long) -> Unit) {
+    val c = java.util.Calendar.getInstance().apply { timeInMillis = current }
+    android.app.DatePickerDialog(
+        context,
+        { _, y, mo, d ->
+            c.set(java.util.Calendar.YEAR, y); c.set(java.util.Calendar.MONTH, mo)
+            c.set(java.util.Calendar.DAY_OF_MONTH, d)
+            onPicked(c.timeInMillis)
+        },
+        c.get(java.util.Calendar.YEAR), c.get(java.util.Calendar.MONTH), c.get(java.util.Calendar.DAY_OF_MONTH)
+    ).show()
 }
