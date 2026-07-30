@@ -17,6 +17,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Backspace
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Divider
 import androidx.compose.material3.Icon
@@ -67,6 +68,13 @@ fun CalculatorDialog(
     val focus = remember { FocusRequester() }
     val scroll = rememberScrollState()
     val total = entries.sum()
+
+    var confirmRemoveLast by remember { mutableStateOf(false) }
+    var showMulDivDialog by remember { mutableStateOf(false) }
+    var mulDivOp by remember { mutableStateOf('*') }
+    var mulDivFactor by remember { mutableStateOf("") }
+    var showNoAmountAlert by remember { mutableStateOf(false) }
+    var showDivByZeroAlert by remember { mutableStateOf(false) }
 
     fun add(sign: Int) {
         val v = input.toDoubleOrNull()
@@ -183,11 +191,95 @@ fun CalculatorDialog(
                     modifier = Modifier.weight(1f).focusRequester(focus)
                 )
                 IconButton(onClick = {
-                    if (input.isNotEmpty()) input = "" else if (entries.isNotEmpty()) entries.removeAt(entries.lastIndex)
+                    if (input.isNotEmpty()) input = "" else if (entries.isNotEmpty()) confirmRemoveLast = true
                 }) { Icon(Icons.Filled.Backspace, contentDescription = "Remove last") }
+                // Multiplication button
+                OutlinedButton(onClick = {
+                    val cur = input.toDoubleOrNull()
+                    if (cur == null) { showNoAmountAlert = true; return@OutlinedButton }
+                    mulDivOp = '*'
+                    mulDivFactor = ""
+                    showMulDivDialog = true
+                }) { Text("×", fontSize = 20.sp, fontWeight = FontWeight.Bold) }
+                // Division button
+                OutlinedButton(onClick = {
+                    val cur = input.toDoubleOrNull()
+                    if (cur == null) { showNoAmountAlert = true; return@OutlinedButton }
+                    mulDivOp = '/'
+                    mulDivFactor = ""
+                    showMulDivDialog = true
+                }) { Text("÷", fontSize = 20.sp, fontWeight = FontWeight.Bold) }
                 OutlinedButton(onClick = { add(-1) }) { Text("−", fontSize = 24.sp, fontWeight = FontWeight.Bold) }
                 Button(onClick = { add(1) }) { Text("+", fontSize = 24.sp, fontWeight = FontWeight.Bold) }
             }
+        }
+
+        // Confirm delete last entry
+        if (confirmRemoveLast) {
+            AlertDialog(
+                onDismissRequest = { confirmRemoveLast = false },
+                title = { Text("Delete last entry?") },
+                text = { Text("This will remove the last amount from the tape. Continue?") },
+                confirmButton = {
+                    Button(onClick = { confirmRemoveLast = false; if (entries.isNotEmpty()) entries.removeAt(entries.lastIndex) }) { Text("Delete") }
+                },
+                dismissButton = { OutlinedButton(onClick = { confirmRemoveLast = false }) { Text("Cancel") } }
+            )
+        }
+
+        // Mul/Div factor dialog
+        if (showMulDivDialog) {
+            AlertDialog(
+                onDismissRequest = { showMulDivDialog = false },
+                title = { Text(if (mulDivOp == '*') "Multiply amount" else "Divide amount") },
+                text = {
+                    Column { 
+                        OutlinedTextField(
+                            value = mulDivFactor,
+                            onValueChange = { mulDivFactor = it.filter { c -> c.isDigit() || c == '.' } },
+                            label = { Text("Enter number") },
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done)
+                        )
+                        if (mulDivOp == '/' && mulDivFactor.toDoubleOrNull() == 0.0 && mulDivFactor.isNotBlank()) {
+                            Text("Cannot divide by zero", color = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                },
+                confirmButton = {
+                    Button(onClick = {
+                        val factor = mulDivFactor.toDoubleOrNull()
+                        val cur = input.toDoubleOrNull()
+                        if (factor == null || cur == null) { showMulDivDialog = false; return@Button }
+                        if (mulDivOp == '/' && factor == 0.0) {
+                            showMulDivDialog = false; showDivByZeroAlert = true; return@Button
+                        }
+                        val res = if (mulDivOp == '*') cur * factor else cur / factor
+                        input = Format.money(res)
+                        showMulDivDialog = false
+                        focus.requestFocus()
+                    }) { Text("Apply") }
+                },
+                dismissButton = { OutlinedButton(onClick = { showMulDivDialog = false }) { Text("Cancel") } }
+            )
+        }
+
+        if (showNoAmountAlert) {
+            AlertDialog(
+                onDismissRequest = { showNoAmountAlert = false },
+                title = { Text("No amount") },
+                text = { Text("Enter an amount first in the Amount field before using × or ÷.") },
+                confirmButton = { Button(onClick = { showNoAmountAlert = false }) { Text("OK") } }
+            )
+        }
+
+        if (showDivByZeroAlert) {
+            AlertDialog(
+                onDismissRequest = { showDivByZeroAlert = false },
+                title = { Text("Cannot divide") },
+                text = { Text("Division by zero is not allowed.") },
+                confirmButton = { Button(onClick = { showDivByZeroAlert = false }) { Text("OK") } }
+            )
         }
     }
 }
