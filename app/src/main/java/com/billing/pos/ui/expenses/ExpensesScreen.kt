@@ -2,6 +2,7 @@ package com.billing.pos.ui.expenses
 
 import android.Manifest
 import android.app.Application
+import android.content.Context
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -23,11 +24,13 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.LibraryAdd
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Print
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Divider
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -71,7 +74,10 @@ import androidx.compose.material.icons.filled.Close
 import com.billing.pos.data.PayMode
 import com.billing.pos.data.Purchase
 import com.billing.pos.data.AppPrefs
+import com.billing.pos.data.DownloadSaver
 import com.billing.pos.data.Repository
+import com.billing.pos.data.SpreadsheetImport
+import com.billing.pos.data.XlsxWriter
 import com.billing.pos.pdf.TablePdf
 import com.billing.pos.print.ThermalPrinter
 import com.billing.pos.ui.billing.collectAsStateSafe
@@ -88,6 +94,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
 
 class ExpensesViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = Repository(app)
@@ -138,6 +145,68 @@ class ExpensesViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** One row parsed from an imported payments spreadsheet. */
+    private data class ImportedPaymentRow(val party: String, val description: String, val amount: Double, val mode: PayMode, val dateMillis: Long)
+
+    /** Download a blank .xlsx template for general (non-purchase) payments. */
+    fun downloadTemplate(context: Context) {
+        viewModelScope.launch {
+            val ok = withContext(Dispatchers.IO) {
+                val rows = listOf(
+                    XlsxWriter.row(
+                        XlsxWriter.text("Date"), XlsxWriter.text("Paid To"), XlsxWriter.text("Description"),
+                        XlsxWriter.text("Amount"), XlsxWriter.text("Payment Type")
+                    ),
+                    XlsxWriter.row(
+                        XlsxWriter.text(Format.date(System.currentTimeMillis())), XlsxWriter.text(""), XlsxWriter.text("Expense"),
+                        XlsxWriter.num(0.0), XlsxWriter.text(PayMode.CASH.label)
+                    )
+                )
+                val validations = listOf(
+                    XlsxWriter.ListValidation(4, PayMode.values().map { it.label }, 2, 1000)
+                )
+                val file = File(File(context.cacheDir, "shared").apply { mkdirs() }, "payments-template.xlsx")
+                XlsxWriter.write(file, "Payments", rows, validations)
+                DownloadSaver.save(context, file, "payments-template.xlsx",
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            }
+            message.value = if (ok) "Template saved to Downloads" else "Could not save template"
+        }
+    }
+
+    /** Import general payments from a picked .xlsx/.csv file; each row's own payment type is used. */
+    fun importFrom(context: Context, uri: android.net.Uri) {
+        viewModelScope.launch {
+            val rows = withContext(Dispatchers.IO) {
+                val raw = SpreadsheetImport.readRaw(context, uri)
+                if (raw.isEmpty()) return@withContext emptyList<ImportedPaymentRow>()
+                val header = raw.first().map { it.trim().lowercase() }
+                fun col(vararg keys: String) = header.indexOfFirst { h -> keys.any { h == it || h.contains(it) } }
+                val iDate = col("date")
+                val iParty = col("paid to", "party", "payee", "supplier", "name")
+                val iDesc = col("description", "narration", "particulars")
+                val iAmount = col("amount")
+                val iMode = col("payment type", "payment mode", "mode", "type")
+                raw.drop(1).mapNotNull { r ->
+                    fun cell(i: Int) = if (i in 0 until r.size) r[i].trim() else ""
+                    val amount = cell(iAmount).toDoubleOrNull() ?: return@mapNotNull null
+                    if (amount <= 0.0) return@mapNotNull null
+                    val party = if (iParty >= 0) cell(iParty) else ""
+                    val desc = if (iDesc >= 0) cell(iDesc) else ""
+                    val dateMillis = (if (iDate >= 0) SpreadsheetImport.parseDate(cell(iDate)) else 0L)
+                        .takeIf { it > 0 } ?: System.currentTimeMillis()
+                    val modeText = if (iMode >= 0) cell(iMode) else ""
+                    val mode = PayMode.values().firstOrNull { it.label.equals(modeText, true) || it.name.equals(modeText, true) }
+                        ?: PayMode.CASH
+                    ImportedPaymentRow(party, desc, amount, mode, dateMillis)
+                }
+            }
+            if (rows.isEmpty()) { message.value = "No valid rows found (need Amount)"; return@launch }
+            rows.forEach { r -> repo.addExpenseFull(r.description, r.amount, r.mode, r.dateMillis, r.party) }
+            message.value = "${rows.size} payment(s) imported"
+        }
+    }
+
     fun addAgainstPurchase(purchase: com.billing.pos.data.Purchase, amount: Double, mode: PayMode) {
         if (amount <= 0) { message.value = "Enter a valid amount"; return }
         viewModelScope.launch { repo.addPaymentForPurchase(purchase, amount, mode); message.value = "Payment added" }
@@ -179,6 +248,11 @@ fun ExpensesScreen(
     var editFor by remember { mutableStateOf<Expense?>(null) }
     var deleteFor by remember { mutableStateOf<Expense?>(null) }
     var printFor by remember { mutableStateOf<Expense?>(null) }
+    var menuOpen by remember { mutableStateOf(false) }
+
+    val importPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) vm.importFrom(context, uri)
+    }
 
     val printPermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -251,6 +325,30 @@ fun ExpensesScreen(
                     if (Session.canViewPayment) {
                         IconButton(onClick = { downloadPdf { buildPaymentsPdf() } }) {
                             Icon(Icons.Filled.Download, contentDescription = "Download PDF")
+                        }
+                    }
+                    if (Session.canCreatePayment) {
+                        IconButton(onClick = { menuOpen = true }) {
+                            Icon(Icons.Filled.MoreVert, contentDescription = "More")
+                        }
+                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                            DropdownMenuItem(
+                                text = { Text("Download blank format (Excel)") },
+                                onClick = {
+                                    menuOpen = false
+                                    vm.downloadTemplate(context)
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Upload from Excel") },
+                                onClick = {
+                                    menuOpen = false
+                                    importPicker.launch(arrayOf(
+                                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                        "application/vnd.ms-excel", "text/csv", "text/comma-separated-values", "*/*"
+                                    ))
+                                }
+                            )
                         }
                     }
                 }

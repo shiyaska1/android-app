@@ -84,7 +84,7 @@ object SpreadsheetImport {
     }
 
     /** Parses an Excel serial number or a text date (several common formats) to millis; 0 if none. */
-    private fun parseDate(s: String): Long {
+    fun parseDate(s: String): Long {
         val t = s.trim()
         if (t.isBlank()) return 0L
         t.toDoubleOrNull()?.let { serial ->

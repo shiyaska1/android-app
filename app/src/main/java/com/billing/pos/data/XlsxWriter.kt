@@ -16,13 +16,16 @@ object XlsxWriter {
     fun num(n: Double): Cell = Cell.Num(n)
     fun row(vararg cells: Cell): List<Cell> = cells.toList()
 
-    fun write(file: File, sheetName: String, rows: List<List<Cell>>) {
+    /** An in-cell Excel dropdown: [colIndex] (0-based) offers [options] on rows [firstRow]..[lastRow] (1-based). */
+    data class ListValidation(val colIndex: Int, val options: List<String>, val firstRow: Int, val lastRow: Int)
+
+    fun write(file: File, sheetName: String, rows: List<List<Cell>>, validations: List<ListValidation> = emptyList()) {
         ZipOutputStream(file.outputStream().buffered()).use { zos ->
             put(zos, "[Content_Types].xml", CONTENT_TYPES)
             put(zos, "_rels/.rels", RELS)
             put(zos, "xl/workbook.xml", workbook(sheetName))
             put(zos, "xl/_rels/workbook.xml.rels", WORKBOOK_RELS)
-            put(zos, "xl/worksheets/sheet1.xml", sheet(rows))
+            put(zos, "xl/worksheets/sheet1.xml", sheet(rows, validations))
         }
     }
 
@@ -32,7 +35,7 @@ object XlsxWriter {
         zos.closeEntry()
     }
 
-    private fun sheet(rows: List<List<Cell>>): String {
+    private fun sheet(rows: List<List<Cell>>, validations: List<ListValidation> = emptyList()): String {
         val sb = StringBuilder()
         sb.append("""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>""")
         sb.append("""<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>""")
@@ -47,7 +50,20 @@ object XlsxWriter {
             }
             sb.append("</row>")
         }
-        sb.append("</sheetData></worksheet>")
+        sb.append("</sheetData>")
+        if (validations.isNotEmpty()) {
+            sb.append("""<dataValidations count="${validations.size}">""")
+            validations.forEach { v ->
+                val col = colName(v.colIndex)
+                val sqref = "$col${v.firstRow}:$col${v.lastRow}"
+                val list = esc(v.options.joinToString(","))
+                sb.append("""<dataValidation type="list" allowBlank="1" showInputMessage="1" showErrorMessage="1" sqref="$sqref">""")
+                sb.append("<formula1>&quot;$list&quot;</formula1>")
+                sb.append("</dataValidation>")
+            }
+            sb.append("</dataValidations>")
+        }
+        sb.append("</worksheet>")
         return sb.toString()
     }
 
