@@ -86,6 +86,7 @@ import com.billing.pos.ui.materialout.ItemMovementScreen
 import com.billing.pos.ui.reports.StockReportScreen
 import com.billing.pos.ui.reports.SalesProfitScreen
 import com.billing.pos.ui.reports.SalesItemReportScreen
+import com.billing.pos.ui.reports.ExpiryReportScreen
 import com.billing.pos.ui.purchase.PurchaseListScreen
 import com.billing.pos.ui.purchase.PurchaseScreen
 import com.billing.pos.ui.purchase.SuppliersScreen
@@ -416,6 +417,7 @@ private fun AppNav() {
                 onLpoMaterialReport = { nav.navigate("lpomaterialreport") },
                 onItemMovement = { nav.navigate("itemmovement") },
                 onStockReport = { nav.navigate("stockreport") },
+                onExpiryReport = { nav.navigate("expiryreport") },
                 onSalesProfit = { nav.navigate("salesprofit") },
                 onSalesItemReport = { nav.navigate("salesitemreport") },
                 onVatReport = { nav.navigate("vat") },
@@ -772,6 +774,9 @@ private fun AppNav() {
             )
         }
         composable("stockreport") { StockReportScreen(onBack = { nav.popBackStack() }) }
+        composable("expiryreport") {
+            ExpiryReportScreen(onBack = { nav.popBackStack() }, onCreatePurchaseReturn = { nav.navigate("purchasereturn") })
+        }
         composable("salesprofit") {
             SalesProfitScreen(onBack = { nav.popBackStack() }, onOpenInvoice = { id -> nav.navigate("billing/edit/$id") })
         }

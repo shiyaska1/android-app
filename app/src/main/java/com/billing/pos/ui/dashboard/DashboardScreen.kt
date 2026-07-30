@@ -176,6 +176,7 @@ fun DashboardScreen(
     onLpoMaterialReport: () -> Unit,
     onItemMovement: () -> Unit,
     onStockReport: () -> Unit,
+    onExpiryReport: () -> Unit,
     onSalesProfit: () -> Unit,
     onSalesItemReport: () -> Unit,
     onVatReport: () -> Unit,
@@ -313,6 +314,7 @@ fun DashboardScreen(
         if (Session.canViewInvoice) add(Tile("Sales (item-wise)", Icons.Filled.Inventory2, onSalesItemReport, "Reports"))
         if (Session.canViewInvoice) add(Tile("LPO Material", Icons.Filled.PlaylistAddCheck, onLpoMaterialReport, "Reports"))
         add(Tile("Stock on Date", Icons.Filled.Inventory, onStockReport, "Reports"))
+        if (com.billing.pos.data.AppPrefs(context).requireItemBatch) add(Tile("Expiry Report", Icons.Filled.EventBusy, onExpiryReport, "Reports"))
         add(Tile("Item Movement", Icons.Filled.SwapVert, onItemMovement, "Reports"))
         add(Tile("Price Search", Icons.Filled.PriceCheck, onPriceSearch, "Reports"))
         if (Session.canViewInvoice) add(Tile("VAT Report", Icons.Filled.Description, onVatReport, "Reports"))

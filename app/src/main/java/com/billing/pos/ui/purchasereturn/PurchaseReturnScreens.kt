@@ -102,6 +102,29 @@ class PurchaseReturnViewModel(app: Application) : AndroidViewModel(app) {
     /** true = return against a chosen purchase (auto-fills the items); false = direct return. */
     var againstBill by mutableStateOf(false)
 
+    /** true while the current cart came from an Expiry Report hand-off that may still have more
+     *  supplier groups queued — drives the auto-chain in [save] and cleanup in [abandonPendingChain]. */
+    private var pendingChainActive = false
+
+    /** Fills the cart from one supplier group handed off by the Expiry Report. */
+    fun loadFromReturnGroup(group: com.billing.pos.ui.reports.ReturnGroup) {
+        cart.clear(); additionalChargeText = ""; discountText = ""; remarks = ""; billNo = ""
+        dateMillis = System.currentTimeMillis(); editingId = null; againstBill = false
+        selectedSupplier = suppliers.value.firstOrNull { it.id == group.supplierId }
+            ?: Supplier(group.supplierId, group.supplierName)
+        group.lines.forEach {
+            cart.add(CartLine(it.itemId, it.name, it.price, it.taxPercent, it.qty, batchNo = it.batchNo, unit = it.unit, primaryPerUnit = it.primaryPerUnit))
+        }
+    }
+
+    /** Clears any Expiry Report groups still queued if the user leaves without saving them. */
+    fun abandonPendingChain() {
+        if (pendingChainActive) {
+            com.billing.pos.ui.reports.ExpiryReportToReturnLink.set(emptyList())
+            pendingChainActive = false
+        }
+    }
+
     /** Loads every line of [purchase] into the cart and picks its supplier. */
     fun loadFromPurchase(purchase: com.billing.pos.data.Purchase) {
         billNo = purchase.purchaseNo
@@ -174,6 +197,14 @@ class PurchaseReturnViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun newReturn() {
+        val next = com.billing.pos.ui.reports.ExpiryReportToReturnLink.takeNext()
+        if (next != null) {
+            pendingChainActive = true
+            loadFromReturnGroup(next)
+            viewModelScope.launch { returnNo = repo.nextPurchaseReturnNo() }
+            return
+        }
+        pendingChainActive = false
         cart.clear(); additionalChargeText = ""; discountText = ""; remarks = ""; billNo = ""
         dateMillis = System.currentTimeMillis(); editingId = null
         selectedSupplier = suppliers.value.firstOrNull { it.isDefault } ?: suppliers.value.firstOrNull()
@@ -199,7 +230,14 @@ class PurchaseReturnViewModel(app: Application) : AndroidViewModel(app) {
                 // Goods returned to supplier leave batch stock (new returns only).
                 cart.filter { it.batchNo.isNotBlank() && it.itemId > 0 }.forEach { repo.deductBatch(it.itemId, it.batchNo, it.primaryQty) }
                 editingId = null
-                message.value = "Return $returnNo saved"
+                val savedNo = returnNo
+                if (com.billing.pos.ui.reports.ExpiryReportToReturnLink.hasMore) {
+                    newReturn()
+                    message.value = "Return $savedNo saved — continuing with the next supplier"
+                } else {
+                    pendingChainActive = false
+                    message.value = "Return $savedNo saved"
+                }
             }
             onDone()
         }
@@ -219,6 +257,10 @@ fun PurchaseReturnScreen(editId: Long?, onBack: () -> Unit, vm: PurchaseReturnVi
     val message by vm.message.collectAsStateSafe()
     val requireBatch = remember { AppPrefs(context).requireItemBatch }
     LaunchedEffect(Unit) { if (editId != null && editId > 0) vm.load(editId) }
+    // Expiring batches ticked on the Expiry Report arrive here as one prefilled return per supplier.
+    LaunchedEffect(Unit) {
+        if (editId == null && com.billing.pos.ui.reports.ExpiryReportToReturnLink.hasMore) vm.newReturn()
+    }
     LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); vm.consumeMessage() } }
 
     var showItemPicker by remember { mutableStateOf(false) }
@@ -231,7 +273,9 @@ fun PurchaseReturnScreen(editId: Long?, onBack: () -> Unit, vm: PurchaseReturnVi
         topBar = {
             TopAppBar(
                 title = { Text(if (vm.editingId != null) "Edit Purchase Return" else "Purchase Return") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
+                navigationIcon = {
+                    IconButton(onClick = { vm.abandonPendingChain(); onBack() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
+                },
                 actions = {
                     DocumentPdfAction(onMessage = { vm.message.value = it }) {
                         if (vm.cart.isEmpty()) { vm.message.value = "Add at least one item"; null }

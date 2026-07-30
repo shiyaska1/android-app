@@ -19,7 +19,10 @@ data class BatchCostRow(
     val price: Double,
     val purchaseId: Long,
     val purchaseNo: String,
-    val dateMillis: Long
+    val dateMillis: Long,
+    val supplierId: Long = 0,
+    val supplierName: String = "",
+    val taxPercent: Double = 0.0
 )
 
 /** A purchase line joined with its supplier + date, for "last supplier" per item. */
@@ -158,7 +161,8 @@ interface PurchaseDao {
     /** Batch-wise purchase rate + the voucher it came from, for expiry costing / drill-down. */
     @Query(
         "SELECT pi.name AS name, pi.batchNo AS batchNo, pi.price AS price, " +
-            "p.id AS purchaseId, p.purchaseNo AS purchaseNo, p.dateMillis AS dateMillis " +
+            "p.id AS purchaseId, p.purchaseNo AS purchaseNo, p.dateMillis AS dateMillis, " +
+            "p.supplierId AS supplierId, p.supplierName AS supplierName, pi.taxPercent AS taxPercent " +
             "FROM purchase_items pi JOIN purchases p ON pi.purchaseId = p.id " +
             "WHERE pi.batchNo <> ''"
     )
