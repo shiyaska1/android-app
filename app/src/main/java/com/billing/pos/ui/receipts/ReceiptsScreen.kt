@@ -8,6 +8,8 @@ import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -418,7 +420,7 @@ private fun AddReceiptDialog(
     onAddOther: (String, Double, PayMode, Long, List<com.billing.pos.data.ReceiptAttachment>) -> Unit
 ) {
     val context = LocalContext.current
-    var againstInvoice by remember { mutableStateOf(outstanding.isNotEmpty()) }
+    var againstInvoice by remember { mutableStateOf(false) }
     var selected by remember { mutableStateOf(outstanding.firstOrNull()) }
     var payFrom by remember { mutableStateOf("") }
     var amount by remember { mutableStateOf(outstanding.firstOrNull()?.balance?.let { Format.money(it) } ?: "") }
@@ -443,18 +445,18 @@ private fun AddReceiptDialog(
         onDismissRequest = onDismiss,
         title = { Text("New receipt") },
         text = {
-            Column {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(
+                        selected = !againstInvoice,
+                        onClick = { againstInvoice = false },
+                        label = { Text("Other source") }
+                    )
                     FilterChip(
                         selected = againstInvoice,
                         onClick = { againstInvoice = true },
                         enabled = outstanding.isNotEmpty(),
                         label = { Text("Against invoice") }
-                    )
-                    FilterChip(
-                        selected = !againstInvoice,
-                        onClick = { againstInvoice = false },
-                        label = { Text("Other source") }
                     )
                 }
 
@@ -567,7 +569,7 @@ private fun ReceiptDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (canSave) "Edit receipt ${receipt.receiptNo}" else "Receipt ${receipt.receiptNo}") },
         text = {
-            Column {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
                 Text(
                     "From: ${receipt.payFrom.ifBlank { receipt.customerName }}" +
                         if (receipt.billNo.isNotBlank()) "  •  vs ${receipt.billNo}" else "  •  other source",

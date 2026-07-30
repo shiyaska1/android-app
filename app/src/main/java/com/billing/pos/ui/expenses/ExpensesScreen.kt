@@ -2,6 +2,8 @@ package com.billing.pos.ui.expenses
 
 import android.app.Application
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -375,7 +377,7 @@ private fun AddPaymentDialog(
         onDismissRequest = onDismiss,
         title = { Text("New payment") },
         text = {
-            Column {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(selected = !againstPurchase, onClick = { againstPurchase = false }, label = { Text("General expense") })
                     FilterChip(selected = againstPurchase, onClick = { againstPurchase = true }, enabled = outstanding.isNotEmpty(), label = { Text("Against purchase") })
@@ -526,7 +528,7 @@ private fun ExpenseEditDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (initial == null) "New payment" else if (canSave) "Edit payment" else "Payment ${initial.voucherNo}") },
         text = {
-            Column {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
                 OutlinedTextField(
                     value = description, onValueChange = { description = it },
                     label = { Text("Description") }, enabled = canSave,
