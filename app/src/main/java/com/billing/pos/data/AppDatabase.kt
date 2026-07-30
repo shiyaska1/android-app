@@ -57,8 +57,9 @@ import androidx.room.TypeConverters
     // v58 job card priority; v59 model/vehicle master on job cards;
     // v60 diary entry customer link; v61 receipt attachments;
     // v62 receipt/expense allocations (one voucher settling multiple invoices/purchases);
-    // v63 delivery notes (goods delivered to a customer — decreases stock).
-    version = 63,
+    // v63 delivery notes (goods delivered to a customer — decreases stock);
+    // v64 delivery note / material receipt "converted to bill/purchase" tracking.
+    version = 64,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -461,6 +462,14 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** Tracks which delivery notes / material receipts were converted into a bill/purchase. */
+        private val MIGRATION_63_64 = object : androidx.room.migration.Migration(63, 64) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE delivery_notes ADD COLUMN convertedBillNo TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE material_receipts ADD COLUMN convertedPurchaseNo TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         fun get(context: Context): AppDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -468,7 +477,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "pos_billing.db"
                 )
-                    .addMigrations(MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45, MIGRATION_45_46, MIGRATION_46_47, MIGRATION_47_48, MIGRATION_48_49, MIGRATION_49_50, MIGRATION_50_51, MIGRATION_51_52, MIGRATION_52_53, MIGRATION_53_54, MIGRATION_54_55, MIGRATION_55_56, MIGRATION_56_57, MIGRATION_57_58, MIGRATION_58_59, MIGRATION_59_60, MIGRATION_60_61, MIGRATION_61_62, MIGRATION_62_63)
+                    .addMigrations(MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45, MIGRATION_45_46, MIGRATION_46_47, MIGRATION_47_48, MIGRATION_48_49, MIGRATION_49_50, MIGRATION_50_51, MIGRATION_51_52, MIGRATION_52_53, MIGRATION_53_54, MIGRATION_54_55, MIGRATION_55_56, MIGRATION_56_57, MIGRATION_57_58, MIGRATION_58_59, MIGRATION_59_60, MIGRATION_60_61, MIGRATION_61_62, MIGRATION_62_63, MIGRATION_63_64)
                     .fallbackToDestructiveMigration()
                     .build()
                     .also { INSTANCE = it }

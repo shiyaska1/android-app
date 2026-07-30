@@ -190,6 +190,29 @@ class DeliveryNoteViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { deliveryNo = repo.nextDeliveryNo() }
     }
 
+    /** Converts the ticked delivery notes (must be one customer) into a prefilled sales bill. */
+    fun convertToBill(ids: List<Long>, onReady: () -> Unit) {
+        viewModelScope.launch {
+            val chosen = notes.value.filter { it.id in ids }
+            if (chosen.isEmpty()) { message.value = "Tick at least one delivery note"; return@launch }
+            if (chosen.map { it.customerId }.distinct().size > 1) { message.value = "Tick delivery notes of one customer only"; return@launch }
+            val custId = chosen.first().customerId
+            val custName = chosen.first().customerName
+            val agg = LinkedHashMap<String, com.billing.pos.ui.billing.BillPrefillLine>()
+            chosen.forEach { d ->
+                repo.deliveryNoteLines(d.id).forEach { l ->
+                    val key = l.name.lowercase() + "|" + l.price + "|" + l.unit
+                    val ex = agg[key]
+                    agg[key] = if (ex == null) com.billing.pos.ui.billing.BillPrefillLine(l.itemId, l.name, l.qty, l.price, l.unit, l.taxPercent)
+                    else ex.copy(qty = ex.qty + l.qty)
+                }
+            }
+            if (agg.isEmpty()) { message.value = "These delivery notes have no items"; return@launch }
+            com.billing.pos.ui.billing.OrderToBillLink.set(custId, custName, agg.values.toList(), "delivery", chosen.map { it.id })
+            onReady()
+        }
+    }
+
     /** Saves the current voucher and returns it with its lines, for printing/PDF/share. */
     suspend fun saveCurrent(): DeliveryNoteWithItems? {
         val customer = selectedCustomer
@@ -455,30 +478,123 @@ private fun sharePdf(context: android.content.Context, saved: DeliveryNoteWithIt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DeliveryNoteListScreen(onBack: () -> Unit, onOpen: (Long) -> Unit, onNew: () -> Unit, vm: DeliveryNoteViewModel = viewModel()) {
+fun DeliveryNoteListScreen(
+    onBack: () -> Unit, onOpen: (Long) -> Unit, onNew: () -> Unit, onConvertToBill: () -> Unit,
+    vm: DeliveryNoteViewModel = viewModel()
+) {
+    val context = LocalContext.current
     val notes by vm.notes.collectAsStateSafe()
+    val customers by vm.customers.collectAsStateSafe()
+    val message by vm.message.collectAsStateSafe()
+    val snackbar = remember { SnackbarHostState() }
+    LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); vm.consumeMessage() } }
+
+    var voucherQuery by remember { mutableStateOf("") }
+    var customerFilter by remember { mutableStateOf("") }
+    var fromMillis by remember { mutableStateOf<Long?>(com.billing.pos.ui.common.oneMonthAgoMillis()) }
+    var toMillis by remember { mutableStateOf<Long?>(System.currentTimeMillis()) }
+    // Selecting delivery notes to convert to one sales bill. Off by default, plain list otherwise.
+    var selecting by remember { mutableStateOf(false) }
+    val selected = remember { mutableStateListOf<Long>() }
+
+    val shown = notes.filter {
+        (voucherQuery.isBlank() || it.deliveryNo.contains(voucherQuery.trim(), ignoreCase = true)) &&
+            (customerFilter.isBlank() || it.customerName.equals(customerFilter, ignoreCase = true)) &&
+            (fromMillis == null || it.dateMillis >= com.billing.pos.ui.common.startOfDay(fromMillis!!)) &&
+            (toMillis == null || it.dateMillis <= com.billing.pos.ui.common.endOfDay(toMillis!!))
+    }
+
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             TopAppBar(
-                title = { Text("Delivery Notes") },
+                title = { Text(if (selecting) "${selected.size} selected" else "Delivery Notes") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
+                actions = {
+                    if (selecting) {
+                        IconButton(onClick = { selecting = false; selected.clear() }) { Icon(Icons.Filled.Delete, "Cancel selection") }
+                    } else {
+                        IconButton(onClick = { selecting = true }) { Icon(Icons.Filled.Add, "Convert delivery notes to a bill") }
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                     titleContentColor = MaterialTheme.colorScheme.onPrimary,
-                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary
+                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary,
+                    actionIconContentColor = MaterialTheme.colorScheme.onPrimary
                 )
             )
         },
         floatingActionButton = { FloatingActionButton(onClick = onNew) { Icon(Icons.Filled.Add, "New delivery note") } }
     ) { pad ->
-        if (notes.isEmpty()) Box(Modifier.fillMaxSize().padding(pad), contentAlignment = Alignment.Center) { Text("No delivery notes yet", color = MaterialTheme.colorScheme.outline) }
-        else LazyColumn(Modifier.fillMaxSize().padding(pad)) {
-            items(notes, key = { it.id }) { d ->
-                Column(Modifier.fillMaxWidth().clickable { onOpen(d.id) }.padding(horizontal = 16.dp, vertical = 10.dp)) {
-                    Text(d.deliveryNo, fontWeight = FontWeight.SemiBold)
-                    Text("${d.customerName} • ${Format.date(d.dateMillis)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+        Column(Modifier.fillMaxSize().padding(pad)) {
+            OutlinedTextField(
+                value = voucherQuery, onValueChange = { voucherQuery = it },
+                label = { Text("Voucher no") }, singleLine = true,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)
+            )
+            com.billing.pos.ui.common.PartyFilterField(
+                names = customers.map { it.name }, selected = customerFilter,
+                onSelect = { customerFilter = it }, label = "Customer", allLabel = "All customers",
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)
+            )
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(onClick = { pickDeliveryDate(context, fromMillis ?: System.currentTimeMillis()) { fromMillis = it } }, modifier = Modifier.weight(1f)) {
+                    Text("From: " + (fromMillis?.let { Format.date(it) } ?: "any"))
                 }
-                Divider()
+                OutlinedButton(onClick = { pickDeliveryDate(context, toMillis ?: System.currentTimeMillis()) { toMillis = it } }, modifier = Modifier.weight(1f)) {
+                    Text("To: " + (toMillis?.let { Format.date(it) } ?: "any"))
+                }
+                if (fromMillis != null || toMillis != null) TextButton(onClick = { fromMillis = null; toMillis = null }) { Text("Clear") }
+            }
+            Divider()
+            if (shown.isEmpty()) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("No delivery notes match", color = MaterialTheme.colorScheme.outline) }
+            } else {
+                LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
+                    items(shown, key = { it.id }) { d ->
+                        val converted = d.convertedBillNo.isNotBlank()
+                        Row(
+                            Modifier.fillMaxWidth()
+                                .clickable {
+                                    if (selecting) { if (converted) Unit else if (d.id in selected) selected.remove(d.id) else selected.add(d.id) }
+                                    else onOpen(d.id)
+                                }
+                                .padding(horizontal = 16.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (selecting) {
+                                androidx.compose.material3.Checkbox(
+                                    checked = d.id in selected, enabled = !converted,
+                                    onCheckedChange = { if (d.id in selected) selected.remove(d.id) else selected.add(d.id) }
+                                )
+                            }
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    d.deliveryNo, fontWeight = FontWeight.SemiBold,
+                                    color = if (converted) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    "${d.customerName} • ${Format.date(d.dateMillis)}" + (if (converted) "  •  Billed as ${d.convertedBillNo}" else ""),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (converted) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.outline
+                                )
+                            }
+                        }
+                        Divider()
+                    }
+                }
+            }
+            if (selecting) {
+                Divider(thickness = 2.dp)
+                Button(
+                    onClick = { vm.convertToBill(selected.toList()) { selecting = false; selected.clear(); onConvertToBill() } },
+                    enabled = selected.isNotEmpty(),
+                    modifier = Modifier.fillMaxWidth().padding(14.dp)
+                ) { Text("Convert ${selected.size} delivery note(s) to a sales bill") }
             }
         }
     }

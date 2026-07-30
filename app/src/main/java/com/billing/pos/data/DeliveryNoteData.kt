@@ -22,7 +22,9 @@ data class DeliveryNote(
     val dateMillis: Long,
     val customerId: Long,
     val customerName: String,
-    val remarks: String = ""
+    val remarks: String = "",
+    /** The sales bill this note was converted into, if any; blank = not yet converted. */
+    val convertedBillNo: String = ""
 )
 
 @Entity(tableName = "delivery_note_items")

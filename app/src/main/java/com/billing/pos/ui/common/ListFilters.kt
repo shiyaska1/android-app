@@ -7,13 +7,22 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.billing.pos.util.Format
@@ -86,6 +95,47 @@ fun DateSearchFilter(
         }
     }
 }
+
+/**
+ * Searchable party (customer/supplier) filter for a document list: type to narrow, or pick from
+ * the dropdown; blank/"All" clears it. Mirrors the "New Bill" customer search field's feel.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun PartyFilterField(
+    names: List<String>,
+    selected: String,
+    onSelect: (String) -> Unit,
+    label: String = "Customer",
+    allLabel: String = "All",
+    modifier: Modifier = Modifier
+) {
+    var expanded by remember { mutableStateOf(false) }
+    var query by remember { mutableStateOf(selected) }
+    androidx.compose.runtime.LaunchedEffect(selected) { if (!expanded) query = selected }
+
+    ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }, modifier = modifier) {
+        OutlinedTextField(
+            value = if (expanded) query else selected.ifBlank { allLabel },
+            onValueChange = { query = it; expanded = true },
+            label = { Text(label) },
+            singleLine = true,
+            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
+            modifier = Modifier.menuAnchor().fillMaxWidth()
+                .onFocusChanged { fs -> if (fs.isFocused) { query = ""; expanded = true } }
+        )
+        val matches = names.filter { query.isBlank() || it.contains(query, ignoreCase = true) }
+        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            DropdownMenuItem(text = { Text(allLabel) }, onClick = { onSelect(""); expanded = false })
+            matches.forEach { nm ->
+                DropdownMenuItem(text = { Text(nm) }, onClick = { onSelect(nm); expanded = false })
+            }
+        }
+    }
+}
+
+/** One month back from now — the default window for lists that show "recent" documents. */
+fun oneMonthAgoMillis(): Long = Calendar.getInstance().apply { add(Calendar.MONTH, -1) }.timeInMillis
 
 private fun pickDate(context: Context, current: Long?, onPicked: (Long) -> Unit) {
     val c = Calendar.getInstance().apply { if (current != null) timeInMillis = current }

@@ -66,6 +66,21 @@ class PurchaseViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Material receipts this purchase was converted from, marked converted once it's saved. */
+    private var pendingReceiptIds: List<Long> = emptyList()
+
+    /** Fills the cart from a supplier's material receipts (VAT booking; stock already received). */
+    fun loadFromReceipts(supplierId: Long, supplierName: String, lines: List<com.billing.pos.ui.billing.BillPrefillLine>, sourceIds: List<Long>) {
+        selectedSupplier = suppliers.value.firstOrNull { it.id == supplierId } ?: Supplier(id = supplierId, name = supplierName)
+        againstLpo = true
+        lpoNo = ""
+        cart.clear()
+        lines.forEach { cart.add(CartLine(it.itemId, it.name, it.price, it.taxPercent, it.qty, unit = it.unit)) }
+        dirty = true
+        pendingReceiptIds = sourceIds
+        _message.value = "Loaded ${lines.size} item(s) from material receipts"
+    }
+
     var editingId by mutableStateOf<Long?>(null); private set
     private var editingSource: String = ""
     private var editingPaidAmount: Double = 0.0
@@ -274,6 +289,10 @@ class PurchaseViewModel(app: Application) : AndroidViewModel(app) {
             if (addsStock) cart.filter { it.batchNo.isNotBlank() && it.itemId > 0 }
                 .forEach { repo.receiveBatch(it.itemId, it.batchNo, it.batchExpiry, it.primaryQty) }
             _message.value = if (addsStock) "Purchase $purchaseNo saved" else "Purchase $purchaseNo saved (VAT only, stock already received)"
+            if (pendingReceiptIds.isNotEmpty()) {
+                repo.markMaterialReceiptsConverted(pendingReceiptIds, purchaseNo)
+                pendingReceiptIds = emptyList()
+            }
         }
         lastSaved = saved
         dirty = false

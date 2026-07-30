@@ -107,6 +107,14 @@ fun PurchaseScreen(
 
     LaunchedEffect(editPurchaseId) { if (editPurchaseId != null && editPurchaseId > 0) vm.startEditing(editPurchaseId) }
 
+    // Material receipts converted from their list arrive here as a prefilled (VAT-only) purchase.
+    LaunchedEffect(Unit) {
+        if (MaterialReceiptToPurchaseLink.hasData) {
+            val taken = MaterialReceiptToPurchaseLink.take()
+            vm.loadFromReceipts(taken.supplierId, taken.supplierName, taken.lines, taken.sourceIds)
+        }
+    }
+
     val suppliers by vm.suppliers.collectAsStateSafe()
     val items by vm.items.collectAsStateSafe()
     val message by vm.message.collectAsStateSafe()

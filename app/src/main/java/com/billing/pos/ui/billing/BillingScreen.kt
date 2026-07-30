@@ -176,11 +176,11 @@ fun BillingScreen(
         val amounts = FastBillLink.take()
         if (amounts.isNotEmpty()) vm.addPriceLines(amounts)
     }
-    // Orders converted from the order list arrive here as a prefilled bill.
+    // Orders, delivery notes or quotations converted from their lists arrive here as a prefilled bill.
     LaunchedEffect(items) {
         if (OrderToBillLink.hasData) {
-            val (cid, cname, lines) = OrderToBillLink.take()
-            vm.loadFromOrders(cid, cname, lines)
+            val taken = OrderToBillLink.take()
+            vm.loadFromOrders(taken.customerId, taken.customerName, taken.lines, taken.sourceKind, taken.sourceIds)
         }
     }
 

@@ -233,15 +233,25 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
      * in the item master (deduplicated by name) using [sellingPrice] (or the line price).
      */
     /** Fast bill: each amount becomes its own cart line with no item name. */
-    /** Fills the bill from a customer's orders: sets the customer and every ordered line. */
-    fun loadFromOrders(customerId: Long, customerName: String, lines: List<BillPrefillLine>) {
+    /** Source documents (delivery notes / quotations) this bill was converted from, so they can
+     *  be marked converted once this bill is actually saved. Empty for a plain order/no source. */
+    private var pendingSourceKind: String = ""
+    private var pendingSourceIds: List<Long> = emptyList()
+
+    /** Fills the bill from a customer's saved documents: sets the customer and every line. */
+    fun loadFromOrders(
+        customerId: Long, customerName: String, lines: List<BillPrefillLine>,
+        sourceKind: String = "", sourceIds: List<Long> = emptyList()
+    ) {
         val c = customers.value.firstOrNull { it.id == customerId }
             ?: customers.value.firstOrNull { it.name.equals(customerName, true) }
         selectedCustomer = c ?: Customer(id = customerId, name = customerName)
         cart.clear()
-        lines.forEach { cart.add(CartLine(it.itemId, it.name, it.price, 0.0, it.qty, unit = it.unit)) }
+        lines.forEach { cart.add(CartLine(it.itemId, it.name, it.price, it.taxPercent, it.qty, unit = it.unit)) }
         dirty = true
-        _message.value = "Loaded ${lines.size} item(s) from orders"
+        pendingSourceKind = sourceKind
+        pendingSourceIds = sourceIds
+        _message.value = "Loaded ${lines.size} item(s)"
     }
 
     fun addPriceLines(prices: List<Double>) {
@@ -494,6 +504,13 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
             editingWasCredit = payment == PaymentMethod.CREDIT
             editingPaidAmount = paid
             _message.value = "Bill $billNo saved"
+            // Mark whatever this bill was converted from, so it shows as used and can't be converted twice.
+            if (pendingSourceIds.isNotEmpty()) {
+                when (pendingSourceKind) {
+                    "delivery" -> repo.markDeliveryNotesConverted(pendingSourceIds, billNo)
+                }
+                pendingSourceKind = ""; pendingSourceIds = emptyList()
+            }
         }
         // Persist any newly-attached documents, then reload so they carry real ids.
         val savedBillId = saved.bill.id

@@ -735,7 +735,12 @@ private fun AppNav() {
 
         // Material Receipt Note (goods received against an LPO).
         composable("materialreceipts") {
-            MaterialReceiptListScreen(onBack = { nav.popBackStack() }, onOpen = { id -> nav.navigate("materialreceipt/edit/$id") }, onNew = { nav.navigate("materialreceipt") })
+            MaterialReceiptListScreen(
+                onBack = { nav.popBackStack() },
+                onOpen = { id -> nav.navigate("materialreceipt/edit/$id") },
+                onNew = { nav.navigate("materialreceipt") },
+                onConvertToPurchase = { nav.navigate("purchase") }
+            )
         }
         composable("materialreceipt") { MaterialReceiptScreen(editId = null, onBack = { nav.popBackStack() }) }
         composable(
@@ -745,7 +750,12 @@ private fun AppNav() {
 
         // Delivery Note (goods delivered to a customer — decreases stock).
         composable("deliverynotes") {
-            DeliveryNoteListScreen(onBack = { nav.popBackStack() }, onOpen = { id -> nav.navigate("deliverynote/edit/$id") }, onNew = { nav.navigate("deliverynote") })
+            DeliveryNoteListScreen(
+                onBack = { nav.popBackStack() },
+                onOpen = { id -> nav.navigate("deliverynote/edit/$id") },
+                onNew = { nav.navigate("deliverynote") },
+                onConvertToBill = { nav.navigate("billing") }
+            )
         }
         composable("deliverynote") { DeliveryNoteScreen(editId = null, onBack = { nav.popBackStack() }) }
         composable(

@@ -88,6 +88,9 @@ import com.billing.pos.ui.billing.NewItemDialog
 import com.billing.pos.ui.billing.UnitPickDialog
 import com.billing.pos.ui.billing.collectAsStateSafe
 import com.billing.pos.ui.common.LpoPickerField
+import com.billing.pos.ui.common.endOfDay
+import com.billing.pos.ui.common.oneMonthAgoMillis
+import com.billing.pos.ui.common.startOfDay
 import com.billing.pos.util.Format
 import com.billing.pos.util.Permissions
 import kotlinx.coroutines.Dispatchers
@@ -207,6 +210,29 @@ class MaterialReceiptViewModel(app: Application) : AndroidViewModel(app) {
     fun newVoucher() {
         cart.clear(); lpoId = 0; lpoNo = ""; remarks = ""; dateMillis = System.currentTimeMillis(); editingId = null
         viewModelScope.launch { receiptNo = repo.nextMrnNo() }
+    }
+
+    /** Converts the ticked material receipts (must be one supplier) into a prefilled purchase. */
+    fun convertToPurchase(ids: List<Long>, onReady: () -> Unit) {
+        viewModelScope.launch {
+            val chosen = receipts.value.filter { it.id in ids }
+            if (chosen.isEmpty()) { message.value = "Tick at least one material receipt"; return@launch }
+            if (chosen.map { it.supplierId }.distinct().size > 1) { message.value = "Tick receipts of one supplier only"; return@launch }
+            val supId = chosen.first().supplierId
+            val supName = chosen.first().supplierName
+            val agg = LinkedHashMap<String, com.billing.pos.ui.billing.BillPrefillLine>()
+            chosen.forEach { r ->
+                repo.materialReceiptLines(r.id).forEach { l ->
+                    val key = l.name.lowercase() + "|" + l.price + "|" + l.unit
+                    val ex = agg[key]
+                    agg[key] = if (ex == null) com.billing.pos.ui.billing.BillPrefillLine(l.itemId, l.name, l.qty, l.price, l.unit, l.taxPercent)
+                    else ex.copy(qty = ex.qty + l.qty)
+                }
+            }
+            if (agg.isEmpty()) { message.value = "These material receipts have no items"; return@launch }
+            com.billing.pos.ui.purchase.MaterialReceiptToPurchaseLink.set(supId, supName, agg.values.toList(), chosen.map { it.id })
+            onReady()
+        }
     }
 
     /** Saves the current voucher and returns it with its lines, for printing/PDF/share. */
@@ -477,30 +503,124 @@ private fun sharePdf(context: android.content.Context, saved: MaterialReceiptWit
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MaterialReceiptListScreen(onBack: () -> Unit, onOpen: (Long) -> Unit, onNew: () -> Unit, vm: MaterialReceiptViewModel = viewModel()) {
+fun MaterialReceiptListScreen(
+    onBack: () -> Unit, onOpen: (Long) -> Unit, onNew: () -> Unit, onConvertToPurchase: () -> Unit,
+    vm: MaterialReceiptViewModel = viewModel()
+) {
+    val context = LocalContext.current
     val receipts by vm.receipts.collectAsStateSafe()
+    val suppliers by vm.suppliers.collectAsStateSafe()
+    val message by vm.message.collectAsStateSafe()
+    val snackbar = remember { SnackbarHostState() }
+    LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); vm.consumeMessage() } }
+
+    var voucherQuery by remember { mutableStateOf("") }
+    var supplierFilter by remember { mutableStateOf("") }
+    var fromMillis by remember { mutableStateOf<Long?>(oneMonthAgoMillis()) }
+    var toMillis by remember { mutableStateOf<Long?>(System.currentTimeMillis()) }
+    // Selecting receipts to convert to one purchase entry. Off by default, plain list otherwise.
+    var selecting by remember { mutableStateOf(false) }
+    val selected = remember { mutableStateListOf<Long>() }
+
+    val shown = receipts.filter {
+        (voucherQuery.isBlank() || it.receiptNo.contains(voucherQuery.trim(), ignoreCase = true)) &&
+            (supplierFilter.isBlank() || it.supplierName.equals(supplierFilter, ignoreCase = true)) &&
+            (fromMillis == null || it.dateMillis >= startOfDay(fromMillis!!)) &&
+            (toMillis == null || it.dateMillis <= endOfDay(toMillis!!))
+    }
+
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             TopAppBar(
-                title = { Text("Material Receipts") },
+                title = { Text(if (selecting) "${selected.size} selected" else "Material Receipts") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
+                actions = {
+                    if (selecting) {
+                        IconButton(onClick = { selecting = false; selected.clear() }) { Icon(Icons.Filled.Delete, "Cancel selection") }
+                    } else {
+                        IconButton(onClick = { selecting = true }) { Icon(Icons.Filled.Add, "Convert receipts to a purchase") }
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                     titleContentColor = MaterialTheme.colorScheme.onPrimary,
-                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary
+                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary,
+                    actionIconContentColor = MaterialTheme.colorScheme.onPrimary
                 )
             )
         },
         floatingActionButton = { FloatingActionButton(onClick = onNew) { Icon(Icons.Filled.Add, "New receipt") } }
     ) { pad ->
-        if (receipts.isEmpty()) Box(Modifier.fillMaxSize().padding(pad), contentAlignment = Alignment.Center) { Text("No receipts yet", color = MaterialTheme.colorScheme.outline) }
-        else LazyColumn(Modifier.fillMaxSize().padding(pad)) {
-            items(receipts, key = { it.id }) { r ->
-                Column(Modifier.fillMaxWidth().clickable { onOpen(r.id) }.padding(horizontal = 16.dp, vertical = 10.dp)) {
-                    Text(r.receiptNo + (if (r.lpoNo.isNotBlank()) "  •  vs ${r.lpoNo}" else ""), fontWeight = FontWeight.SemiBold)
-                    Text("${r.supplierName} • ${Format.date(r.dateMillis)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+        Column(Modifier.fillMaxSize().padding(pad)) {
+            OutlinedTextField(
+                value = voucherQuery, onValueChange = { voucherQuery = it },
+                label = { Text("Voucher no") }, singleLine = true,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)
+            )
+            com.billing.pos.ui.common.PartyFilterField(
+                names = suppliers.map { it.name }, selected = supplierFilter,
+                onSelect = { supplierFilter = it }, label = "Supplier", allLabel = "All suppliers",
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)
+            )
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(onClick = { pickDate(context, fromMillis ?: System.currentTimeMillis()) { fromMillis = it } }, modifier = Modifier.weight(1f)) {
+                    Text("From: " + (fromMillis?.let { Format.date(it) } ?: "any"))
                 }
-                Divider()
+                OutlinedButton(onClick = { pickDate(context, toMillis ?: System.currentTimeMillis()) { toMillis = it } }, modifier = Modifier.weight(1f)) {
+                    Text("To: " + (toMillis?.let { Format.date(it) } ?: "any"))
+                }
+                if (fromMillis != null || toMillis != null) TextButton(onClick = { fromMillis = null; toMillis = null }) { Text("Clear") }
+            }
+            Divider()
+            if (shown.isEmpty()) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("No material receipts match", color = MaterialTheme.colorScheme.outline) }
+            } else {
+                LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
+                    items(shown, key = { it.id }) { r ->
+                        val converted = r.convertedPurchaseNo.isNotBlank()
+                        Row(
+                            Modifier.fillMaxWidth()
+                                .clickable {
+                                    if (selecting) { if (converted) Unit else if (r.id in selected) selected.remove(r.id) else selected.add(r.id) }
+                                    else onOpen(r.id)
+                                }
+                                .padding(horizontal = 16.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (selecting) {
+                                androidx.compose.material3.Checkbox(
+                                    checked = r.id in selected, enabled = !converted,
+                                    onCheckedChange = { if (r.id in selected) selected.remove(r.id) else selected.add(r.id) }
+                                )
+                            }
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    r.receiptNo + (if (r.lpoNo.isNotBlank()) "  •  vs ${r.lpoNo}" else ""),
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = if (converted) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    "${r.supplierName} • ${Format.date(r.dateMillis)}" + (if (converted) "  •  Purchased as ${r.convertedPurchaseNo}" else ""),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (converted) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.outline
+                                )
+                            }
+                        }
+                        Divider()
+                    }
+                }
+            }
+            if (selecting) {
+                Divider(thickness = 2.dp)
+                Button(
+                    onClick = { vm.convertToPurchase(selected.toList()) { selecting = false; selected.clear(); onConvertToPurchase() } },
+                    enabled = selected.isNotEmpty(),
+                    modifier = Modifier.fillMaxWidth().padding(14.dp)
+                ) { Text("Convert ${selected.size} receipt(s) to a purchase") }
             }
         }
     }

@@ -592,6 +592,11 @@ class Repository(context: Context) {
     suspend fun deleteDeliveryNote(d: DeliveryNote) = deliveryNoteDao.delete(d)
     suspend fun deliveryNoteById(id: Long): DeliveryNote? = deliveryNoteDao.byId(id)
     suspend fun deliveryNoteLines(id: Long): List<DeliveryNoteItem> = deliveryNoteDao.linesFor(id)
+
+    /** Marks these delivery notes as converted into [billNo], so they show as used and aren't offered again. */
+    suspend fun markDeliveryNotesConverted(ids: List<Long>, billNo: String) {
+        ids.forEach { id -> deliveryNoteDao.byId(id)?.let { deliveryNoteDao.updateHeader(it.copy(convertedBillNo = billNo)) } }
+    }
     val purchaseQuotationLinesFlow: Flow<List<PurchaseQuotationItem>> = purchaseQuotationDao.observeAllLines()
     suspend fun nextMrnNo(): String = "MRN-" + (materialReceiptDao.count() + 1).toString().padStart(4, '0')
     suspend fun saveMaterialReceipt(m: MaterialReceipt, lines: List<MaterialReceiptItem>): Long = materialReceiptDao.save(m, lines)
@@ -599,6 +604,11 @@ class Repository(context: Context) {
     suspend fun deleteMaterialReceipt(m: MaterialReceipt) = materialReceiptDao.delete(m)
     suspend fun materialReceiptById(id: Long): MaterialReceipt? = materialReceiptDao.byId(id)
     suspend fun materialReceiptLines(id: Long): List<MaterialReceiptItem> = materialReceiptDao.linesFor(id)
+
+    /** Marks these material receipts as converted into [purchaseNo], so they show as used and aren't offered again. */
+    suspend fun markMaterialReceiptsConverted(ids: List<Long>, purchaseNo: String) {
+        ids.forEach { id -> materialReceiptDao.byId(id)?.let { materialReceiptDao.updateHeader(it.copy(convertedPurchaseNo = purchaseNo)) } }
+    }
     suspend fun returnedQtyForSupplier(supplierId: Long): List<NameQty> = purchaseDao.returnedQtyForSupplier(supplierId)
 
     /**

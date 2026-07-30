@@ -26,7 +26,9 @@ data class MaterialReceipt(
     /** The purchase order this receipt is against; 0 = none. */
     val lpoId: Long = 0,
     val lpoNo: String = "",
-    val remarks: String = ""
+    val remarks: String = "",
+    /** The purchase entry this receipt was converted into, if any; blank = not yet converted. */
+    val convertedPurchaseNo: String = ""
 )
 
 @Entity(tableName = "material_receipt_items")
