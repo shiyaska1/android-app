@@ -13,7 +13,7 @@ android {
         applicationId = "com.billing.pos"
         minSdk = 26
         targetSdk = 36
-        versionCode = 136
+        versionCode = 137
         versionName = "1.60.3"
         vectorDrawables { useSupportLibrary = true }
 
