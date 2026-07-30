@@ -125,7 +125,8 @@ private val COACHING_TILES = setOf(
     "Settings", "Backup"
 ) + SERVICE_TILES
 
-private val SECTION_ORDER = listOf("Transactions", "Masters", "Accounts", "Reports")
+// Make Accounts the first top-level section so it appears before Transactions
+private val SECTION_ORDER = listOf("Accounts", "Transactions", "Masters", "Reports")
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -287,14 +288,19 @@ fun DashboardScreen(
         if (Session.canExport || Session.canImport) add(Tile("Backup", Icons.Filled.Backup, onBackup, "Masters"))
 
         // ---- Accounts ----
-        if (Session.canViewReceipt) add(Tile("Receipts", Icons.Filled.Payments, onReceipts, "Accounts"))
-        if (Session.canViewPayment) add(Tile("Payments", Icons.Filled.MoneyOff, onExpenses, "Accounts"))
-        if (Session.canViewCashbook) add(Tile("Cash Book", Icons.Filled.AccountBalanceWallet, onCashbook, "Accounts"))
-        if (Session.canViewInvoice) add(Tile("Outstanding", Icons.Filled.AccountBalance, onOutstanding, "Accounts"))
-        if (Session.canManageUsers) add(Tile("Accounts", Icons.Filled.AccountTree, onAccounts, "Accounts"))
-        if (Session.canManageUsers) add(Tile("Journal", Icons.Filled.Book, onJournal, "Accounts"))
-        if (Session.canViewCashbook) add(Tile("Ledger", Icons.Filled.Summarize, onLedger, "Accounts"))
-        if (Session.canViewCashbook) add(Tile("Receipt & Payment", Icons.Filled.Summarize, onRpReport, "Accounts"))
+        // Group accounting-related tiles under Accounts with sub-groups (Masters/Transactions/Reports)
+        if (Session.canViewReceipt) add(Tile("Receipts", Icons.Filled.Payments, onReceipts, "Accounts/Transactions"))
+        if (Session.canViewPayment) add(Tile("Payments", Icons.Filled.MoneyOff, onExpenses, "Accounts/Transactions"))
+        if (Session.canViewCashbook) add(Tile("Cash Book", Icons.Filled.AccountBalanceWallet, onCashbook, "Accounts/Transactions"))
+        if (Session.canViewInvoice) add(Tile("Outstanding", Icons.Filled.AccountBalance, onOutstanding, "Accounts/Transactions"))
+        if (Session.canManageUsers) add(Tile("Accounts", Icons.Filled.AccountTree, onAccounts, "Accounts/Masters"))
+        if (Session.canManageUsers) add(Tile("Journal", Icons.Filled.Book, onJournal, "Accounts/Transactions"))
+        if (Session.canViewCashbook) add(Tile("Ledger", Icons.Filled.Summarize, onLedger, "Accounts/Reports"))
+        if (Session.canViewCashbook) add(Tile("Receipt & Payment", Icons.Filled.Summarize, onRpReport, "Accounts/Reports"))
+        // Accounting reports that were previously in Reports -> move under Accounts/Reports
+        if (Session.canManageUsers) add(Tile("Trial Balance", Icons.Filled.Balance, onTrialBalance, "Accounts/Reports"))
+        if (Session.canManageUsers) add(Tile("Profit & Loss", Icons.Filled.TrendingUp, onProfitLoss, "Accounts/Reports"))
+        if (Session.canManageUsers) add(Tile("Balance Sheet", Icons.Filled.AccountBalance, onBalanceSheet, "Accounts/Reports"))
 
         // ---- Reports ----
         if (Session.canViewInvoice) add(Tile("Sales Report", Icons.Filled.Assessment, onReports, "Reports"))
@@ -305,11 +311,7 @@ fun DashboardScreen(
         add(Tile("Item Movement", Icons.Filled.SwapVert, onItemMovement, "Reports"))
         add(Tile("Price Search", Icons.Filled.PriceCheck, onPriceSearch, "Reports"))
         if (Session.canViewInvoice) add(Tile("VAT Report", Icons.Filled.Description, onVatReport, "Reports"))
-        if (Session.canManageUsers) {
-            add(Tile("Trial Balance", Icons.Filled.Balance, onTrialBalance, "Reports"))
-            add(Tile("Profit & Loss", Icons.Filled.TrendingUp, onProfitLoss, "Reports"))
-            add(Tile("Balance Sheet", Icons.Filled.AccountBalance, onBalanceSheet, "Reports"))
-        }
+        // note: Trial Balance / P&L / Balance Sheet moved up into Accounts/Reports above
         if (isRental) {
             add(Tile("Hire Item Report", Icons.Filled.Inventory2, onHireItemReport, "Reports"))
             add(Tile("Hire Expiry", Icons.Filled.EventBusy, onHireExpiryReport, "Reports"))
@@ -448,44 +450,125 @@ fun DashboardScreen(
                     }
 
                     if (!isPersonal) {
-                        item(span = { GridItemSpan(maxLineSpan) }) {
-                            DashboardCharts(onOpenDetail = onOpenChart)
+                        // DashboardCharts moved to after the main sections so report links shift up
+                        // DashboardCharts(onOpenDetail = onOpenChart)
+                    }
+
+                    // Render top-level sections. Accounts is treated specially to show internal groups.
+                    SECTION_ORDER.forEach { section ->
+                        if (section == "Accounts") {
+                            // collect account sub-groups (Accounts/Masters, Accounts/Transactions, Accounts/Reports)
+                            val accTiles = visibleTiles.filter { it.section.startsWith("Accounts/") }
+                            if (accTiles.isNotEmpty()) {
+                                val open = openSections[section] == true
+                                item(span = { GridItemSpan(maxLineSpan) }) {
+                                    Row(
+                                        Modifier.fillMaxWidth()
+                                            .clickable { openSections[section] = !open }
+                                            .padding(top = 10.dp, bottom = 2.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            if (open) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                                            contentDescription = if (open) "Collapse" else "Expand",
+                                            tint = MaterialTheme.colorScheme.primary
+                                        )
+                                        Text(
+                                            section.uppercase(),
+                                            style = MaterialTheme.typography.labelLarge,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.weight(1f).padding(start = 4.dp)
+                                        )
+                                        Text(
+                                            accTiles.size.toString(),
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = MaterialTheme.colorScheme.outline
+                                        )
+                                    }
+                                }
+                                if (open) {
+                                    // show subgroups in fixed order: Masters, Transactions, Reports
+                                    val subs = listOf("Masters", "Transactions", "Reports")
+                                    subs.forEach { sub ->
+                                        val key = "Accounts/$sub"
+                                        val tilesForSub = visibleTiles.filter { it.section == key }
+                                        if (tilesForSub.isNotEmpty()) {
+                                            val subOpen = openSections[key] == true
+                                            item(span = { GridItemSpan(maxLineSpan) }) {
+                                                Row(
+                                                    Modifier.fillMaxWidth()
+                                                        .clickable { openSections[key] = !subOpen }
+                                                        .padding(top = 6.dp, bottom = 2.dp),
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Icon(
+                                                        if (subOpen) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                                                        contentDescription = if (subOpen) "Collapse" else "Expand",
+                                                        tint = MaterialTheme.colorScheme.primary
+                                                    )
+                                                    Text(
+                                                        sub,
+                                                        style = MaterialTheme.typography.labelMedium,
+                                                        fontWeight = FontWeight.SemiBold,
+                                                        color = MaterialTheme.colorScheme.primary,
+                                                        modifier = Modifier.weight(1f).padding(start = 8.dp)
+                                                    )
+                                                    Text(
+                                                        tilesForSub.size.toString(),
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        color = MaterialTheme.colorScheme.outline
+                                                    )
+                                                }
+                                            }
+                                            if (subOpen) {
+                                                items(tilesForSub) { tile -> TileCard(tile) { record(tile.label); tile.onClick() } }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            val secTiles = visibleTiles.filter { it.section == section }
+                            if (secTiles.isNotEmpty()) {
+                                val open = openSections[section] == true
+                                item(span = { GridItemSpan(maxLineSpan) }) {
+                                    Row(
+                                        Modifier.fillMaxWidth()
+                                            .clickable { openSections[section] = !open }
+                                            .padding(top = 10.dp, bottom = 2.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            if (open) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                                            contentDescription = if (open) "Collapse" else "Expand",
+                                            tint = MaterialTheme.colorScheme.primary
+                                        )
+                                        Text(
+                                            section.uppercase(),
+                                            style = MaterialTheme.typography.labelLarge,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.weight(1f).padding(start = 4.dp)
+                                        )
+                                        Text(
+                                            secTiles.size.toString(),
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = MaterialTheme.colorScheme.outline
+                                        )
+                                    }
+                                }
+                                if (open) {
+                                    items(secTiles) { tile -> TileCard(tile) { record(tile.label); tile.onClick() } }
+                                }
+                            }
                         }
                     }
 
-                    SECTION_ORDER.forEach { section ->
-                        val secTiles = visibleTiles.filter { it.section == section }
-                        if (secTiles.isNotEmpty()) {
-                            val open = openSections[section] == true
-                            item(span = { GridItemSpan(maxLineSpan) }) {
-                                Row(
-                                    Modifier.fillMaxWidth()
-                                        .clickable { openSections[section] = !open }
-                                        .padding(top = 10.dp, bottom = 2.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Icon(
-                                        if (open) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
-                                        contentDescription = if (open) "Collapse" else "Expand",
-                                        tint = MaterialTheme.colorScheme.primary
-                                    )
-                                    Text(
-                                        section.uppercase(),
-                                        style = MaterialTheme.typography.labelLarge,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.weight(1f).padding(start = 4.dp)
-                                    )
-                                    Text(
-                                        secTiles.size.toString(),
-                                        style = MaterialTheme.typography.labelMedium,
-                                        color = MaterialTheme.colorScheme.outline
-                                    )
-                                }
-                            }
-                            if (open) {
-                                items(secTiles) { tile -> TileCard(tile) { record(tile.label); tile.onClick() } }
-                            }
+                    // Place charts after the main sections so related links are shifted up slightly
+                    if (!isPersonal) {
+                        item(span = { GridItemSpan(maxLineSpan) }) {
+                            DashboardCharts(onOpenDetail = onOpenChart)
                         }
                     }
                 }
