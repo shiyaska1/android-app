@@ -14,6 +14,8 @@ import com.billing.pos.data.Bill
 import com.billing.pos.data.BillItem
 import com.billing.pos.data.CompanyInfo
 import com.billing.pos.data.Expense
+import com.billing.pos.data.MaterialReceipt
+import com.billing.pos.data.MaterialReceiptItem
 import com.billing.pos.data.Purchase
 import com.billing.pos.data.PurchaseItem
 import com.billing.pos.data.Receipt
@@ -93,6 +95,13 @@ object ThermalPrinter {
     fun printPurchase(context: Context, company: CompanyInfo, purchase: Purchase, lines: List<PurchaseItem>) {
         applyWidth(context)
         sendBytes(context, buildPurchase(company, purchase, lines))
+    }
+
+    /** Prints a Material Receipt Note (goods received). */
+    @SuppressLint("MissingPermission")
+    fun printMaterialReceipt(context: Context, company: CompanyInfo, receipt: MaterialReceipt, lines: List<MaterialReceiptItem>) {
+        applyWidth(context)
+        sendBytes(context, buildMaterialReceipt(company, receipt, lines))
     }
 
     /** Everything a service job card slip needs; lines are (job name, price, status). */
@@ -496,6 +505,40 @@ object ThermalPrinter {
         sb.append(kv("RECEIVED", Format.money(r.amount))).append('\n')
         sb.append(line()).append('\n')
         sb.append(center("Thank you")).append('\n')
+        sb.append("\n\n\n")
+
+        val text = sb.toString().toByteArray(Charsets.US_ASCII)
+        val init = byteArrayOf(ESC.toByte(), '@'.code.toByte())
+        val cut = byteArrayOf(GS.toByte(), 'V'.code.toByte(), 66, 0)
+        return init + BOLD_ON + text + cut
+    }
+
+    private fun buildMaterialReceipt(company: CompanyInfo, r: MaterialReceipt, lines: List<MaterialReceiptItem>): ByteArray {
+        val sb = StringBuilder()
+        sb.append(center(company.name)).append('\n')
+        if (company.address.isNotBlank()) sb.append(center(company.address)).append('\n')
+        if (company.phone.isNotBlank()) sb.append(center("Ph: ${company.phone}")).append('\n')
+        sb.append(center("MATERIAL RECEIPT NOTE")).append('\n')
+        sb.append(line()).append('\n')
+        sb.append("No  : ${r.receiptNo}\n")
+        sb.append("Date: ${Format.dateTime(r.dateMillis)}\n")
+        sb.append("Supp: ${r.supplierName}\n")
+        if (r.lpoNo.isNotBlank()) sb.append("LPO : ${r.lpoNo}\n")
+        sb.append(line()).append('\n')
+        sb.append(row("Item", "Qty", "Amount")).append('\n')
+        sb.append(line()).append('\n')
+        for (l in lines) {
+            sb.append(clip(l.name + if (l.batchNo.isNotBlank()) " [${l.batchNo}]" else "", COLS)).append('\n')
+            sb.append(row("  @${Format.money(l.price)}" + (if (l.unit.isNotBlank()) "/${l.unit}" else ""), Format.qty(l.qty), Format.money(l.lineTotal))).append('\n')
+        }
+        sb.append(line()).append('\n')
+        sb.append(kv("TOTAL", Format.money(lines.sumOf { it.lineTotal }))).append('\n')
+        sb.append(line()).append('\n')
+        if (r.remarks.isNotBlank()) {
+            sb.append("Note:\n")
+            r.remarks.chunked(COLS).forEach { sb.append(it).append('\n') }
+            sb.append(line()).append('\n')
+        }
         sb.append("\n\n\n")
 
         val text = sb.toString().toByteArray(Charsets.US_ASCII)

@@ -1,8 +1,13 @@
 package com.billing.pos.ui.materialreceipt
 
+import android.Manifest
 import android.app.Application
 import android.app.DatePickerDialog
+import android.content.Intent
+import android.os.Build
 import java.util.Calendar
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -20,6 +25,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material.icons.filled.Print
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -35,8 +43,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -46,6 +56,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.runtime.mutableStateListOf
@@ -62,23 +73,30 @@ import com.billing.pos.data.AppPrefs
 import com.billing.pos.data.Item
 import com.billing.pos.data.MaterialReceipt
 import com.billing.pos.data.MaterialReceiptItem
+import com.billing.pos.data.MaterialReceiptWithItems
 import com.billing.pos.data.PurchaseQuotation
 import com.billing.pos.data.Repository
 import com.billing.pos.data.Supplier
 import com.billing.pos.data.costRate
 import com.billing.pos.data.hasTwoUnits
 import com.billing.pos.data.primaryCostChoice
+import com.billing.pos.pdf.MaterialReceiptPdf
+import com.billing.pos.print.ThermalPrinter
 import com.billing.pos.ui.billing.CartLine
 import com.billing.pos.ui.billing.ItemPickerDialog
+import com.billing.pos.ui.billing.NewItemDialog
 import com.billing.pos.ui.billing.UnitPickDialog
 import com.billing.pos.ui.billing.collectAsStateSafe
 import com.billing.pos.ui.common.LpoPickerField
 import com.billing.pos.util.Format
+import com.billing.pos.util.Permissions
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class MaterialReceiptViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = Repository(app)
@@ -112,6 +130,40 @@ class MaterialReceiptViewModel(app: Application) : AndroidViewModel(app) {
     val grandTotal get() = subTotal + taxTotal
 
     fun selectSupplier(s: Supplier) { selectedSupplier = s }
+
+    fun addSupplier(name: String, phone: String, address: String, onCreated: () -> Unit) {
+        if (name.isBlank()) { message.value = "Enter supplier name"; return }
+        viewModelScope.launch {
+            selectedSupplier = repo.addSupplier(name, phone, address)
+            message.value = "Supplier added"
+            onCreated()
+        }
+    }
+
+    fun addItem(form: com.billing.pos.ui.billing.NewItemForm, addToCart: Boolean, onCreated: () -> Unit) {
+        if (form.name.isBlank()) { message.value = "Enter item name"; return }
+        viewModelScope.launch {
+            val id = repo.addItem(
+                name = form.name, price = form.price, taxPercent = form.taxPercent,
+                barcode = form.barcode, hsn = form.hsn, category = form.category,
+                openingStock = form.openingStock, unit = form.unit, storeLocation = form.storeLocation,
+                secondaryUnit = form.secondaryUnit, conversionFactor = form.conversionFactor,
+                purchasePrice = form.purchasePrice
+            )
+            form.attachments.forEach { repo.addItemAttachment(it.copy(itemId = id)) }
+            if (addToCart) addItemToCart(
+                Item(
+                    id = id, name = form.name.trim(), price = form.price, taxPercent = form.taxPercent,
+                    barcode = form.barcode.trim(), hsn = form.hsn.trim(), category = form.category.trim(),
+                    openingStock = form.openingStock, unit = form.unit,
+                    secondaryUnit = form.secondaryUnit, conversionFactor = form.conversionFactor,
+                    storeLocation = form.storeLocation.trim()
+                )
+            )
+            message.value = "Item added"
+            onCreated()
+        }
+    }
     fun setLpo(l: PurchaseQuotation) {
         lpoId = l.id; lpoNo = l.lpoNo
         selectedSupplier = suppliers.value.firstOrNull { it.id == l.supplierId } ?: Supplier(l.supplierId, l.supplierName)
@@ -157,33 +209,32 @@ class MaterialReceiptViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { receiptNo = repo.nextMrnNo() }
     }
 
-    fun save(onDone: () -> Unit) {
+    /** Saves the current voucher and returns it with its lines, for printing/PDF/share. */
+    suspend fun saveCurrent(): com.billing.pos.data.MaterialReceiptWithItems? {
         val supplier = selectedSupplier
-        if (supplier == null) { message.value = "Select a supplier"; return }
-        if (cart.isEmpty()) { message.value = "Add at least one item"; return }
-        viewModelScope.launch {
-            for (i in cart.indices) {
-                val l = cart[i]
-                if (l.itemId == 0L && l.name.isNotBlank()) {
-                    val existing = items.value.firstOrNull { it.name.equals(l.name, true) }
-                    val id = existing?.id ?: repo.addItem(l.name, 0.0, 0.0, unit = l.unit.ifBlank { "PCS" }, purchasePrice = l.price)
-                    cart[i] = l.copy(itemId = id)
-                }
+        if (supplier == null) { message.value = "Select a supplier"; return null }
+        if (cart.isEmpty()) { message.value = "Add at least one item"; return null }
+        for (i in cart.indices) {
+            val l = cart[i]
+            if (l.itemId == 0L && l.name.isNotBlank()) {
+                val existing = items.value.firstOrNull { it.name.equals(l.name, true) }
+                val id = existing?.id ?: repo.addItem(l.name, 0.0, 0.0, unit = l.unit.ifBlank { "PCS" }, purchasePrice = l.price)
+                cart[i] = l.copy(itemId = id)
             }
-            val m = MaterialReceipt(
-                id = editingId ?: 0, receiptNo = receiptNo, dateMillis = dateMillis,
-                supplierId = supplier.id, supplierName = supplier.name, lpoId = lpoId, lpoNo = lpoNo, remarks = remarks.trim()
-            )
-            // Store the PRIMARY-unit quantity so stock increases correctly.
-            val lines = cart.map {
-                MaterialReceiptItem(0, m.id, it.itemId, it.name, it.primaryQty, it.price, it.taxPercent, it.total, it.batchNo, it.unit)
-            }
-            if (editingId != null) repo.updateMaterialReceipt(m, lines) else { repo.saveMaterialReceipt(m, lines); editingId = null }
-            // Receive batch stock (add to existing / create new) for batch lines.
-            cart.filter { it.batchNo.isNotBlank() && it.itemId > 0 }.forEach { repo.receiveBatch(it.itemId, it.batchNo, it.batchExpiry, it.primaryQty) }
-            message.value = "Material receipt $receiptNo saved"
-            onDone()
         }
+        val m = MaterialReceipt(
+            id = editingId ?: 0, receiptNo = receiptNo, dateMillis = dateMillis,
+            supplierId = supplier.id, supplierName = supplier.name, lpoId = lpoId, lpoNo = lpoNo, remarks = remarks.trim()
+        )
+        // Store the PRIMARY-unit quantity so stock increases correctly.
+        val lines = cart.map {
+            MaterialReceiptItem(0, m.id, it.itemId, it.name, it.primaryQty, it.price, it.taxPercent, it.total, it.batchNo, it.unit)
+        }
+        val savedId = if (editingId != null) { repo.updateMaterialReceipt(m, lines); m.id } else repo.saveMaterialReceipt(m, lines).also { editingId = it }
+        // Receive batch stock (add to existing / create new) for batch lines.
+        cart.filter { it.batchNo.isNotBlank() && it.itemId > 0 }.forEach { repo.receiveBatch(it.itemId, it.batchNo, it.batchExpiry, it.primaryQty) }
+        message.value = "Material receipt $receiptNo saved"
+        return com.billing.pos.data.MaterialReceiptWithItems(m.copy(id = savedId), lines.map { it.copy(receiptId = savedId) })
     }
 }
 
@@ -205,6 +256,23 @@ fun MaterialReceiptScreen(editId: Long?, onBack: () -> Unit, vm: MaterialReceipt
     var showItemPicker by remember { mutableStateOf(false) }
     var unitPickFor by remember { mutableStateOf<Item?>(null) }
     var batchFor by remember { mutableStateOf<Item?>(null) }
+    var showNewSupplier by remember { mutableStateOf(false) }
+    var showNewItem by remember { mutableStateOf(false) }
+    var newItemName by remember { mutableStateOf("") }
+
+    val printPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) scope.launch { doPrint(context, vm, snackbar) }
+        else scope.launch {
+            val res = snackbar.showSnackbar(
+                "Allow 'Nearby devices' permission to print",
+                actionLabel = "Settings",
+                duration = SnackbarDuration.Long
+            )
+            if (res == SnackbarResult.ActionPerformed) Permissions.openAppSettings(context)
+        }
+    }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
@@ -228,16 +296,19 @@ fun MaterialReceiptScreen(editId: Long?, onBack: () -> Unit, vm: MaterialReceipt
                 OutlinedButton(onClick = { pickDate(context, vm.dateMillis) { vm.dateMillis = it } }) { Text(Format.date(vm.dateMillis)) }
             }
             var supMenu by remember { mutableStateOf(false) }
-            ExposedDropdownMenuBox(expanded = supMenu, onExpandedChange = { supMenu = !supMenu }, modifier = Modifier.padding(top = 6.dp)) {
-                OutlinedTextField(
-                    readOnly = true, value = vm.selectedSupplier?.name ?: "", onValueChange = {},
-                    label = { Text("Supplier *") },
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(supMenu) },
-                    modifier = Modifier.menuAnchor().fillMaxWidth()
-                )
-                ExposedDropdownMenu(expanded = supMenu, onDismissRequest = { supMenu = false }) {
-                    suppliers.forEach { s -> DropdownMenuItem(text = { Text(s.name) }, onClick = { vm.selectSupplier(s); supMenu = false }) }
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 6.dp)) {
+                ExposedDropdownMenuBox(expanded = supMenu, onExpandedChange = { supMenu = !supMenu }, modifier = Modifier.weight(1f)) {
+                    OutlinedTextField(
+                        readOnly = true, value = vm.selectedSupplier?.name ?: "", onValueChange = {},
+                        label = { Text("Supplier *") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(supMenu) },
+                        modifier = Modifier.menuAnchor().fillMaxWidth()
+                    )
+                    ExposedDropdownMenu(expanded = supMenu, onDismissRequest = { supMenu = false }) {
+                        suppliers.forEach { s -> DropdownMenuItem(text = { Text(s.name) }, onClick = { vm.selectSupplier(s); supMenu = false }) }
+                    }
                 }
+                IconButton(onClick = { showNewSupplier = true }) { Icon(Icons.Filled.PersonAdd, "New supplier") }
             }
             LpoPickerField(lpos = lpos, supplierId = vm.selectedSupplier?.id ?: 0L, selectedNo = vm.lpoNo, onPick = { vm.setLpo(it) })
 
@@ -265,10 +336,38 @@ fun MaterialReceiptScreen(editId: Long?, onBack: () -> Unit, vm: MaterialReceipt
             }
 
             OutlinedTextField(value = vm.remarks, onValueChange = { vm.remarks = it }, label = { Text("Remarks") }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(top = 6.dp))
-            Button(onClick = { vm.save { onBack() } }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) { Text("Save receipt  (stock in)") }
+            Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = { scope.launch { vm.saveCurrent()?.let { onBack() } } }, modifier = Modifier.weight(1f)) { Text("Save (stock in)") }
+                OutlinedButton(
+                    onClick = { scope.launch { val saved = vm.saveCurrent() ?: return@launch; sharePdf(context, saved) } },
+                    modifier = Modifier.weight(1f)
+                ) { Icon(Icons.Filled.Share, null); Text("PDF") }
+                OutlinedButton(
+                    onClick = {
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !ThermalPrinter.hasConnectPermission(context)) {
+                            printPermission.launch(Manifest.permission.BLUETOOTH_CONNECT)
+                        } else scope.launch { doPrint(context, vm, snackbar) }
+                    },
+                    modifier = Modifier.weight(1f)
+                ) { Icon(Icons.Filled.Print, null); Text("Print") }
+            }
         }
     }
 
+    if (showNewSupplier) {
+        NewSupplierDialog(
+            onDismiss = { showNewSupplier = false },
+            onSave = { n, p, a -> vm.addSupplier(n, p, a) { showNewSupplier = false } }
+        )
+    }
+    if (showNewItem) {
+        NewItemDialog(
+            onDismiss = { showNewItem = false },
+            initialName = newItemName,
+            categories = items.map { it.category }.filter { it.isNotBlank() }.distinct().sortedBy { it.lowercase() },
+            onSave = { form -> vm.addItem(form, addToCart = true) { showNewItem = false } }
+        )
+    }
     if (showItemPicker) {
         ItemPickerDialog(
             items = items,
@@ -281,7 +380,7 @@ fun MaterialReceiptScreen(editId: Long?, onBack: () -> Unit, vm: MaterialReceipt
                     else -> vm.addItemToCart(picked)
                 }
             },
-            onNewItem = { showItemPicker = false }
+            onNewItem = { q -> showItemPicker = false; newItemName = q; showNewItem = true }
         )
     }
     unitPickFor?.let { item ->
@@ -336,6 +435,44 @@ private fun ReceiptBatchDialog(
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
+}
+
+@Composable
+private fun NewSupplierDialog(onDismiss: () -> Unit, onSave: (String, String, String) -> Unit) {
+    var name by remember { mutableStateOf("") }
+    var phone by remember { mutableStateOf("") }
+    var address by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("New Supplier") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Name *") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = phone, onValueChange = { phone = it.filter { c -> c.isDigit() } }, label = { Text("Phone") }, singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = address, onValueChange = { address = it }, label = { Text("Address") }, modifier = Modifier.fillMaxWidth())
+            }
+        },
+        confirmButton = { TextButton(onClick = { onSave(name, phone, address) }) { Text("Save") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
+private suspend fun doPrint(context: android.content.Context, vm: MaterialReceiptViewModel, snackbar: SnackbarHostState) {
+    val saved = vm.saveCurrent() ?: return
+    val company = AppPrefs(context).company
+    val result = withContext(Dispatchers.IO) { runCatching { ThermalPrinter.printMaterialReceipt(context, company, saved.receipt, saved.lines) } }
+    result.onSuccess { snackbar.showSnackbar("Sent to printer") }.onFailure { snackbar.showSnackbar(it.message ?: "Print failed") }
+}
+
+private fun sharePdf(context: android.content.Context, saved: MaterialReceiptWithItems) {
+    val company = AppPrefs(context).company
+    val uri = MaterialReceiptPdf.generate(context, company, saved.receipt, saved.lines)
+    val intent = Intent(Intent.ACTION_SEND).apply {
+        type = "application/pdf"
+        putExtra(Intent.EXTRA_STREAM, uri)
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+    }
+    context.startActivity(Intent.createChooser(intent, "Share material receipt").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
