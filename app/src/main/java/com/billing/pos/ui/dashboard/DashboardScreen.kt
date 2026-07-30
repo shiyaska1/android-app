@@ -231,35 +231,38 @@ fun DashboardScreen(
             add(Tile("Attendance Report", Icons.Filled.Schedule, onCoachAttReport, "Reports"))
         }
         // ---- Transactions ----
+        // General tools: neither customer- nor vendor-facing, so they stay directly under Transactions.
         add(Tile("Sticky Note", Icons.Filled.EditNote, onStickyNote, "Transactions"))
-        add(Tile("New Bill", Icons.Filled.PointOfSale, onNewBill, "Transactions"))
-        add(Tile("Quick Bill", Icons.Filled.Restaurant, onQuickBill, "Transactions"))
-        if (Session.canViewInvoice) add(Tile("Invoices", Icons.Filled.ReceiptLong, onInvoices, "Transactions"))
         add(Tile("Calculator", Icons.Filled.Calculate, { showCalculator = true }, "Transactions"))
         add(Tile("Mobile number", Icons.Filled.Phone, { showMobileBoard = true }, "Transactions"))
         add(Tile("Poster maker", Icons.Filled.Campaign, onPoster, "Transactions"))
-        add(Tile("Quotations", Icons.Filled.Description, onQuotations, "Transactions"))
-        add(Tile("Estimates", Icons.Filled.RequestQuote, onEstimates, "Transactions"))
-        if (Session.canViewInvoice) add(Tile("Sales Return", Icons.Filled.AssignmentReturn, onSalesReturns, "Transactions"))
-        add(Tile("New Purchase", Icons.Filled.ShoppingCart, onNewPurchase, "Transactions"))
-        if (Session.canViewInvoice) add(Tile("Purchases", Icons.Filled.Inventory2, onPurchases, "Transactions"))
-        if (Session.canViewInvoice) add(Tile("Purchase Return", Icons.Filled.AssignmentReturned, onPurchaseReturns, "Transactions"))
-        add(Tile("Purchase Order", Icons.Filled.PlaylistAddCheck, onLpos, "Transactions"))
-        add(Tile("Purchase Quotation", Icons.Filled.RequestQuote, onPurchaseQuotes, "Transactions"))
-        add(Tile("Orders", Icons.Filled.ListAlt, onOrders, "Transactions"))
-        if (Session.canViewInvoice) add(Tile("Material Receipt", Icons.Filled.MoveToInbox, onMaterialReceipt, "Transactions"))
+        // Customer Relation: every transaction made with/for a customer.
+        add(Tile("New Bill", Icons.Filled.PointOfSale, onNewBill, "Transactions/Customer Relation"))
+        add(Tile("Quick Bill", Icons.Filled.Restaurant, onQuickBill, "Transactions/Customer Relation"))
+        if (Session.canViewInvoice) add(Tile("Invoices", Icons.Filled.ReceiptLong, onInvoices, "Transactions/Customer Relation"))
+        add(Tile("Quotations", Icons.Filled.Description, onQuotations, "Transactions/Customer Relation"))
+        add(Tile("Estimates", Icons.Filled.RequestQuote, onEstimates, "Transactions/Customer Relation"))
+        if (Session.canViewInvoice) add(Tile("Sales Return", Icons.Filled.AssignmentReturn, onSalesReturns, "Transactions/Customer Relation"))
+        add(Tile("Orders", Icons.Filled.ListAlt, onOrders, "Transactions/Customer Relation"))
+        // Vendor Relation: every transaction made with/for a supplier.
+        add(Tile("New Purchase", Icons.Filled.ShoppingCart, onNewPurchase, "Transactions/Vendor Relation"))
+        if (Session.canViewInvoice) add(Tile("Purchases", Icons.Filled.Inventory2, onPurchases, "Transactions/Vendor Relation"))
+        if (Session.canViewInvoice) add(Tile("Purchase Return", Icons.Filled.AssignmentReturned, onPurchaseReturns, "Transactions/Vendor Relation"))
+        add(Tile("Purchase Order", Icons.Filled.PlaylistAddCheck, onLpos, "Transactions/Vendor Relation"))
+        add(Tile("Purchase Quotation", Icons.Filled.RequestQuote, onPurchaseQuotes, "Transactions/Vendor Relation"))
+        if (Session.canViewInvoice) add(Tile("Material Receipt", Icons.Filled.MoveToInbox, onMaterialReceipt, "Transactions/Vendor Relation"))
         if (isLab) {
-            add(Tile("Lab Bill", Icons.Filled.Science, onLabBills, "Transactions"))
-            add(Tile("Material Out", Icons.Filled.MoveDown, onMaterialOut, "Transactions"))
+            add(Tile("Lab Bill", Icons.Filled.Science, onLabBills, "Transactions/Customer Relation"))
+            add(Tile("Material Out", Icons.Filled.MoveDown, onMaterialOut, "Transactions/Customer Relation"))
         }
         if (isRental) {
-            add(Tile("Hire Invoice", Icons.Filled.Handshake, onHireInvoices, "Transactions"))
-            add(Tile("Hire Return", Icons.Filled.AssignmentReturn, onHireReturns, "Transactions"))
+            add(Tile("Hire Invoice", Icons.Filled.Handshake, onHireInvoices, "Transactions/Customer Relation"))
+            add(Tile("Hire Return", Icons.Filled.AssignmentReturn, onHireReturns, "Transactions/Customer Relation"))
         }
         // Job cards are useful to any shop that takes in service work, so every
         // business type gets them except Personal (which has no shop tools at all).
         if (!isPersonal) {
-            add(Tile("Job Cards", Icons.Filled.Build, onServiceJobs, "Transactions"))
+            add(Tile("Job Cards", Icons.Filled.Build, onServiceJobs, "Transactions/Customer Relation"))
             add(Tile("Service Masters", Icons.Filled.Handyman, onServiceMasters, "Masters"))
             add(Tile("Job Status Report", Icons.Filled.Assessment, onServiceStatusReport, "Reports"))
             add(Tile("Pending Jobs", Icons.Filled.EventBusy, onServicePendingReport, "Reports"))
@@ -492,6 +495,81 @@ fun DashboardScreen(
                                     val subs = listOf("Masters", "Transactions", "Reports")
                                     subs.forEach { sub ->
                                         val key = "Accounts/$sub"
+                                        val tilesForSub = visibleTiles.filter { it.section == key }
+                                        if (tilesForSub.isNotEmpty()) {
+                                            val subOpen = openSections[key] == true
+                                            item(span = { GridItemSpan(maxLineSpan) }) {
+                                                Row(
+                                                    Modifier.fillMaxWidth()
+                                                        .clickable { openSections[key] = !subOpen }
+                                                        .padding(top = 6.dp, bottom = 2.dp),
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Icon(
+                                                        if (subOpen) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                                                        contentDescription = if (subOpen) "Collapse" else "Expand",
+                                                        tint = MaterialTheme.colorScheme.primary
+                                                    )
+                                                    Text(
+                                                        sub,
+                                                        style = MaterialTheme.typography.labelMedium,
+                                                        fontWeight = FontWeight.SemiBold,
+                                                        color = MaterialTheme.colorScheme.primary,
+                                                        modifier = Modifier.weight(1f).padding(start = 8.dp)
+                                                    )
+                                                    Text(
+                                                        tilesForSub.size.toString(),
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        color = MaterialTheme.colorScheme.outline
+                                                    )
+                                                }
+                                            }
+                                            if (subOpen) {
+                                                items(tilesForSub) { tile -> TileCard(tile) { record(tile.label); tile.onClick() } }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        } else if (section == "Transactions") {
+                            // General (unbucketed) tools plus the Customer/Vendor Relation sub-groups.
+                            val flatTiles = visibleTiles.filter { it.section == "Transactions" }
+                            val subTiles = visibleTiles.filter { it.section.startsWith("Transactions/") }
+                            if (flatTiles.isNotEmpty() || subTiles.isNotEmpty()) {
+                                val open = openSections[section] == true
+                                item(span = { GridItemSpan(maxLineSpan) }) {
+                                    Row(
+                                        Modifier.fillMaxWidth()
+                                            .clickable { openSections[section] = !open }
+                                            .padding(top = 10.dp, bottom = 2.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            if (open) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                                            contentDescription = if (open) "Collapse" else "Expand",
+                                            tint = MaterialTheme.colorScheme.primary
+                                        )
+                                        Text(
+                                            section.uppercase(),
+                                            style = MaterialTheme.typography.labelLarge,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.weight(1f).padding(start = 4.dp)
+                                        )
+                                        Text(
+                                            (flatTiles.size + subTiles.size).toString(),
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = MaterialTheme.colorScheme.outline
+                                        )
+                                    }
+                                }
+                                if (open) {
+                                    if (flatTiles.isNotEmpty()) {
+                                        items(flatTiles) { tile -> TileCard(tile) { record(tile.label); tile.onClick() } }
+                                    }
+                                    val subs = listOf("Customer Relation", "Vendor Relation")
+                                    subs.forEach { sub ->
+                                        val key = "Transactions/$sub"
                                         val tilesForSub = visibleTiles.filter { it.section == key }
                                         if (tilesForSub.isNotEmpty()) {
                                             val subOpen = openSections[key] == true

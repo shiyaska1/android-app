@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
@@ -371,6 +372,9 @@ fun FastBillDialog(
                         color = MaterialTheme.colorScheme.primary
                     )
                 }
+                // Breathing room below the total so it never sits flush against the edge —
+                // the tape above (weight(1f)) shrinks to make room for it automatically.
+                Spacer(Modifier.height(16.dp))
             }
         }
     }
