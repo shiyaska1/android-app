@@ -13,6 +13,7 @@ import com.billing.pos.data.AppPrefs
 import com.billing.pos.data.Bill
 import com.billing.pos.data.BillItem
 import com.billing.pos.data.CompanyInfo
+import com.billing.pos.data.Expense
 import com.billing.pos.data.Purchase
 import com.billing.pos.data.PurchaseItem
 import com.billing.pos.data.Receipt
@@ -78,6 +79,13 @@ object ThermalPrinter {
     fun printReceipt(context: Context, company: CompanyInfo, receipt: Receipt) {
         applyWidth(context)
         sendBytes(context, buildReceiptVoucher(company, receipt))
+    }
+
+    /** Prints a payment voucher (money paid out) to give to the payee. */
+    @SuppressLint("MissingPermission")
+    fun printPayment(context: Context, company: CompanyInfo, expense: Expense) {
+        applyWidth(context)
+        sendBytes(context, buildPaymentVoucher(company, expense))
     }
 
     /** Prints a purchase voucher. */
@@ -486,6 +494,30 @@ object ThermalPrinter {
         sb.append("Mode: ${r.paymentMode}\n")
         sb.append(line()).append('\n')
         sb.append(kv("RECEIVED", Format.money(r.amount))).append('\n')
+        sb.append(line()).append('\n')
+        sb.append(center("Thank you")).append('\n')
+        sb.append("\n\n\n")
+
+        val text = sb.toString().toByteArray(Charsets.US_ASCII)
+        val init = byteArrayOf(ESC.toByte(), '@'.code.toByte())
+        val cut = byteArrayOf(GS.toByte(), 'V'.code.toByte(), 66, 0)
+        return init + BOLD_ON + text + cut
+    }
+
+    private fun buildPaymentVoucher(company: CompanyInfo, e: Expense): ByteArray {
+        val sb = StringBuilder()
+        sb.append(center(company.name)).append('\n')
+        if (company.address.isNotBlank()) sb.append(center(company.address)).append('\n')
+        if (company.phone.isNotBlank()) sb.append(center("Ph: ${company.phone}")).append('\n')
+        sb.append(center("PAYMENT VOUCHER")).append('\n')
+        sb.append(line()).append('\n')
+        sb.append("No  : ${e.voucherNo}\n")
+        sb.append("Date: ${Format.dateTime(e.dateMillis)}\n")
+        sb.append("To  : ${e.payTo.ifBlank { e.description.ifBlank { "Expense" } }}\n")
+        if (e.purchaseNo.isNotBlank()) sb.append("Ref : ${e.purchaseNo}\n")
+        sb.append("Mode: ${e.paymentMode}\n")
+        sb.append(line()).append('\n')
+        sb.append(kv("PAID", Format.money(e.amount))).append('\n')
         sb.append(line()).append('\n')
         sb.append(center("Thank you")).append('\n')
         sb.append("\n\n\n")

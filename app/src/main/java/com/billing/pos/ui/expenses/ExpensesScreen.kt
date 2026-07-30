@@ -1,6 +1,10 @@
 package com.billing.pos.ui.expenses
 
+import android.Manifest
 import android.app.Application
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -19,6 +23,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.LibraryAdd
+import androidx.compose.material.icons.filled.Print
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -36,8 +41,10 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -66,17 +73,21 @@ import com.billing.pos.data.Purchase
 import com.billing.pos.data.AppPrefs
 import com.billing.pos.data.Repository
 import com.billing.pos.pdf.TablePdf
+import com.billing.pos.print.ThermalPrinter
 import com.billing.pos.ui.billing.collectAsStateSafe
 import com.billing.pos.ui.common.DateSearchFilter
 import com.billing.pos.ui.common.endOfDay
 import com.billing.pos.ui.common.rememberPdfDownloader
 import com.billing.pos.ui.common.startOfDay
 import com.billing.pos.util.Format
+import com.billing.pos.util.Permissions
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class ExpensesViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = Repository(app)
@@ -167,6 +178,29 @@ fun ExpensesScreen(
     var showBulk by remember { mutableStateOf(false) }
     var editFor by remember { mutableStateOf<Expense?>(null) }
     var deleteFor by remember { mutableStateOf<Expense?>(null) }
+    var printFor by remember { mutableStateOf<Expense?>(null) }
+
+    val printPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        val e = printFor
+        if (granted && e != null) scope.launch { doPrintPayment(context, e, snackbar) }
+        else if (!granted) scope.launch {
+            val res = snackbar.showSnackbar(
+                "Allow 'Nearby devices' permission to print",
+                actionLabel = "Settings",
+                duration = SnackbarDuration.Long
+            )
+            if (res == SnackbarResult.ActionPerformed) Permissions.openAppSettings(context)
+        }
+    }
+
+    fun requestPrint(e: Expense) {
+        printFor = e
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !ThermalPrinter.hasConnectPermission(context)) {
+            printPermission.launch(Manifest.permission.BLUETOOTH_CONNECT)
+        } else scope.launch { doPrintPayment(context, e, snackbar) }
+    }
 
     var query by remember { mutableStateOf("") }
     var fromMillis by remember { mutableStateOf<Long?>(null) }
@@ -259,6 +293,9 @@ fun ExpensesScreen(
                             )
                         }
                         Text("- " + Format.rupee(e.amount), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error)
+                        IconButton(onClick = { requestPrint(e) }) {
+                            Icon(Icons.Filled.Print, "Print")
+                        }
                         if (Session.canDeletePayment) {
                             IconButton(onClick = { deleteFor = e }) {
                                 Icon(Icons.Filled.Delete, "Delete", tint = MaterialTheme.colorScheme.error)
@@ -583,6 +620,13 @@ private fun ExpenseEditDialog(
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Close") } }
     )
+}
+
+private suspend fun doPrintPayment(context: android.content.Context, e: Expense, snackbar: SnackbarHostState) {
+    val company = AppPrefs(context).company
+    val result = withContext(Dispatchers.IO) { runCatching { ThermalPrinter.printPayment(context, company, e) } }
+    result.onSuccess { snackbar.showSnackbar("Sent to printer") }
+        .onFailure { snackbar.showSnackbar(it.message ?: "Print failed") }
 }
 
 private fun pickPaymentDate(context: android.content.Context, current: Long, onPicked: (Long) -> Unit) {
