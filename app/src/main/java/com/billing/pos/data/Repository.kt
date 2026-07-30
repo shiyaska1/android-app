@@ -581,6 +581,17 @@ class Repository(context: Context) {
     val materialReceipts: Flow<List<MaterialReceipt>> = materialReceiptDao.observeAll()
     val materialReceivedByItem: Flow<List<NameQty>> = materialReceiptDao.observeReceivedByItem()
     val receivedByLpo: Flow<List<LpoReceivedRow>> = materialReceiptDao.observeReceivedByLpo()
+
+    // ---- delivery notes (goods delivered to a customer — decreases stock) ----
+    private val deliveryNoteDao = db.deliveryNoteDao()
+    val deliveryNotes: Flow<List<DeliveryNote>> = deliveryNoteDao.observeAll()
+    val deliveredByItem: Flow<List<NameQty>> = deliveryNoteDao.observeDeliveredByItem()
+    suspend fun nextDeliveryNo(): String = tagPrefix() + "DN-" + (deliveryNoteDao.count() + 1).toString().padStart(4, '0')
+    suspend fun saveDeliveryNote(d: DeliveryNote, lines: List<DeliveryNoteItem>): Long = deliveryNoteDao.save(d, lines)
+    suspend fun updateDeliveryNote(d: DeliveryNote, lines: List<DeliveryNoteItem>) = deliveryNoteDao.update(d, lines)
+    suspend fun deleteDeliveryNote(d: DeliveryNote) = deliveryNoteDao.delete(d)
+    suspend fun deliveryNoteById(id: Long): DeliveryNote? = deliveryNoteDao.byId(id)
+    suspend fun deliveryNoteLines(id: Long): List<DeliveryNoteItem> = deliveryNoteDao.linesFor(id)
     val purchaseQuotationLinesFlow: Flow<List<PurchaseQuotationItem>> = purchaseQuotationDao.observeAllLines()
     suspend fun nextMrnNo(): String = "MRN-" + (materialReceiptDao.count() + 1).toString().padStart(4, '0')
     suspend fun saveMaterialReceipt(m: MaterialReceipt, lines: List<MaterialReceiptItem>): Long = materialReceiptDao.save(m, lines)
@@ -592,17 +603,17 @@ class Repository(context: Context) {
 
     /**
      * name (lowercased) -> net live-stock delta = stock-purchases + material receipts
-     * - sales - material out. Openings are added per item on top of this.
+     * - sales - material out - delivery notes. Openings are added per item on top of this.
      */
     val stockByName: Flow<Map<String, Double>> =
         kotlinx.coroutines.flow.combine(
-            purchaseDao.observePurchaseStockQty(), materialReceivedByItem, soldQty, materialOutByItem
-        ) { pur, recv, sold, out ->
+            purchaseDao.observePurchaseStockQty(), materialReceivedByItem, soldQty, materialOutByItem, deliveredByItem
+        ) { pur, recv, sold, out, delivered ->
             val m = HashMap<String, Double>()
             fun apply(list: List<NameQty>, sign: Double) = list.forEach { nq ->
                 val k = nq.name.lowercase(); m[k] = (m[k] ?: 0.0) + sign * nq.qty
             }
-            apply(pur, 1.0); apply(recv, 1.0); apply(sold, -1.0); apply(out, -1.0)
+            apply(pur, 1.0); apply(recv, 1.0); apply(sold, -1.0); apply(out, -1.0); apply(delivered, -1.0)
             m
         }
 

@@ -13,6 +13,8 @@ import com.billing.pos.data.AppPrefs
 import com.billing.pos.data.Bill
 import com.billing.pos.data.BillItem
 import com.billing.pos.data.CompanyInfo
+import com.billing.pos.data.DeliveryNote
+import com.billing.pos.data.DeliveryNoteItem
 import com.billing.pos.data.Expense
 import com.billing.pos.data.MaterialReceipt
 import com.billing.pos.data.MaterialReceiptItem
@@ -102,6 +104,13 @@ object ThermalPrinter {
     fun printMaterialReceipt(context: Context, company: CompanyInfo, receipt: MaterialReceipt, lines: List<MaterialReceiptItem>) {
         applyWidth(context)
         sendBytes(context, buildMaterialReceipt(company, receipt, lines))
+    }
+
+    /** Prints a Delivery Note (goods delivered to a customer). */
+    @SuppressLint("MissingPermission")
+    fun printDeliveryNote(context: Context, company: CompanyInfo, note: DeliveryNote, lines: List<DeliveryNoteItem>) {
+        applyWidth(context)
+        sendBytes(context, buildDeliveryNote(company, note, lines))
     }
 
     /** Everything a service job card slip needs; lines are (job name, price, status). */
@@ -537,6 +546,39 @@ object ThermalPrinter {
         if (r.remarks.isNotBlank()) {
             sb.append("Note:\n")
             r.remarks.chunked(COLS).forEach { sb.append(it).append('\n') }
+            sb.append(line()).append('\n')
+        }
+        sb.append("\n\n\n")
+
+        val text = sb.toString().toByteArray(Charsets.US_ASCII)
+        val init = byteArrayOf(ESC.toByte(), '@'.code.toByte())
+        val cut = byteArrayOf(GS.toByte(), 'V'.code.toByte(), 66, 0)
+        return init + BOLD_ON + text + cut
+    }
+
+    private fun buildDeliveryNote(company: CompanyInfo, n: DeliveryNote, lines: List<DeliveryNoteItem>): ByteArray {
+        val sb = StringBuilder()
+        sb.append(center(company.name)).append('\n')
+        if (company.address.isNotBlank()) sb.append(center(company.address)).append('\n')
+        if (company.phone.isNotBlank()) sb.append(center("Ph: ${company.phone}")).append('\n')
+        sb.append(center("DELIVERY NOTE")).append('\n')
+        sb.append(line()).append('\n')
+        sb.append("No  : ${n.deliveryNo}\n")
+        sb.append("Date: ${Format.dateTime(n.dateMillis)}\n")
+        sb.append("Cust: ${n.customerName}\n")
+        sb.append(line()).append('\n')
+        sb.append(row("Item", "Qty", "Amount")).append('\n')
+        sb.append(line()).append('\n')
+        for (l in lines) {
+            sb.append(clip(l.name + if (l.batchNo.isNotBlank()) " [${l.batchNo}]" else "", COLS)).append('\n')
+            sb.append(row("  @${Format.money(l.price)}" + (if (l.unit.isNotBlank()) "/${l.unit}" else ""), Format.qty(l.qty), Format.money(l.lineTotal))).append('\n')
+        }
+        sb.append(line()).append('\n')
+        sb.append(kv("TOTAL", Format.money(lines.sumOf { it.lineTotal }))).append('\n')
+        sb.append(line()).append('\n')
+        if (n.remarks.isNotBlank()) {
+            sb.append("Note:\n")
+            n.remarks.chunked(COLS).forEach { sb.append(it).append('\n') }
             sb.append(line()).append('\n')
         }
         sb.append("\n\n\n")

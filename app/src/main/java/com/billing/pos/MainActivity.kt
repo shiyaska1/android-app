@@ -78,6 +78,8 @@ import com.billing.pos.ui.materialout.MaterialOutScreen
 import com.billing.pos.ui.materialout.MaterialOutListScreen
 import com.billing.pos.ui.materialreceipt.MaterialReceiptScreen
 import com.billing.pos.ui.materialreceipt.MaterialReceiptListScreen
+import com.billing.pos.ui.deliverynote.DeliveryNoteScreen
+import com.billing.pos.ui.deliverynote.DeliveryNoteListScreen
 import com.billing.pos.ui.reports.LpoMaterialReportScreen
 import com.billing.pos.ui.materialout.MaterialOutLink
 import com.billing.pos.ui.materialout.ItemMovementScreen
@@ -410,6 +412,7 @@ private fun AppNav() {
                 onLabBills = { nav.navigate("labbills") },
                 onMaterialOut = { nav.navigate("materialouts") },
                 onMaterialReceipt = { nav.navigate("materialreceipts") },
+                onDeliveryNote = { nav.navigate("deliverynotes") },
                 onLpoMaterialReport = { nav.navigate("lpomaterialreport") },
                 onItemMovement = { nav.navigate("itemmovement") },
                 onStockReport = { nav.navigate("stockreport") },
@@ -739,6 +742,16 @@ private fun AppNav() {
             route = "materialreceipt/edit/{id}",
             arguments = listOf(navArgument("id") { type = NavType.LongType })
         ) { entry -> MaterialReceiptScreen(editId = entry.arguments?.getLong("id"), onBack = { nav.popBackStack() }) }
+
+        // Delivery Note (goods delivered to a customer — decreases stock).
+        composable("deliverynotes") {
+            DeliveryNoteListScreen(onBack = { nav.popBackStack() }, onOpen = { id -> nav.navigate("deliverynote/edit/$id") }, onNew = { nav.navigate("deliverynote") })
+        }
+        composable("deliverynote") { DeliveryNoteScreen(editId = null, onBack = { nav.popBackStack() }) }
+        composable(
+            route = "deliverynote/edit/{id}",
+            arguments = listOf(navArgument("id") { type = NavType.LongType })
+        ) { entry -> DeliveryNoteScreen(editId = entry.arguments?.getLong("id"), onBack = { nav.popBackStack() }) }
         composable("lpomaterialreport") {
             LpoMaterialReportScreen(onBack = { nav.popBackStack() }, onOpenLpo = { id -> nav.navigate("lpo/edit/$id") })
         }

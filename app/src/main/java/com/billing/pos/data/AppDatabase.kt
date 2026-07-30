@@ -43,7 +43,8 @@ import androidx.room.TypeConverters
         ServiceJobCard::class, ServiceJobLine::class, ServiceJobAttachment::class,
         ServiceEmployee::class, ServiceModel::class,
         ReceiptAttachment::class,
-        ReceiptAllocation::class, ExpenseAllocation::class
+        ReceiptAllocation::class, ExpenseAllocation::class,
+        DeliveryNote::class, DeliveryNoteItem::class
     ],
     // v25 quotations; v26 sales returns; v27 purchase returns; v28 purchase quotations (LPO);
     // v29 dual units; v30 rental; v31 medical lab; v32 lab masters + heading rows;
@@ -55,8 +56,9 @@ import androidx.room.TypeConverters
     // v56 service center job cards; v57 service employees + card assignment;
     // v58 job card priority; v59 model/vehicle master on job cards;
     // v60 diary entry customer link; v61 receipt attachments;
-    // v62 receipt/expense allocations (one voucher settling multiple invoices/purchases).
-    version = 62,
+    // v62 receipt/expense allocations (one voucher settling multiple invoices/purchases);
+    // v63 delivery notes (goods delivered to a customer — decreases stock).
+    version = 63,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -108,6 +110,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun receiptAttachmentDao(): ReceiptAttachmentDao
     abstract fun receiptAllocationDao(): ReceiptAllocationDao
     abstract fun expenseAllocationDao(): ExpenseAllocationDao
+    abstract fun deliveryNoteDao(): DeliveryNoteDao
 
     companion object {
         @Volatile private var INSTANCE: AppDatabase? = null
@@ -439,6 +442,25 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** Delivery notes — goods delivered to a customer (decreases stock). */
+        private val MIGRATION_62_63 = object : androidx.room.migration.Migration(62, 63) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS delivery_notes (" +
+                        "id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, deliveryNo TEXT NOT NULL, " +
+                        "dateMillis INTEGER NOT NULL, customerId INTEGER NOT NULL, customerName TEXT NOT NULL, " +
+                        "remarks TEXT NOT NULL DEFAULT '')"
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS delivery_note_items (" +
+                        "id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, deliveryId INTEGER NOT NULL, " +
+                        "itemId INTEGER NOT NULL DEFAULT 0, name TEXT NOT NULL, qty REAL NOT NULL, " +
+                        "price REAL NOT NULL, taxPercent REAL NOT NULL DEFAULT 0, lineTotal REAL NOT NULL DEFAULT 0, " +
+                        "batchNo TEXT NOT NULL DEFAULT '', unit TEXT NOT NULL DEFAULT '')"
+                )
+            }
+        }
+
         fun get(context: Context): AppDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -446,7 +468,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "pos_billing.db"
                 )
-                    .addMigrations(MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45, MIGRATION_45_46, MIGRATION_46_47, MIGRATION_47_48, MIGRATION_48_49, MIGRATION_49_50, MIGRATION_50_51, MIGRATION_51_52, MIGRATION_52_53, MIGRATION_53_54, MIGRATION_54_55, MIGRATION_55_56, MIGRATION_56_57, MIGRATION_57_58, MIGRATION_58_59, MIGRATION_59_60, MIGRATION_60_61, MIGRATION_61_62)
+                    .addMigrations(MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45, MIGRATION_45_46, MIGRATION_46_47, MIGRATION_47_48, MIGRATION_48_49, MIGRATION_49_50, MIGRATION_50_51, MIGRATION_51_52, MIGRATION_52_53, MIGRATION_53_54, MIGRATION_54_55, MIGRATION_55_56, MIGRATION_56_57, MIGRATION_57_58, MIGRATION_58_59, MIGRATION_59_60, MIGRATION_60_61, MIGRATION_61_62, MIGRATION_62_63)
                     .fallbackToDestructiveMigration()
                     .build()
                     .also { INSTANCE = it }

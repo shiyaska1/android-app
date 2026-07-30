@@ -172,6 +172,7 @@ fun DashboardScreen(
     onLabBills: () -> Unit,
     onMaterialOut: () -> Unit,
     onMaterialReceipt: () -> Unit,
+    onDeliveryNote: () -> Unit,
     onLpoMaterialReport: () -> Unit,
     onItemMovement: () -> Unit,
     onStockReport: () -> Unit,
@@ -251,6 +252,7 @@ fun DashboardScreen(
         add(Tile("Purchase Order", Icons.Filled.PlaylistAddCheck, onLpos, "Transactions/Vendor Relation"))
         add(Tile("Purchase Quotation", Icons.Filled.RequestQuote, onPurchaseQuotes, "Transactions/Vendor Relation"))
         if (Session.canViewInvoice) add(Tile("Material Receipt", Icons.Filled.MoveToInbox, onMaterialReceipt, "Transactions/Vendor Relation"))
+        if (Session.canViewInvoice) add(Tile("Delivery Note", Icons.Filled.LocalShipping, onDeliveryNote, "Transactions/Customer Relation"))
         if (isLab) {
             add(Tile("Lab Bill", Icons.Filled.Science, onLabBills, "Transactions/Customer Relation"))
             add(Tile("Material Out", Icons.Filled.MoveDown, onMaterialOut, "Transactions/Customer Relation"))
