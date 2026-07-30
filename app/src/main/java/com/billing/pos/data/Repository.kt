@@ -689,6 +689,43 @@ class Repository(context: Context) {
         return receipt.copy(id = newId)
     }
 
+    private val receiptAllocationDao = db.receiptAllocationDao()
+
+    /**
+     * One receipt settling several invoices for the same customer at once: each bill's own
+     * paid amount is adjusted by its own share, but only ONE receipt (one ledger entry) is
+     * posted, for the sum of all shares.
+     */
+    suspend fun addReceiptForBills(shares: List<Pair<Bill, Double>>, mode: PayMode, dateMillis: Long = System.currentTimeMillis(), toAccountId: Long = 0): Receipt {
+        require(shares.isNotEmpty()) { "Pick at least one invoice" }
+        val party = shares.first().first.customerName
+        ensureCustomerHead(party)
+        val total = shares.sumOf { it.second }
+        val single = shares.singleOrNull()
+        val receipt = Receipt(
+            receiptNo = nextReceiptNo(),
+            billId = single?.first?.id ?: 0,
+            billNo = single?.first?.billNo ?: "${shares.size} invoices",
+            customerName = party,
+            dateMillis = dateMillis,
+            amount = total,
+            paymentMode = mode.label,
+            payFrom = party,
+            toAccountId = if (toAccountId != 0L) toAccountId else ensureModeAccount(mode.label)
+        )
+        val newId = receiptDao.insert(receipt)
+        shares.forEach { (bill, amount) ->
+            val newPaid = (bill.paidAmount + amount).coerceAtMost(bill.grandTotal)
+            billDao.updateBillHeader(bill.copy(paidAmount = newPaid))
+        }
+        if (shares.size > 1) {
+            receiptAllocationDao.insertAll(shares.map { (bill, amount) ->
+                ReceiptAllocation(receiptId = newId, billId = bill.id, billNo = bill.billNo, amount = amount)
+            })
+        }
+        return receipt.copy(id = newId)
+    }
+
     /** Records a receipt from any source (no invoice link; [refNo] labels it, e.g. a job card no). */
     suspend fun addStandaloneReceipt(payFrom: String, amount: Double, mode: PayMode, dateMillis: Long = System.currentTimeMillis(), toAccountId: Long = 0, partyIsSupplier: Boolean = false, refNo: String = ""): Receipt {
         if (payFrom.isNotBlank()) { if (partyIsSupplier) ensureSupplierHead(payFrom) else ensureCustomerHead(payFrom) }
@@ -759,9 +796,21 @@ class Repository(context: Context) {
         receiptDao.update(old.copy(amount = newAmount, paymentMode = mode.label))
     }
 
-    /** Deletes a receipt and reduces the linked invoice's paid amount. */
+    /** Invoices covered by a (possibly multi-invoice) receipt; empty for a single/standalone one. */
+    suspend fun receiptAllocationsFor(receiptId: Long): List<ReceiptAllocation> = receiptAllocationDao.forReceipt(receiptId)
+
+    /** Deletes a receipt and reduces every invoice it was allocated against, single or multiple. */
     suspend fun deleteReceipt(receipt: Receipt) {
-        if (receipt.billId > 0) {
+        val allocations = receiptAllocationDao.forReceipt(receipt.id)
+        if (allocations.isNotEmpty()) {
+            allocations.forEach { a ->
+                billDao.byId(a.billId)?.let { bill ->
+                    val adjusted = (bill.paidAmount - a.amount).coerceAtLeast(0.0)
+                    billDao.updateBillHeader(bill.copy(paidAmount = adjusted))
+                }
+            }
+            receiptAllocationDao.deleteForReceipt(receipt.id)
+        } else if (receipt.billId > 0) {
             billDao.byId(receipt.billId)?.let { bill ->
                 val adjusted = (bill.paidAmount - receipt.amount).coerceAtLeast(0.0)
                 billDao.updateBillHeader(bill.copy(paidAmount = adjusted))
@@ -792,6 +841,43 @@ class Repository(context: Context) {
         return expense.copy(id = id)
     }
 
+    private val expenseAllocationDao = db.expenseAllocationDao()
+
+    /**
+     * One payment settling several purchases for the same supplier at once: each purchase's own
+     * paid amount is adjusted by its own share, but only ONE expense (one ledger entry) is
+     * posted, for the sum of all shares.
+     */
+    suspend fun addExpenseForPurchases(shares: List<Pair<Purchase, Double>>, mode: PayMode, fromAccountId: Long = 0): Expense {
+        require(shares.isNotEmpty()) { "Pick at least one purchase" }
+        val supplier = shares.first().first.supplierName
+        ensureSupplierHead(supplier)
+        val total = shares.sumOf { it.second }
+        val single = shares.singleOrNull()
+        val expense = Expense(
+            voucherNo = nextVoucherNo(),
+            dateMillis = System.currentTimeMillis(),
+            description = "Payment to $supplier",
+            amount = total,
+            paymentMode = mode.label,
+            purchaseId = single?.first?.id ?: 0,
+            purchaseNo = single?.first?.purchaseNo ?: "${shares.size} purchases",
+            payTo = supplier,
+            fromAccountId = if (fromAccountId != 0L) fromAccountId else ensureModeAccount(mode.label)
+        )
+        val id = expenseDao.insert(expense)
+        shares.forEach { (purchase, amount) ->
+            val newPaid = (purchase.paidAmount + amount).coerceAtMost(purchase.grandTotal)
+            purchaseDao.updateHeader(purchase.copy(paidAmount = newPaid))
+        }
+        if (shares.size > 1) {
+            expenseAllocationDao.insertAll(shares.map { (purchase, amount) ->
+                ExpenseAllocation(expenseId = id, purchaseId = purchase.id, purchaseNo = purchase.purchaseNo, amount = amount)
+            })
+        }
+        return expense.copy(id = id)
+    }
+
     suspend fun updateExpense(expense: Expense, description: String, amount: Double, mode: PayMode) {
         if (expense.purchaseId > 0) {
             purchaseDao.byId(expense.purchaseId)?.let { pur ->
@@ -802,8 +888,21 @@ class Repository(context: Context) {
         expenseDao.update(expense.copy(description = description.trim(), amount = amount, paymentMode = mode.label))
     }
 
+    /** Purchases covered by a (possibly multi-purchase) payment; empty for a single/general one. */
+    suspend fun expenseAllocationsFor(expenseId: Long): List<ExpenseAllocation> = expenseAllocationDao.forExpense(expenseId)
+
+    /** Deletes a payment and reduces every purchase it was allocated against, single or multiple. */
     suspend fun deleteExpense(expense: Expense) {
-        if (expense.purchaseId > 0) {
+        val allocations = expenseAllocationDao.forExpense(expense.id)
+        if (allocations.isNotEmpty()) {
+            allocations.forEach { a ->
+                purchaseDao.byId(a.purchaseId)?.let { pur ->
+                    val adjusted = (pur.paidAmount - a.amount).coerceAtLeast(0.0)
+                    purchaseDao.updateHeader(pur.copy(paidAmount = adjusted))
+                }
+            }
+            expenseAllocationDao.deleteForExpense(expense.id)
+        } else if (expense.purchaseId > 0) {
             purchaseDao.byId(expense.purchaseId)?.let { pur ->
                 val adjusted = (pur.paidAmount - expense.amount).coerceAtLeast(0.0)
                 purchaseDao.updateHeader(pur.copy(paidAmount = adjusted))

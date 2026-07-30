@@ -137,6 +137,9 @@ class ExpensesViewModel(app: Application) : AndroidViewModel(app) {
     /** Attachments already saved against a payment, for the edit dialog. */
     suspend fun attachmentsFor(expenseId: Long) = repo.expenseAttachmentsFor(expenseId)
 
+    /** Purchases covered by a multi-purchase payment; empty for a single/general one. */
+    suspend fun allocationsFor(expenseId: Long) = repo.expenseAllocationsFor(expenseId)
+
     fun addBulk(mode: PayMode, rows: List<com.billing.pos.ui.common.BulkEntryRow>) {
         if (rows.isEmpty()) { message.value = "Nothing to save"; return }
         viewModelScope.launch {
@@ -207,9 +210,10 @@ class ExpensesViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun addAgainstPurchase(purchase: com.billing.pos.data.Purchase, amount: Double, mode: PayMode) {
-        if (amount <= 0) { message.value = "Enter a valid amount"; return }
-        viewModelScope.launch { repo.addPaymentForPurchase(purchase, amount, mode); message.value = "Payment added" }
+    /** One or more purchases settled by a single payment (one ledger entry for the total). */
+    fun addAgainstPurchases(shares: List<Pair<com.billing.pos.data.Purchase, Double>>, mode: PayMode) {
+        if (shares.isEmpty() || shares.any { it.second <= 0 }) { message.value = "Enter a valid amount"; return }
+        viewModelScope.launch { repo.addExpenseForPurchases(shares, mode); message.value = "Payment added" }
     }
 
     fun edit(
@@ -436,7 +440,7 @@ fun ExpensesScreen(
             partyNames = partyNames,
             onDismiss = { showAdd = false },
             onGeneral = { desc, amt, mode, date, atts, payTo -> vm.add(desc, amt, mode, date, atts, payTo); showAdd = false },
-            onAgainstPurchase = { pur, amt, mode -> vm.addAgainstPurchase(pur, amt, mode); showAdd = false }
+            onAgainstPurchase = { shares, mode -> vm.addAgainstPurchases(shares, mode); showAdd = false }
         )
     }
     editFor?.let { e ->
@@ -445,7 +449,8 @@ fun ExpensesScreen(
             canSave = Session.canEditPayment,
             onDismiss = { editFor = null },
             onSave = { desc, amt, mode, atts -> vm.edit(e, desc, amt, mode, atts); editFor = null },
-            loadAttachments = { id -> vm.attachmentsFor(id) }
+            loadAttachments = { id -> vm.attachmentsFor(id) },
+            loadAllocations = { id -> vm.allocationsFor(id) }
         )
     }
     deleteFor?.let { e ->
@@ -466,13 +471,15 @@ private fun AddPaymentDialog(
     partyNames: List<String>,
     onDismiss: () -> Unit,
     onGeneral: (String, Double, PayMode, Long, List<com.billing.pos.data.ExpenseAttachment>, String) -> Unit,
-    onAgainstPurchase: (Purchase, Double, PayMode) -> Unit
+    onAgainstPurchase: (List<Pair<Purchase, Double>>, PayMode) -> Unit
 ) {
     val context = LocalContext.current
     var againstPurchase by remember { mutableStateOf(false) }
     var payTo by remember { mutableStateOf("") }
     var payToQuery by remember { mutableStateOf("") }
-    var selected by remember { mutableStateOf(outstanding.firstOrNull()) }
+    var purchaseParty by remember { mutableStateOf("") }
+    // purchaseId -> amount text; which purchases are checked and what to apply against each.
+    val selectedPurchases = remember { androidx.compose.runtime.mutableStateMapOf<Long, String>() }
     var description by remember { mutableStateOf("") }
     var amount by remember { mutableStateOf("") }
     val attachments = remember { androidx.compose.runtime.mutableStateListOf<com.billing.pos.data.ExpenseAttachment>() }
@@ -518,20 +525,76 @@ private fun AddPaymentDialog(
                     FilterChip(selected = againstPurchase, onClick = { againstPurchase = true }, enabled = outstanding.isNotEmpty(), label = { Text("Against purchase") })
                 }
                 if (againstPurchase) {
+                    val supplierNames = outstanding.map { it.supplierName }.distinct().sorted()
                     ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }, modifier = Modifier.padding(top = 8.dp)) {
                         OutlinedTextField(
                             readOnly = true,
-                            value = selected?.let { "${it.purchaseNo} • ${it.supplierName} • bal ${Format.money(it.balance)}" } ?: "",
-                            onValueChange = {}, label = { Text("Purchase") },
+                            value = purchaseParty,
+                            onValueChange = {}, label = { Text("Supplier") },
                             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
                             modifier = Modifier.menuAnchor().fillMaxWidth()
                         )
                         ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                            outstanding.forEach { p ->
+                            supplierNames.forEach { nm ->
                                 DropdownMenuItem(
-                                    text = { Text("${p.purchaseNo} • ${p.supplierName} • bal ${Format.money(p.balance)}") },
-                                    onClick = { selected = p; amount = Format.money(p.balance); expanded = false }
+                                    text = { Text(nm) },
+                                    onClick = { purchaseParty = nm; selectedPurchases.clear(); expanded = false }
                                 )
+                            }
+                        }
+                    }
+                    val partyPurchases = outstanding.filter { it.supplierName.equals(purchaseParty, ignoreCase = true) }
+                    if (purchaseParty.isNotBlank()) {
+                        if (partyPurchases.isEmpty()) {
+                            Text(
+                                "No outstanding purchases for this supplier",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.outline,
+                                modifier = Modifier.padding(top = 8.dp)
+                            )
+                        } else {
+                            Text(
+                                "Select purchases to settle", style = MaterialTheme.typography.labelLarge,
+                                modifier = Modifier.padding(top = 10.dp)
+                            )
+                            partyPurchases.forEach { p ->
+                                val checked = selectedPurchases.containsKey(p.id)
+                                Row(
+                                    Modifier.fillMaxWidth().padding(top = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    androidx.compose.material3.Checkbox(
+                                        checked = checked,
+                                        onCheckedChange = { on ->
+                                            if (on) selectedPurchases[p.id] = Format.money(p.balance) else selectedPurchases.remove(p.id)
+                                        }
+                                    )
+                                    Column(Modifier.weight(1f)) {
+                                        Text(p.purchaseNo, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
+                                        Text(
+                                            "Bal: ${Format.money(p.balance)}",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.outline
+                                        )
+                                    }
+                                    if (checked) {
+                                        OutlinedTextField(
+                                            value = selectedPurchases[p.id] ?: "",
+                                            onValueChange = { v -> selectedPurchases[p.id] = v.filter { c -> c.isDigit() || c == '.' } },
+                                            singleLine = true,
+                                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                            modifier = Modifier.width(110.dp)
+                                        )
+                                    }
+                                }
+                            }
+                            val purchaseTotal = partyPurchases.sumOf { p -> selectedPurchases[p.id]?.toDoubleOrNull() ?: 0.0 }
+                            Row(
+                                Modifier.fillMaxWidth().padding(top = 8.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("Total", fontWeight = FontWeight.Bold)
+                                Text(Format.money(purchaseTotal), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                             }
                         }
                     }
@@ -559,43 +622,47 @@ private fun AddPaymentDialog(
                         modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
                     )
                 }
-                // Handwrite the description, or read it off a photo.
-                Row(
-                    Modifier.fillMaxWidth().padding(top = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    OutlinedButton(onClick = { drawDesc = true }, modifier = Modifier.weight(1f)) {
-                        Text("Draw", style = MaterialTheme.typography.labelMedium)
-                    }
-                    OutlinedButton(onClick = { descCamera() }, modifier = Modifier.weight(1f)) {
-                        Text("Camera", style = MaterialTheme.typography.labelMedium)
-                    }
-                    OutlinedButton(
-                        onClick = {
-                            descGallery.launch(
-                                androidx.activity.result.PickVisualMediaRequest(
-                                    androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly
-                                )
-                            )
-                        },
-                        modifier = Modifier.weight(1f)
-                    ) { Text("Gallery", style = MaterialTheme.typography.labelMedium) }
-                }
-                OutlinedTextField(
-                    value = amount, onValueChange = { amount = it.filter { c -> c.isDigit() || c == '.' } },
-                    label = { Text("Amount") }, singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    trailingIcon = {
-                        IconButton(onClick = { showCalc = true }) {
-                            Icon(Icons.Filled.Calculate, contentDescription = "Calculator")
+                if (!againstPurchase) {
+                    // Handwrite the description, or read it off a photo.
+                    Row(
+                        Modifier.fillMaxWidth().padding(top = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        OutlinedButton(onClick = { drawDesc = true }, modifier = Modifier.weight(1f)) {
+                            Text("Draw", style = MaterialTheme.typography.labelMedium)
                         }
-                    },
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-                )
+                        OutlinedButton(onClick = { descCamera() }, modifier = Modifier.weight(1f)) {
+                            Text("Camera", style = MaterialTheme.typography.labelMedium)
+                        }
+                        OutlinedButton(
+                            onClick = {
+                                descGallery.launch(
+                                    androidx.activity.result.PickVisualMediaRequest(
+                                        androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly
+                                    )
+                                )
+                            },
+                            modifier = Modifier.weight(1f)
+                        ) { Text("Gallery", style = MaterialTheme.typography.labelMedium) }
+                    }
+                    OutlinedTextField(
+                        value = amount, onValueChange = { amount = it.filter { c -> c.isDigit() || c == '.' } },
+                        label = { Text("Amount") }, singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        trailingIcon = {
+                            IconButton(onClick = { showCalc = true }) {
+                                Icon(Icons.Filled.Calculate, contentDescription = "Calculator")
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                    )
+                }
                 Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     PayMode.values().forEach { m -> FilterChip(selected = mode == m, onClick = { mode = m }, label = { Text(m.label) }) }
                 }
-                PaymentAttachments(attachments, enabled = true)
+                if (!againstPurchase) {
+                    PaymentAttachments(attachments, enabled = true)
+                }
                 OutlinedButton(
                     onClick = { pickPaymentDate(context, dateMillis) { dateMillis = it } },
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
@@ -603,11 +670,21 @@ private fun AddPaymentDialog(
             }
         },
         confirmButton = {
-            Button(onClick = {
-                val amt = amount.toDoubleOrNull() ?: 0.0
-                if (againstPurchase) selected?.let { onAgainstPurchase(it, amt.coerceAtMost(it.balance), mode) }
-                else onGeneral(description, amt, mode, dateMillis, attachments.toList(), payTo.ifBlank { payToQuery })
-            }) { Text("Add") }
+            Button(
+                enabled = !againstPurchase || selectedPurchases.isNotEmpty(),
+                onClick = {
+                    if (againstPurchase) {
+                        val partyPurchases = outstanding.filter { it.supplierName.equals(purchaseParty, ignoreCase = true) }
+                        val shares = partyPurchases.mapNotNull { p ->
+                            val amt = selectedPurchases[p.id]?.toDoubleOrNull()
+                            if (amt != null && amt > 0.0) p to amt.coerceAtMost(p.balance) else null
+                        }
+                        if (shares.isNotEmpty()) onAgainstPurchase(shares, mode)
+                    } else {
+                        onGeneral(description, amount.toDoubleOrNull() ?: 0.0, mode, dateMillis, attachments.toList(), payTo.ifBlank { payToQuery })
+                    }
+                }
+            ) { Text("Add") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
@@ -619,7 +696,8 @@ private fun ExpenseEditDialog(
     canSave: Boolean,
     onDismiss: () -> Unit,
     onSave: (String, Double, PayMode, List<com.billing.pos.data.ExpenseAttachment>) -> Unit,
-    loadAttachments: suspend (Long) -> List<com.billing.pos.data.ExpenseAttachment> = { emptyList() }
+    loadAttachments: suspend (Long) -> List<com.billing.pos.data.ExpenseAttachment> = { emptyList() },
+    loadAllocations: suspend (Long) -> List<com.billing.pos.data.ExpenseAllocation> = { emptyList() }
 ) {
     var description by remember { mutableStateOf(initial?.description ?: "") }
     var amount by remember { mutableStateOf(initial?.amount?.let { Format.money(it) } ?: "") }
@@ -629,6 +707,13 @@ private fun ExpenseEditDialog(
         val id = initial?.id ?: return@LaunchedEffect
         attachments.clear()
         attachments.addAll(loadAttachments(id))
+    }
+    // A multi-purchase payment's total can't be safely hand-edited here — it would desync from
+    // the per-purchase split and the purchases' own balances. Delete and re-add it instead.
+    var allocations by remember(initial?.id) { mutableStateOf<List<com.billing.pos.data.ExpenseAllocation>>(emptyList()) }
+    androidx.compose.runtime.LaunchedEffect(initial?.id) {
+        val id = initial?.id ?: return@LaunchedEffect
+        allocations = loadAllocations(id)
     }
     // Fill the description by hand or from a photo, and the amount from a calculator.
     var drawDesc by remember { mutableStateOf(false) }
@@ -694,9 +779,23 @@ private fun ExpenseEditDialog(
                     ) { Text("Gallery", style = MaterialTheme.typography.labelMedium) }
                 }
                 }
+                if (allocations.isNotEmpty()) {
+                    Text(
+                        "Covers ${allocations.size} purchases — delete and re-add to change amounts:",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline,
+                        modifier = Modifier.padding(top = 6.dp)
+                    )
+                    allocations.forEach { a ->
+                        Text(
+                            "${a.purchaseNo}: ${Format.money(a.amount)}",
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(start = 8.dp, top = 2.dp)
+                        )
+                    }
+                }
                 OutlinedTextField(
                     value = amount, onValueChange = { amount = it.filter { c -> c.isDigit() || c == '.' } },
-                    label = { Text("Amount") }, singleLine = true, enabled = canSave,
+                    label = { Text("Amount") }, singleLine = true, enabled = canSave && allocations.isEmpty(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     trailingIcon = {
                         if (canSave) IconButton(onClick = { showCalc = true }) {

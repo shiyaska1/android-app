@@ -39,8 +39,6 @@ import androidx.compose.material3.Divider
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -133,10 +131,11 @@ class ReceiptsViewModel(app: Application) : AndroidViewModel(app) {
 
     init { viewModelScope.launch { refreshPayFrom() } }
 
-    fun addAgainstInvoice(bill: Bill, amount: Double, mode: PayMode, dateMillis: Long, attachments: List<com.billing.pos.data.ReceiptAttachment> = emptyList()) {
-        if (amount <= 0) { message.value = "Enter a valid amount"; return }
+    /** One or more invoices settled by a single receipt (one ledger entry for the total). */
+    fun addAgainstInvoices(shares: List<Pair<Bill, Double>>, mode: PayMode, dateMillis: Long, attachments: List<com.billing.pos.data.ReceiptAttachment> = emptyList()) {
+        if (shares.isEmpty() || shares.any { it.second <= 0 }) { message.value = "Enter a valid amount"; return }
         viewModelScope.launch {
-            val r = repo.addReceipt(bill, amount, mode, dateMillis)
+            val r = repo.addReceiptForBills(shares, mode, dateMillis)
             if (attachments.isNotEmpty()) repo.replaceReceiptAttachments(r.id, attachments)
             message.value = "Receipt added"
         }
@@ -450,7 +449,7 @@ fun ReceiptsScreen(
             customers = customers,
             payFromOptions = payFromOptions,
             onDismiss = { showAdd = false },
-            onAddInvoice = { bill, amt, mode, date, atts -> vm.addAgainstInvoice(bill, amt, mode, date, atts); showAdd = false },
+            onAddInvoice = { shares, mode, date, atts -> vm.addAgainstInvoices(shares, mode, date, atts); showAdd = false },
             onAddOther = { payFrom, amt, mode, date, atts -> vm.addStandalone(payFrom, amt, mode, date, atts); showAdd = false }
         )
     }
@@ -512,17 +511,18 @@ private fun AddReceiptDialog(
     customers: List<com.billing.pos.data.Customer>,
     payFromOptions: List<String>,
     onDismiss: () -> Unit,
-    onAddInvoice: (Bill, Double, PayMode, Long, List<com.billing.pos.data.ReceiptAttachment>) -> Unit,
+    onAddInvoice: (List<Pair<Bill, Double>>, PayMode, Long, List<com.billing.pos.data.ReceiptAttachment>) -> Unit,
     onAddOther: (String, Double, PayMode, Long, List<com.billing.pos.data.ReceiptAttachment>) -> Unit
 ) {
     val context = LocalContext.current
     var againstInvoice by remember { mutableStateOf(false) }
-    var selected by remember { mutableStateOf(outstanding.firstOrNull()) }
+    var invoiceParty by remember { mutableStateOf("") }
+    // billId -> amount text; which invoices are checked and what to apply against each.
+    val selectedBills = remember { androidx.compose.runtime.mutableStateMapOf<Long, String>() }
     var payFrom by remember { mutableStateOf("") }
-    var amount by remember { mutableStateOf(outstanding.firstOrNull()?.balance?.let { Format.money(it) } ?: "") }
+    var amount by remember { mutableStateOf("") }
     var mode by remember { mutableStateOf(PayMode.CASH) }
     var dateMillis by remember { mutableStateOf(System.currentTimeMillis()) }
-    var billExpanded by remember { mutableStateOf(false) }
     var payFromExpanded by remember { mutableStateOf(false) }
     val attachments = remember { androidx.compose.runtime.mutableStateListOf<com.billing.pos.data.ReceiptAttachment>() }
     fun addAttachment(uri: android.net.Uri?) {
@@ -557,21 +557,66 @@ private fun AddReceiptDialog(
                 }
 
                 if (againstInvoice) {
-                    ExposedDropdownMenuBox(expanded = billExpanded, onExpandedChange = { billExpanded = it }, modifier = Modifier.padding(top = 8.dp)) {
-                        OutlinedTextField(
-                            readOnly = true,
-                            value = selected?.let { "${it.billNo} • ${it.customerName} • bal ${Format.money(it.balance)}" } ?: "",
-                            onValueChange = {},
-                            label = { Text("Invoice") },
-                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(billExpanded) },
-                            modifier = Modifier.menuAnchor().fillMaxWidth()
-                        )
-                        ExposedDropdownMenu(expanded = billExpanded, onDismissRequest = { billExpanded = false }) {
-                            outstanding.forEach { b ->
-                                DropdownMenuItem(
-                                    text = { Text("${b.billNo} • ${b.customerName} • bal ${Format.money(b.balance)}") },
-                                    onClick = { selected = b; amount = Format.money(b.balance); billExpanded = false }
-                                )
+                    com.billing.pos.ui.common.CustomerPickField(
+                        customers = customers,
+                        selectedName = invoiceParty,
+                        onPick = { c -> invoiceParty = c.name; selectedBills.clear() },
+                        label = "Customer",
+                        allowFreeText = false,
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                    )
+                    val partyBills = outstanding.filter { it.customerName.equals(invoiceParty, ignoreCase = true) }
+                    if (invoiceParty.isNotBlank()) {
+                        if (partyBills.isEmpty()) {
+                            Text(
+                                "No outstanding invoices for this customer",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.outline,
+                                modifier = Modifier.padding(top = 8.dp)
+                            )
+                        } else {
+                            Text(
+                                "Select invoices to settle", style = MaterialTheme.typography.labelLarge,
+                                modifier = Modifier.padding(top = 10.dp)
+                            )
+                            partyBills.forEach { b ->
+                                val checked = selectedBills.containsKey(b.id)
+                                Row(
+                                    Modifier.fillMaxWidth().padding(top = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    androidx.compose.material3.Checkbox(
+                                        checked = checked,
+                                        onCheckedChange = { on ->
+                                            if (on) selectedBills[b.id] = Format.money(b.balance) else selectedBills.remove(b.id)
+                                        }
+                                    )
+                                    Column(Modifier.weight(1f)) {
+                                        Text(b.billNo, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
+                                        Text(
+                                            "Bal: ${Format.money(b.balance)}",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.outline
+                                        )
+                                    }
+                                    if (checked) {
+                                        OutlinedTextField(
+                                            value = selectedBills[b.id] ?: "",
+                                            onValueChange = { v -> selectedBills[b.id] = v.filter { c -> c.isDigit() || c == '.' } },
+                                            singleLine = true,
+                                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                            modifier = Modifier.width(110.dp)
+                                        )
+                                    }
+                                }
+                            }
+                            val invoiceTotal = partyBills.sumOf { b -> selectedBills[b.id]?.toDoubleOrNull() ?: 0.0 }
+                            Row(
+                                Modifier.fillMaxWidth().padding(top = 8.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("Total", fontWeight = FontWeight.Bold)
+                                Text(Format.money(invoiceTotal), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                             }
                         }
                     }
@@ -591,13 +636,15 @@ private fun AddReceiptDialog(
                     com.billing.pos.ui.service.JobCardBalanceNote(customerId = 0L, customerName = payFrom)
                 }
 
-                OutlinedTextField(
-                    value = amount,
-                    onValueChange = { amount = it.filter { c -> c.isDigit() || c == '.' } },
-                    label = { Text("Amount received") }, singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-                )
+                if (!againstInvoice) {
+                    OutlinedTextField(
+                        value = amount,
+                        onValueChange = { amount = it.filter { c -> c.isDigit() || c == '.' } },
+                        label = { Text("Amount received") }, singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                    )
+                }
                 Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     PayMode.values().forEach { m ->
                         FilterChip(selected = mode == m, onClick = { mode = m }, label = { Text(m.label) })
@@ -639,14 +686,21 @@ private fun AddReceiptDialog(
             }
         },
         confirmButton = {
-            Button(onClick = {
-                val amt = amount.toDoubleOrNull() ?: 0.0
-                if (againstInvoice) {
-                    selected?.let { onAddInvoice(it, amt.coerceAtMost(it.balance), mode, dateMillis, attachments.toList()) }
-                } else {
-                    onAddOther(payFrom.trim(), amt, mode, dateMillis, attachments.toList())
-                }
-            }) { Text("Add") }
+            Button(
+                onClick = {
+                    if (againstInvoice) {
+                        val partyBills = outstanding.filter { it.customerName.equals(invoiceParty, ignoreCase = true) }
+                        val shares = partyBills.mapNotNull { b ->
+                            val amt = selectedBills[b.id]?.toDoubleOrNull()
+                            if (amt != null && amt > 0.0) b to amt.coerceAtMost(b.balance) else null
+                        }
+                        if (shares.isNotEmpty()) onAddInvoice(shares, mode, dateMillis, attachments.toList())
+                    } else {
+                        onAddOther(payFrom.trim(), amount.toDoubleOrNull() ?: 0.0, mode, dateMillis, attachments.toList())
+                    }
+                },
+                enabled = !againstInvoice || selectedBills.isNotEmpty()
+            ) { Text("Add") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
@@ -661,6 +715,13 @@ private fun ReceiptDialog(
 ) {
     var amount by remember { mutableStateOf(Format.money(receipt.amount)) }
     var mode by remember { mutableStateOf(PayMode.values().firstOrNull { it.label == receipt.paymentMode } ?: PayMode.CASH) }
+    // A multi-invoice receipt's total can't be safely hand-edited here — it would desync from
+    // the per-invoice split and the invoices' own balances. Delete and re-add it instead.
+    val allocCtx = LocalContext.current
+    var allocations by remember(receipt.id) { mutableStateOf<List<com.billing.pos.data.ReceiptAllocation>>(emptyList()) }
+    LaunchedEffect(receipt.id) {
+        allocations = com.billing.pos.data.Repository(allocCtx).receiptAllocationsFor(receipt.id)
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (canSave) "Edit receipt ${receipt.receiptNo}" else "Receipt ${receipt.receiptNo}") },
@@ -671,9 +732,23 @@ private fun ReceiptDialog(
                         if (receipt.billNo.isNotBlank()) "  •  vs ${receipt.billNo}" else "  •  other source",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline
                 )
+                if (allocations.isNotEmpty()) {
+                    Text(
+                        "Covers ${allocations.size} invoices — delete and re-add to change amounts:",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline,
+                        modifier = Modifier.padding(top = 6.dp)
+                    )
+                    allocations.forEach { a ->
+                        Text(
+                            "${a.billNo}: ${Format.money(a.amount)}",
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(start = 8.dp, top = 2.dp)
+                        )
+                    }
+                }
                 OutlinedTextField(
                     value = amount, onValueChange = { amount = it.filter { c -> c.isDigit() || c == '.' } },
-                    label = { Text("Amount") }, singleLine = true, enabled = canSave,
+                    label = { Text("Amount") }, singleLine = true, enabled = canSave && allocations.isEmpty(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
                 )
