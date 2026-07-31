@@ -3,6 +3,7 @@ package com.billing.pos.data
 import android.content.Context
 import com.billing.pos.auth.PasswordHasher
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -302,6 +303,11 @@ class Repository(context: Context) {
     // ---- item batches (batch no + expiry + qty) ----
     private val itemBatchDao = db.itemBatchDao()
     val itemBatches: Flow<List<ItemBatch>> = itemBatchDao.observeAll()
+
+    /** itemId -> total quantity across all its batches, for stock display once batch stock has been recorded. */
+    val batchStockByItem: Flow<Map<Long, Double>> = itemBatches.map { list ->
+        list.groupBy { it.itemId }.mapValues { (_, l) -> l.sumOf { it.quantity } }
+    }
 
     /** Batch-wise purchase rate + source voucher, for expiry costing and drill-down. */
     val batchCosts: Flow<List<BatchCostRow>> = purchaseDao.observeBatchCosts()

@@ -101,8 +101,8 @@ class MaterialOutViewModel(app: Application) : AndroidViewModel(app) {
     /** material-out movements (voucher id + item name), for the item filter on the list. */
     val movements: StateFlow<List<com.billing.pos.data.MoveRow>> = repo.materialMovements.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val stockByItem: StateFlow<Map<Long, Double>> =
-        combine(repo.items, repo.stockByName) { list, byName ->
-            list.associate { it.id to (it.openingStock + (byName[it.name.lowercase()] ?: 0.0)) }
+        combine(repo.items, repo.stockByName, repo.batchStockByItem) { list, byName, batchStock ->
+            list.associate { it.id to (batchStock[it.id] ?: (it.openingStock + (byName[it.name.lowercase()] ?: 0.0))) }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
     val cart: SnapshotStateList<CartLine> = mutableStateListOf()

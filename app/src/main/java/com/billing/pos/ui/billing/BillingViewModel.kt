@@ -81,10 +81,15 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
     val allSizes: StateFlow<List<com.billing.pos.data.ItemSize>> =
         repo.itemSizes.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    /** itemId -> current stock (opening + purchased - sold - material out), for the item picker. */
+    /**
+     * itemId -> current stock, for the item picker. Once an item has batch stock recorded, its
+     * total is the sum of its batch quantities; otherwise opening + purchased - sold - material out.
+     */
     val stockByItem: StateFlow<Map<Long, Double>> =
-        kotlinx.coroutines.flow.combine(repo.items, repo.stockByName) { list, byName ->
-            list.associate { item -> item.id to (item.openingStock + (byName[item.name.lowercase()] ?: 0.0)) }
+        kotlinx.coroutines.flow.combine(repo.items, repo.stockByName, repo.batchStockByItem) { list, byName, batchStock ->
+            list.associate { item ->
+                item.id to (batchStock[item.id] ?: (item.openingStock + (byName[item.name.lowercase()] ?: 0.0)))
+            }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
     /** itemId -> first product photo path, for the quick-bill grid. */
     val itemPhotos: StateFlow<Map<Long, String>> =

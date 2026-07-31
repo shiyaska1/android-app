@@ -14,8 +14,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Redo
+import androidx.compose.material.icons.filled.Undo
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -23,6 +28,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -34,6 +40,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -61,10 +68,25 @@ fun HandwriteTextDialog(onResult: (String) -> Unit, onDismiss: () -> Unit) {
     var failed by remember(lang) { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     val strokes = remember { mutableStateListOf<List<Offset>>() }
+    // Strokes undone with "Undo" land here so "Redo" can bring them back; a fresh stroke
+    // (or Clear) drops this history, same as any text editor's undo/redo.
+    val redoStack = remember { mutableStateListOf<List<Offset>>() }
+    // Bumped on every change to `strokes` so the live-preview effect below re-runs.
+    var strokeVersion by remember { mutableIntStateOf(0) }
+    var preview by remember { mutableStateOf("") }
+    var previewBusy by remember { mutableStateOf(false) }
     LaunchedEffect(lang) {
         ready = false; failed = false
         ready = recognizer.ensureReady()
         failed = !ready
+    }
+    // Re-reads the whole canvas after every stroke/undo/redo so the user sees what will be
+    // submitted and can undo before it's wrong, instead of only finding out after OK.
+    LaunchedEffect(strokeVersion, ready) {
+        if (!ready || strokes.isEmpty()) { preview = ""; previewBusy = false; return@LaunchedEffect }
+        previewBusy = true
+        preview = recognizer.recognize(strokes.toList()).trim()
+        previewBusy = false
     }
 
     Dialog(
@@ -74,7 +96,19 @@ fun HandwriteTextDialog(onResult: (String) -> Unit, onDismiss: () -> Unit) {
         Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface).safeDrawingPadding().padding(12.dp)) {
             // Actions on top so the nav bar never covers them.
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { strokes.clear() }, enabled = !busy) { Text("Clear") }
+                IconButton(
+                    onClick = {
+                        if (strokes.isNotEmpty()) { redoStack.add(strokes.removeAt(strokes.lastIndex)); strokeVersion++ }
+                    },
+                    enabled = !busy && strokes.isNotEmpty()
+                ) { Icon(Icons.Filled.Undo, "Undo last stroke") }
+                IconButton(
+                    onClick = {
+                        if (redoStack.isNotEmpty()) { strokes.add(redoStack.removeAt(redoStack.lastIndex)); strokeVersion++ }
+                    },
+                    enabled = !busy && redoStack.isNotEmpty()
+                ) { Icon(Icons.Filled.Redo, "Redo stroke") }
+                OutlinedButton(onClick = { strokes.clear(); redoStack.clear(); strokeVersion++ }, enabled = !busy) { Text("Clear") }
                 OutlinedButton(onClick = onDismiss, enabled = !busy, modifier = Modifier.weight(1f)) { Text("Cancel") }
                 Button(
                     onClick = {
@@ -98,7 +132,7 @@ fun HandwriteTextDialog(onResult: (String) -> Unit, onDismiss: () -> Unit) {
                 listOf(InkLang.ENGLISH, InkLang.MALAYALAM).forEach { tag ->
                     FilterChip(
                         selected = lang == tag,
-                        onClick = { if (lang != tag && !busy) { strokes.clear(); lang = tag } },
+                        onClick = { if (lang != tag && !busy) { strokes.clear(); redoStack.clear(); strokeVersion++; lang = tag } },
                         enabled = !busy,
                         label = { Text(InkLang.label(tag)) }
                     )
@@ -109,9 +143,13 @@ fun HandwriteTextDialog(onResult: (String) -> Unit, onDismiss: () -> Unit) {
                     failed -> "Could not prepare ${InkLang.label(lang)} handwriting. It needs internet " +
                         "the first time only — connect once, then it works offline."
                     !ready -> "Preparing ${InkLang.label(lang)} handwriting… (first time needs internet)"
-                    else -> "Write in ${InkLang.label(lang)}, then tap OK"
+                    strokes.isEmpty() -> "Write in ${InkLang.label(lang)}, then tap OK"
+                    previewBusy -> "Reading…"
+                    preview.isBlank() -> "Couldn't read that — keep writing or undo"
+                    else -> "Reads as: $preview"
                 },
-                style = MaterialTheme.typography.bodySmall,
+                style = if (ready && strokes.isNotEmpty()) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodySmall,
+                fontWeight = if (ready && strokes.isNotEmpty() && !previewBusy && preview.isNotBlank()) FontWeight.Bold else FontWeight.Normal,
                 color = if (failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outline,
                 modifier = Modifier.padding(vertical = 6.dp)
             )
@@ -132,7 +170,11 @@ fun HandwriteTextDialog(onResult: (String) -> Unit, onDismiss: () -> Unit) {
                                 val ev = awaitPointerEvent()
                                 val c = ev.changes.firstOrNull() ?: break
                                 if (c.pressed) { pts = pts + c.position; live = pts; c.consume() }
-                                else { strokes.add(pts); live = emptyList(); break }
+                                else {
+                                    strokes.add(pts); live = emptyList()
+                                    redoStack.clear(); strokeVersion++
+                                    break
+                                }
                             }
                         }
                     }

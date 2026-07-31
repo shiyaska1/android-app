@@ -1245,7 +1245,10 @@ private fun ItemDialog(
     if (showBatchInput) {
         BatchInputDialog(
             onDismiss = { showBatchInput = false },
-            onAdd = { no, exp, q -> onAddBatch(no, exp, q); showBatchInput = false }
+            onAdd = { no, exp, q -> onAddBatch(no, exp, q); showBatchInput = false },
+            primaryUnit = unit.ifBlank { "PCS" },
+            secondaryUnit = secondaryUnit,
+            conversionFactor = factorText.toDoubleOrNull() ?: 1.0
         )
     }
     if (editBatchIndex in batches.indices) {
@@ -1253,7 +1256,10 @@ private fun ItemDialog(
         BatchInputDialog(
             initialNo = b.batchNo, initialExpiry = b.expiryMillis, initialQty = b.quantity,
             onDismiss = { editBatchIndex = -1 },
-            onAdd = { no, exp, q -> onUpdateBatch(editBatchIndex, no, exp, q); editBatchIndex = -1 }
+            onAdd = { no, exp, q -> onUpdateBatch(editBatchIndex, no, exp, q); editBatchIndex = -1 },
+            primaryUnit = unit.ifBlank { "PCS" },
+            secondaryUnit = secondaryUnit,
+            conversionFactor = factorText.toDoubleOrNull() ?: 1.0
         )
     }
     if (showSizeInput) {
@@ -1287,19 +1293,32 @@ private fun SizeInputDialog(onDismiss: () -> Unit, onAdd: (String, Double) -> Un
     )
 }
 
-/** Enter one batch: batch number, expiry date and quantity. */
+/**
+ * Enter one batch: batch number, expiry date and quantity.
+ *
+ * Quantity is entered in [primaryUnit] or [secondaryUnit] (when the item genuinely has two units),
+ * then converted to the primary unit before [onAdd] is called — batch stock, like all stock, is
+ * always stored in the primary unit.
+ */
 @Composable
 private fun BatchInputDialog(
     onDismiss: () -> Unit,
     onAdd: (String, Long, Double) -> Unit,
     initialNo: String = "",
     initialExpiry: Long = 0L,
-    initialQty: Double = 0.0
+    initialQty: Double = 0.0,
+    primaryUnit: String = "PCS",
+    secondaryUnit: String = "",
+    conversionFactor: Double = 1.0
 ) {
     val context = LocalContext.current
     var batchNo by remember { mutableStateOf(initialNo) }
     var qty by remember { mutableStateOf(if (initialQty > 0) Format.qty(initialQty) else "") }
     var expiry by remember { mutableStateOf(initialExpiry) }
+    val showUnitPicker = secondaryUnit.isNotBlank() &&
+        !secondaryUnit.equals(primaryUnit, ignoreCase = true) && conversionFactor > 0
+    var selectedUnit by remember { mutableStateOf(primaryUnit) }
+    var unitMenu by remember { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (initialNo.isBlank() && initialExpiry == 0L) "Add batch" else "Edit batch") },
@@ -1311,13 +1330,32 @@ private fun BatchInputDialog(
                     label = { Text("Quantity") }, singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth()
                 )
+                if (showUnitPicker) {
+                    ExposedDropdownMenuBox(expanded = unitMenu, onExpandedChange = { unitMenu = !unitMenu }) {
+                        OutlinedTextField(
+                            readOnly = true, value = selectedUnit, onValueChange = {}, label = { Text("Unit") },
+                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = unitMenu) },
+                            modifier = Modifier.menuAnchor().fillMaxWidth()
+                        )
+                        ExposedDropdownMenu(expanded = unitMenu, onDismissRequest = { unitMenu = false }) {
+                            listOf(primaryUnit, secondaryUnit).forEach { u ->
+                                DropdownMenuItem(text = { Text(u) }, onClick = { selectedUnit = u; unitMenu = false })
+                            }
+                        }
+                    }
+                }
                 OutlinedButton(onClick = { pickDate(context, if (expiry > 0) expiry else System.currentTimeMillis()) { expiry = it } }, modifier = Modifier.fillMaxWidth()) {
                     Text(if (expiry > 0) "Expiry: ${Format.date(expiry)}" else "Set expiry date")
                 }
             }
         },
         confirmButton = {
-            TextButton(enabled = batchNo.isNotBlank(), onClick = { onAdd(batchNo.trim(), expiry, qty.toDoubleOrNull() ?: 0.0) }) { Text("Add") }
+            TextButton(enabled = batchNo.isNotBlank(), onClick = {
+                val entered = qty.toDoubleOrNull() ?: 0.0
+                val primaryQty = if (showUnitPicker && selectedUnit.equals(secondaryUnit, ignoreCase = true))
+                    entered / conversionFactor else entered
+                onAdd(batchNo.trim(), expiry, primaryQty)
+            }) { Text("Add") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
