@@ -12,12 +12,15 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.billing.pos.data.AppPrefs
+import com.billing.pos.data.Repository
 import com.billing.pos.ui.settings.BUSINESS_TYPES
+import kotlinx.coroutines.launch
 
 /**
  * One-time question on first launch: what is this app for?
@@ -29,6 +32,7 @@ import com.billing.pos.ui.settings.BUSINESS_TYPES
 fun BusinessTypeScreen(onChosen: () -> Unit) {
     val context = LocalContext.current
     val prefs = androidx.compose.runtime.remember { AppPrefs(context) }
+    val scope = rememberCoroutineScope()
 
     Column(Modifier.fillMaxSize().padding(20.dp)) {
         Text(
@@ -50,6 +54,7 @@ fun BusinessTypeScreen(onChosen: () -> Unit) {
                         prefs.businessType = type
                         if (type == "Medical store") prefs.requireItemBatch = true
                         prefs.onboarded = true
+                        scope.launch { Repository(context).seedSampleItems(type) }
                         onChosen()
                     }
                 ) {

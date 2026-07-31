@@ -50,6 +50,9 @@ interface ItemDao {
     @Query("SELECT * FROM items WHERE barcode = :barcode AND barcode != '' LIMIT 1")
     suspend fun byBarcode(barcode: String): Item?
 
+    @Query("SELECT COUNT(*) FROM items")
+    suspend fun count(): Int
+
     @Insert
     suspend fun insert(item: Item): Long
 

@@ -200,6 +200,11 @@ class AppPrefs(context: Context) {
         get() = p.getBoolean("require_item_batch", false)
         set(v) { p.edit().putBoolean("require_item_batch", v).apply() }
 
+    /** When on (and batch tracking is on), sales auto-pick the oldest-expiry batch with stock instead of prompting. */
+    var fifoAutoPickBatch: Boolean
+        get() = p.getBoolean("fifo_auto_pick_batch", false)
+        set(v) { p.edit().putBoolean("fifo_auto_pick_batch", v).apply() }
+
     /** Business vertical, drives medical (chemical content) and restaurant (sizes) features. */
     /**
      * True once the one-time business-type question has been answered. An install that

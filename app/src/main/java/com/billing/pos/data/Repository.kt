@@ -300,6 +300,14 @@ class Repository(context: Context) {
     suspend fun itemByBarcode(barcode: String): Item? = itemDao.byBarcode(barcode.trim())
     suspend fun itemByName(name: String): Item? = itemDao.byName(name.trim())
 
+    /** Seeds starter demo items for a business type — only when there are no items at all yet. */
+    suspend fun seedSampleItems(businessType: String): Int {
+        if (itemDao.count() > 0) return 0
+        val samples = SampleData.itemsFor(businessType)
+        samples.forEach { s -> addItem(s.name, s.price, 0.0, "", "", s.category, 0.0, s.unit, "", s.chemical) }
+        return samples.size
+    }
+
     // ---- item batches (batch no + expiry + qty) ----
     private val itemBatchDao = db.itemBatchDao()
     val itemBatches: Flow<List<ItemBatch>> = itemBatchDao.observeAll()

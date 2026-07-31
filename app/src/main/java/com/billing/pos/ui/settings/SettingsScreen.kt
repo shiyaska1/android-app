@@ -91,6 +91,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
     var upiName by remember { mutableStateOf(prefs.upiName) }
     var upiQrOnPrint by remember { mutableStateOf(prefs.showUpiQrOnPrint) }
     var requireBatch by remember { mutableStateOf(prefs.requireItemBatch) }
+    var fifoAutoPick by remember { mutableStateOf(prefs.fifoAutoPickBatch) }
     var businessType by remember { mutableStateOf(prefs.businessType) }
     var receiptWidth by remember { mutableStateOf(prefs.receiptWidth) }
     var ocrLanguage by remember { mutableStateOf(prefs.ocrLanguage) }
@@ -471,6 +472,10 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
                         DropdownMenuItem(text = { Text(t) }, onClick = {
                             businessType = t; prefs.businessType = t; typeMenu = false
                             if (t == "Medical store") { requireBatch = true; prefs.requireItemBatch = true }
+                            scope.launch {
+                                val added = com.billing.pos.data.Repository(context).seedSampleItems(t)
+                                if (added > 0) snackbar.showSnackbar("Loaded $added sample $t item(s) for demo")
+                            }
                         })
                     }
                 }
@@ -584,6 +589,18 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
                     )
                 }
                 Switch(checked = requireBatch, onCheckedChange = { requireBatch = it; prefs.requireItemBatch = it })
+            }
+            if (requireBatch) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Auto-pick batch (FIFO)", style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            "Sales use the oldest-expiry batch with stock automatically, without asking.",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline
+                        )
+                    }
+                    Switch(checked = fifoAutoPick, onCheckedChange = { fifoAutoPick = it; prefs.fifoAutoPickBatch = it })
+                }
             }
         }
     }

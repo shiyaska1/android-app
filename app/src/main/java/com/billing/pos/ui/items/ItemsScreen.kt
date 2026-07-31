@@ -1063,16 +1063,19 @@ private fun ItemDialog(
                 if (showBatches) {
                     Divider(Modifier.padding(top = 4.dp))
                     Text("Batches", style = MaterialTheme.typography.titleSmall)
+                    // Only batches with stock left are shown — depleted batches are dropped automatically.
                     batches.forEachIndexed { i, b ->
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f).clickable { editBatchIndex = i }) {
-                                Text(b.batchNo.ifBlank { "(no batch no)" }, fontWeight = FontWeight.SemiBold)
-                                Text(
-                                    (if (b.expiryMillis > 0) "Exp ${Format.date(b.expiryMillis)}" else "No expiry") + "   •   Qty ${Format.qty(b.quantity)}  •  tap to edit",
-                                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline
-                                )
+                        if (b.quantity > 0.0) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f).clickable { editBatchIndex = i }) {
+                                    Text(b.batchNo.ifBlank { "(no batch no)" }, fontWeight = FontWeight.SemiBold)
+                                    Text(
+                                        (if (b.expiryMillis > 0) "Exp ${Format.date(b.expiryMillis)}" else "No expiry") + "   •   Qty ${Format.qty(b.quantity)}  •  tap to edit",
+                                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline
+                                    )
+                                }
+                                IconButton(onClick = { onRemoveBatch(i) }) { Icon(Icons.Filled.Delete, "Remove batch", tint = MaterialTheme.colorScheme.error) }
                             }
-                            IconButton(onClick = { onRemoveBatch(i) }) { Icon(Icons.Filled.Delete, "Remove batch", tint = MaterialTheme.colorScheme.error) }
                         }
                     }
                     OutlinedButton(onClick = { showBatchInput = true }, modifier = Modifier.fillMaxWidth()) {
@@ -1246,6 +1249,8 @@ private fun ItemDialog(
         BatchInputDialog(
             onDismiss = { showBatchInput = false },
             onAdd = { no, exp, q -> onAddBatch(no, exp, q); showBatchInput = false },
+            initialNo = nextBatchNo(batches),
+            isNew = true,
             primaryUnit = unit.ifBlank { "PCS" },
             secondaryUnit = secondaryUnit,
             conversionFactor = factorText.toDoubleOrNull() ?: 1.0
@@ -1293,6 +1298,13 @@ private fun SizeInputDialog(onDismiss: () -> Unit, onAdd: (String, Double) -> Un
     )
 }
 
+/** Next sequential batch number, e.g. "B001", "B002" — continues past the highest existing "B<n>" batch. */
+private fun nextBatchNo(existing: List<com.billing.pos.data.ItemBatch>): String {
+    val maxN = existing.mapNotNull { b -> Regex("^B(\\d+)$").matchEntire(b.batchNo.trim())?.groupValues?.get(1)?.toIntOrNull() }
+        .maxOrNull() ?: 0
+    return "B%03d".format(maxN + 1)
+}
+
 /**
  * Enter one batch: batch number, expiry date and quantity.
  *
@@ -1310,7 +1322,8 @@ private fun BatchInputDialog(
     initialQty: Double = 0.0,
     primaryUnit: String = "PCS",
     secondaryUnit: String = "",
-    conversionFactor: Double = 1.0
+    conversionFactor: Double = 1.0,
+    isNew: Boolean = initialNo.isBlank() && initialExpiry == 0L
 ) {
     val context = LocalContext.current
     var batchNo by remember { mutableStateOf(initialNo) }
@@ -1322,7 +1335,7 @@ private fun BatchInputDialog(
     var unitMenu by remember { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (initialNo.isBlank() && initialExpiry == 0L) "Add batch" else "Edit batch") },
+        title = { Text(if (isNew) "Add batch" else "Edit batch") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(value = batchNo, onValueChange = { batchNo = it }, label = { Text("Batch no *") }, singleLine = true, modifier = Modifier.fillMaxWidth())

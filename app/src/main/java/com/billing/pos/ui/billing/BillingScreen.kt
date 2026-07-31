@@ -194,6 +194,7 @@ fun BillingScreen(
         }
     }
     val requireBatch = remember { com.billing.pos.data.AppPrefs(context).requireItemBatch }
+    val fifoAutoPick = remember { com.billing.pos.data.AppPrefs(context).fifoAutoPickBatch }
     var batchPickFor by remember { mutableStateOf<com.billing.pos.data.Item?>(null) }
     var sizePickFor by remember { mutableStateOf<com.billing.pos.data.Item?>(null) }
     var unitPickFor by remember { mutableStateOf<com.billing.pos.data.Item?>(null) }
@@ -781,7 +782,13 @@ fun BillingScreen(
                     // Two different units → ask which one. Same unit → no prompt.
                     picked.hasTwoUnits -> unitPickFor = picked
                     requireBatch && allBatches.any { b -> b.itemId == picked.id } -> {
-                        pendingChoice = picked.primaryChoice(); batchPickFor = picked
+                        val itemBatches = allBatches.filter { b -> b.itemId == picked.id }
+                        val auto = if (fifoAutoPick) fifoBatchWithStock(itemBatches) else null
+                        when {
+                            auto != null -> vm.addItemWithBatch(picked, auto, picked.primaryChoice())
+                            fifoAutoPick -> vm.addItemWithUnit(picked, picked.primaryChoice())
+                            else -> { pendingChoice = picked.primaryChoice(); batchPickFor = picked }
+                        }
                     }
                     else -> vm.addItemToCart(picked)
                 }
@@ -798,7 +805,13 @@ fun BillingScreen(
             onPick = { choice ->
                 unitPickFor = null
                 if (requireBatch && allBatches.any { it.itemId == item.id }) {
-                    pendingChoice = choice; batchPickFor = item
+                    val itemBatches = allBatches.filter { it.itemId == item.id }
+                    val auto = if (fifoAutoPick) fifoBatchWithStock(itemBatches) else null
+                    when {
+                        auto != null -> vm.addItemWithBatch(item, auto, choice)
+                        fifoAutoPick -> vm.addItemWithUnit(item, choice)
+                        else -> { pendingChoice = choice; batchPickFor = item }
+                    }
                 } else vm.addItemWithUnit(item, choice)
             },
             onDismiss = { unitPickFor = null }
@@ -1274,6 +1287,10 @@ internal fun UnitPickDialog(
         confirmButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
 }
+
+/** Oldest-expiry batch that still has stock, for FIFO auto-pick (no expiry sorts last). */
+internal fun fifoBatchWithStock(batches: List<com.billing.pos.data.ItemBatch>): com.billing.pos.data.ItemBatch? =
+    batches.filter { it.quantity > 0.0 }.minByOrNull { if (it.expiryMillis <= 0) Long.MAX_VALUE else it.expiryMillis }
 
 /** Pick which batch to sell from (shows each batch's stock + expiry). */
 @Composable

@@ -14,6 +14,13 @@ object SampleData {
         "Mobile shop" -> mobile
         "Electrical & plumbing" -> electrical
         "Automobiles" -> automobiles
+        "General" -> general
+        "Rental" -> rental
+        "Medical lab" -> medicalLab
+        "Bulk SMS" -> bulkSms
+        "Gym" -> gym
+        "Coaching Center" -> coaching
+        "Service Center" -> serviceCenter
         else -> emptyList()
     }
 
@@ -107,5 +114,96 @@ object SampleData {
         SampleItem("Wiper Blade", "Accessories", 250.0),
         SampleItem("Car Perfume", "Accessories", 150.0),
         SampleItem("Seat Cover", "Accessories", 1200.0)
+    )
+
+    private val general = listOf(
+        SampleItem("Notebook 200pg", "Stationery", 45.0),
+        SampleItem("Ball Pen", "Stationery", 10.0),
+        SampleItem("Stapler", "Stationery", 90.0),
+        SampleItem("Scissors", "Household", 60.0),
+        SampleItem("Glue Stick", "Stationery", 25.0),
+        SampleItem("Umbrella", "Household", 350.0),
+        SampleItem("LED Torch", "Household", 150.0),
+        SampleItem("Batteries AA (4pc)", "Household", 80.0),
+        SampleItem("Plastic Bucket", "Household", 180.0),
+        SampleItem("Broom", "Household", 90.0)
+    )
+
+    private val rental = listOf(
+        SampleItem("Plastic Chair", "Furniture", 20.0),
+        SampleItem("Round Table", "Furniture", 150.0),
+        SampleItem("Canopy Tent 10x10", "Tents", 800.0),
+        SampleItem("Generator 5KVA", "Equipment", 1500.0),
+        SampleItem("PA Speaker", "Sound", 500.0),
+        SampleItem("Wireless Mic Set", "Sound", 300.0),
+        SampleItem("LED Par Light", "Lighting", 100.0),
+        SampleItem("Carpet Roll", "Decor", 250.0),
+        SampleItem("Air Cooler", "Equipment", 400.0),
+        SampleItem("Steel Utensil Set", "Catering", 350.0)
+    )
+
+    private val medicalLab = listOf(
+        SampleItem("Syringe 5ml", "Consumables", 8.0),
+        SampleItem("Vacutainer Tube", "Consumables", 12.0),
+        SampleItem("Cotton Roll", "Consumables", 40.0),
+        SampleItem("Spirit Swab (Box)", "Consumables", 60.0),
+        SampleItem("Glucometer Strips", "Consumables", 350.0, "BOX"),
+        SampleItem("Face Mask (Box)", "Consumables", 120.0, "BOX"),
+        SampleItem("Hand Sanitizer 500ml", "Consumables", 150.0),
+        SampleItem("Examination Gloves (Box)", "Consumables", 250.0, "BOX"),
+        SampleItem("Bandage Roll", "Consumables", 30.0),
+        SampleItem("Digital Thermometer", "Equipment", 200.0)
+    )
+
+    private val bulkSms = listOf(
+        SampleItem("SMS Credits 1000", "SMS Packs", 250.0),
+        SampleItem("SMS Credits 5000", "SMS Packs", 1100.0),
+        SampleItem("SMS Credits 10000", "SMS Packs", 2000.0),
+        SampleItem("SMS Credits 25000", "SMS Packs", 4500.0),
+        SampleItem("WhatsApp Credits 500", "WhatsApp Packs", 500.0),
+        SampleItem("WhatsApp Credits 1000", "WhatsApp Packs", 900.0),
+        SampleItem("Voice Call Pack 100min", "Voice Packs", 300.0),
+        SampleItem("Bulk Email Pack 5000", "Email Packs", 400.0),
+        SampleItem("Sender ID Setup", "Services", 500.0),
+        SampleItem("DLT Registration Service", "Services", 1000.0)
+    )
+
+    private val gym = listOf(
+        SampleItem("Monthly Membership", "Membership", 1500.0),
+        SampleItem("Quarterly Membership", "Membership", 4000.0),
+        SampleItem("Annual Membership", "Membership", 14000.0),
+        SampleItem("Personal Training Session", "Training", 500.0),
+        SampleItem("Protein Shake", "Supplements", 150.0),
+        SampleItem("Gym Gloves", "Accessories", 250.0),
+        SampleItem("Shaker Bottle", "Accessories", 200.0),
+        SampleItem("Resistance Band", "Accessories", 300.0),
+        SampleItem("Skipping Rope", "Accessories", 180.0),
+        SampleItem("Gym Towel", "Accessories", 150.0)
+    )
+
+    private val coaching = listOf(
+        SampleItem("Monthly Tuition Fee", "Fees", 2000.0),
+        SampleItem("Course Registration", "Fees", 500.0),
+        SampleItem("Study Material Kit", "Materials", 800.0),
+        SampleItem("Notebook Set", "Materials", 150.0),
+        SampleItem("Test Series Pack", "Fees", 600.0),
+        SampleItem("Whiteboard Marker", "Materials", 30.0),
+        SampleItem("Mock Test Fee", "Fees", 100.0),
+        SampleItem("Uniform", "Materials", 450.0),
+        SampleItem("ID Card", "Materials", 50.0),
+        SampleItem("Certificate Printing", "Services", 100.0)
+    )
+
+    private val serviceCenter = listOf(
+        SampleItem("Service Charge - Basic", "Services", 300.0),
+        SampleItem("Service Charge - AC", "Services", 600.0),
+        SampleItem("Screen Replacement", "Spares", 2500.0),
+        SampleItem("Battery Replacement", "Spares", 1200.0),
+        SampleItem("Deep Cleaning Service", "Services", 400.0),
+        SampleItem("Spare Part - Generic", "Spares", 350.0),
+        SampleItem("Diagnostic Fee", "Services", 150.0),
+        SampleItem("Home Visit Charge", "Services", 200.0),
+        SampleItem("Warranty Extension", "Services", 999.0),
+        SampleItem("Labour Charge (per hr)", "Services", 250.0)
     )
 }

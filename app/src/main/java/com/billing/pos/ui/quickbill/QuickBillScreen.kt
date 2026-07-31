@@ -120,6 +120,7 @@ fun QuickBillScreen(
     var showNewCustomer by remember { mutableStateOf(false) }
     var showNotes by remember { mutableStateOf(false) }
     val requireBatch = remember { com.billing.pos.data.AppPrefs(context).requireItemBatch }
+    val fifoAutoPick = remember { com.billing.pos.data.AppPrefs(context).fifoAutoPickBatch }
     val allSizes by vm.allSizes.collectAsStateSafe()
     val allBatchesTop by vm.allBatches.collectAsStateSafe()
     var sizePickFor by remember { mutableStateOf<com.billing.pos.data.Item?>(null) }
@@ -275,7 +276,13 @@ fun QuickBillScreen(
                                     allSizes.any { s -> s.itemId == item.id } -> sizePickFor = item
                                     item.hasTwoUnits -> unitPickFor = item
                                     requireBatch && allBatchesTop.any { b -> b.itemId == item.id } -> {
-                                        pendingChoice = item.primaryChoice(); batchPickFor = item
+                                        val itemBatches = allBatchesTop.filter { b -> b.itemId == item.id }
+                                        val auto = if (fifoAutoPick) com.billing.pos.ui.billing.fifoBatchWithStock(itemBatches) else null
+                                        when {
+                                            auto != null -> vm.addItemWithBatch(item, auto, item.primaryChoice())
+                                            fifoAutoPick -> vm.addItemWithUnit(item, item.primaryChoice())
+                                            else -> { pendingChoice = item.primaryChoice(); batchPickFor = item }
+                                        }
                                     }
                                     else -> vm.addItemToCart(item)
                                 }
@@ -351,7 +358,13 @@ fun QuickBillScreen(
             onPick = { choice ->
                 unitPickFor = null
                 if (requireBatch && allBatches.any { it.itemId == item.id }) {
-                    pendingChoice = choice; batchPickFor = item
+                    val itemBatches = allBatches.filter { it.itemId == item.id }
+                    val auto = if (fifoAutoPick) com.billing.pos.ui.billing.fifoBatchWithStock(itemBatches) else null
+                    when {
+                        auto != null -> vm.addItemWithBatch(item, auto, choice)
+                        fifoAutoPick -> vm.addItemWithUnit(item, choice)
+                        else -> { pendingChoice = choice; batchPickFor = item }
+                    }
                 } else vm.addItemWithUnit(item, choice)
             },
             onDismiss = { unitPickFor = null }
