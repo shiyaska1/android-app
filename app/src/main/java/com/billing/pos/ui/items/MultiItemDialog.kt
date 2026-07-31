@@ -165,6 +165,14 @@ fun MultiItemDialog(
             }
             Divider()
 
+            OutlinedButton(
+                onClick = { rows.add(0, MultiItemRow()) },
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp)
+            ) {
+                Icon(Icons.Filled.Add, null)
+                Text("  Add another row")
+            }
+
             LazyColumn(Modifier.fillMaxSize().padding(horizontal = 10.dp)) {
                 itemsIndexed(rows) { index, row ->
                     Card(Modifier.fillMaxWidth().padding(vertical = 5.dp)) {
@@ -184,38 +192,26 @@ fun MultiItemDialog(
                                 }
                             }
 
-                            OutlinedTextField(
-                                value = row.name,
-                                onValueChange = { row.name = it },
-                                label = { Text("Item name") },
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                            // Name by hand, or read off a label.
-                            Row(
-                                Modifier.fillMaxWidth().padding(top = 4.dp),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                OutlinedButton(onClick = { drawFor = row }, modifier = Modifier.weight(1f)) {
-                                    Icon(Icons.Filled.Draw, null, Modifier.size(16.dp))
-                                    Text(" Draw", style = MaterialTheme.typography.labelSmall)
-                                }
-                                OutlinedButton(
-                                    onClick = { ocrFor = row; ocrCamera() },
+                            // Name typed, handwritten, or read off a label photo — draw/camera/gallery are icon-only.
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                                OutlinedTextField(
+                                    value = row.name,
+                                    onValueChange = { row.name = it },
+                                    label = { Text("Item name") },
+                                    singleLine = true,
                                     modifier = Modifier.weight(1f)
-                                ) {
-                                    Icon(Icons.Filled.PhotoCamera, null, Modifier.size(16.dp))
-                                    Text(" Camera", style = MaterialTheme.typography.labelSmall)
+                                )
+                                IconButton(onClick = { drawFor = row }) {
+                                    Icon(Icons.Filled.Draw, "Draw")
                                 }
-                                OutlinedButton(
-                                    onClick = {
-                                        ocrFor = row
-                                        ocrGallery.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-                                    },
-                                    modifier = Modifier.weight(1f)
-                                ) {
-                                    Icon(Icons.Filled.PhotoLibrary, null, Modifier.size(16.dp))
-                                    Text(" Gallery", style = MaterialTheme.typography.labelSmall)
+                                IconButton(onClick = { ocrFor = row; ocrCamera() }) {
+                                    Icon(Icons.Filled.PhotoCamera, "Camera")
+                                }
+                                IconButton(onClick = {
+                                    ocrFor = row
+                                    ocrGallery.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                                }) {
+                                    Icon(Icons.Filled.PhotoLibrary, "Gallery")
                                 }
                             }
 
@@ -303,15 +299,6 @@ fun MultiItemDialog(
                                 }
                             }
                         }
-                    }
-                }
-                item {
-                    OutlinedButton(
-                        onClick = { rows.add(MultiItemRow()) },
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp)
-                    ) {
-                        Icon(Icons.Filled.Add, null)
-                        Text("  Add another row")
                     }
                 }
             }

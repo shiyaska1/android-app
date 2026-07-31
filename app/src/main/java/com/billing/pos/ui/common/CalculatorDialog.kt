@@ -66,6 +66,7 @@ fun CalculatorDialog(
     val entries = remember { mutableStateListOf<Double>().apply { if (initial > 0.0) add(initial) } }
     var input by remember { mutableStateOf("") }
     val focus = remember { FocusRequester() }
+    val mulDivFocus = remember { FocusRequester() }
     val scroll = rememberScrollState()
     val total = entries.sum()
 
@@ -233,13 +234,15 @@ fun CalculatorDialog(
                 onDismissRequest = { showMulDivDialog = false },
                 title = { Text(if (mulDivOp == '*') "Multiply amount" else "Divide amount") },
                 text = {
-                    Column { 
+                    Column {
+                        LaunchedEffect(Unit) { runCatching { mulDivFocus.requestFocus() } }
                         OutlinedTextField(
                             value = mulDivFactor,
                             onValueChange = { mulDivFactor = it.filter { c -> c.isDigit() || c == '.' } },
                             label = { Text("Enter number") },
                             singleLine = true,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done)
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done),
+                            modifier = Modifier.focusRequester(mulDivFocus)
                         )
                         if (mulDivOp == '/' && mulDivFactor.toDoubleOrNull() == 0.0 && mulDivFactor.isNotBlank()) {
                             Text("Cannot divide by zero", color = MaterialTheme.colorScheme.error)
