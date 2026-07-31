@@ -1300,6 +1300,7 @@ private fun SizeInputDialog(onDismiss: () -> Unit, onAdd: (String, Double) -> Un
  * then converted to the primary unit before [onAdd] is called — batch stock, like all stock, is
  * always stored in the primary unit.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun BatchInputDialog(
     onDismiss: () -> Unit,
