@@ -136,6 +136,12 @@ fun BackupScreen(
             val result = withContext(Dispatchers.IO) {
                 runCatching {
                     val zip = FullBackup.create(context)
+                    // Verify the zip is structurally sound (has its end-of-central-directory
+                    // record) before ever uploading it — catches a corrupt local file at the
+                    // source instead of pushing garbage the server can't tell apart from a
+                    // network truncation.
+                    runCatching { java.util.zip.ZipFile(zip).use { it.size() } }
+                        .onFailure { throw IOException("Backup file is corrupt before upload (${it.message}) — try again") }
                     val (org, dev) = syncOrgDevice()
                     val conn = URL(withOrgDevice(url, org, dev)).openConnection() as HttpURLConnection
                     conn.requestMethod = "POST"
@@ -143,8 +149,10 @@ fun BackupScreen(
                     conn.connectTimeout = 15000
                     conn.readTimeout = 120000
                     conn.setRequestProperty("Content-Type", "application/zip")
-                    conn.setFixedLengthStreamingMode(zip.length())
-                    conn.outputStream.use { out -> zip.inputStream().use { it.copyTo(out) } }
+                    val expectedLen = zip.length()
+                    conn.setFixedLengthStreamingMode(expectedLen)
+                    val sent = conn.outputStream.use { out -> zip.inputStream().use { it.copyTo(out) } }
+                    if (sent != expectedLen) throw IOException("Upload incomplete: sent $sent of $expectedLen bytes")
                     val code = conn.responseCode
                     val err = if (code !in 200..299) runCatching { conn.errorStream?.bufferedReader()?.readText() }.getOrNull() else null
                     conn.disconnect()
@@ -173,6 +181,11 @@ fun BackupScreen(
                     val dest = File(dir, "pulled-backup.zip")
                     conn.inputStream.use { input -> dest.outputStream().use { input.copyTo(it) } }
                     conn.disconnect()
+                    // Same structural check as Push, on the way in: tell the user plainly that
+                    // the download is corrupt instead of surfacing a raw ZipException/EOFException
+                    // once restore/merge starts unpacking it.
+                    runCatching { java.util.zip.ZipFile(dest).use { it.size() } }
+                        .onFailure { throw IOException("Downloaded backup is corrupt (${it.message}) — push a fresh backup from the source device and try again") }
                     Uri.fromFile(dest)
                 }
             }
