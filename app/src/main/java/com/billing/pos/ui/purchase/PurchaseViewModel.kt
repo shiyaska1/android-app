@@ -93,6 +93,7 @@ class PurchaseViewModel(app: Application) : AndroidViewModel(app) {
 
     var editingId by mutableStateOf<Long?>(null); private set
     private var editingSource: String = ""
+    private var editingDeviceId: String = ""
     private var editingPaidAmount: Double = 0.0
     private var editingWasCredit: Boolean = false
     private var dirty = true
@@ -347,7 +348,8 @@ class PurchaseViewModel(app: Application) : AndroidViewModel(app) {
             stockReceived = addsStock,
             lpoNo = if (againstLpo) lpoNo else "",
             supplierBillNo = supplierBillNo.trim(),
-            remarks = remarks
+            remarks = remarks,
+            deviceId = editingDeviceId.ifBlank { com.billing.pos.data.License.deviceId(app) }
         )
         val lines = cart.map {
             PurchaseItem(0, editId ?: 0, it.name, it.qty, it.price, it.taxPercent, it.total, batchNo = it.batchNo, unit = it.unit, primaryQty = it.primaryQty)
@@ -399,6 +401,7 @@ class PurchaseViewModel(app: Application) : AndroidViewModel(app) {
             val lines = repo.purchaseLinesFor(id)
             editingId = purchase.id
             editingSource = purchase.source
+            editingDeviceId = purchase.deviceId
             editingPaidAmount = purchase.paidAmount
             editingWasCredit = purchase.paymentMethod == PaymentMethod.CREDIT.label
             purchaseNo = purchase.purchaseNo
@@ -438,6 +441,7 @@ class PurchaseViewModel(app: Application) : AndroidViewModel(app) {
         selectedSupplier = suppliers.value.firstOrNull { it.isDefault } ?: suppliers.value.firstOrNull()
         editingId = null
         editingSource = ""
+        editingDeviceId = ""
         lastSaved = null
         dirty = true
         viewModelScope.launch { purchaseNo = repo.nextPurchaseNo() }

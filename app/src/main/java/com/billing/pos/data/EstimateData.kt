@@ -36,7 +36,9 @@ data class Estimate(
     val discount: Double,
     val grandTotal: Double,
     val customerGstin: String = "",
-    val remarks: String = ""
+    val remarks: String = "",
+    /** [License.deviceId] of the phone this estimate was created on — used to dedupe cloud-sync merges. */
+    val deviceId: String = ""
 )
 
 /** A single line on an estimate. No batch or primary-qty: nothing here moves stock. */
@@ -87,6 +89,8 @@ interface EstimateDao {
     @Query("SELECT * FROM estimates ORDER BY dateMillis DESC") fun observeAll(): Flow<List<Estimate>>
     @Query("SELECT * FROM estimates") suspend fun all(): List<Estimate>
     @Query("SELECT * FROM estimates WHERE id = :id LIMIT 1") suspend fun byId(id: Long): Estimate?
+    @Query("SELECT * FROM estimates WHERE deviceId = :deviceId AND estimateNo = :estimateNo LIMIT 1")
+    suspend fun byDeviceAndNo(deviceId: String, estimateNo: String): Estimate?
     @Query("SELECT * FROM estimate_items WHERE estimateId = :id") suspend fun linesFor(id: Long): List<EstimateItem>
     @Query("SELECT * FROM estimate_items") suspend fun allLines(): List<EstimateItem>
 }

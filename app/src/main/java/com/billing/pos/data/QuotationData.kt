@@ -26,7 +26,9 @@ data class Quotation(
     val grandTotal: Double,
     val remarks: String = "",
     /** Terms and conditions printed at the foot of the quotation. */
-    val terms: String = ""
+    val terms: String = "",
+    /** [License.deviceId] of the phone this quotation was created on — used to dedupe cloud-sync merges. */
+    val deviceId: String = ""
 )
 
 @Entity(tableName = "quotation_items")
@@ -79,6 +81,8 @@ interface QuotationDao {
     @Query("SELECT * FROM quotations ORDER BY dateMillis DESC") fun observeAll(): Flow<List<Quotation>>
     @Query("SELECT * FROM quotations") suspend fun all(): List<Quotation>
     @Query("SELECT * FROM quotations WHERE id = :id LIMIT 1") suspend fun byId(id: Long): Quotation?
+    @Query("SELECT * FROM quotations WHERE deviceId = :deviceId AND quotationNo = :quotationNo LIMIT 1")
+    suspend fun byDeviceAndNo(deviceId: String, quotationNo: String): Quotation?
     @Query("SELECT * FROM quotation_items WHERE quotationId = :id") suspend fun linesFor(id: Long): List<QuotationItem>
     @Query("SELECT * FROM quotation_items") suspend fun allLines(): List<QuotationItem>
 }

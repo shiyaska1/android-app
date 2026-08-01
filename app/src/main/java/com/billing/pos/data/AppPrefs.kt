@@ -55,6 +55,10 @@ class AppPrefs(context: Context) {
     var deviceTag: String
         get() = (p.getString("sync_device_tag", "") ?: "").trim()
         set(v) { p.edit().putString("sync_device_tag", v.trim()).apply() }
+    /** One-time: have this device's pre-existing (deviceId-less) records been tagged with its own id yet? */
+    var legacyDeviceIdBackfilled: Boolean
+        get() = p.getBoolean("legacy_device_id_backfilled", false)
+        set(v) { p.edit().putBoolean("legacy_device_id_backfilled", v).apply() }
     /** TCP port this device's sync server listens on when acting as host. */
     var syncPort: Int
         get() = p.getInt("sync_port", 8765)
@@ -99,7 +103,7 @@ class AppPrefs(context: Context) {
         set(v) { p.edit().putBoolean("cloud_auto_sync", v).apply() }
     /** Seconds between auto pull+merge+push cycles. Callers should floor this at ~10s before use so a mistyped value can't hammer the server. */
     var cloudAutoSyncIntervalSec: Int
-        get() = p.getInt("cloud_auto_sync_interval_sec", 30)
+        get() = p.getInt("cloud_auto_sync_interval_sec", 300)
         set(v) { p.edit().putInt("cloud_auto_sync_interval_sec", v).apply() }
 
     // ---- Bulk SMS gateway (generic, provider-agnostic) ----

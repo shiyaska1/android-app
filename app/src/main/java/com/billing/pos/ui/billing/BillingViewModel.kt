@@ -128,6 +128,7 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
     /** Non-null when editing an existing bill. */
     var editingBillId by mutableStateOf<Long?>(null); private set
     private var editingSource: String = ""
+    private var editingDeviceId: String = ""
     private var editingPaidAmount: Double = 0.0
     private var editingWasCredit: Boolean = false
 
@@ -477,7 +478,8 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
             paidAmount = paid,
             customerGstin = customer.gstin,
             source = editingSource,
-            remarks = remarks.trim()
+            remarks = remarks.trim(),
+            deviceId = editingDeviceId.ifBlank { com.billing.pos.data.License.deviceId(app) }
         )
         val lines = cart.map {
             BillItem(
@@ -563,6 +565,7 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
             val lines = repo.linesFor(billId)
             editingBillId = bill.id
             editingSource = bill.source
+            editingDeviceId = bill.deviceId
             editingPaidAmount = bill.paidAmount
             editingWasCredit = bill.paymentMethod == PaymentMethod.CREDIT.label
             billNo = bill.billNo
@@ -620,6 +623,7 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
         selectedCustomer = customers.value.firstOrNull { it.isDefault } ?: customers.value.firstOrNull()
         editingBillId = null
         editingSource = ""
+        editingDeviceId = ""
         lastSaved = null
         dirty = true
         viewModelScope.launch { billNo = nextVoucherNo() }
@@ -643,7 +647,8 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
             discount = discount,
             grandTotal = grandTotal,
             customerGstin = customer.gstin,
-            remarks = remarks.trim()
+            remarks = remarks.trim(),
+            deviceId = editingDeviceId.ifBlank { com.billing.pos.data.License.deviceId(app) }
         )
         val lines = cart.map {
             EstimateItem(
@@ -690,6 +695,7 @@ class BillingViewModel(app: Application) : AndroidViewModel(app) {
             val e = repo.estimateById(estimateId) ?: return@launch
             val lines = repo.estimateLines(estimateId)
             editingBillId = e.id
+            editingDeviceId = e.deviceId
             billNo = e.estimateNo
             dateMillis = e.dateMillis
             payment = PaymentMethod.values().firstOrNull { it.label == e.paymentMethod } ?: PaymentMethod.CASH

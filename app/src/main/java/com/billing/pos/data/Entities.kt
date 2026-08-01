@@ -75,7 +75,9 @@ data class Bill(
     val customerGstin: String = "",
     val source: String = "",
     /** Free-text note; printed on the bill only when non-blank. */
-    val remarks: String = ""
+    val remarks: String = "",
+    /** [License.deviceId] of the phone this bill was created on — used to dedupe cloud-sync merges. */
+    val deviceId: String = ""
 ) {
     val balance: Double get() = (grandTotal - paidAmount).coerceAtLeast(0.0)
     val paymentStatus: String
@@ -147,7 +149,9 @@ data class Receipt(
     val payFrom: String = "",
     val source: String = "",
     /** Cash/Bank account head the money was received into (0 = unspecified/legacy). */
-    val toAccountId: Long = 0
+    val toAccountId: Long = 0,
+    /** [License.deviceId] of the phone this receipt was created on — used to dedupe cloud-sync merges. */
+    val deviceId: String = ""
 )
 
 /**
@@ -167,7 +171,9 @@ data class Expense(
     val payTo: String = "",
     val source: String = "",
     /** Cash/Bank account head the money was paid from (0 = unspecified/legacy). */
-    val fromAccountId: Long = 0
+    val fromAccountId: Long = 0,
+    /** [License.deviceId] of the phone this expense was created on — used to dedupe cloud-sync merges. */
+    val deviceId: String = ""
 )
 
 enum class Role(val label: String) {

@@ -93,6 +93,8 @@ interface CustOrderDao {
     @Query("SELECT * FROM cust_orders ORDER BY dateMillis DESC") fun observeAll(): Flow<List<CustOrder>>
     @Query("SELECT * FROM cust_orders") suspend fun all(): List<CustOrder>
     @Query("SELECT * FROM cust_orders WHERE id = :id") suspend fun byId(id: Long): CustOrder?
+    @Query("SELECT * FROM cust_orders WHERE deviceId = :deviceId AND orderNo = :orderNo LIMIT 1")
+    suspend fun byDeviceAndNo(deviceId: String, orderNo: String): CustOrder?
     @Query("SELECT * FROM cust_order_items WHERE orderId = :id ORDER BY id ASC") suspend fun linesFor(id: Long): List<CustOrderItem>
     @Query("SELECT * FROM cust_order_items") suspend fun allLines(): List<CustOrderItem>
     @Query("SELECT * FROM cust_order_items") fun observeAllLines(): Flow<List<CustOrderItem>>

@@ -645,12 +645,12 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
             )
 
             var cloudAutoSync by remember { mutableStateOf(prefs.cloudAutoSync) }
-            var cloudAutoSyncIntervalText by remember { mutableStateOf(prefs.cloudAutoSyncIntervalSec.toString()) }
+            var cloudAutoSyncIntervalMinText by remember { mutableStateOf((prefs.cloudAutoSyncIntervalSec / 60).coerceAtLeast(1).toString()) }
             val cloudSyncStatus by com.billing.pos.sync.CloudSyncManager.status.collectAsState()
             fun restartCloudAutoSyncIfOn() {
                 if (cloudAutoSync) {
-                    val secs = cloudAutoSyncIntervalText.toIntOrNull()?.coerceAtLeast(10) ?: 30
-                    com.billing.pos.sync.CloudSyncManager.startAuto(context, secs * 1000L)
+                    val mins = cloudAutoSyncIntervalMinText.toIntOrNull()?.coerceAtLeast(1) ?: 5
+                    com.billing.pos.sync.CloudSyncManager.startAuto(context, mins * 60_000L)
                 }
             }
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 12.dp)) {
@@ -658,7 +658,10 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
                     Text("Auto pull + merge + push", style = MaterialTheme.typography.bodyMedium)
                     Text(
                         "Keeps syncing with the server on its own while the app is open — data and " +
-                            "settings only, never photos/attachments.",
+                            "settings only, never photos/attachments. Sales, purchases, receipts, payments, " +
+                            "quotations, estimates and orders are safe to sync repeatedly; diary, lab, hire, " +
+                            "service, gym, coaching, material movements, returns, LPOs, production and bundles " +
+                            "are not deduplicated yet and may duplicate with repeated syncing.",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline
                     )
                 }
@@ -668,13 +671,13 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
                 })
             }
             OutlinedTextField(
-                value = cloudAutoSyncIntervalText,
+                value = cloudAutoSyncIntervalMinText,
                 onValueChange = { txt ->
-                    cloudAutoSyncIntervalText = txt.filter { it.isDigit() }
-                    cloudAutoSyncIntervalText.toIntOrNull()?.let { prefs.cloudAutoSyncIntervalSec = it }
+                    cloudAutoSyncIntervalMinText = txt.filter { it.isDigit() }
+                    cloudAutoSyncIntervalMinText.toIntOrNull()?.let { prefs.cloudAutoSyncIntervalSec = it * 60 }
                     restartCloudAutoSyncIfOn()
                 },
-                label = { Text("Interval (seconds, min 10)") }, singleLine = true,
+                label = { Text("Interval (minutes, min 1)") }, singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
             )

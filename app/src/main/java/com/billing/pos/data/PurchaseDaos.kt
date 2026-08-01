@@ -98,6 +98,9 @@ interface PurchaseDao {
         deleteHeader(purchase)
     }
 
+    @Query("SELECT * FROM purchases WHERE deviceId = :deviceId AND purchaseNo = :purchaseNo LIMIT 1")
+    suspend fun byDeviceAndNo(deviceId: String, purchaseNo: String): Purchase?
+
     @Query("SELECT * FROM purchases ORDER BY dateMillis DESC")
     fun observeAll(): Flow<List<Purchase>>
 

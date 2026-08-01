@@ -202,6 +202,9 @@ interface BillDao {
 
     @Query("SELECT * FROM bills WHERE source = :source AND billNo = :billNo LIMIT 1")
     suspend fun findBySourceAndNo(source: String, billNo: String): Bill?
+
+    @Query("SELECT * FROM bills WHERE deviceId = :deviceId AND billNo = :billNo LIMIT 1")
+    suspend fun byDeviceAndNo(deviceId: String, billNo: String): Bill?
 }
 
 @Dao
@@ -217,6 +220,9 @@ interface ReceiptDao {
 
     @Query("SELECT * FROM receipts WHERE source = :source AND receiptNo = :receiptNo LIMIT 1")
     suspend fun findBySourceAndNo(source: String, receiptNo: String): Receipt?
+
+    @Query("SELECT * FROM receipts WHERE deviceId = :deviceId AND receiptNo = :receiptNo LIMIT 1")
+    suspend fun byDeviceAndNo(deviceId: String, receiptNo: String): Receipt?
 
     @Query("SELECT DISTINCT payFrom FROM receipts WHERE payFrom != '' ORDER BY payFrom COLLATE NOCASE ASC")
     suspend fun payFromNames(): List<String>
@@ -244,6 +250,9 @@ interface ExpenseDao {
 
     @Query("SELECT * FROM expenses WHERE source = :source AND voucherNo = :voucherNo LIMIT 1")
     suspend fun findBySourceAndNo(source: String, voucherNo: String): Expense?
+
+    @Query("SELECT * FROM expenses WHERE deviceId = :deviceId AND voucherNo = :voucherNo LIMIT 1")
+    suspend fun byDeviceAndNo(deviceId: String, voucherNo: String): Expense?
 
     @Insert
     suspend fun insert(expense: Expense): Long

@@ -730,6 +730,23 @@ class Repository(context: Context) {
         run.copy(id = runId)
     }
 
+    /**
+     * One-time fix-up: tags every pre-existing (deviceId-less) bill/purchase/receipt/expense/
+     * quotation/estimate/order on this device with this device's own id, so cloud-merge dedup
+     * (by deviceId + document number) can recognize them too, not just records created after
+     * the dedup fix shipped. Safe to call more than once — already-tagged rows are skipped.
+     */
+    suspend fun backfillDeviceIds() {
+        val myId = License.deviceId(context)
+        billDao.all().filter { it.deviceId.isBlank() }.forEach { billDao.updateBillHeader(it.copy(deviceId = myId)) }
+        purchaseDao.all().filter { it.deviceId.isBlank() }.forEach { purchaseDao.updateHeader(it.copy(deviceId = myId)) }
+        receiptDao.all().filter { it.deviceId.isBlank() }.forEach { receiptDao.update(it.copy(deviceId = myId)) }
+        expenseDao.all().filter { it.deviceId.isBlank() }.forEach { expenseDao.update(it.copy(deviceId = myId)) }
+        quotationDao.all().filter { it.deviceId.isBlank() }.forEach { quotationDao.updateHeader(it.copy(deviceId = myId)) }
+        estimateDao.all().filter { it.deviceId.isBlank() }.forEach { estimateDao.updateHeader(it.copy(deviceId = myId)) }
+        custOrderDao.all().filter { it.deviceId.isBlank() }.forEach { custOrderDao.updateHeader(it.copy(deviceId = myId)) }
+    }
+
     /** Deletes a run and its linked MaterialOut/MaterialReceipt, reversing its stock effect. */
     suspend fun deleteProductionRun(run: ProductionRun) {
         if (run.materialOutId > 0) materialOutDao.byId(run.materialOutId)?.let { materialOutDao.delete(it) }
@@ -805,7 +822,8 @@ class Repository(context: Context) {
             amount = amount,
             paymentMode = mode.label,
             payFrom = bill.customerName,
-            toAccountId = if (toAccountId != 0L) toAccountId else ensureModeAccount(mode.label)
+            toAccountId = if (toAccountId != 0L) toAccountId else ensureModeAccount(mode.label),
+            deviceId = License.deviceId(context)
         )
         val newId = receiptDao.insert(receipt)
         val newPaid = (bill.paidAmount + amount).coerceAtMost(bill.grandTotal)
@@ -835,7 +853,8 @@ class Repository(context: Context) {
             amount = total,
             paymentMode = mode.label,
             payFrom = party,
-            toAccountId = if (toAccountId != 0L) toAccountId else ensureModeAccount(mode.label)
+            toAccountId = if (toAccountId != 0L) toAccountId else ensureModeAccount(mode.label),
+            deviceId = License.deviceId(context)
         )
         val newId = receiptDao.insert(receipt)
         shares.forEach { (bill, amount) ->
@@ -882,7 +901,8 @@ class Repository(context: Context) {
             description = description.trim(),
             amount = amount,
             paymentMode = mode.label,
-            fromAccountId = if (fromAccountId != 0L) fromAccountId else ensureModeAccount(mode.label)
+            fromAccountId = if (fromAccountId != 0L) fromAccountId else ensureModeAccount(mode.label),
+            deviceId = License.deviceId(context)
         )
         // Return the row with its generated id — callers attach files to it, and an id of 0
         // silently orphans them.
@@ -900,7 +920,8 @@ class Repository(context: Context) {
             amount = amount,
             paymentMode = mode.label,
             payTo = payTo.trim(),
-            fromAccountId = if (fromAccountId != 0L) fromAccountId else ensureModeAccount(mode.label)
+            fromAccountId = if (fromAccountId != 0L) fromAccountId else ensureModeAccount(mode.label),
+            deviceId = License.deviceId(context)
         )
         // Return the row with its generated id — callers attach files to it, and an id of 0
         // silently orphans them.
@@ -957,7 +978,8 @@ class Repository(context: Context) {
             purchaseId = purchase.id,
             purchaseNo = purchase.purchaseNo,
             payTo = purchase.supplierName,
-            fromAccountId = if (fromAccountId != 0L) fromAccountId else ensureModeAccount(mode.label)
+            fromAccountId = if (fromAccountId != 0L) fromAccountId else ensureModeAccount(mode.label),
+            deviceId = License.deviceId(context)
         )
         val id = expenseDao.insert(expense)
         val newPaid = (purchase.paidAmount + amount).coerceAtMost(purchase.grandTotal)
@@ -987,7 +1009,8 @@ class Repository(context: Context) {
             purchaseId = single?.first?.id ?: 0,
             purchaseNo = single?.first?.purchaseNo ?: "${shares.size} purchases",
             payTo = supplier,
-            fromAccountId = if (fromAccountId != 0L) fromAccountId else ensureModeAccount(mode.label)
+            fromAccountId = if (fromAccountId != 0L) fromAccountId else ensureModeAccount(mode.label),
+            deviceId = License.deviceId(context)
         )
         val id = expenseDao.insert(expense)
         shares.forEach { (purchase, amount) ->

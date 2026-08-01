@@ -38,7 +38,9 @@ data class Purchase(
     val lpoNo: String = "",
     /** The supplier's own invoice/bill number (distinct from our internal [purchaseNo]). */
     val supplierBillNo: String = "",
-    val remarks: String = ""
+    val remarks: String = "",
+    /** [License.deviceId] of the phone this purchase was created on — used to dedupe cloud-sync merges. */
+    val deviceId: String = ""
 ) {
     val balance: Double get() = (grandTotal - paidAmount).coerceAtLeast(0.0)
     val paymentStatus: String

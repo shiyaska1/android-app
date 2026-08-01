@@ -113,6 +113,7 @@ class QuotationViewModel(app: Application) : AndroidViewModel(app) {
     var quotationNo by mutableStateOf("QT-0001"); private set
     var dateMillis by mutableStateOf(System.currentTimeMillis())
     var editingId by mutableStateOf<Long?>(null); private set
+    private var editingDeviceId: String = ""
     private var loaded = false
 
     val message = MutableStateFlow<String?>(null)
@@ -151,6 +152,7 @@ class QuotationViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val q = repo.quotationById(id) ?: return@launch
             editingId = q.id
+            editingDeviceId = q.deviceId
             quotationNo = q.quotationNo
             dateMillis = q.dateMillis
             additionalChargeText = if (q.additionalCharge != 0.0) q.additionalCharge.toString() else ""
@@ -165,7 +167,7 @@ class QuotationViewModel(app: Application) : AndroidViewModel(app) {
 
     fun newQuotation() {
         cart.clear(); additionalChargeText = ""; discountText = ""; remarks = ""; terms = ""
-        dateMillis = System.currentTimeMillis(); editingId = null
+        dateMillis = System.currentTimeMillis(); editingId = null; editingDeviceId = ""
         selectedCustomer = customers.value.firstOrNull { it.isDefault } ?: customers.value.firstOrNull()
         viewModelScope.launch { quotationNo = repo.nextQuotationNo() }
     }
@@ -179,7 +181,8 @@ class QuotationViewModel(app: Application) : AndroidViewModel(app) {
                 id = editingId ?: 0, quotationNo = quotationNo, dateMillis = dateMillis,
                 customerId = customer.id, customerName = customer.name,
                 subTotal = subTotal, taxTotal = taxTotal, additionalCharge = additionalCharge,
-                discount = discount, grandTotal = grandTotal, remarks = remarks.trim(), terms = terms.trim()
+                discount = discount, grandTotal = grandTotal, remarks = remarks.trim(), terms = terms.trim(),
+                deviceId = editingDeviceId.ifBlank { com.billing.pos.data.License.deviceId(app) }
             )
             val lines = cart.map { QuotationItem(0, q.id, it.name, it.qty, it.price, it.taxPercent, it.total, it.unit, it.note) }
             val eid = editingId
@@ -199,6 +202,7 @@ class QuotationViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val q = repo.quotationById(id) ?: return@launch
             editingId = null
+            editingDeviceId = ""
             quotationNo = repo.nextQuotationNo()
             dateMillis = System.currentTimeMillis()
             additionalChargeText = if (q.additionalCharge != 0.0) q.additionalCharge.toString() else ""

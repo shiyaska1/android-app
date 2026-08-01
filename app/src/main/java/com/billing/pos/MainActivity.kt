@@ -6,6 +6,9 @@ import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.fragment.app.FragmentActivity
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
@@ -108,13 +111,26 @@ class MainActivity : FragmentActivity() {
         captureIncoming(intent)
         // Offer the Play update straight away, so customers are not left on an old build.
         com.billing.pos.update.AppUpdater.check(this)
-        // KILL SWITCH: merge has no per-record dedup, so every pull+merge cycle re-inserted
-        // every transactional record as a brand-new row — the auto-sync loop was duplicating
-        // data every cycle. Force it off everywhere until real multi-device merge (dedup by
-        // origin device + record, last-write-wins) ships. Remove this block once that lands.
+        // One-time: tag this device's pre-existing (deviceId-less) documents with its own id, so
+        // cloud-merge dedup recognizes them on the very first sync instead of only new records.
         AppPrefs(this).let { p ->
-            if (p.cloudAutoSync) p.cloudAutoSync = false
-            com.billing.pos.sync.CloudSyncManager.stopAuto()
+            if (!p.legacyDeviceIdBackfilled) {
+                lifecycleScope.launch(Dispatchers.IO) {
+                    runCatching { com.billing.pos.data.Repository(this@MainActivity).backfillDeviceIds() }
+                    p.legacyDeviceIdBackfilled = true
+                }
+            }
+        }
+        // Resume the cloud auto pull+merge+push loop across app restarts if the user left it on
+        // — otherwise it would only (re)start the next time they happened to open Settings.
+        // Bills/purchases/receipts/expenses/quotations/estimates/orders are deduped on merge by
+        // (deviceId, document number); other record types (diary, lab, hire, service, gym,
+        // coaching, material movements, returns, LPOs, production, bundles) are not yet, so
+        // repeated merges can still duplicate those specifically.
+        AppPrefs(this).let { p ->
+            if (p.cloudAutoSync) {
+                com.billing.pos.sync.CloudSyncManager.startAuto(this, p.cloudAutoSyncIntervalSec.coerceAtLeast(60) * 1000L)
+            }
         }
         enableEdgeToEdge()
         setContent {

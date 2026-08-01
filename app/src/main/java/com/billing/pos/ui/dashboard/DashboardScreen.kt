@@ -3,6 +3,10 @@ package com.billing.pos.ui.dashboard
 import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.NoteAdd
+import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -216,6 +220,8 @@ fun DashboardScreen(
     onLogout: () -> Unit
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
+    val syncScope = rememberCoroutineScope()
+    var syncingNow by remember { mutableStateOf(false) }
     val businessType = remember { com.billing.pos.data.AppPrefs(context).businessType }
     val isRental = businessType == "Rental"
     val isPersonal = businessType == "Personal"
@@ -342,6 +348,26 @@ fun DashboardScreen(
             TopAppBar(
                 title = { Text("Dashboard") },
                 actions = {
+                    if (com.billing.pos.data.AppPrefs(context).backupPushUrl.isNotBlank() || com.billing.pos.data.AppPrefs(context).backupPullUrl.isNotBlank()) {
+                        IconButton(
+                            onClick = {
+                                if (!syncingNow) {
+                                    syncingNow = true
+                                    syncScope.launch {
+                                        com.billing.pos.sync.CloudSyncManager.runOnePullMergePush(context)
+                                        syncingNow = false
+                                        android.widget.Toast.makeText(context, com.billing.pos.sync.CloudSyncManager.status.value, android.widget.Toast.LENGTH_LONG).show()
+                                    }
+                                }
+                            }
+                        ) {
+                            if (syncingNow) {
+                                CircularProgressIndicator(modifier = Modifier.size(20.dp), color = MaterialTheme.colorScheme.onPrimary, strokeWidth = 2.dp)
+                            } else {
+                                Icon(Icons.Filled.Sync, contentDescription = "Sync now")
+                            }
+                        }
+                    }
                     IconButton(onClick = onQuickNote) {
                         Icon(Icons.Filled.NoteAdd, contentDescription = "Quick note")
                     }

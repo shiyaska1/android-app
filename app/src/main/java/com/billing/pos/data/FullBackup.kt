@@ -532,8 +532,15 @@ object FullBackup {
         root.optJSONArray("bills")?.let {
             for (i in 0 until it.length()) {
                 val b = readBill(it.getJSONObject(i))
-                billMap[b.id] = db.billDao().insertBill(b.copy(id = 0, customerId = custMap[b.customerId] ?: b.customerId))
-                    .also { nid -> log.add("bills", nid) }
+                val remapped = b.copy(customerId = custMap[b.customerId] ?: b.customerId)
+                val existing = if (b.deviceId.isNotBlank()) db.billDao().byDeviceAndNo(b.deviceId, b.billNo) else null
+                billMap[b.id] = if (existing != null) {
+                    db.billDao().updateBillHeader(remapped.copy(id = existing.id))
+                    db.billDao().deleteLines(existing.id)
+                    existing.id
+                } else {
+                    db.billDao().insertBill(remapped.copy(id = 0)).also { nid -> log.add("bills", nid) }
+                }
             }
         }
         root.optJSONArray("billItems")?.let {
@@ -549,8 +556,15 @@ object FullBackup {
         root.optJSONArray("purchases")?.let {
             for (i in 0 until it.length()) {
                 val p = readPurchase(it.getJSONObject(i))
-                purMap[p.id] = db.purchaseDao().insertPurchase(p.copy(id = 0, supplierId = suppMap[p.supplierId] ?: p.supplierId))
-                    .also { nid -> log.add("purchases", nid) }
+                val remapped = p.copy(supplierId = suppMap[p.supplierId] ?: p.supplierId)
+                val existing = if (p.deviceId.isNotBlank()) db.purchaseDao().byDeviceAndNo(p.deviceId, p.purchaseNo) else null
+                purMap[p.id] = if (existing != null) {
+                    db.purchaseDao().updateHeader(remapped.copy(id = existing.id))
+                    db.purchaseDao().deleteLines(existing.id)
+                    existing.id
+                } else {
+                    db.purchaseDao().insertPurchase(remapped.copy(id = 0)).also { nid -> log.add("purchases", nid) }
+                }
             }
         }
         root.optJSONArray("purchaseItems")?.let {
@@ -561,19 +575,28 @@ object FullBackup {
             }
             if (lines.isNotEmpty()) db.purchaseDao().insertLines(lines)
         }
-        // Receipts / expenses
+        // Receipts / expenses — single-row entities, so an existing match is just updated in place.
         root.optJSONArray("receipts")?.let {
             for (i in 0 until it.length()) {
                 val r = readReceipt(it.getJSONObject(i))
                 val nb = if (r.billId > 0) (billMap[r.billId] ?: 0L) else 0L
-                db.receiptDao().insert(r.copy(id = 0, billId = nb))
+                val remapped = r.copy(billId = nb)
+                val existing = if (r.deviceId.isNotBlank()) db.receiptDao().byDeviceAndNo(r.deviceId, r.receiptNo) else null
+                if (existing != null) db.receiptDao().update(remapped.copy(id = existing.id))
+                else db.receiptDao().insert(remapped.copy(id = 0))
             }
         }
         root.optJSONArray("expenses")?.let {
             for (i in 0 until it.length()) {
                 val ex = readExpense(it.getJSONObject(i))
                 val np = if (ex.purchaseId > 0) (purMap[ex.purchaseId] ?: 0L) else 0L
-                expMap[ex.id] = db.expenseDao().insert(ex.copy(id = 0, purchaseId = np)).also { nid -> log.add("expenses", nid) }
+                val remapped = ex.copy(purchaseId = np)
+                val existing = if (ex.deviceId.isNotBlank()) db.expenseDao().byDeviceAndNo(ex.deviceId, ex.voucherNo) else null
+                expMap[ex.id] = if (existing != null) {
+                    db.expenseDao().update(remapped.copy(id = existing.id)); existing.id
+                } else {
+                    db.expenseDao().insert(remapped.copy(id = 0)).also { nid -> log.add("expenses", nid) }
+                }
             }
         }
         // Journals
@@ -637,7 +660,13 @@ object FullBackup {
         val quoteMap = HashMap<Long, Long>()
         root.optJSONArray("quotations")?.let {
             for (i in 0 until it.length()) {
-                val q = readQuotation(it.getJSONObject(i)); quoteMap[q.id] = db.quotationDao().insertHeader(q.copy(id = 0))
+                val q = readQuotation(it.getJSONObject(i))
+                val existing = if (q.deviceId.isNotBlank()) db.quotationDao().byDeviceAndNo(q.deviceId, q.quotationNo) else null
+                quoteMap[q.id] = if (existing != null) {
+                    db.quotationDao().updateHeader(q.copy(id = existing.id))
+                    db.quotationDao().deleteLines(existing.id)
+                    existing.id
+                } else db.quotationDao().insertHeader(q.copy(id = 0))
             }
         }
         root.optJSONArray("quotationItems")?.let {
@@ -649,7 +678,13 @@ object FullBackup {
         val estMap = HashMap<Long, Long>()
         root.optJSONArray("estimates")?.let {
             for (i in 0 until it.length()) {
-                val e = readEstimate(it.getJSONObject(i)); estMap[e.id] = db.estimateDao().insertHeader(e.copy(id = 0))
+                val e = readEstimate(it.getJSONObject(i))
+                val existing = if (e.deviceId.isNotBlank()) db.estimateDao().byDeviceAndNo(e.deviceId, e.estimateNo) else null
+                estMap[e.id] = if (existing != null) {
+                    db.estimateDao().updateHeader(e.copy(id = existing.id))
+                    db.estimateDao().deleteLines(existing.id)
+                    existing.id
+                } else db.estimateDao().insertHeader(e.copy(id = 0))
             }
         }
         root.optJSONArray("estimateItems")?.let {
@@ -833,7 +868,15 @@ object FullBackup {
         root.optJSONArray("custOrders")?.let {
             for (i in 0 until it.length()) {
                 val o = readOrder(it.getJSONObject(i))
-                orderMap[o.id] = db.custOrderDao().insertHeader(o.copy(id = 0)).also { nid -> log.add("custOrders", nid) }
+                val existing = if (o.deviceId.isNotBlank()) db.custOrderDao().byDeviceAndNo(o.deviceId, o.orderNo) else null
+                orderMap[o.id] = if (existing != null) {
+                    db.custOrderDao().updateHeader(o.copy(id = existing.id))
+                    db.custOrderDao().deleteLines(existing.id)
+                    db.custOrderDao().deleteAttachments(existing.id)
+                    existing.id
+                } else {
+                    db.custOrderDao().insertHeader(o.copy(id = 0)).also { nid -> log.add("custOrders", nid) }
+                }
             }
         }
         root.optJSONArray("custOrderItems")?.let {
@@ -938,6 +981,7 @@ object FullBackup {
         .put("additionalCharge", b.additionalCharge).put("discount", b.discount)
         .put("grandTotal", b.grandTotal).put("paidAmount", b.paidAmount)
         .put("customerGstin", b.customerGstin).put("source", b.source).put("remarks", b.remarks)
+        .put("deviceId", b.deviceId)
 
     private fun lineJson(l: BillItem) = JSONObject().put("id", l.id).put("billId", l.billId)
         .put("name", l.name).put("qty", l.qty).put("price", l.price)
@@ -947,12 +991,12 @@ object FullBackup {
     private fun receiptJson(r: Receipt) = JSONObject().put("id", r.id).put("receiptNo", r.receiptNo)
         .put("billId", r.billId).put("billNo", r.billNo).put("customerName", r.customerName)
         .put("dateMillis", r.dateMillis).put("amount", r.amount).put("paymentMode", r.paymentMode)
-        .put("payFrom", r.payFrom).put("source", r.source)
+        .put("payFrom", r.payFrom).put("source", r.source).put("deviceId", r.deviceId)
 
     private fun expenseJson(e: Expense) = JSONObject().put("id", e.id).put("voucherNo", e.voucherNo)
         .put("dateMillis", e.dateMillis).put("description", e.description).put("amount", e.amount)
         .put("paymentMode", e.paymentMode).put("purchaseId", e.purchaseId).put("purchaseNo", e.purchaseNo)
-        .put("payTo", e.payTo).put("source", e.source)
+        .put("payTo", e.payTo).put("source", e.source).put("deviceId", e.deviceId)
 
     private fun userJson(u: User) = JSONObject().put("id", u.id).put("username", u.username)
         .put("passwordHash", u.passwordHash).put("role", u.role.name)
@@ -984,6 +1028,7 @@ object FullBackup {
         .put("paymentMethod", p.paymentMethod).put("subTotal", p.subTotal).put("taxTotal", p.taxTotal)
         .put("additionalCharge", p.additionalCharge).put("discount", p.discount).put("grandTotal", p.grandTotal)
         .put("paidAmount", p.paidAmount).put("supplierGstin", p.supplierGstin).put("source", p.source)
+        .put("deviceId", p.deviceId)
 
     private fun pLineJson(l: PurchaseItem) = JSONObject().put("id", l.id).put("purchaseId", l.purchaseId)
         .put("name", l.name).put("qty", l.qty).put("price", l.price)
@@ -1097,7 +1142,7 @@ object FullBackup {
         .put("dateMillis", q.dateMillis).put("customerId", q.customerId).put("customerName", q.customerName)
         .put("subTotal", q.subTotal).put("taxTotal", q.taxTotal).put("additionalCharge", q.additionalCharge)
         .put("discount", q.discount).put("grandTotal", q.grandTotal).put("remarks", q.remarks)
-        .put("terms", q.terms)
+        .put("terms", q.terms).put("deviceId", q.deviceId)
 
     private fun readQuotation(o: JSONObject) = Quotation(
         id = o.optLong("id"), quotationNo = o.optString("quotationNo"), dateMillis = o.optLong("dateMillis"),
@@ -1105,7 +1150,7 @@ object FullBackup {
         subTotal = o.optDouble("subTotal", 0.0), taxTotal = o.optDouble("taxTotal", 0.0),
         additionalCharge = o.optDouble("additionalCharge", 0.0), discount = o.optDouble("discount", 0.0),
         grandTotal = o.optDouble("grandTotal", 0.0), remarks = o.optString("remarks"),
-        terms = o.optString("terms")
+        terms = o.optString("terms"), deviceId = o.optString("deviceId")
     )
 
     private fun estimateJson(e: Estimate) = JSONObject().put("id", e.id).put("estimateNo", e.estimateNo)
@@ -1113,7 +1158,7 @@ object FullBackup {
         .put("paymentMethod", e.paymentMethod)
         .put("subTotal", e.subTotal).put("taxTotal", e.taxTotal).put("additionalCharge", e.additionalCharge)
         .put("discount", e.discount).put("grandTotal", e.grandTotal)
-        .put("customerGstin", e.customerGstin).put("remarks", e.remarks)
+        .put("customerGstin", e.customerGstin).put("remarks", e.remarks).put("deviceId", e.deviceId)
 
     private fun readEstimate(o: JSONObject) = Estimate(
         id = o.optLong("id"), estimateNo = o.optString("estimateNo"), dateMillis = o.optLong("dateMillis"),
@@ -1122,7 +1167,8 @@ object FullBackup {
         subTotal = o.optDouble("subTotal", 0.0), taxTotal = o.optDouble("taxTotal", 0.0),
         additionalCharge = o.optDouble("additionalCharge", 0.0), discount = o.optDouble("discount", 0.0),
         grandTotal = o.optDouble("grandTotal", 0.0),
-        customerGstin = o.optString("customerGstin"), remarks = o.optString("remarks")
+        customerGstin = o.optString("customerGstin"), remarks = o.optString("remarks"),
+        deviceId = o.optString("deviceId")
     )
 
     private fun eItemJson(l: EstimateItem) = JSONObject().put("id", l.id).put("estimateId", l.estimateId)
@@ -1482,7 +1528,7 @@ object FullBackup {
         taxTotal = o.optDouble("taxTotal", 0.0), additionalCharge = o.optDouble("additionalCharge", 0.0),
         discount = o.optDouble("discount", 0.0), grandTotal = o.optDouble("grandTotal", 0.0),
         paidAmount = o.optDouble("paidAmount", 0.0), customerGstin = o.optString("customerGstin"),
-        source = o.optString("source"), remarks = o.optString("remarks")
+        source = o.optString("source"), remarks = o.optString("remarks"), deviceId = o.optString("deviceId")
     )
 
     private fun readLine(o: JSONObject) = BillItem(
@@ -1497,14 +1543,16 @@ object FullBackup {
         id = o.optLong("id"), receiptNo = o.optString("receiptNo"), billId = o.optLong("billId"),
         billNo = o.optString("billNo"), customerName = o.optString("customerName"),
         dateMillis = o.optLong("dateMillis"), amount = o.optDouble("amount", 0.0),
-        paymentMode = o.optString("paymentMode"), payFrom = o.optString("payFrom"), source = o.optString("source")
+        paymentMode = o.optString("paymentMode"), payFrom = o.optString("payFrom"), source = o.optString("source"),
+        deviceId = o.optString("deviceId")
     )
 
     private fun readExpense(o: JSONObject) = Expense(
         id = o.optLong("id"), voucherNo = o.optString("voucherNo"), dateMillis = o.optLong("dateMillis"),
         description = o.optString("description"), amount = o.optDouble("amount", 0.0),
         paymentMode = o.optString("paymentMode"), purchaseId = o.optLong("purchaseId"),
-        purchaseNo = o.optString("purchaseNo"), payTo = o.optString("payTo"), source = o.optString("source")
+        purchaseNo = o.optString("purchaseNo"), payTo = o.optString("payTo"), source = o.optString("source"),
+        deviceId = o.optString("deviceId")
     )
 
     private fun readUser(o: JSONObject) = User(
@@ -1545,7 +1593,7 @@ object FullBackup {
         taxTotal = o.optDouble("taxTotal", 0.0), additionalCharge = o.optDouble("additionalCharge", 0.0),
         discount = o.optDouble("discount", 0.0), grandTotal = o.optDouble("grandTotal", 0.0),
         paidAmount = o.optDouble("paidAmount", 0.0), supplierGstin = o.optString("supplierGstin"),
-        source = o.optString("source")
+        source = o.optString("source"), deviceId = o.optString("deviceId")
     )
 
     private fun readPLine(o: JSONObject) = PurchaseItem(
