@@ -482,8 +482,3 @@ fun OrderListScreen(onBack: () -> Unit, onOpen: (Long) -> Unit, onNew: () -> Uni
     }
 }
 
-private fun pickDate(context: android.content.Context, current: Long, onPicked: (Long) -> Unit) {
-    val c = Calendar.getInstance().apply { timeInMillis = current }
-    android.app.DatePickerDialog(context, { _, y, m, d -> c.set(Calendar.YEAR, y); c.set(Calendar.MONTH, m); c.set(Calendar.DAY_OF_MONTH, d); onPicked(c.timeInMillis) },
-        c.get(Calendar.YEAR), c.get(Calendar.MONTH), c.get(Calendar.DAY_OF_MONTH)).show()
-}
