@@ -21,6 +21,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Draw
 import androidx.compose.material.icons.filled.PhotoCamera
@@ -85,6 +86,23 @@ fun MultiItemDialog(
     var ocrFor by remember { mutableStateOf<MultiItemRow?>(null) }
     var ocrUri by remember { mutableStateOf<android.net.Uri?>(null) }
     var photoFor by remember { mutableStateOf<MultiItemRow?>(null) }
+    // Top-bar camera/gallery: box multiple item names in one photo, one line per row.
+    var bulkOcrUri by remember { mutableStateOf<android.net.Uri?>(null) }
+
+    /** Fills blank-named rows first (top to bottom), then adds a new row for any names left over. */
+    fun applyBulkNames(lines: List<String>) {
+        val names = lines.map { it.trim() }.filter { it.isNotBlank() }
+        if (names.isEmpty()) return
+        var i = 0
+        for (row in rows) {
+            if (i >= names.size) break
+            if (row.name.isBlank()) { row.name = names[i]; i++ }
+        }
+        while (i < names.size) {
+            rows.add(MultiItemRow().also { it.name = names[i] })
+            i++
+        }
+    }
 
     // Categories offered in the dropdowns: the existing ones plus anything added here.
     val addedCategories = remember { mutableStateListOf<String>() }
@@ -102,6 +120,10 @@ fun MultiItemDialog(
         if (uri != null) photoFor?.photos?.add(uri)
         photoFor = null
     }
+    val bulkCamera = com.billing.pos.ocr.rememberImageCamera { uri -> bulkOcrUri = uri }
+    val bulkGallery = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) bulkOcrUri = uri
+    }
 
     drawFor?.let { row ->
         com.billing.pos.ui.common.HandwriteTextDialog(
@@ -115,6 +137,13 @@ fun MultiItemDialog(
             uri = u,
             onResult = { t -> if (t.isNotBlank() && row != null) row.name = t; ocrUri = null; ocrFor = null },
             onDismiss = { ocrUri = null; ocrFor = null }
+        )
+    }
+    bulkOcrUri?.let { u ->
+        com.billing.pos.ui.common.RegionLinesOcrDialog(
+            uri = u,
+            onResult = { lines -> applyBulkNames(lines); bulkOcrUri = null },
+            onDismiss = { bulkOcrUri = null }
         )
     }
 
@@ -150,17 +179,26 @@ fun MultiItemDialog(
                 .safeDrawingPadding()
                 .imePadding()
         ) {
-            // Actions on top, clear of the navigation bar.
+            // Actions on top, clear of the navigation bar. Camera/Gallery box multiple item
+            // names in one photo (one line per row); Cancel is icon-only to leave room for them.
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) { Text("Cancel") }
+                IconButton(onClick = { bulkCamera() }) {
+                    Icon(Icons.Filled.PhotoCamera, "Read item names from a photo")
+                }
+                IconButton(onClick = {
+                    bulkGallery.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                }) {
+                    Icon(Icons.Filled.PhotoLibrary, "Read item names from a gallery photo")
+                }
+                IconButton(onClick = onDismiss) { Icon(Icons.Filled.Close, "Cancel") }
                 Button(
                     onClick = { onSave(rows.filter { it.isFilled }.toList()) },
                     enabled = rows.any { it.isFilled },
-                    modifier = Modifier.weight(1.6f)
+                    modifier = Modifier.weight(1f)
                 ) { Text("Save ${rows.count { it.isFilled }} item(s)") }
             }
             Divider()
