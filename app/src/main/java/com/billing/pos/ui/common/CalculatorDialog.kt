@@ -38,6 +38,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -230,18 +231,22 @@ fun CalculatorDialog(
 
         // Mul/Div factor dialog
         if (showMulDivDialog) {
+            val keyboardController = LocalSoftwareKeyboardController.current
             AlertDialog(
                 onDismissRequest = { showMulDivDialog = false },
                 title = { Text(if (mulDivOp == '*') "Multiply amount" else "Divide amount") },
                 text = {
                     Column {
-                        LaunchedEffect(Unit) { runCatching { mulDivFocus.requestFocus() } }
+                        LaunchedEffect(Unit) {
+                            runCatching { mulDivFocus.requestFocus() }
+                            keyboardController?.show()
+                        }
                         OutlinedTextField(
                             value = mulDivFactor,
                             onValueChange = { mulDivFactor = it.filter { c -> c.isDigit() || c == '.' } },
                             label = { Text("Enter number") },
                             singleLine = true,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
                             modifier = Modifier.focusRequester(mulDivFocus)
                         )
                         if (mulDivOp == '/' && mulDivFactor.toDoubleOrNull() == 0.0 && mulDivFactor.isNotBlank()) {

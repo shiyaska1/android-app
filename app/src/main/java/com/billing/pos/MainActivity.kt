@@ -28,9 +28,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.navArgument
 import com.billing.pos.auth.PendingDiaryOpen
 import com.billing.pos.auth.PendingImport
+import com.billing.pos.auth.PendingQuickNoteOpen
 import com.billing.pos.auth.PendingSharedMedia
 import com.billing.pos.auth.Session
 import com.billing.pos.diary.EXTRA_OPEN_DIARY_ID
+import com.billing.pos.quicknote.EXTRA_OPEN_QUICKNOTE_ID
 import com.billing.pos.data.AppPrefs
 import com.billing.pos.ui.auth.BootScreen
 import com.billing.pos.ui.auth.LoginScreen
@@ -174,6 +176,9 @@ class MainActivity : FragmentActivity() {
 
         val diaryId = intent.getLongExtra(EXTRA_OPEN_DIARY_ID, 0L)
         if (diaryId > 0L) PendingDiaryOpen.id = diaryId
+
+        val quickNoteId = intent.getLongExtra(EXTRA_OPEN_QUICKNOTE_ID, 0L)
+        if (quickNoteId > 0L) PendingQuickNoteOpen.id = quickNoteId
     }
 }
 
@@ -204,6 +209,16 @@ private fun AppNav() {
         if (did != null && Session.isLoggedIn) {
             PendingDiaryOpen.consume()
             nav.navigate("diary/edit/$did") { launchSingleTop = true }
+        }
+    }
+
+    // Reminder tap → once logged in, open that quick note in edit mode.
+    val pendingQuickNoteId = PendingQuickNoteOpen.id
+    androidx.compose.runtime.LaunchedEffect(pendingQuickNoteId, Session.current) {
+        val qid = PendingQuickNoteOpen.id
+        if (qid != null && Session.isLoggedIn) {
+            PendingQuickNoteOpen.consume()
+            nav.navigate("quicknote/edit/$qid") { launchSingleTop = true }
         }
     }
 
@@ -369,6 +384,7 @@ private fun AppNav() {
                 }
             }
             DashboardScreen(
+                onQuickNote = { nav.navigate("quicknotes") },
                 onStickyNote = { nav.navigate("stickynote") },
                 onNewBill = { nav.navigate("billing") },
                 onQuickBill = { nav.navigate("quickbill") },
@@ -771,6 +787,18 @@ private fun AppNav() {
             com.billing.pos.ui.sticky.StickyNoteScreen(
                 onClose = { nav.popBackStack() },
                 onOcrToSales = { nav.navigate("billing") }
+            )
+        }
+        composable("quicknotes") {
+            com.billing.pos.ui.quicknote.QuickNoteListScreen(onBack = { nav.popBackStack() })
+        }
+        composable(
+            route = "quicknote/edit/{id}",
+            arguments = listOf(navArgument("id") { type = NavType.LongType })
+        ) { entry ->
+            com.billing.pos.ui.quicknote.QuickNoteListScreen(
+                onBack = { nav.popBackStack() },
+                initialEditId = entry.arguments?.getLong("id")
             )
         }
         composable("stockreport") { StockReportScreen(onBack = { nav.popBackStack() }) }

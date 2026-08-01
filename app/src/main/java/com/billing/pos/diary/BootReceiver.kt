@@ -24,6 +24,9 @@ class BootReceiver : BroadcastReceiver() {
                 AppDatabase.get(appContext).diaryDao().allWithReminder().forEach {
                     ReminderScheduler.schedule(appContext, it)
                 }
+                AppDatabase.get(appContext).quickNoteDao().allWithReminder().forEach {
+                    com.billing.pos.quicknote.QuickNoteReminderScheduler.schedule(appContext, it)
+                }
             } finally {
                 pending.finish()
             }

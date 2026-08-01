@@ -2,6 +2,7 @@ package com.billing.pos.ui.dashboard
 
 import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.NoteAdd
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -131,6 +132,7 @@ private val SECTION_ORDER = listOf("Accounts", "Transactions", "Masters", "Repor
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DashboardScreen(
+    onQuickNote: () -> Unit,
     onStickyNote: () -> Unit,
     onNewBill: () -> Unit,
     onQuickBill: () -> Unit,
@@ -329,6 +331,11 @@ fun DashboardScreen(
         topBar = {
             TopAppBar(
                 title = { Text("Dashboard") },
+                actions = {
+                    IconButton(onClick = onQuickNote) {
+                        Icon(Icons.Filled.NoteAdd, contentDescription = "Quick note")
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                     titleContentColor = MaterialTheme.colorScheme.onPrimary,

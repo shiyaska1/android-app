@@ -113,6 +113,10 @@
             android:exported="false" />
 
         <receiver
+            android:name=".quicknote.QuickNoteReminderReceiver"
+            android:exported="false" />
+
+        <receiver
             android:name=".diary.BootReceiver"
             android:exported="true">
             <intent-filter>
