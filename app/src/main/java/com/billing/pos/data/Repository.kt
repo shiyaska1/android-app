@@ -16,7 +16,7 @@ data class ImportResult(
 )
 
 /** Single access point for all data operations. */
-class Repository(context: Context) {
+class Repository(private val context: Context) {
 
     private val db = AppDatabase.get(context)
     private val customerDao = db.customerDao()

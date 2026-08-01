@@ -62,7 +62,7 @@ data class CartLine(
     }
 }
 
-class BillingViewModel(app: Application) : AndroidViewModel(app) {
+class BillingViewModel(private val app: Application) : AndroidViewModel(app) {
 
     private val repo = Repository(app)
 

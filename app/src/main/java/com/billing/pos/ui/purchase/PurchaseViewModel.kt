@@ -31,7 +31,7 @@ import kotlinx.coroutines.withContext
 
 data class PurchaseWithItems(val purchase: Purchase, val lines: List<PurchaseItem>)
 
-class PurchaseViewModel(app: Application) : AndroidViewModel(app) {
+class PurchaseViewModel(private val app: Application) : AndroidViewModel(app) {
 
     private val repo = Repository(app)
 

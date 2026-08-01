@@ -94,7 +94,7 @@ object QuotationCopy {
     fun take(): Long? { val p = pending; pending = null; return p }
 }
 
-class QuotationViewModel(app: Application) : AndroidViewModel(app) {
+class QuotationViewModel(private val app: Application) : AndroidViewModel(app) {
     private val repo = Repository(app)
 
     val customers: StateFlow<List<Customer>> =
