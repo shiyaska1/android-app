@@ -135,8 +135,10 @@ class MainActivity : FragmentActivity() {
 
     override fun onResume() {
         super.onResume()
-        // Pick an update back up if it was interrupted last time.
-        com.billing.pos.update.AppUpdater.resumeIfInterrupted(this)
+        // Re-check every time the app comes back to the foreground — this is what makes an
+        // update actually mandatory: backing out of the Play update screen just returns here
+        // and immediately re-blocks, instead of leaving the customer on the old build.
+        com.billing.pos.update.AppUpdater.check(this)
     }
 
     /**
