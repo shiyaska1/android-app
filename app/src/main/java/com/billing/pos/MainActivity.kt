@@ -108,12 +108,13 @@ class MainActivity : FragmentActivity() {
         captureIncoming(intent)
         // Offer the Play update straight away, so customers are not left on an old build.
         com.billing.pos.update.AppUpdater.check(this)
-        // Resume the cloud auto pull+merge+push loop across app restarts if the user left it on
-        // — otherwise it would only (re)start the next time they happened to open Settings.
+        // KILL SWITCH: merge has no per-record dedup, so every pull+merge cycle re-inserted
+        // every transactional record as a brand-new row — the auto-sync loop was duplicating
+        // data every cycle. Force it off everywhere until real multi-device merge (dedup by
+        // origin device + record, last-write-wins) ships. Remove this block once that lands.
         AppPrefs(this).let { p ->
-            if (p.cloudAutoSync) {
-                com.billing.pos.sync.CloudSyncManager.startAuto(this, p.cloudAutoSyncIntervalSec.coerceAtLeast(10) * 1000L)
-            }
+            if (p.cloudAutoSync) p.cloudAutoSync = false
+            com.billing.pos.sync.CloudSyncManager.stopAuto()
         }
         enableEdgeToEdge()
         setContent {
