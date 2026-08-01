@@ -38,6 +38,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -70,6 +71,8 @@ fun CalculatorDialog(
     val mulDivFocus = remember { FocusRequester() }
     val scroll = rememberScrollState()
     val total = entries.sum()
+    // Leaves a little breathing room below the +/-/x/div row, clear of the phone's gesture bar.
+    val bottomPad = LocalConfiguration.current.screenHeightDp.dp * 0.05f
 
     var confirmRemoveLast by remember { mutableStateOf(false) }
     var showMulDivDialog by remember { mutableStateOf(false) }
@@ -97,6 +100,7 @@ fun CalculatorDialog(
                 .background(MaterialTheme.colorScheme.surface)
                 .safeDrawingPadding()
                 .imePadding()
+                .padding(bottom = bottomPad)
         ) {
             // Actions on top, clear of the navigation bar.
             Row(
@@ -119,7 +123,7 @@ fun CalculatorDialog(
             // Capped rather than weight(1f): a full-height tape pushes the amount box and the
             // +/- keys under the keyboard and the navigation bar, where they can't be reached.
             Box(
-                Modifier.fillMaxWidth().fillMaxHeight(0.62f)
+                Modifier.fillMaxWidth().fillMaxHeight(0.57f)
                     .background(MaterialTheme.colorScheme.primaryContainer)
             ) {
                 Column(

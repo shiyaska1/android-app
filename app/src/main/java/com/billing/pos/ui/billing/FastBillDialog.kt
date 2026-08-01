@@ -115,6 +115,8 @@ fun FastBillDialog(
     val total = entries.sum()
     val context = androidx.compose.ui.platform.LocalContext.current
     val scope = androidx.compose.runtime.rememberCoroutineScope()
+    // Leaves a little breathing room below the +/-/x/div row, clear of the phone's gesture bar.
+    val bottomPad = androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp.dp * 0.05f
 
     // --- New states for multiply/divide and remove-last confirmation
     var confirmRemoveLast by remember { mutableStateOf(false) }
@@ -192,6 +194,7 @@ fun FastBillDialog(
             Modifier.fillMaxSize()
                 .background(MaterialTheme.colorScheme.surface)
                 .safeDrawingPadding()
+                .padding(bottom = bottomPad)
         ) {
             // ---- TOP BAR: icon-only, evenly spread so it never crowds ----
             Row(
