@@ -19,7 +19,7 @@ import java.util.zip.ZipOutputStream
  */
 object FullBackup {
 
-    suspend fun create(context: Context): File {
+    suspend fun create(context: Context, includeAttachments: Boolean = true): File {
         val db = AppDatabase.get(context)
         val prefs = AppPrefs(context)
 
@@ -109,58 +109,60 @@ object FullBackup {
             zos.putNextEntry(ZipEntry("full-backup.json"))
             zos.write(root.toString().toByteArray(Charsets.UTF_8))
             zos.closeEntry()
-            attachments.forEach { att ->
-                val f = File(att.path)
-                if (f.exists()) {
-                    zos.putNextEntry(ZipEntry("files/" + f.name))
-                    f.inputStream().use { it.copyTo(zos) }
-                    zos.closeEntry()
-                }
-            }
-            diaryBlocks.forEach { b ->
-                if (b.path.isNotBlank()) {
-                    val f = File(b.path)
+            if (includeAttachments) {
+                attachments.forEach { att ->
+                    val f = File(att.path)
                     if (f.exists()) {
                         zos.putNextEntry(ZipEntry("files/" + f.name))
                         f.inputStream().use { it.copyTo(zos) }
                         zos.closeEntry()
                     }
                 }
-            }
-            itemAtts.forEach { att ->
-                val f = File(att.path)
-                if (f.exists()) {
-                    zos.putNextEntry(ZipEntry("itemfiles/" + f.name))
-                    f.inputStream().use { it.copyTo(zos) }
-                    zos.closeEntry()
+                diaryBlocks.forEach { b ->
+                    if (b.path.isNotBlank()) {
+                        val f = File(b.path)
+                        if (f.exists()) {
+                            zos.putNextEntry(ZipEntry("files/" + f.name))
+                            f.inputStream().use { it.copyTo(zos) }
+                            zos.closeEntry()
+                        }
+                    }
                 }
-            }
-            billAtts.forEach { att ->
-                val f = File(att.path)
-                if (f.exists()) {
-                    zos.putNextEntry(ZipEntry("billfiles/" + f.name))
-                    f.inputStream().use { it.copyTo(zos) }
-                    zos.closeEntry()
+                itemAtts.forEach { att ->
+                    val f = File(att.path)
+                    if (f.exists()) {
+                        zos.putNextEntry(ZipEntry("itemfiles/" + f.name))
+                        f.inputStream().use { it.copyTo(zos) }
+                        zos.closeEntry()
+                    }
                 }
-            }
-            expenseAtts.forEach { att ->
-                val f = File(att.path)
-                if (f.exists()) {
-                    zos.putNextEntry(ZipEntry("expensefiles/" + f.name))
-                    f.inputStream().use { it.copyTo(zos) }
-                    zos.closeEntry()
+                billAtts.forEach { att ->
+                    val f = File(att.path)
+                    if (f.exists()) {
+                        zos.putNextEntry(ZipEntry("billfiles/" + f.name))
+                        f.inputStream().use { it.copyTo(zos) }
+                        zos.closeEntry()
+                    }
                 }
-            }
-            orderAtts.forEach { att ->
-                val f = File(att.path)
-                if (f.exists()) { zos.putNextEntry(ZipEntry("orderfiles/" + f.name)); f.inputStream().use { it.copyTo(zos) }; zos.closeEntry() }
-            }
-            custAtts.forEach { att ->
-                val f = File(att.path)
-                if (f.exists()) {
-                    zos.putNextEntry(ZipEntry("customerfiles/" + f.name))
-                    f.inputStream().use { it.copyTo(zos) }
-                    zos.closeEntry()
+                expenseAtts.forEach { att ->
+                    val f = File(att.path)
+                    if (f.exists()) {
+                        zos.putNextEntry(ZipEntry("expensefiles/" + f.name))
+                        f.inputStream().use { it.copyTo(zos) }
+                        zos.closeEntry()
+                    }
+                }
+                orderAtts.forEach { att ->
+                    val f = File(att.path)
+                    if (f.exists()) { zos.putNextEntry(ZipEntry("orderfiles/" + f.name)); f.inputStream().use { it.copyTo(zos) }; zos.closeEntry() }
+                }
+                custAtts.forEach { att ->
+                    val f = File(att.path)
+                    if (f.exists()) {
+                        zos.putNextEntry(ZipEntry("customerfiles/" + f.name))
+                        f.inputStream().use { it.copyTo(zos) }
+                        zos.closeEntry()
+                    }
                 }
             }
         }

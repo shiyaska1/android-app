@@ -89,6 +89,10 @@ class AppPrefs(context: Context) {
     var backupDeviceId: String
         get() = (p.getString("backup_device_id", "") ?: "").trim()
         set(v) { p.edit().putString("backup_device_id", v.trim()).apply() }
+    /** When off, Push skips photos/attachments — smaller, faster, and less likely to hit a host's upload limits. Data and settings still sync in full. */
+    var backupPushIncludeAttachments: Boolean
+        get() = p.getBoolean("backup_push_include_attachments", true)
+        set(v) { p.edit().putBoolean("backup_push_include_attachments", v).apply() }
 
     // ---- Bulk SMS gateway (generic, provider-agnostic) ----
     /**

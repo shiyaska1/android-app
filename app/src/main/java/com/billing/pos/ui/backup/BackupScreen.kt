@@ -4,7 +4,9 @@ import android.Manifest
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -25,6 +27,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -35,6 +38,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -63,6 +67,7 @@ fun BackupScreen(
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
     var busy by remember { mutableStateOf(false) }
+    var pushIncludeAttachments by remember { mutableStateOf(AppPrefs(context).backupPushIncludeAttachments) }
     // Holds the picker to launch after the user confirms a restore.
     var restoreAction by remember { mutableStateOf<(() -> Unit)?>(null) }
     var restoreMerge by remember { mutableStateOf(false) }
@@ -135,7 +140,7 @@ fun BackupScreen(
             busy = true
             val result = withContext(Dispatchers.IO) {
                 runCatching {
-                    val zip = FullBackup.create(context)
+                    val zip = FullBackup.create(context, includeAttachments = AppPrefs(context).backupPushIncludeAttachments)
                     // Verify the zip is structurally sound (has its end-of-central-directory
                     // record) before ever uploading it — catches a corrupt local file at the
                     // source instead of pushing garbage the server can't tell apart from a
@@ -261,6 +266,20 @@ fun BackupScreen(
                     enabled = !busy,
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
                 ) { Icon(Icons.Filled.CloudUpload, null); Text("  Upload to Google Drive") }
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Include photos & attachments in Push", modifier = Modifier.weight(1f))
+                    Switch(
+                        checked = pushIncludeAttachments,
+                        onCheckedChange = {
+                            pushIncludeAttachments = it
+                            AppPrefs(context).backupPushIncludeAttachments = it
+                        }
+                    )
+                }
                 Button(
                     onClick = { pushBackup() },
                     enabled = !busy,
