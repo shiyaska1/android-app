@@ -737,6 +737,15 @@ class Repository(context: Context) {
         productionDao.deleteRun(run)
     }
 
+    // ---- item bundles (combos sold as one line, expanded into real item lines when sold) ----
+    private val itemBundleDao = db.itemBundleDao()
+    val bundles: Flow<List<ItemBundle>> = itemBundleDao.observeAll()
+    suspend fun bundleComponents(id: Long): List<ItemBundleComponent> = itemBundleDao.componentsFor(id)
+    suspend fun saveBundle(b: ItemBundle, components: List<ItemBundleComponent>): Long = itemBundleDao.save(b, components)
+    suspend fun updateBundle(b: ItemBundle, components: List<ItemBundleComponent>) = itemBundleDao.update(b, components)
+    suspend fun deleteBundle(b: ItemBundle) = itemBundleDao.delete(b)
+    suspend fun bundleById(id: Long): ItemBundle? = itemBundleDao.byId(id)
+
     // ---- item sizes (variants with their own price) ----
     private val itemSizeDao = db.itemSizeDao()
     val itemSizes: Flow<List<ItemSize>> = itemSizeDao.observeAll()

@@ -153,6 +153,7 @@ fun DashboardScreen(
     onSmsReport: () -> Unit,
     onSmsSettings: () -> Unit,
     onItems: () -> Unit,
+    onBundles: () -> Unit,
     onNewPurchase: () -> Unit,
     onPurchases: () -> Unit,
     onSuppliers: () -> Unit,
@@ -283,6 +284,7 @@ fun DashboardScreen(
         // ---- Masters ----
         add(Tile("Customers", Icons.Filled.People, onCustomers, "Masters"))
         add(Tile("Items", Icons.Filled.Category, onItems, "Masters"))
+        add(Tile("Item Bundles", Icons.Filled.Inventory2, onBundles, "Masters"))
         add(Tile("Suppliers", Icons.Filled.LocalShipping, onSuppliers, "Masters"))
         if (isLab) {
             add(Tile("Patients", Icons.Filled.People, onPatients, "Masters"))

@@ -46,6 +46,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -231,6 +232,9 @@ fun QuotationScreen(editId: Long?, onBack: () -> Unit, vm: QuotationViewModel = 
     LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); vm.consumeMessage() } }
 
     var showItemPicker by remember { mutableStateOf(false) }
+    var showBundlePicker by remember { mutableStateOf(false) }
+    val bundleRepo = remember { Repository(context) }
+    val bundles by bundleRepo.bundles.collectAsState(initial = emptyList())
     // Index of the line whose description is open, if any.
     var noteFor by remember { mutableStateOf<Int?>(null) }
     var unitPickFor by remember { mutableStateOf<Item?>(null) }
@@ -282,8 +286,15 @@ fun QuotationScreen(editId: Long?, onBack: () -> Unit, vm: QuotationViewModel = 
                 value = vm.remarks, onValueChange = { vm.remarks = it }, label = { Text("Note (optional)") },
                 singleLine = true, modifier = Modifier.fillMaxWidth().padding(top = 6.dp)
             )
-            Button(onClick = { showItemPicker = true }, modifier = Modifier.fillMaxWidth().padding(top = 6.dp)) {
-                Icon(Icons.Filled.Add, null); Text("  Add item")
+            Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Button(onClick = { showItemPicker = true }, modifier = Modifier.weight(1f)) {
+                    Icon(Icons.Filled.Add, null); Text("  Add item")
+                }
+                if (bundles.isNotEmpty()) {
+                    Button(onClick = { showBundlePicker = true }, modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Filled.Add, null); Text("  Bundle")
+                    }
+                }
             }
 
             Card(Modifier.weight(1f).fillMaxWidth().padding(top = 8.dp)) {
@@ -386,6 +397,19 @@ fun QuotationScreen(editId: Long?, onBack: () -> Unit, vm: QuotationViewModel = 
                 if (picked.hasTwoUnits) unitPickFor = picked else vm.addItemToCart(picked)
             },
             onNewItem = { showItemPicker = false }
+        )
+    }
+    if (showBundlePicker) {
+        com.billing.pos.ui.bundle.BundlePickerDialog(
+            bundles = bundles,
+            onDismiss = { showBundlePicker = false },
+            onPick = { bundle, qty ->
+                showBundlePicker = false
+                scope.launch {
+                    val components = bundleRepo.bundleComponents(bundle.id)
+                    com.billing.pos.ui.bundle.expandBundleAndAdd(vm.cart, components, items, qty)
+                }
+            }
         )
     }
     unitPickFor?.let { item ->

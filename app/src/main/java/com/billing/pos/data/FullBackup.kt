@@ -99,6 +99,8 @@ object FullBackup {
         root.put("productionProcedures", JSONArray().apply { db.productionDao().allProcedures().forEach { put(procedureJson(it)) } })
         root.put("productionProcedureMaterials", JSONArray().apply { db.productionDao().allProcedureMaterials().forEach { put(procedureMaterialJson(it)) } })
         root.put("productionRuns", JSONArray().apply { db.productionDao().allRuns().forEach { put(productionRunJson(it)) } })
+        root.put("itemBundles", JSONArray().apply { db.itemBundleDao().all().forEach { put(bundleJson(it)) } })
+        root.put("itemBundleComponents", JSONArray().apply { db.itemBundleDao().allComponents().forEach { put(bundleComponentJson(it)) } })
         val billAtts = db.billAttachmentDao().all()
         root.put("billAttachments", JSONArray().apply { billAtts.forEach { put(billAttJson(it)) } })
         val expenseAtts = db.expenseAttachmentDao().all()
@@ -414,6 +416,12 @@ object FullBackup {
             if (ls.isNotEmpty()) db.productionDao().insertProcedureMaterials(ls)
         }
         root.optJSONArray("productionRuns")?.let { for (i in 0 until it.length()) db.productionDao().insertRun(readProductionRun(it.getJSONObject(i))) }
+        root.optJSONArray("itemBundles")?.let { for (i in 0 until it.length()) db.itemBundleDao().insertHeader(readBundle(it.getJSONObject(i))) }
+        root.optJSONArray("itemBundleComponents")?.let {
+            val ls = ArrayList<ItemBundleComponent>()
+            for (i in 0 until it.length()) ls.add(readBundleComponent(it.getJSONObject(i)))
+            if (ls.isNotEmpty()) db.itemBundleDao().insertComponents(ls)
+        }
 
         "Restore complete"
     } }
@@ -894,6 +902,20 @@ object FullBackup {
                         materialReceiptId = matRecMap[r.materialReceiptId] ?: 0
                     )
                 ).also { nid -> log.add("productionRuns", nid) }
+            }
+        }
+        // Item bundles + their component lines, following the header's new id.
+        val bundleMap = HashMap<Long, Long>()
+        root.optJSONArray("itemBundles")?.let {
+            for (i in 0 until it.length()) {
+                val b = readBundle(it.getJSONObject(i))
+                bundleMap[b.id] = db.itemBundleDao().insertHeader(b.copy(id = 0)).also { nid -> log.add("itemBundles", nid) }
+            }
+        }
+        root.optJSONArray("itemBundleComponents")?.let {
+            for (i in 0 until it.length()) {
+                val c = readBundleComponent(it.getJSONObject(i)); val nb = bundleMap[c.bundleId] ?: continue
+                db.itemBundleDao().insertComponents(listOf(c.copy(id = 0, bundleId = nb, itemId = itemMap[c.itemId] ?: c.itemId)))
             }
         }
 
@@ -1397,6 +1419,19 @@ object FullBackup {
         materialCost = o.optDouble("materialCost", 0.0), labourCost = o.optDouble("labourCost", 0.0),
         totalCost = o.optDouble("totalCost", 0.0), unitCost = o.optDouble("unitCost", 0.0),
         remarks = o.optString("remarks"), materialOutId = o.optLong("materialOutId"), materialReceiptId = o.optLong("materialReceiptId")
+    )
+
+    private fun bundleJson(b: ItemBundle) = JSONObject().put("id", b.id).put("name", b.name)
+        .put("unit", b.unit).put("price", b.price).put("remarks", b.remarks)
+    private fun readBundle(o: JSONObject) = ItemBundle(
+        id = o.optLong("id"), name = o.optString("name"), unit = o.optString("unit"),
+        price = o.optDouble("price", 0.0), remarks = o.optString("remarks")
+    )
+    private fun bundleComponentJson(c: ItemBundleComponent) = JSONObject().put("id", c.id).put("bundleId", c.bundleId)
+        .put("itemId", c.itemId).put("name", c.name).put("qty", c.qty).put("unit", c.unit)
+    private fun readBundleComponent(o: JSONObject) = ItemBundleComponent(
+        id = o.optLong("id"), bundleId = o.optLong("bundleId"), itemId = o.optLong("itemId"),
+        name = o.optString("name"), qty = o.optDouble("qty", 0.0), unit = o.optString("unit")
     )
 
     private fun expenseAttJson(a: ExpenseAttachment) = JSONObject().put("id", a.id).put("expenseId", a.expenseId)

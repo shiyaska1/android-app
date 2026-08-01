@@ -413,6 +413,7 @@ private fun AppNav() {
                 onSmsReport = { nav.navigate("smsreport") },
                 onSmsSettings = { nav.navigate("smssettings") },
                 onItems = { nav.navigate("items") },
+                onBundles = { nav.navigate("bundles") },
                 onNewPurchase = { nav.navigate("purchase") },
                 onPurchases = { nav.navigate("purchases") },
                 onSuppliers = { nav.navigate("suppliers") },
@@ -875,6 +876,18 @@ private fun AppNav() {
         ) { entry ->
             ItemsScreen(onBack = { nav.popBackStack() }, initialEditItemId = entry.arguments?.getLong("id"))
         }
+        composable("bundles") {
+            com.billing.pos.ui.bundle.BundleListScreen(
+                onBack = { nav.popBackStack() },
+                onOpen = { id -> nav.navigate("bundle/edit/$id") },
+                onNew = { nav.navigate("bundle") }
+            )
+        }
+        composable("bundle") { com.billing.pos.ui.bundle.BundleEditScreen(editId = null, onBack = { nav.popBackStack() }) }
+        composable(
+            route = "bundle/edit/{id}",
+            arguments = listOf(navArgument("id") { type = NavType.LongType })
+        ) { entry -> com.billing.pos.ui.bundle.BundleEditScreen(editId = entry.arguments?.getLong("id"), onBack = { nav.popBackStack() }) }
         composable("poster") {
             com.billing.pos.ui.poster.PosterScreen(onBack = { nav.popBackStack() })
         }

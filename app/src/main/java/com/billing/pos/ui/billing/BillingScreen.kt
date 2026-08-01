@@ -35,6 +35,7 @@ import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Dialpad
+import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Draw
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.EditNote
@@ -78,6 +79,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -151,6 +153,9 @@ fun BillingScreen(
     // Name carried over from the item search when nothing matched.
     var newItemName by remember { mutableStateOf("") }
     var showItemPicker by remember { mutableStateOf(false) }
+    var showBundlePicker by remember { mutableStateOf(false) }
+    val bundleRepo = remember { com.billing.pos.data.Repository(context) }
+    val bundles by bundleRepo.bundles.collectAsState(initial = emptyList())
     var showCustomLine by remember { mutableStateOf(false) }
     var showWhatsApp by remember { mutableStateOf(false) }
     var showBillInfo by remember { mutableStateOf(false) }
@@ -427,6 +432,7 @@ fun BillingScreen(
             // --- Item actions (one line) ---
             Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
                 ToolAction(Icons.Filled.Add, "Item") { showItemPicker = true }
+                if (bundles.isNotEmpty()) ToolAction(Icons.Filled.Inventory2, "Bundle") { showBundlePicker = true }
                 ToolAction(Icons.Filled.Dialpad, "Price") { showCustomLine = true }
                 ToolAction(Icons.Filled.NoteAdd, "New") { showNewItem = true }
                 ToolAction(Icons.Filled.Gesture, "Write") { showHandwrite = true }
@@ -796,6 +802,19 @@ fun BillingScreen(
             onNewItem = { q -> showItemPicker = false; newItemName = q; showNewItem = true },
             stockByItem = stockByItem,
             photosByItem = photosByItem
+        )
+    }
+    if (showBundlePicker) {
+        com.billing.pos.ui.bundle.BundlePickerDialog(
+            bundles = bundles,
+            onDismiss = { showBundlePicker = false },
+            onPick = { bundle, qty ->
+                showBundlePicker = false
+                scope.launch {
+                    val components = bundleRepo.bundleComponents(bundle.id)
+                    com.billing.pos.ui.bundle.expandBundleAndAdd(vm.cart, components, items, qty)
+                }
+            }
         )
     }
     unitPickFor?.let { item ->
