@@ -103,6 +103,16 @@ if ($method === 'POST' || $method === 'PUT') {
         @unlink($tmpPath);
         pos_backup_fail(400, 'Empty upload');
     }
+    // The app sends the exact file size as Content-Length. If fewer bytes actually
+    // arrived (host post_max_size limit, execution-time limit, dropped connection),
+    // stream_copy_to_stream() would otherwise silently "succeed" with a truncated,
+    // unreadable zip — so check this before saving instead of trusting the count.
+    $expectedLength = isset($_SERVER['CONTENT_LENGTH']) ? (int) $_SERVER['CONTENT_LENGTH'] : null;
+    if ($expectedLength !== null && $bytes !== $expectedLength) {
+        @unlink($tmpPath);
+        pos_backup_fail(400, "Upload incomplete: expected $expectedLength bytes but only received $bytes. " .
+            "Check this host's post_max_size / max_execution_time PHP settings, or retry on a better connection.");
+    }
     // Write to a temp file then rename, so a Pull that arrives mid-upload never
     // sees a half-written zip.
     if (!@rename($tmpPath, $path)) {
