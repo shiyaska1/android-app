@@ -154,7 +154,10 @@ fun PurchaseScreen(
     var showNotes by remember { mutableStateOf(false) }
     var showRemarkPopup by remember { mutableStateOf(false) }
     var showSupplierBillCapture by remember { mutableStateOf(false) }
-    var supplierBillParsed by remember { mutableStateOf<com.billing.pos.ocr.SupplierBillParsed?>(null) }
+    // Pages captured, waiting for the user to mark each header field on the first page.
+    var billHeaderWizardPages by remember { mutableStateOf<List<android.net.Uri>?>(null) }
+    // Header fields marked + item lines read — ready for the final review/confirm step.
+    var supplierBillReview by remember { mutableStateOf<SupplierBillReview?>(null) }
     val attachPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments()
     ) { uris -> vm.addAttachmentUris(context, uris) }
@@ -579,32 +582,61 @@ fun PurchaseScreen(
         )
     }
 
-    // Multi-page supplier bill: photograph every page, OCR each, then read invoice no / date /
-    // total / items out of the combined text before showing the single map-and-confirm step.
+    // Multi-page supplier bill: photograph every page, then mark supplier name / bill no / date /
+    // total one at a time on the first page (an automatic layout guess proved unreliable — asking
+    // one question at a time reads a real bill far more accurately), then review before adding.
     if (showSupplierBillCapture) {
         SupplierBillCaptureDialog(
-            onDone = { pages ->
-                showSupplierBillCapture = false
-                scope.launch {
-                    val allLines = pages.flatMap { com.billing.pos.ocr.TextOcr.lines(context, it) }
-                    supplierBillParsed = com.billing.pos.ocr.SupplierBillParser.parse(allLines)
-                }
-            },
+            onDone = { pages -> showSupplierBillCapture = false; billHeaderWizardPages = pages },
             onDismiss = { showSupplierBillCapture = false }
         )
     }
-    supplierBillParsed?.let { parsed ->
+    billHeaderWizardPages?.let { pages ->
+        SupplierBillHeaderWizard(
+            pageUri = pages.first(),
+            onDone = { supplierText, billNoText, dateText, totalText ->
+                billHeaderWizardPages = null
+                scope.launch {
+                    val allLines = pages.flatMap { com.billing.pos.ocr.TextOcr.lines(context, it) }
+                    val parsedLines = com.billing.pos.ocr.SupplierBillParser.parseItems(allLines)
+                    val parsedDate = com.billing.pos.ocr.SupplierBillParser.parseDateText(dateText) ?: 0L
+                    val parsedTotal = com.billing.pos.ocr.SupplierBillParser.parseAmountText(totalText)
+                    supplierBillReview = SupplierBillReview(supplierText.trim(), billNoText.trim(), parsedDate, parsedTotal, parsedLines)
+                }
+            },
+            onDismiss = { billHeaderWizardPages = null }
+        )
+    }
+    supplierBillReview?.let { review ->
+        val matchedId = suppliers.firstOrNull { it.name.equals(review.supplierText, ignoreCase = true) }?.id
+            ?: suppliers.firstOrNull { review.supplierText.isNotBlank() && it.name.contains(review.supplierText, ignoreCase = true) }?.id
         SupplierBillMapDialog(
-            parsed = parsed,
+            supplierText = review.supplierText,
+            billNoText = review.billNo,
+            dateMillis = review.dateMillis,
+            total = review.total,
+            lines = review.lines,
+            suppliers = suppliers,
+            matchedSupplierId = matchedId,
             masterItems = items,
-            onDismiss = { supplierBillParsed = null },
-            onConfirm = { billNo, dateMillis, lines ->
+            onDismiss = { supplierBillReview = null },
+            onConfirm = { supplierId, billNo, dateMillis, lines ->
+                suppliers.firstOrNull { it.id == supplierId }?.let { vm.selectSupplier(it) }
                 vm.addSupplierBillLines(billNo, dateMillis, lines)
-                supplierBillParsed = null
+                supplierBillReview = null
             }
         )
     }
 }
+
+/** Header fields marked + item lines read from a supplier bill, ready for the review/confirm step. */
+private data class SupplierBillReview(
+    val supplierText: String,
+    val billNo: String,
+    val dateMillis: Long,
+    val total: Double,
+    val lines: List<com.billing.pos.ocr.SupplierBillLine>
+)
 
 /** Receive stock into a batch on purchase: pick an existing batch or create a new one. */
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)

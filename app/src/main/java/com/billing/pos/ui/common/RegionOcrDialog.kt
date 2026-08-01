@@ -49,11 +49,11 @@ import kotlin.math.min
 
 /**
  * Shows [uri] full-screen, lets the user drag a rectangle over it, and on OK OCRs ONLY the
- * text inside that rectangle (so just the item name is read). Falls back to the whole image
+ * text inside that rectangle (so just [fieldLabel] is read). Falls back to the whole image
  * if no box is drawn.
  */
 @Composable
-fun RegionOcrDialog(uri: Uri, onResult: (String) -> Unit, onDismiss: () -> Unit) {
+fun RegionOcrDialog(uri: Uri, fieldLabel: String = "the item name", onResult: (String) -> Unit, onDismiss: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val bitmap = remember(uri) {
@@ -104,7 +104,7 @@ fun RegionOcrDialog(uri: Uri, onResult: (String) -> Unit, onDismiss: () -> Unit)
             }
             OcrLanguageChips(selected = ocrLang, onSelect = { ocrLang = it }, enabled = !busy)
             Text(
-                "Drag a box around the item name, then tap OK. Wrong language? Switch above and tap OK again.",
+                "Drag a box around $fieldLabel, then tap OK. Wrong language? Switch above and tap OK again.",
                 style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier.padding(top = 6.dp, bottom = 6.dp)
             )

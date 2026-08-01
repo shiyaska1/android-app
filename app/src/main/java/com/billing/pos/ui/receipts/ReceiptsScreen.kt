@@ -24,6 +24,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.LibraryAdd
@@ -522,6 +523,7 @@ private fun AddReceiptDialog(
     val selectedBills = remember { androidx.compose.runtime.mutableStateMapOf<Long, String>() }
     var payFrom by remember { mutableStateOf("") }
     var amount by remember { mutableStateOf("") }
+    var showCalc by remember { mutableStateOf(false) }
     var mode by remember { mutableStateOf(PayMode.CASH) }
     var dateMillis by remember { mutableStateOf(System.currentTimeMillis()) }
     var payFromExpanded by remember { mutableStateOf(false) }
@@ -643,7 +645,19 @@ private fun AddReceiptDialog(
                         onValueChange = { amount = it.filter { c -> c.isDigit() || c == '.' } },
                         label = { Text("Amount received") }, singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        trailingIcon = {
+                            IconButton(onClick = { showCalc = true }) {
+                                Icon(Icons.Filled.Calculate, contentDescription = "Calculator")
+                            }
+                        },
                         modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                    )
+                }
+                if (showCalc) {
+                    com.billing.pos.ui.common.CalculatorDialog(
+                        initial = amount.toDoubleOrNull() ?: 0.0,
+                        onOk = { total -> amount = Format.money(total); showCalc = false },
+                        onDismiss = { showCalc = false }
                     )
                 }
                 Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -715,6 +729,7 @@ private fun ReceiptDialog(
     onSave: (Double, PayMode) -> Unit
 ) {
     var amount by remember { mutableStateOf(Format.money(receipt.amount)) }
+    var showCalc by remember { mutableStateOf(false) }
     var mode by remember { mutableStateOf(PayMode.values().firstOrNull { it.label == receipt.paymentMode } ?: PayMode.CASH) }
     // A multi-invoice receipt's total can't be safely hand-edited here — it would desync from
     // the per-invoice split and the invoices' own balances. Delete and re-add it instead.
@@ -751,8 +766,20 @@ private fun ReceiptDialog(
                     value = amount, onValueChange = { amount = it.filter { c -> c.isDigit() || c == '.' } },
                     label = { Text("Amount") }, singleLine = true, enabled = canSave && allocations.isEmpty(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    trailingIcon = {
+                        if (canSave && allocations.isEmpty()) IconButton(onClick = { showCalc = true }) {
+                            Icon(Icons.Filled.Calculate, contentDescription = "Calculator")
+                        }
+                    },
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
                 )
+                if (showCalc) {
+                    com.billing.pos.ui.common.CalculatorDialog(
+                        initial = amount.toDoubleOrNull() ?: 0.0,
+                        onOk = { total -> amount = Format.money(total); showCalc = false },
+                        onDismiss = { showCalc = false }
+                    )
+                }
                 Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     PayMode.values().forEach { m ->
                         FilterChip(selected = mode == m, onClick = { if (canSave) mode = m }, label = { Text(m.label) })

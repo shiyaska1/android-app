@@ -46,9 +46,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.billing.pos.data.Item
+import com.billing.pos.data.Supplier
 import com.billing.pos.data.costRate
 import com.billing.pos.ocr.SupplierBillLine
-import com.billing.pos.ocr.SupplierBillParsed
 import com.billing.pos.util.Format
 
 private class BillRow(line: SupplierBillLine) {
@@ -61,23 +61,32 @@ private class BillRow(line: SupplierBillLine) {
 }
 
 /**
- * The single review step after a supplier bill's pages are OCR'd: header fields (bill no, date,
- * the bill's own printed total for a sanity check) already filled in from the read, plus one row
- * per item — matched against the item master by name, or left as-is to create a new item. Rows
- * also carry whatever unit/expiry was detected, editable before anything is saved.
+ * The single review step after a supplier bill's pages are OCR'd: the header fields the user
+ * just marked (supplier name / bill no / date / total) already filled in, plus one row per item
+ * — matched against the item master by name, or left as-is to create a new item. Everything here
+ * is editable before anything is saved, including which existing supplier this maps to.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SupplierBillMapDialog(
-    parsed: SupplierBillParsed,
+    supplierText: String,
+    billNoText: String,
+    dateMillis: Long,
+    total: Double,
+    lines: List<SupplierBillLine>,
+    suppliers: List<Supplier>,
+    matchedSupplierId: Long?,
     masterItems: List<Item>,
     onDismiss: () -> Unit,
-    onConfirm: (billNo: String, dateMillis: Long, lines: List<SupplierBillLine>) -> Unit
+    onConfirm: (supplierId: Long?, billNo: String, dateMillis: Long, lines: List<SupplierBillLine>) -> Unit
 ) {
     val context = LocalContext.current
-    var billNo by remember { mutableStateOf(parsed.invoiceNo) }
-    var dateMillis by remember { mutableStateOf(if (parsed.dateMillis > 0) parsed.dateMillis else System.currentTimeMillis()) }
-    val rows = remember { mutableStateListOf<BillRow>().apply { parsed.lines.forEach { add(BillRow(it)) } } }
+    var billNo by remember { mutableStateOf(billNoText) }
+    var pickedDate by remember { mutableStateOf(if (dateMillis > 0) dateMillis else System.currentTimeMillis()) }
+    var supplierQuery by remember { mutableStateOf(suppliers.firstOrNull { it.id == matchedSupplierId }?.name ?: supplierText) }
+    var supplierId by remember { mutableStateOf(matchedSupplierId) }
+    var supplierExpanded by remember { mutableStateOf(false) }
+    val rows = remember { mutableStateListOf<BillRow>().apply { lines.forEach { add(BillRow(it)) } } }
     val selected = rows.count { it.include && it.name.isNotBlank() }
 
     Dialog(
@@ -95,19 +104,49 @@ fun SupplierBillMapDialog(
 
             Card(Modifier.fillMaxWidth().padding(top = 8.dp)) {
                 Column(Modifier.padding(10.dp)) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    val supplierSuggestions = remember(supplierQuery, suppliers) {
+                        val q = supplierQuery.trim()
+                        if (q.isBlank()) suppliers else suppliers.filter { it.name.contains(q, ignoreCase = true) }
+                    }
+                    ExposedDropdownMenuBox(
+                        expanded = supplierExpanded && supplierSuggestions.isNotEmpty(),
+                        onExpandedChange = { supplierExpanded = it }
+                    ) {
+                        OutlinedTextField(
+                            value = supplierQuery,
+                            onValueChange = { q ->
+                                supplierQuery = q; supplierExpanded = true
+                                supplierId = suppliers.firstOrNull { it.name.equals(q.trim(), ignoreCase = true) }?.id
+                            },
+                            label = { Text("Supplier") }, singleLine = true,
+                            supportingText = { if (supplierId == null) Text("No match — pick one, or set it in the form below") },
+                            modifier = Modifier.menuAnchor().fillMaxWidth()
+                        )
+                        ExposedDropdownMenu(
+                            expanded = supplierExpanded && supplierSuggestions.isNotEmpty(),
+                            onDismissRequest = { supplierExpanded = false }
+                        ) {
+                            supplierSuggestions.forEach { s ->
+                                DropdownMenuItem(
+                                    text = { Text(s.name) },
+                                    onClick = { supplierQuery = s.name; supplierId = s.id; supplierExpanded = false }
+                                )
+                            }
+                        }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
                         OutlinedTextField(
                             value = billNo, onValueChange = { billNo = it },
                             label = { Text("Supplier bill no") }, singleLine = true,
                             modifier = Modifier.weight(1f)
                         )
-                        OutlinedButton(onClick = { pickPurchaseDate(context, dateMillis) { dateMillis = it } }) {
-                            Text(Format.date(dateMillis))
+                        OutlinedButton(onClick = { pickPurchaseDate(context, pickedDate) { pickedDate = it } }) {
+                            Text(Format.date(pickedDate))
                         }
                     }
-                    if (parsed.total > 0.0) {
+                    if (total > 0.0) {
                         Text(
-                            "Bill total (as read): ${Format.rupee(parsed.total)} — check this against the item total below.",
+                            "Bill total (as read): ${Format.rupee(total)} — check this against the item total below.",
                             style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline,
                             modifier = Modifier.padding(top = 4.dp)
                         )
@@ -127,7 +166,7 @@ fun SupplierBillMapDialog(
                                 unit = it.unit, expiryMillis = it.expiryMillis
                             )
                         }
-                        onConfirm(billNo.trim(), dateMillis, out)
+                        onConfirm(supplierId, billNo.trim(), pickedDate, out)
                     },
                     enabled = selected > 0,
                     modifier = Modifier.weight(1.2f)
