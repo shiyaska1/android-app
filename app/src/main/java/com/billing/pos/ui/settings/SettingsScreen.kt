@@ -602,6 +602,45 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
                     Switch(checked = fifoAutoPick, onCheckedChange = { fifoAutoPick = it; prefs.fifoAutoPickBatch = it })
                 }
             }
+
+            Divider(Modifier.padding(vertical = 16.dp))
+            Text("Cloud backup sync", style = MaterialTheme.typography.titleSmall)
+            Text(
+                "Push uploads the backup zip to your server; Pull downloads and restores it — " +
+                    "used from the Backup & Restore screen. Each push overwrites the same file, keyed " +
+                    "by Org ID + Device ID, so nothing piles up on the server.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline
+            )
+            var backupPushUrl by remember { mutableStateOf(prefs.backupPushUrl) }
+            var backupPullUrl by remember { mutableStateOf(prefs.backupPullUrl) }
+            var backupOrgId by remember { mutableStateOf(prefs.backupOrgId) }
+            var backupDeviceId by remember {
+                mutableStateOf(prefs.backupDeviceId.ifBlank { com.billing.pos.data.License.deviceId(context) })
+            }
+            OutlinedTextField(
+                value = backupPushUrl,
+                onValueChange = { backupPushUrl = it; prefs.backupPushUrl = it },
+                label = { Text("Push URL") }, singleLine = true,
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+            )
+            OutlinedTextField(
+                value = backupOrgId,
+                onValueChange = { backupOrgId = it; prefs.backupOrgId = it },
+                label = { Text("Org ID") }, singleLine = true,
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+            )
+            OutlinedTextField(
+                value = backupDeviceId,
+                onValueChange = { backupDeviceId = it; prefs.backupDeviceId = it },
+                label = { Text("Device ID") }, singleLine = true,
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+            )
+            OutlinedTextField(
+                value = backupPullUrl,
+                onValueChange = { backupPullUrl = it; prefs.backupPullUrl = it },
+                label = { Text("Pull URL") }, singleLine = true,
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+            )
         }
     }
 }

@@ -72,6 +72,24 @@ class AppPrefs(context: Context) {
         get() = p.getBoolean("sync_auto", false)
         set(v) { p.edit().putBoolean("sync_auto", v).apply() }
 
+    // ---- Cloud backup sync (push/pull the backup zip to/from your own server) ----
+    /** Where "Push" uploads the backup zip. The server should overwrite, not version, the file. */
+    var backupPushUrl: String
+        get() = (p.getString("backup_push_url", "") ?: "").trim()
+        set(v) { p.edit().putString("backup_push_url", v.trim()).apply() }
+    /** Where "Pull" downloads the backup zip from. */
+    var backupPullUrl: String
+        get() = (p.getString("backup_pull_url", "") ?: "").trim()
+        set(v) { p.edit().putString("backup_pull_url", v.trim()).apply() }
+    /** Identifies the organisation on a shared server (multiple businesses, one endpoint). */
+    var backupOrgId: String
+        get() = (p.getString("backup_org_id", "") ?: "").trim()
+        set(v) { p.edit().putString("backup_org_id", v.trim()).apply() }
+    /** Identifies this device. Blank = fall back to [License.deviceId] at push/pull time. */
+    var backupDeviceId: String
+        get() = (p.getString("backup_device_id", "") ?: "").trim()
+        set(v) { p.edit().putString("backup_device_id", v.trim()).apply() }
+
     // ---- Bulk SMS gateway (generic, provider-agnostic) ----
     /**
      * Send URL template with placeholders {number} {message} {apikey} {sender}. Example:

@@ -13,8 +13,8 @@ android {
         applicationId = "com.billing.pos"
         minSdk = 26
         targetSdk = 36
-        versionCode = 153
-        versionName = "1.64.5"
+        versionCode = 154
+        versionName = "1.65.0"
         vectorDrawables { useSupportLibrary = true }
 
         // Real Android phones are arm. The x86/x86_64 native libs are emulator-only

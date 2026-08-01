@@ -40,11 +40,17 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.billing.pos.auth.Session
+import com.billing.pos.data.AppPrefs
 import com.billing.pos.data.DownloadSaver
 import com.billing.pos.data.FullBackup
+import com.billing.pos.data.License
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
+import java.io.IOException
+import java.net.HttpURLConnection
+import java.net.URL
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -107,6 +113,74 @@ fun BackupScreen(
     val restorePicker = rememberLauncherForActivityResult(
         ActivityResultContracts.GetContent()
     ) { uri -> if (uri != null) runRestore(uri) }
+
+    // --- Push/Pull to a server (Settings > Cloud backup sync) ---
+    // Org + device pick which server-side folder the backup lives in, so a push always
+    // overwrites the one file in that folder rather than piling up.
+    fun syncOrgDevice(): Pair<String, String> {
+        val prefs = AppPrefs(context)
+        val org = prefs.backupOrgId.filter { it.isLetterOrDigit() }.ifBlank { "org" }
+        val dev = prefs.backupDeviceId.ifBlank { License.deviceId(context) }
+            .filter { it.isLetterOrDigit() }.ifBlank { "device" }
+        return org to dev
+    }
+    fun withOrgDevice(baseUrl: String, org: String, device: String): String {
+        val sep = if (baseUrl.contains("?")) "&" else "?"
+        return "$baseUrl${sep}org=$org&device=$device"
+    }
+    fun pushBackup() {
+        val url = AppPrefs(context).backupPushUrl
+        if (url.isBlank()) { scope.launch { snackbar.showSnackbar("Set the Push URL in Settings first") }; return }
+        scope.launch {
+            busy = true
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    val zip = FullBackup.create(context)
+                    val (org, dev) = syncOrgDevice()
+                    val conn = URL(withOrgDevice(url, org, dev)).openConnection() as HttpURLConnection
+                    conn.requestMethod = "POST"
+                    conn.doOutput = true
+                    conn.connectTimeout = 15000
+                    conn.readTimeout = 120000
+                    conn.setRequestProperty("Content-Type", "application/zip")
+                    conn.setFixedLengthStreamingMode(zip.length())
+                    conn.outputStream.use { out -> zip.inputStream().use { it.copyTo(out) } }
+                    val code = conn.responseCode
+                    val err = if (code !in 200..299) runCatching { conn.errorStream?.bufferedReader()?.readText() }.getOrNull() else null
+                    conn.disconnect()
+                    if (code !in 200..299) throw IOException("HTTP $code" + (if (!err.isNullOrBlank()) ": $err" else ""))
+                }
+            }
+            busy = false
+            snackbar.showSnackbar(if (result.isSuccess) "Backup pushed" else "Push failed: ${result.exceptionOrNull()?.message}")
+        }
+    }
+    fun pullAndRestore() {
+        val url = AppPrefs(context).backupPullUrl
+        if (url.isBlank()) { scope.launch { snackbar.showSnackbar("Set the Pull URL in Settings first") }; return }
+        scope.launch {
+            busy = true
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    val (org, dev) = syncOrgDevice()
+                    val conn = URL(withOrgDevice(url, org, dev)).openConnection() as HttpURLConnection
+                    conn.requestMethod = "GET"
+                    conn.connectTimeout = 15000
+                    conn.readTimeout = 120000
+                    val code = conn.responseCode
+                    if (code !in 200..299) { conn.disconnect(); throw IOException("HTTP $code") }
+                    val dir = File(context.cacheDir, "shared").apply { mkdirs() }
+                    val dest = File(dir, "pulled-backup.zip")
+                    conn.inputStream.use { input -> dest.outputStream().use { input.copyTo(it) } }
+                    conn.disconnect()
+                    Uri.fromFile(dest)
+                }
+            }
+            busy = false
+            result.onSuccess { uri -> runRestore(uri) }
+                .onFailure { snackbar.showSnackbar("Pull failed: ${it.message}") }
+        }
+    }
 
     // --- Google Drive (via the system Storage Access Framework picker) ---
     // Upload: writes the backup .zip to the location the user picks (Google Drive, etc.).
@@ -174,6 +248,11 @@ fun BackupScreen(
                     enabled = !busy,
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
                 ) { Icon(Icons.Filled.CloudUpload, null); Text("  Upload to Google Drive") }
+                Button(
+                    onClick = { pushBackup() },
+                    enabled = !busy,
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                ) { Icon(Icons.Filled.CloudUpload, null); Text("  Push backup to server") }
             }
 
             if (Session.canImport) {
@@ -187,6 +266,11 @@ fun BackupScreen(
                     enabled = !busy,
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
                 ) { Icon(Icons.Filled.CloudDownload, null); Text("  Restore from Google Drive") }
+                OutlinedButton(
+                    onClick = { restoreAction = { pullAndRestore() } },
+                    enabled = !busy,
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                ) { Icon(Icons.Filled.CloudDownload, null); Text("  Pull backup from server") }
                 // Available whenever a merge has been run before, not only right after one.
                 if (com.billing.pos.data.MergeReport.load(context) != null) {
                     OutlinedButton(
