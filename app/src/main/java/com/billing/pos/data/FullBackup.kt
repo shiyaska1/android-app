@@ -4,6 +4,8 @@ import android.content.Context
 import android.net.Uri
 import com.billing.pos.diary.AttachmentStore
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -19,7 +21,12 @@ import java.util.zip.ZipOutputStream
  */
 object FullBackup {
 
-    suspend fun create(context: Context, includeAttachments: Boolean = true): File {
+    // Serializes every create()/restore() call app-wide (manual backup, Google Drive, cloud
+    // Push/Pull, the auto-sync loop) — they all read/write the same cache file paths, so two
+    // running at once would race and could produce a truncated zip.
+    private val ioGate = Mutex()
+
+    suspend fun create(context: Context, includeAttachments: Boolean = true): File = ioGate.withLock {
         val db = AppDatabase.get(context)
         val prefs = AppPrefs(context)
 
@@ -166,10 +173,10 @@ object FullBackup {
                 }
             }
         }
-        return zip
+        zip
     }
 
-    suspend fun restore(context: Context, uri: Uri, merge: Boolean = false): Result<String> = runCatching {
+    suspend fun restore(context: Context, uri: Uri, merge: Boolean = false): Result<String> = ioGate.withLock { runCatching {
         val filesDir = AttachmentStore.dir(context)
         val itemFilesDir = com.billing.pos.items.ItemAttachmentStore.dir(context)
         val billFilesDir = com.billing.pos.bills.BillAttachmentStore.dir(context)
@@ -390,7 +397,7 @@ object FullBackup {
         }
 
         "Restore complete"
-    }
+    } }
 
     /**
      * Appends a backup into the existing data (no wipe). Masters (customers, suppliers,

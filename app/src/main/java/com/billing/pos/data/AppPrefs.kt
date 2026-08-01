@@ -93,6 +93,14 @@ class AppPrefs(context: Context) {
     var backupPushIncludeAttachments: Boolean
         get() = p.getBoolean("backup_push_include_attachments", true)
         set(v) { p.edit().putBoolean("backup_push_include_attachments", v).apply() }
+    /** When on, a background loop pulls the server backup, merges it in, then pushes — data only, no attachments — every [cloudAutoSyncIntervalSec] seconds while the app is open. */
+    var cloudAutoSync: Boolean
+        get() = p.getBoolean("cloud_auto_sync", false)
+        set(v) { p.edit().putBoolean("cloud_auto_sync", v).apply() }
+    /** Seconds between auto pull+merge+push cycles. Callers should floor this at ~10s before use so a mistyped value can't hammer the server. */
+    var cloudAutoSyncIntervalSec: Int
+        get() = p.getInt("cloud_auto_sync_interval_sec", 30)
+        set(v) { p.edit().putInt("cloud_auto_sync_interval_sec", v).apply() }
 
     // ---- Bulk SMS gateway (generic, provider-agnostic) ----
     /**

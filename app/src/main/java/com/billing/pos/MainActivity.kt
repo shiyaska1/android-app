@@ -108,6 +108,13 @@ class MainActivity : FragmentActivity() {
         captureIncoming(intent)
         // Offer the Play update straight away, so customers are not left on an old build.
         com.billing.pos.update.AppUpdater.check(this)
+        // Resume the cloud auto pull+merge+push loop across app restarts if the user left it on
+        // — otherwise it would only (re)start the next time they happened to open Settings.
+        AppPrefs(this).let { p ->
+            if (p.cloudAutoSync) {
+                com.billing.pos.sync.CloudSyncManager.startAuto(this, p.cloudAutoSyncIntervalSec.coerceAtLeast(10) * 1000L)
+            }
+        }
         enableEdgeToEdge()
         setContent {
             POSTheme {

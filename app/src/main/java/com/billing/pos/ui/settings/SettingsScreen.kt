@@ -641,6 +641,44 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
                 label = { Text("Pull URL") }, singleLine = true,
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
             )
+
+            var cloudAutoSync by remember { mutableStateOf(prefs.cloudAutoSync) }
+            var cloudAutoSyncIntervalText by remember { mutableStateOf(prefs.cloudAutoSyncIntervalSec.toString()) }
+            val cloudSyncStatus by com.billing.pos.sync.CloudSyncManager.status.collectAsState()
+            fun restartCloudAutoSyncIfOn() {
+                if (cloudAutoSync) {
+                    val secs = cloudAutoSyncIntervalText.toIntOrNull()?.coerceAtLeast(10) ?: 30
+                    com.billing.pos.sync.CloudSyncManager.startAuto(context, secs * 1000L)
+                }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 12.dp)) {
+                Column(Modifier.weight(1f)) {
+                    Text("Auto pull + merge + push", style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        "Keeps syncing with the server on its own while the app is open — data and " +
+                            "settings only, never photos/attachments.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline
+                    )
+                }
+                Switch(checked = cloudAutoSync, onCheckedChange = { on ->
+                    cloudAutoSync = on; prefs.cloudAutoSync = on
+                    if (on) restartCloudAutoSyncIfOn() else com.billing.pos.sync.CloudSyncManager.stopAuto()
+                })
+            }
+            OutlinedTextField(
+                value = cloudAutoSyncIntervalText,
+                onValueChange = { txt ->
+                    cloudAutoSyncIntervalText = txt.filter { it.isDigit() }
+                    cloudAutoSyncIntervalText.toIntOrNull()?.let { prefs.cloudAutoSyncIntervalSec = it }
+                    restartCloudAutoSyncIfOn()
+                },
+                label = { Text("Interval (seconds, min 10)") }, singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+            )
+            if (cloudAutoSync) {
+                Text(cloudSyncStatus, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 6.dp))
+            }
         }
     }
 }
