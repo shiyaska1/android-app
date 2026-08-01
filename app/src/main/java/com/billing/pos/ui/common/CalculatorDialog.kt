@@ -246,8 +246,8 @@ fun CalculatorDialog(
                             onValueChange = { mulDivFactor = it.filter { c -> c.isDigit() || c == '.' } },
                             label = { Text("Enter number") },
                             singleLine = true,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number, imeAction = ImeAction.Done),
-                            modifier = Modifier.focusRequester(mulDivFocus)
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done),
+                            modifier = Modifier.focusRequester(mulDivFocus).fillMaxWidth()
                         )
                         if (mulDivOp == '/' && mulDivFactor.toDoubleOrNull() == 0.0 && mulDivFactor.isNotBlank()) {
                             Text("Cannot divide by zero", color = MaterialTheme.colorScheme.error)

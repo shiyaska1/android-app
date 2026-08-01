@@ -139,7 +139,7 @@ class ItemsViewModel(app: Application) : AndroidViewModel(app) {
                 val key = item.name.lowercase()
                 val lastRate = rateByName[key].orEmpty().maxByOrNull { it.dateMillis }?.price ?: 0.0
                 ItemStockRow(item, item.openingStock + (byName[key] ?: 0.0), lastRate, lastSupplierByName[key] ?: "")
-            }
+            }.sortedByDescending { it.item.id } // last-entered item first
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     /** Distinct categories already in use, for the category dropdown. */
