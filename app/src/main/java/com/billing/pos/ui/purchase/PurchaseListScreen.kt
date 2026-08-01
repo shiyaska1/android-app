@@ -20,6 +20,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -85,11 +86,13 @@ fun PurchaseListScreen(
     var pendingDelete by remember { mutableStateOf<Purchase?>(null) }
     var voucherQ by remember { mutableStateOf("") }
     var nameQ by remember { mutableStateOf("") }
+    var billNoQ by remember { mutableStateOf("") }
     var fromMillis by remember { mutableStateOf<Long?>(null) }
     var toMillis by remember { mutableStateOf<Long?>(null) }
     val filtered = purchases.filter {
         (voucherQ.isBlank() || it.purchaseNo.contains(voucherQ, true)) &&
             (nameQ.isBlank() || it.supplierName.contains(nameQ, true)) &&
+            (billNoQ.isBlank() || it.supplierBillNo.contains(billNoQ, true)) &&
             (fromMillis == null || it.dateMillis >= startOfDay(fromMillis!!)) &&
             (toMillis == null || it.dateMillis <= endOfDay(toMillis!!))
     }
@@ -142,6 +145,11 @@ fun PurchaseListScreen(
                     from = fromMillis, onFrom = { fromMillis = it },
                     to = toMillis, onTo = { toMillis = it }
                 )
+                OutlinedTextField(
+                    value = billNoQ, onValueChange = { billNoQ = it },
+                    label = { Text("Supplier bill no") }, singleLine = true,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)
+                )
                 if (filtered.isEmpty()) {
                     Text(
                         if (purchases.isEmpty()) "No purchases yet" else "No purchases match the filter",
@@ -154,7 +162,10 @@ fun PurchaseListScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(Modifier.weight(1f)) {
-                            Text(p.purchaseNo, fontWeight = FontWeight.Bold)
+                            Text(
+                                p.purchaseNo + if (p.supplierBillNo.isNotBlank()) "  (Bill: ${p.supplierBillNo})" else "",
+                                fontWeight = FontWeight.Bold
+                            )
                             Text(
                                 "${p.supplierName} • ${p.paymentMethod} • ${p.paymentStatus} • ${Format.date(p.dateMillis)}",
                                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline

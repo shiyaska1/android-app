@@ -45,7 +45,8 @@ import androidx.room.TypeConverters
         ReceiptAttachment::class,
         ReceiptAllocation::class, ExpenseAllocation::class,
         DeliveryNote::class, DeliveryNoteItem::class,
-        QuickNote::class, QuickNoteAttachment::class
+        QuickNote::class, QuickNoteAttachment::class,
+        PurchaseAttachment::class
     ],
     // v25 quotations; v26 sales returns; v27 purchase returns; v28 purchase quotations (LPO);
     // v29 dual units; v30 rental; v31 medical lab; v32 lab masters + heading rows;
@@ -61,7 +62,8 @@ import androidx.room.TypeConverters
     // v63 delivery notes (goods delivered to a customer — decreases stock);
     // v64 delivery note / material receipt "converted to bill/purchase" tracking.
     // v65 quick notes (dashboard quick-note list, with an optional one-time/daily reminder).
-    version = 65,
+    // v66 purchase supplier-bill-no + remarks + attachments.
+    version = 66,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -116,6 +118,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun deliveryNoteDao(): DeliveryNoteDao
     abstract fun quickNoteDao(): QuickNoteDao
     abstract fun quickNoteAttachmentDao(): QuickNoteAttachmentDao
+    abstract fun purchaseAttachmentDao(): PurchaseAttachmentDao
 
     companion object {
         @Volatile private var INSTANCE: AppDatabase? = null
@@ -492,6 +495,19 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** Supplier bill no + remarks on a purchase, and purchase document attachments. */
+        private val MIGRATION_65_66 = object : androidx.room.migration.Migration(65, 66) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE purchases ADD COLUMN supplierBillNo TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE purchases ADD COLUMN remarks TEXT NOT NULL DEFAULT ''")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS purchase_attachments (" +
+                        "id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, purchaseId INTEGER NOT NULL, " +
+                        "path TEXT NOT NULL, name TEXT NOT NULL DEFAULT '', mime TEXT NOT NULL DEFAULT '')"
+                )
+            }
+        }
+
         fun get(context: Context): AppDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -499,7 +515,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "pos_billing.db"
                 )
-                    .addMigrations(MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45, MIGRATION_45_46, MIGRATION_46_47, MIGRATION_47_48, MIGRATION_48_49, MIGRATION_49_50, MIGRATION_50_51, MIGRATION_51_52, MIGRATION_52_53, MIGRATION_53_54, MIGRATION_54_55, MIGRATION_55_56, MIGRATION_56_57, MIGRATION_57_58, MIGRATION_58_59, MIGRATION_59_60, MIGRATION_60_61, MIGRATION_61_62, MIGRATION_62_63, MIGRATION_63_64, MIGRATION_64_65)
+                    .addMigrations(MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45, MIGRATION_45_46, MIGRATION_46_47, MIGRATION_47_48, MIGRATION_48_49, MIGRATION_49_50, MIGRATION_50_51, MIGRATION_51_52, MIGRATION_52_53, MIGRATION_53_54, MIGRATION_54_55, MIGRATION_55_56, MIGRATION_56_57, MIGRATION_57_58, MIGRATION_58_59, MIGRATION_59_60, MIGRATION_60_61, MIGRATION_61_62, MIGRATION_62_63, MIGRATION_63_64, MIGRATION_64_65, MIGRATION_65_66)
                     .fallbackToDestructiveMigration()
                     .build()
                     .also { INSTANCE = it }

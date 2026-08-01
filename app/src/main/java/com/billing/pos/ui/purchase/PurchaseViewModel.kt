@@ -8,20 +8,26 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.billing.pos.data.AppPrefs
 import com.billing.pos.data.Item
 import com.billing.pos.data.PaymentMethod
 import com.billing.pos.data.Purchase
+import com.billing.pos.data.PurchaseAttachment
 import com.billing.pos.data.PurchaseItem
 import com.billing.pos.data.Repository
+import com.billing.pos.data.hasTwoUnits
 import com.billing.pos.data.primaryChoice
 import com.billing.pos.data.primaryCostChoice
+import com.billing.pos.data.secondaryCostChoice
 import com.billing.pos.data.Supplier
 import com.billing.pos.ui.billing.CartLine
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 data class PurchaseWithItems(val purchase: Purchase, val lines: List<PurchaseItem>)
 
@@ -44,6 +50,10 @@ class PurchaseViewModel(app: Application) : AndroidViewModel(app) {
     var discountText by mutableStateOf(""); private set
     var purchaseNo by mutableStateOf("PUR-0001"); private set
     var dateMillis by mutableStateOf(System.currentTimeMillis()); private set
+    /** The supplier's own invoice/bill number, distinct from our internal [purchaseNo]. */
+    var supplierBillNo by mutableStateOf(""); private set
+    var remarks by mutableStateOf(""); private set
+    val editAttachments: SnapshotStateList<PurchaseAttachment> = mutableStateListOf()
     /** When on, this purchase is booked against an LPO whose stock was already received (VAT only). */
     var againstLpo by mutableStateOf(false)
     var lpoNo by mutableStateOf("")
@@ -116,6 +126,25 @@ class PurchaseViewModel(app: Application) : AndroidViewModel(app) {
     fun selectPayment(m: PaymentMethod) { payment = m; dirty = true }
     fun setAdditionalCharge(v: String) { additionalChargeText = v; dirty = true }
     fun setDiscount(v: String) { discountText = v; dirty = true }
+    fun updateDate(millis: Long) { dateMillis = millis; dirty = true }
+    fun updateSupplierBillNo(v: String) { supplierBillNo = v; dirty = true }
+    fun updateRemarks(v: String) { remarks = v; dirty = true }
+
+    fun addAttachmentUris(context: android.content.Context, uris: List<android.net.Uri>) {
+        if (uris.isEmpty()) return
+        viewModelScope.launch {
+            val added = withContext(Dispatchers.IO) { uris.mapNotNull { com.billing.pos.purchase.PurchaseAttachmentStore.copyIn(context, it) } }
+            editAttachments.addAll(added); dirty = true
+        }
+    }
+    fun addAttachment(att: PurchaseAttachment) { editAttachments.add(att); dirty = true }
+    fun removeAttachment(att: PurchaseAttachment) {
+        editAttachments.remove(att); dirty = true
+        viewModelScope.launch {
+            if (att.id > 0) repo.deletePurchaseAttachment(att)
+            else withContext(Dispatchers.IO) { com.billing.pos.purchase.PurchaseAttachmentStore.delete(att) }
+        }
+    }
 
     fun addItemToCart(item: Item) = addItemWithUnit(item, item.primaryCostChoice())
 
@@ -181,6 +210,50 @@ class PurchaseViewModel(app: Application) : AndroidViewModel(app) {
             dirty = true
             _message.value = "Added $added item(s) from photo"
         }
+    }
+
+    /**
+     * Applies a multi-page supplier bill read: sets the header fields and adds each line.
+     * A line with a detected expiry gets its own auto-numbered batch (when batch tracking is
+     * on) instead of a plain cart line, so nothing needs the manual batch dialog afterwards.
+     */
+    fun addSupplierBillLines(billNo: String, billDateMillis: Long, lines: List<com.billing.pos.ocr.SupplierBillLine>) {
+        if (lines.isEmpty()) { _message.value = "No items found in the photos"; return }
+        if (billNo.isNotBlank()) supplierBillNo = billNo.trim()
+        if (billDateMillis > 0) dateMillis = billDateMillis
+        val batchTrackingOn = AppPrefs(getApplication()).requireItemBatch
+        viewModelScope.launch {
+            var added = 0
+            lines.forEach { s ->
+                val name = s.name.trim()
+                if (name.isBlank()) return@forEach
+                val existing = items.value.firstOrNull { it.name.equals(name, ignoreCase = true) } ?: repo.itemByName(name)
+                val item = existing ?: run {
+                    val id = repo.addItem(name, s.price, 0.0)
+                    Item(id = id, name = name, price = s.price, taxPercent = 0.0)
+                }
+                val choice = if (item.hasTwoUnits && s.unit.isNotBlank() && s.unit.equals(item.secondaryUnit, ignoreCase = true))
+                    item.secondaryCostChoice()
+                else item.primaryCostChoice()
+                val rate = if (s.price > 0.0) s.price else choice.price
+                if (batchTrackingOn && s.expiryMillis > 0) {
+                    addBatchLine(item, nextAutoBatchNo(item.id), s.expiryMillis, s.qty, rate, choice)
+                } else {
+                    cart.add(CartLine(item.id, item.name, rate, item.taxPercent, s.qty, unit = choice.unit, primaryPerUnit = choice.primaryPerUnit))
+                }
+                added++
+            }
+            dirty = true
+            _message.value = "Added $added item(s) from the supplier bill"
+        }
+    }
+
+    /** Next sequential auto-batch number for an item, e.g. "B001", "B002". */
+    private fun nextAutoBatchNo(itemId: Long): String {
+        val maxN = allBatches.value.filter { it.itemId == itemId }
+            .mapNotNull { Regex("^B(\\d+)$").matchEntire(it.batchNo.trim())?.groupValues?.get(1)?.toIntOrNull() }
+            .maxOrNull() ?: 0
+        return "B%03d".format(maxN + 1)
     }
 
     fun changeQty(index: Int, delta: Double) {
@@ -272,7 +345,9 @@ class PurchaseViewModel(app: Application) : AndroidViewModel(app) {
             supplierGstin = supplier.gstin,
             source = editingSource,
             stockReceived = addsStock,
-            lpoNo = if (againstLpo) lpoNo else ""
+            lpoNo = if (againstLpo) lpoNo else "",
+            supplierBillNo = supplierBillNo.trim(),
+            remarks = remarks
         )
         val lines = cart.map {
             PurchaseItem(0, editId ?: 0, it.name, it.qty, it.price, it.taxPercent, it.total, batchNo = it.batchNo, unit = it.unit, primaryQty = it.primaryQty)
@@ -294,6 +369,24 @@ class PurchaseViewModel(app: Application) : AndroidViewModel(app) {
                 pendingReceiptIds = emptyList()
             }
         }
+
+        val newAtts = editAttachments.filter { it.id == 0L }
+        if (newAtts.isNotEmpty()) {
+            newAtts.forEach { repo.addPurchaseAttachment(it.copy(purchaseId = saved.purchase.id)) }
+            editAttachments.clear()
+            editAttachments.addAll(repo.purchaseAttachmentsFor(saved.purchase.id))
+        }
+
+        // Keep the item master's cost/tax in step with what was actually paid this time.
+        // Only lines billed in the item's own primary unit carry a directly comparable rate —
+        // a secondary-unit (e.g. BOX) rate would need converting before it means the same thing.
+        cart.filter { it.itemId > 0 && it.primaryPerUnit == 1.0 }.forEach { line ->
+            val master = items.value.firstOrNull { it.id == line.itemId } ?: return@forEach
+            if (master.purchasePrice != line.price || master.taxPercent != line.taxPercent) {
+                repo.updateItem(master.copy(purchasePrice = line.price, taxPercent = line.taxPercent))
+            }
+        }
+
         lastSaved = saved
         dirty = false
         return saved
@@ -310,6 +403,8 @@ class PurchaseViewModel(app: Application) : AndroidViewModel(app) {
             editingWasCredit = purchase.paymentMethod == PaymentMethod.CREDIT.label
             purchaseNo = purchase.purchaseNo
             dateMillis = purchase.dateMillis
+            supplierBillNo = purchase.supplierBillNo
+            remarks = purchase.remarks
             payment = PaymentMethod.values().firstOrNull { it.label == purchase.paymentMethod } ?: PaymentMethod.CASH
             additionalChargeText = if (purchase.additionalCharge != 0.0) purchase.additionalCharge.toString() else ""
             discountText = if (purchase.discount != 0.0) purchase.discount.toString() else ""
@@ -320,6 +415,8 @@ class PurchaseViewModel(app: Application) : AndroidViewModel(app) {
                 val perUnit = if (it.primaryQty > 0 && it.qty > 0) it.primaryQty / it.qty else 1.0
                 cart.add(CartLine(0, it.name, it.price, it.taxPercent, it.qty, batchNo = it.batchNo, unit = it.unit, primaryPerUnit = perUnit))
             }
+            editAttachments.clear()
+            editAttachments.addAll(repo.purchaseAttachmentsFor(purchase.id))
             dirty = false
             lastSaved = PurchaseWithItems(purchase, lines)
         }
@@ -329,6 +426,13 @@ class PurchaseViewModel(app: Application) : AndroidViewModel(app) {
         cart.clear()
         additionalChargeText = ""
         discountText = ""
+        supplierBillNo = ""
+        remarks = ""
+        val unsaved = editAttachments.filter { it.id == 0L }
+        editAttachments.clear()
+        if (unsaved.isNotEmpty()) viewModelScope.launch(Dispatchers.IO) {
+            unsaved.forEach { com.billing.pos.purchase.PurchaseAttachmentStore.delete(it) }
+        }
         payment = PaymentMethod.CASH
         dateMillis = System.currentTimeMillis()
         selectedSupplier = suppliers.value.firstOrNull { it.isDefault } ?: suppliers.value.firstOrNull()

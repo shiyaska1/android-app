@@ -15,23 +15,33 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Dialpad
+import androidx.compose.material.icons.filled.Draw
+import androidx.compose.material.icons.filled.EditNote
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.NoteAdd
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.QrCodeScanner
+import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -137,6 +147,18 @@ fun PurchaseScreen(
         androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia()
     ) { uri -> if (uri != null) regionOcrUri = uri }
 
+    // Purchase No/Date/Supplier Bill No, Against LPO, and Remarks/Attachments are all hidden by
+    // default and revealed by their own icon — same pattern as the Sales entry screen.
+    var showPurchaseInfo by remember { mutableStateOf(false) }
+    var showLpo by remember { mutableStateOf(false) }
+    var showNotes by remember { mutableStateOf(false) }
+    var showRemarkPopup by remember { mutableStateOf(false) }
+    var showSupplierBillCapture by remember { mutableStateOf(false) }
+    var supplierBillParsed by remember { mutableStateOf<com.billing.pos.ocr.SupplierBillParsed?>(null) }
+    val attachPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris -> vm.addAttachmentUris(context, uris) }
+
     val readOnly = vm.editingId != null && !Session.canEdit
 
     LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); vm.consumeMessage() } }
@@ -176,6 +198,18 @@ fun PurchaseScreen(
                     actionIconContentColor = MaterialTheme.colorScheme.onPrimary
                 ),
                 actions = {
+                    IconButton(onClick = { showPurchaseInfo = !showPurchaseInfo }) {
+                        Icon(Icons.Filled.Info, contentDescription = "Purchase no, date & supplier bill no",
+                            tint = if (showPurchaseInfo) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.6f))
+                    }
+                    IconButton(onClick = { showLpo = !showLpo }) {
+                        Icon(Icons.Filled.ReceiptLong, contentDescription = "Against LPO",
+                            tint = if (showLpo) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.6f))
+                    }
+                    IconButton(onClick = { showNotes = !showNotes }) {
+                        Icon(Icons.Filled.EditNote, contentDescription = "Remarks & attachments",
+                            tint = if (showNotes) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.6f))
+                    }
                     IconButton(onClick = { vm.newPurchase() }) {
                         Icon(Icons.Filled.NoteAdd, contentDescription = "New purchase")
                     }
@@ -186,20 +220,29 @@ fun PurchaseScreen(
         Column(
             Modifier.fillMaxSize().padding(pad).padding(12.dp)
         ) {
-            Card(Modifier.fillMaxWidth()) {
-                Row(Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Column {
-                        Text("Purchase No", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
-                        Text(vm.purchaseNo, fontWeight = FontWeight.Bold)
-                    }
-                    Column(horizontalAlignment = Alignment.End) {
-                        Text("Date", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
-                        Text(Format.date(vm.dateMillis), fontWeight = FontWeight.Bold)
+            // --- Optional: Purchase No + editable Date + Supplier Bill No (toggle) ---
+            if (showPurchaseInfo) {
+                Card(Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(12.dp)) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Column {
+                                Text("Purchase No", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                                Text(vm.purchaseNo, fontWeight = FontWeight.Bold)
+                            }
+                            OutlinedButton(onClick = { pickPurchaseDate(context, vm.dateMillis) { vm.updateDate(it) } }) {
+                                Text("Date: ${Format.date(vm.dateMillis)}")
+                            }
+                        }
+                        OutlinedTextField(
+                            value = vm.supplierBillNo,
+                            onValueChange = { vm.updateSupplierBillNo(it) },
+                            label = { Text("Supplier bill no") }, singleLine = true,
+                            modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                        )
                     }
                 }
+                Spacer(Modifier.padding(6.dp))
             }
-
-            Spacer(Modifier.padding(6.dp))
 
             // Supplier (searchable) + New + Payment, all one line
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -247,16 +290,96 @@ fun PurchaseScreen(
                 }
             }
 
-            // Book against an LPO (goods already received via a Material Receipt) — VAT only, no stock.
-            Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                androidx.compose.material3.Checkbox(checked = vm.againstLpo, onCheckedChange = { vm.againstLpo = it })
-                Text("Against LPO (already received — VAT only)", style = MaterialTheme.typography.labelMedium)
+            // --- Optional: Book against an LPO (goods already received via a Material Receipt) — VAT only, no stock (toggle) ---
+            if (showLpo) {
+                Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    androidx.compose.material3.Checkbox(checked = vm.againstLpo, onCheckedChange = { vm.againstLpo = it })
+                    Text("Against LPO (already received — VAT only)", style = MaterialTheme.typography.labelMedium)
+                }
+                if (vm.againstLpo) {
+                    val lpos by vm.lpos.collectAsStateSafe()
+                    com.billing.pos.ui.common.LpoPickerField(
+                        lpos = lpos, supplierId = vm.selectedSupplier?.id ?: 0L, selectedNo = vm.lpoNo,
+                        onPick = { vm.loadFromLpo(it) }
+                    )
+                }
             }
-            if (vm.againstLpo) {
-                val lpos by vm.lpos.collectAsStateSafe()
-                com.billing.pos.ui.common.LpoPickerField(
-                    lpos = lpos, supplierId = vm.selectedSupplier?.id ?: 0L, selectedNo = vm.lpoNo,
-                    onPick = { vm.loadFromLpo(it) }
+
+            // --- Optional: Remarks + Attach documents (toggle) ---
+            if (showNotes) {
+                Row(
+                    Modifier.fillMaxWidth().padding(top = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Box(Modifier.weight(1f)) {
+                        OutlinedTextField(
+                            value = vm.remarks,
+                            onValueChange = {},
+                            readOnly = true,
+                            label = { Text("Remarks (tap to edit)") },
+                            textStyle = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                            singleLine = true,
+                            trailingIcon = {
+                                if (vm.remarks.isNotBlank()) IconButton(onClick = { vm.updateRemarks("") }) {
+                                    Icon(Icons.Filled.Close, contentDescription = "Clear remark")
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Box(Modifier.matchParentSize().clickable { showRemarkPopup = true })
+                    }
+                    IconButton(onClick = { runCatching { attachPicker.launch(arrayOf("*/*")) } }) {
+                        Icon(Icons.Filled.AttachFile, contentDescription = "Attach document")
+                    }
+                }
+                if (vm.editAttachments.isNotEmpty()) {
+                    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 2.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        vm.editAttachments.forEach { att ->
+                            AssistChip(
+                                onClick = { com.billing.pos.purchase.PurchaseAttachmentStore.open(context, att) },
+                                label = { Text(att.name, maxLines = 1) },
+                                trailingIcon = {
+                                    Icon(Icons.Filled.Close, contentDescription = "Remove",
+                                        modifier = Modifier.size(16.dp).clickable { vm.removeAttachment(att) })
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (showRemarkPopup) {
+                var draft by remember(vm.remarks) { mutableStateOf(vm.remarks) }
+                var drawRemark by remember { mutableStateOf(false) }
+                if (drawRemark) {
+                    com.billing.pos.ui.common.HandwriteTextDialog(
+                        onDismiss = { drawRemark = false },
+                        onResult = { t ->
+                            if (t.isNotBlank()) draft = (draft.trimEnd() + " " + t).trim()
+                            drawRemark = false
+                        }
+                    )
+                }
+                AlertDialog(
+                    onDismissRequest = { showRemarkPopup = false },
+                    title = { Text("Remark") },
+                    text = {
+                        OutlinedTextField(
+                            value = draft, onValueChange = { draft = it },
+                            placeholder = { Text("Type the remark…") },
+                            textStyle = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                            minLines = 2, maxLines = 6,
+                            trailingIcon = {
+                                IconButton(onClick = { drawRemark = true }) {
+                                    Icon(Icons.Filled.Draw, contentDescription = "Write by hand")
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    },
+                    confirmButton = { TextButton(onClick = { vm.updateRemarks(draft.trim()); showRemarkPopup = false }) { Text("Save") } },
+                    dismissButton = { TextButton(onClick = { showRemarkPopup = false }) { Text("Close") } }
                 )
             }
 
@@ -268,6 +391,7 @@ fun PurchaseScreen(
                 ToolAction(Icons.Filled.QrCodeScanner, "Scan") {
                     scanLauncher.launch(ScanOptions().setPrompt("Scan item barcode").setBeepEnabled(true).setOrientationLocked(false))
                 }
+                ToolAction(Icons.Filled.ReceiptLong, "Bill") { showSupplierBillCapture = true }
             }
 
             Spacer(Modifier.padding(2.dp))
@@ -454,6 +578,32 @@ fun PurchaseScreen(
             onDismiss = { pendingChoice = null; batchFor = null }
         )
     }
+
+    // Multi-page supplier bill: photograph every page, OCR each, then read invoice no / date /
+    // total / items out of the combined text before showing the single map-and-confirm step.
+    if (showSupplierBillCapture) {
+        SupplierBillCaptureDialog(
+            onDone = { pages ->
+                showSupplierBillCapture = false
+                scope.launch {
+                    val allLines = pages.flatMap { com.billing.pos.ocr.TextOcr.lines(context, it) }
+                    supplierBillParsed = com.billing.pos.ocr.SupplierBillParser.parse(allLines)
+                }
+            },
+            onDismiss = { showSupplierBillCapture = false }
+        )
+    }
+    supplierBillParsed?.let { parsed ->
+        SupplierBillMapDialog(
+            parsed = parsed,
+            masterItems = items,
+            onDismiss = { supplierBillParsed = null },
+            onConfirm = { billNo, dateMillis, lines ->
+                vm.addSupplierBillLines(billNo, dateMillis, lines)
+                supplierBillParsed = null
+            }
+        )
+    }
 }
 
 /** Receive stock into a batch on purchase: pick an existing batch or create a new one. */
@@ -508,7 +658,7 @@ private fun PurchaseBatchDialog(
     )
 }
 
-private fun pickPurchaseDate(context: android.content.Context, current: Long, onPicked: (Long) -> Unit) {
+internal fun pickPurchaseDate(context: android.content.Context, current: Long, onPicked: (Long) -> Unit) {
     val c = java.util.Calendar.getInstance().apply { timeInMillis = current }
     android.app.DatePickerDialog(
         context,

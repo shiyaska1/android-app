@@ -992,6 +992,15 @@ class Repository(context: Context) {
 
     suspend fun purchaseLinesFor(id: Long): List<PurchaseItem> = purchaseDao.linesFor(id)
 
+    // ---- purchase document attachments (e.g. a scanned supplier bill) ----
+    private val purchaseAttachmentDao = db.purchaseAttachmentDao()
+    suspend fun purchaseAttachmentsFor(purchaseId: Long): List<PurchaseAttachment> = purchaseAttachmentDao.forPurchase(purchaseId)
+    suspend fun addPurchaseAttachment(att: PurchaseAttachment): Long = purchaseAttachmentDao.insert(att)
+    suspend fun deletePurchaseAttachment(att: PurchaseAttachment) {
+        com.billing.pos.purchase.PurchaseAttachmentStore.delete(att)
+        purchaseAttachmentDao.delete(att)
+    }
+
     // ---- data export / import (invoices, customers, items — NOT users) ----
 
     /** Serialises this device's own data to a JSON string, stamped with [sourceLabel]. */

@@ -35,7 +35,10 @@ data class Purchase(
      *  Receipt Note against the LPO); it is booked only for VAT. Default true = normal purchase. */
     val stockReceived: Boolean = true,
     /** The LPO this purchase was booked against, if any. */
-    val lpoNo: String = ""
+    val lpoNo: String = "",
+    /** The supplier's own invoice/bill number (distinct from our internal [purchaseNo]). */
+    val supplierBillNo: String = "",
+    val remarks: String = ""
 ) {
     val balance: Double get() = (grandTotal - paidAmount).coerceAtLeast(0.0)
     val paymentStatus: String

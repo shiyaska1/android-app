@@ -183,3 +183,25 @@ interface PurchaseDao {
     )
     fun observePurchaseLineParties(): Flow<List<PurchaseLineParty>>
 }
+
+/** A photo/document (e.g. a scanned supplier bill page) attached to a purchase. */
+@androidx.room.Entity(tableName = "purchase_attachments")
+data class PurchaseAttachment(
+    @androidx.room.PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val purchaseId: Long,
+    val path: String,
+    val name: String = "",
+    val mime: String = ""
+)
+
+@Dao
+interface PurchaseAttachmentDao {
+    @Query("SELECT * FROM purchase_attachments WHERE purchaseId = :purchaseId ORDER BY id")
+    suspend fun forPurchase(purchaseId: Long): List<PurchaseAttachment>
+
+    @Insert
+    suspend fun insert(attachment: PurchaseAttachment): Long
+
+    @Delete
+    suspend fun delete(attachment: PurchaseAttachment)
+}
