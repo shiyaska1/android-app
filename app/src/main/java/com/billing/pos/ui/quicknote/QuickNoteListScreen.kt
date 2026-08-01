@@ -38,6 +38,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Divider
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -76,6 +77,8 @@ import androidx.core.content.ContextCompat
 import com.billing.pos.data.QuickNote
 import com.billing.pos.data.QuickNoteAttachment
 import com.billing.pos.data.QuickNoteRepository
+import com.billing.pos.quicknote.QuickNoteAttachmentStore
+import com.billing.pos.quicknote.QuickNoteReminderScheduler
 import com.billing.pos.ui.common.HandwriteTextDialog
 import com.billing.pos.ui.common.ImageViewerDialog
 import com.billing.pos.ui.common.rememberThumbnail
@@ -89,6 +92,7 @@ import java.util.Calendar
  * List of quick notes, most-recently-updated first. Tapping "+" or an existing note opens the
  * same popup form (text + photos + optional reminder); everything is written back on Save.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun QuickNoteListScreen(onBack: () -> Unit, initialEditId: Long? = null) {
     val context = LocalContext.current
