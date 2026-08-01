@@ -57,6 +57,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -109,6 +110,7 @@ fun FastBillDialog(
     var toMillis by remember { mutableStateOf(System.currentTimeMillis()) }
     var editIndex by remember { mutableStateOf(-1) }
     val focus = remember { FocusRequester() }
+    val mulDivFocus = remember { FocusRequester() }
     val scroll = rememberScrollState()
     val total = entries.sum()
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -860,17 +862,23 @@ fun FastBillDialog(
     }
 
     if (showMulDivDialog) {
+        val keyboardController = LocalSoftwareKeyboardController.current
         AlertDialog(
             onDismissRequest = { showMulDivDialog = false },
             title = { Text(if (mulDivOp == '*') "Multiply" else "Divide") },
             text = {
                 Column {
+                    LaunchedEffect(Unit) {
+                        runCatching { mulDivFocus.requestFocus() }
+                        keyboardController?.show()
+                    }
                     OutlinedTextField(
                         value = mulDivFactor,
                         onValueChange = { mulDivFactor = it.filter { c -> c.isDigit() || c == '.' } },
                         label = { Text("Factor") },
                         singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done),
+                        modifier = Modifier.fillMaxWidth().focusRequester(mulDivFocus)
                     )
                     Text(
                         "Applies to the current amount in the box. The result replaces the amount.",

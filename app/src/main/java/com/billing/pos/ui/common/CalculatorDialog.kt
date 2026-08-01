@@ -174,45 +174,58 @@ fun CalculatorDialog(
             }
             Divider()
 
-            Row(
-                Modifier.fillMaxWidth().padding(12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                OutlinedTextField(
-                    value = input,
-                    onValueChange = { input = it.filter { c -> c.isDigit() || c == '.' } },
-                    label = { Text("Amount") },
-                    singleLine = true,
-                    textStyle = LocalTextStyle.current.copy(
-                        fontSize = 26.sp, fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.Bold, textAlign = TextAlign.End
-                    ),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done),
-                    keyboardActions = KeyboardActions(onDone = { add(1) }),
-                    modifier = Modifier.weight(1f).focusRequester(focus)
-                )
-                IconButton(onClick = {
-                    if (input.isNotEmpty()) input = "" else if (entries.isNotEmpty()) confirmRemoveLast = true
-                }) { Icon(Icons.Filled.Backspace, contentDescription = "Remove last") }
-                // Multiplication button
-                OutlinedButton(onClick = {
-                    val cur = input.toDoubleOrNull()
-                    if (cur == null) { showNoAmountAlert = true; return@OutlinedButton }
-                    mulDivOp = '*'
-                    mulDivFactor = ""
-                    showMulDivDialog = true
-                }) { Text("×", fontSize = 20.sp, fontWeight = FontWeight.Bold) }
-                // Division button
-                OutlinedButton(onClick = {
-                    val cur = input.toDoubleOrNull()
-                    if (cur == null) { showNoAmountAlert = true; return@OutlinedButton }
-                    mulDivOp = '/'
-                    mulDivFactor = ""
-                    showMulDivDialog = true
-                }) { Text("÷", fontSize = 20.sp, fontWeight = FontWeight.Bold) }
-                OutlinedButton(onClick = { add(-1) }) { Text("−", fontSize = 24.sp, fontWeight = FontWeight.Bold) }
-                Button(onClick = { add(1) }) { Text("+", fontSize = 24.sp, fontWeight = FontWeight.Bold) }
+            Column(Modifier.fillMaxWidth().padding(12.dp)) {
+                // Amount box and remove-last share their own row...
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = input,
+                        onValueChange = { input = it.filter { c -> c.isDigit() || c == '.' } },
+                        label = { Text("Amount") },
+                        singleLine = true,
+                        textStyle = LocalTextStyle.current.copy(
+                            fontSize = 26.sp, fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold, textAlign = TextAlign.End
+                        ),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Done),
+                        keyboardActions = KeyboardActions(onDone = { add(1) }),
+                        modifier = Modifier.weight(1f).focusRequester(focus)
+                    )
+                    IconButton(onClick = {
+                        if (input.isNotEmpty()) input = "" else if (entries.isNotEmpty()) confirmRemoveLast = true
+                    }) { Icon(Icons.Filled.Backspace, contentDescription = "Remove last") }
+                }
+                // ...×, ÷, − and + get their own row below, so neither row is crowded.
+                Row(
+                    Modifier.fillMaxWidth().padding(top = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        modifier = Modifier.weight(1f),
+                        onClick = {
+                            val cur = input.toDoubleOrNull()
+                            if (cur == null) { showNoAmountAlert = true; return@OutlinedButton }
+                            mulDivOp = '*'
+                            mulDivFactor = ""
+                            showMulDivDialog = true
+                        }
+                    ) { Text("×", fontSize = 20.sp, fontWeight = FontWeight.Bold) }
+                    OutlinedButton(
+                        modifier = Modifier.weight(1f),
+                        onClick = {
+                            val cur = input.toDoubleOrNull()
+                            if (cur == null) { showNoAmountAlert = true; return@OutlinedButton }
+                            mulDivOp = '/'
+                            mulDivFactor = ""
+                            showMulDivDialog = true
+                        }
+                    ) { Text("÷", fontSize = 20.sp, fontWeight = FontWeight.Bold) }
+                    OutlinedButton(modifier = Modifier.weight(1f), onClick = { add(-1) }) {
+                        Text("−", fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                    }
+                    Button(modifier = Modifier.weight(1f), onClick = { add(1) }) {
+                        Text("+", fontSize = 24.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
             }
         }
 
