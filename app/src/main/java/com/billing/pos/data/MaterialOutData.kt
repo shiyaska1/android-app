@@ -21,7 +21,9 @@ data class MaterialOut(
     val resultRef: String = "",
     /** Comma-joined test names of the linked results, for the test filter. */
     val resultTests: String = "",
-    val remarks: String = ""
+    val remarks: String = "",
+    /** The production run this consumption was generated for; 0 = a standalone material-out voucher. */
+    val productionRunId: Long = 0
 )
 
 @Entity(tableName = "material_out_items")

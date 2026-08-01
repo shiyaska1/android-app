@@ -26,8 +26,23 @@ data class CustOrder(
     val remark: String = "",
     val latitude: Double = 0.0,
     val longitude: Double = 0.0,
-    val grandTotal: Double
+    val grandTotal: Double,
+    /** [License.deviceId] of the phone the order was created on, so reports can attribute it to a salesman. */
+    val deviceId: String = ""
 )
+
+/** Delivery status of one order line. Stored as [name] in the DB; [PENDING] is the default for anything not yet touched. */
+enum class OrderStatus(val label: String) {
+    PENDING("Pending"), DELIVERED("Delivered"), PARTIAL("Partial Delivered"), CANCELLED("Cancel");
+    companion object {
+        fun from(s: String): OrderStatus = runCatching { valueOf(s) }.getOrDefault(PENDING)
+        /** All-same -> that status; any mix (e.g. some lines delivered, some not) -> Partial Delivered. */
+        fun rollup(statuses: Collection<OrderStatus>): OrderStatus {
+            val distinct = statuses.toSet()
+            return if (distinct.size == 1) distinct.first() else PARTIAL
+        }
+    }
+}
 
 @Entity(tableName = "cust_order_items")
 data class CustOrderItem(
@@ -38,7 +53,8 @@ data class CustOrderItem(
     val qty: Double,
     val price: Double,
     val lineTotal: Double,
-    val unit: String = ""
+    val unit: String = "",
+    val status: String = "PENDING"
 )
 
 @Entity(tableName = "cust_order_attachments")
@@ -85,6 +101,9 @@ interface CustOrderDao {
     @Query("SELECT * FROM cust_order_attachments WHERE orderId = :id") suspend fun attachmentsFor(id: Long): List<CustOrderAttachment>
     @Query("SELECT * FROM cust_order_attachments") suspend fun allAttachments(): List<CustOrderAttachment>
     @Query("DELETE FROM cust_order_attachments WHERE orderId = :id") suspend fun deleteAttachments(id: Long)
+
+    @Query("UPDATE cust_order_items SET status = :status WHERE id = :id") suspend fun updateItemStatus(id: Long, status: String)
+    @Query("UPDATE cust_order_items SET status = :status WHERE id IN (:ids)") suspend fun updateItemStatusBulk(ids: List<Long>, status: String)
 }
 
 /** Files attached to a customer order, copied in so they survive the source going away. */

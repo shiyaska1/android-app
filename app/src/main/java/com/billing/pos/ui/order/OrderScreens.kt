@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -25,8 +26,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Gesture
 import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.NoteAdd
 import androidx.compose.material.icons.filled.PhotoLibrary
@@ -116,11 +119,15 @@ class OrderViewModel(app: Application) : AndroidViewModel(app) {
         if (cart.isEmpty()) { message.value = "Add at least one item"; return }
         viewModelScope.launch {
             val total = cart.sumOf { it.total }
-            val no = if (existingId == null) repo.nextOrderNo() else repo.orderById(existingId)?.orderNo ?: repo.nextOrderNo()
+            val existing = existingId?.let { repo.orderById(it) }
+            val no = existing?.orderNo ?: repo.nextOrderNo()
+            // New orders are tagged with this phone's id so reports can attribute them to a
+            // salesman (Settings > Salesman mapping); an edit keeps the original order's device.
+            val deviceId = existing?.deviceId ?: com.billing.pos.data.License.deviceId(getApplication())
             val order = CustOrder(
                 id = existingId ?: 0, orderNo = no, dateMillis = System.currentTimeMillis(),
                 customerId = customer.id, customerName = customer.name, remark = remark.trim(),
-                latitude = lat, longitude = lng, grandTotal = total
+                latitude = lat, longitude = lng, grandTotal = total, deviceId = deviceId
             )
             val lines = cart.map { CustOrderItem(0, order.id, it.itemId, it.name, it.qty, it.price, it.total, it.unit) }
             val id = if (existingId != null) { repo.updateOrder(order, lines); existingId } else repo.saveOrder(order, lines)
@@ -351,7 +358,7 @@ fun OrderEntryScreen(editId: Long?, onBack: () -> Unit, vm: OrderViewModel = vie
     }
 }
 
-private fun captureLocation(context: android.content.Context, onGot: (Double, Double) -> Unit) {
+internal fun captureLocation(context: android.content.Context, onGot: (Double, Double) -> Unit) {
     runCatching {
         val lm = context.getSystemService(android.content.Context.LOCATION_SERVICE) as android.location.LocationManager
         val loc = lm.getLastKnownLocation(android.location.LocationManager.GPS_PROVIDER)
@@ -362,7 +369,7 @@ private fun captureLocation(context: android.content.Context, onGot: (Double, Do
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun OrderListScreen(onBack: () -> Unit, onOpen: (Long) -> Unit, onNew: () -> Unit, onReport: () -> Unit, onConvertToBill: () -> Unit, vm: OrderViewModel = viewModel()) {
+fun OrderListScreen(onBack: () -> Unit, onOpen: (Long) -> Unit, onNew: () -> Unit, onQuickNew: () -> Unit, onReport: () -> Unit, onStatusReport: () -> Unit, onConvertToBill: () -> Unit, vm: OrderViewModel = viewModel()) {
     val snackbar = remember { SnackbarHostState() }
     val orders by vm.orders.collectAsStateSafe()
     val message by vm.message.collectAsStateSafe()
@@ -398,6 +405,7 @@ fun OrderListScreen(onBack: () -> Unit, onOpen: (Long) -> Unit, onNew: () -> Uni
                     } else {
                         IconButton(onClick = { selecting = true }) { Icon(Icons.Filled.Add, "Convert orders to a bill") }
                         IconButton(onClick = onReport) { Icon(Icons.Filled.NoteAdd, "Consolidated report") }
+                        IconButton(onClick = onStatusReport) { Icon(Icons.Filled.Checklist, "Order status report") }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -408,7 +416,13 @@ fun OrderListScreen(onBack: () -> Unit, onOpen: (Long) -> Unit, onNew: () -> Uni
                 )
             )
         },
-        floatingActionButton = { FloatingActionButton(onClick = onNew) { Icon(Icons.Filled.Add, "New order") } }
+        floatingActionButton = {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                androidx.compose.material3.SmallFloatingActionButton(onClick = onQuickNew) { Icon(Icons.Filled.Bolt, "Quick order") }
+                Spacer(Modifier.height(10.dp))
+                FloatingActionButton(onClick = onNew) { Icon(Icons.Filled.Add, "New order") }
+            }
+        }
     ) { pad ->
         Column(Modifier.fillMaxSize().padding(pad)) {
             OutlinedTextField(value = nameQuery, onValueChange = { nameQuery = it }, label = { Text("Search customer") }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp))

@@ -96,6 +96,9 @@ object FullBackup {
         root.put("materialOutItems", JSONArray().apply { db.materialOutDao().allLines().forEach { put(matOutItemJson(it)) } })
         root.put("materialReceipts", JSONArray().apply { db.materialReceiptDao().all().forEach { put(matRecJson(it)) } })
         root.put("materialReceiptItems", JSONArray().apply { db.materialReceiptDao().allLines().forEach { put(matRecItemJson(it)) } })
+        root.put("productionProcedures", JSONArray().apply { db.productionDao().allProcedures().forEach { put(procedureJson(it)) } })
+        root.put("productionProcedureMaterials", JSONArray().apply { db.productionDao().allProcedureMaterials().forEach { put(procedureMaterialJson(it)) } })
+        root.put("productionRuns", JSONArray().apply { db.productionDao().allRuns().forEach { put(productionRunJson(it)) } })
         val billAtts = db.billAttachmentDao().all()
         root.put("billAttachments", JSONArray().apply { billAtts.forEach { put(billAttJson(it)) } })
         val expenseAtts = db.expenseAttachmentDao().all()
@@ -109,6 +112,9 @@ object FullBackup {
         root.put("custOrderItems", JSONArray().apply { db.custOrderDao().allLines().forEach { put(orderItemJson(it)) } })
         val orderAtts = db.custOrderDao().allAttachments()
         root.put("custOrderAttachments", JSONArray().apply { orderAtts.forEach { put(orderAttJson(it)) } })
+        root.put("salesmanMap", JSONArray().apply {
+            db.salesmanMapDao().all().forEach { put(JSONObject().put("deviceId", it.deviceId).put("name", it.name)) }
+        })
 
         val dir = File(context.cacheDir, "shared").apply { mkdirs() }
         val zip = File(dir, "pos-full-backup.zip")
@@ -387,6 +393,12 @@ object FullBackup {
             if (ls.isNotEmpty()) db.custOrderDao().insertLines(ls)
         }
         root.optJSONArray("custOrderAttachments")?.let { for (i in 0 until it.length()) db.custOrderDao().insertAttachment(readOrderAtt(context, it.getJSONObject(i))) }
+        root.optJSONArray("salesmanMap")?.let {
+            for (i in 0 until it.length()) {
+                val o = it.getJSONObject(i)
+                db.salesmanMapDao().upsert(SalesmanMap(o.optString("deviceId"), o.optString("name")))
+            }
+        }
         root.optJSONArray("materialReceipts")?.let {
             for (i in 0 until it.length()) db.materialReceiptDao().insertHeader(readMatRec(it.getJSONObject(i)))
         }
@@ -395,6 +407,13 @@ object FullBackup {
             for (i in 0 until it.length()) ls.add(readMatRecItem(it.getJSONObject(i)))
             if (ls.isNotEmpty()) db.materialReceiptDao().insertLines(ls)
         }
+        root.optJSONArray("productionProcedures")?.let { for (i in 0 until it.length()) db.productionDao().insertProcedureHeader(readProcedure(it.getJSONObject(i))) }
+        root.optJSONArray("productionProcedureMaterials")?.let {
+            val ls = ArrayList<ProductionProcedureMaterial>()
+            for (i in 0 until it.length()) ls.add(readProcedureMaterial(it.getJSONObject(i)))
+            if (ls.isNotEmpty()) db.productionDao().insertProcedureMaterials(ls)
+        }
+        root.optJSONArray("productionRuns")?.let { for (i in 0 until it.length()) db.productionDao().insertRun(readProductionRun(it.getJSONObject(i))) }
 
         "Restore complete"
     } }
@@ -407,6 +426,16 @@ object FullBackup {
      */
     private suspend fun mergeInto(context: Context, db: AppDatabase, root: JSONObject): MergeReport {
         val log = MergeReportBuilder()
+        // Company settings — a merge is meant to converge every device onto the same business
+        // profile too, not just add records, so this is applied unconditionally like a replace
+        // restore does (previously this only happened on a full Replace-all, never on Merge —
+        // including every Push/Pull cloud-sync cycle, which always merges).
+        root.optJSONObject("settings")?.let { s ->
+            val prefs = AppPrefs(context)
+            prefs.companyName = s.optString("companyName", prefs.companyName)
+            prefs.companyAddress = s.optString("companyAddress", prefs.companyAddress)
+            prefs.companyPhone = s.optString("companyPhone", prefs.companyPhone)
+        }
         // Customers
         val custByName = HashMap<String, Long>()
         db.customerDao().all().forEach { custByName[it.name.lowercase()] = it.id }
@@ -811,6 +840,14 @@ object FullBackup {
                 db.custOrderDao().insertAttachment(a.copy(id = 0, orderId = no))
             }
         }
+        // Salesman map — keyed by deviceId, so merging is just an upsert (same device wins with
+        // whatever name the merged-in backup had, never duplicated).
+        root.optJSONArray("salesmanMap")?.let {
+            for (i in 0 until it.length()) {
+                val o = it.getJSONObject(i)
+                db.salesmanMapDao().upsert(SalesmanMap(o.optString("deviceId"), o.optString("name")))
+            }
+        }
         // Material receipts + lines
         val matRecMap = HashMap<Long, Long>()
         root.optJSONArray("materialReceipts")?.let {
@@ -825,6 +862,38 @@ object FullBackup {
             for (i in 0 until it.length()) {
                 val l = readMatRecItem(it.getJSONObject(i)); val nm = matRecMap[l.receiptId] ?: continue
                 db.materialReceiptDao().insertLines(listOf(l.copy(id = 0, receiptId = nm, itemId = itemMap[l.itemId] ?: l.itemId)))
+            }
+        }
+        // Production procedures (recipes) + their material lines, following the header's new id.
+        val procedureMap = HashMap<Long, Long>()
+        root.optJSONArray("productionProcedures")?.let {
+            for (i in 0 until it.length()) {
+                val p = readProcedure(it.getJSONObject(i))
+                procedureMap[p.id] = db.productionDao()
+                    .insertProcedureHeader(p.copy(id = 0, producedItemId = itemMap[p.producedItemId] ?: p.producedItemId))
+                    .also { nid -> log.add("productionProcedures", nid) }
+            }
+        }
+        root.optJSONArray("productionProcedureMaterials")?.let {
+            for (i in 0 until it.length()) {
+                val m = readProcedureMaterial(it.getJSONObject(i)); val np = procedureMap[m.procedureId] ?: continue
+                db.productionDao().insertProcedureMaterials(listOf(m.copy(id = 0, procedureId = np, itemId = itemMap[m.itemId] ?: m.itemId)))
+            }
+        }
+        // Production runs — follow the procedure's new id, and the linked MaterialOut/MaterialReceipt's
+        // new ids (0 if either link can't be resolved, same "no link" convention as a fresh run).
+        root.optJSONArray("productionRuns")?.let {
+            for (i in 0 until it.length()) {
+                val r = readProductionRun(it.getJSONObject(i))
+                db.productionDao().insertRun(
+                    r.copy(
+                        id = 0,
+                        procedureId = procedureMap[r.procedureId] ?: r.procedureId,
+                        producedItemId = itemMap[r.producedItemId] ?: r.producedItemId,
+                        materialOutId = matOutMap[r.materialOutId] ?: 0,
+                        materialReceiptId = matRecMap[r.materialReceiptId] ?: 0
+                    )
+                ).also { nid -> log.add("productionRuns", nid) }
             }
         }
 
@@ -978,19 +1047,21 @@ object FullBackup {
     private fun orderJson(o: CustOrder) = JSONObject().put("id", o.id).put("orderNo", o.orderNo)
         .put("dateMillis", o.dateMillis).put("customerId", o.customerId).put("customerName", o.customerName)
         .put("remark", o.remark).put("latitude", o.latitude).put("longitude", o.longitude).put("grandTotal", o.grandTotal)
+        .put("deviceId", o.deviceId)
     private fun readOrder(o: JSONObject) = CustOrder(
         id = o.optLong("id"), orderNo = o.optString("orderNo"), dateMillis = o.optLong("dateMillis"),
         customerId = o.optLong("customerId"), customerName = o.optString("customerName"),
         remark = o.optString("remark"), latitude = o.optDouble("latitude", 0.0), longitude = o.optDouble("longitude", 0.0),
-        grandTotal = o.optDouble("grandTotal", 0.0)
+        grandTotal = o.optDouble("grandTotal", 0.0), deviceId = o.optString("deviceId")
     )
     private fun orderItemJson(l: CustOrderItem) = JSONObject().put("id", l.id).put("orderId", l.orderId)
         .put("itemId", l.itemId).put("name", l.name).put("qty", l.qty).put("price", l.price)
-        .put("lineTotal", l.lineTotal).put("unit", l.unit)
+        .put("lineTotal", l.lineTotal).put("unit", l.unit).put("status", l.status)
     private fun readOrderItem(o: JSONObject) = CustOrderItem(
         id = o.optLong("id"), orderId = o.optLong("orderId"), itemId = o.optLong("itemId"),
         name = o.optString("name"), qty = o.optDouble("qty", 0.0), price = o.optDouble("price", 0.0),
-        lineTotal = o.optDouble("lineTotal", 0.0), unit = o.optString("unit")
+        lineTotal = o.optDouble("lineTotal", 0.0), unit = o.optString("unit"),
+        status = o.optString("status", "PENDING")
     )
     private fun orderAttJson(a: CustOrderAttachment) = JSONObject().put("id", a.id).put("orderId", a.orderId)
         .put("file", File(a.path).name).put("name", a.name).put("mime", a.mime)
@@ -1256,9 +1327,11 @@ object FullBackup {
 
     private fun matOutJson(m: MaterialOut) = JSONObject().put("id", m.id).put("voucherNo", m.voucherNo)
         .put("dateMillis", m.dateMillis).put("resultRef", m.resultRef).put("resultTests", m.resultTests).put("remarks", m.remarks)
+        .put("productionRunId", m.productionRunId)
     private fun readMatOut(o: JSONObject) = MaterialOut(
         id = o.optLong("id"), voucherNo = o.optString("voucherNo"), dateMillis = o.optLong("dateMillis"),
-        resultRef = o.optString("resultRef"), resultTests = o.optString("resultTests"), remarks = o.optString("remarks")
+        resultRef = o.optString("resultRef"), resultTests = o.optString("resultTests"), remarks = o.optString("remarks"),
+        productionRunId = o.optLong("productionRunId")
     )
     private fun matOutItemJson(l: MaterialOutItem) = JSONObject().put("id", l.id).put("outId", l.outId)
         .put("itemId", l.itemId).put("name", l.name).put("qty", l.qty).put("unit", l.unit)
@@ -1276,12 +1349,13 @@ object FullBackup {
 
     private fun matRecJson(m: MaterialReceipt) = JSONObject().put("id", m.id).put("receiptNo", m.receiptNo)
         .put("dateMillis", m.dateMillis).put("supplierId", m.supplierId).put("supplierName", m.supplierName)
-        .put("lpoId", m.lpoId).put("lpoNo", m.lpoNo).put("remarks", m.remarks)
+        .put("lpoId", m.lpoId).put("lpoNo", m.lpoNo).put("remarks", m.remarks).put("productionRunId", m.productionRunId)
 
     private fun readMatRec(o: JSONObject) = MaterialReceipt(
         id = o.optLong("id"), receiptNo = o.optString("receiptNo"), dateMillis = o.optLong("dateMillis"),
         supplierId = o.optLong("supplierId"), supplierName = o.optString("supplierName"),
-        lpoId = o.optLong("lpoId"), lpoNo = o.optString("lpoNo"), remarks = o.optString("remarks")
+        lpoId = o.optLong("lpoId"), lpoNo = o.optString("lpoNo"), remarks = o.optString("remarks"),
+        productionRunId = o.optLong("productionRunId")
     )
 
     private fun matRecItemJson(l: MaterialReceiptItem) = JSONObject().put("id", l.id).put("receiptId", l.receiptId)
@@ -1293,6 +1367,36 @@ object FullBackup {
         name = o.optString("name"), qty = o.optDouble("qty", 0.0), price = o.optDouble("price", 0.0),
         taxPercent = o.optDouble("taxPercent", 0.0), lineTotal = o.optDouble("lineTotal", 0.0),
         batchNo = o.optString("batchNo"), unit = o.optString("unit")
+    )
+
+    private fun procedureJson(p: ProductionProcedure) = JSONObject().put("id", p.id).put("name", p.name)
+        .put("producedItemId", p.producedItemId).put("producedItemName", p.producedItemName)
+        .put("producedQty", p.producedQty).put("unit", p.unit).put("labourCost", p.labourCost).put("remarks", p.remarks)
+    private fun readProcedure(o: JSONObject) = ProductionProcedure(
+        id = o.optLong("id"), name = o.optString("name"), producedItemId = o.optLong("producedItemId"),
+        producedItemName = o.optString("producedItemName"), producedQty = o.optDouble("producedQty", 0.0),
+        unit = o.optString("unit"), labourCost = o.optDouble("labourCost", 0.0), remarks = o.optString("remarks")
+    )
+    private fun procedureMaterialJson(m: ProductionProcedureMaterial) = JSONObject().put("id", m.id).put("procedureId", m.procedureId)
+        .put("itemId", m.itemId).put("name", m.name).put("qty", m.qty).put("unit", m.unit)
+    private fun readProcedureMaterial(o: JSONObject) = ProductionProcedureMaterial(
+        id = o.optLong("id"), procedureId = o.optLong("procedureId"), itemId = o.optLong("itemId"),
+        name = o.optString("name"), qty = o.optDouble("qty", 0.0), unit = o.optString("unit")
+    )
+    private fun productionRunJson(r: ProductionRun) = JSONObject().put("id", r.id).put("runNo", r.runNo)
+        .put("dateMillis", r.dateMillis).put("procedureId", r.procedureId).put("procedureName", r.procedureName)
+        .put("producedItemId", r.producedItemId).put("producedItemName", r.producedItemName)
+        .put("qtyProduced", r.qtyProduced).put("unit", r.unit).put("materialCost", r.materialCost)
+        .put("labourCost", r.labourCost).put("totalCost", r.totalCost).put("unitCost", r.unitCost)
+        .put("remarks", r.remarks).put("materialOutId", r.materialOutId).put("materialReceiptId", r.materialReceiptId)
+    private fun readProductionRun(o: JSONObject) = ProductionRun(
+        id = o.optLong("id"), runNo = o.optString("runNo"), dateMillis = o.optLong("dateMillis"),
+        procedureId = o.optLong("procedureId"), procedureName = o.optString("procedureName"),
+        producedItemId = o.optLong("producedItemId"), producedItemName = o.optString("producedItemName"),
+        qtyProduced = o.optDouble("qtyProduced", 0.0), unit = o.optString("unit"),
+        materialCost = o.optDouble("materialCost", 0.0), labourCost = o.optDouble("labourCost", 0.0),
+        totalCost = o.optDouble("totalCost", 0.0), unitCost = o.optDouble("unitCost", 0.0),
+        remarks = o.optString("remarks"), materialOutId = o.optLong("materialOutId"), materialReceiptId = o.optLong("materialReceiptId")
     )
 
     private fun expenseAttJson(a: ExpenseAttachment) = JSONObject().put("id", a.id).put("expenseId", a.expenseId)

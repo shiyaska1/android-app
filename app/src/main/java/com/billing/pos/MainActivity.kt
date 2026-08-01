@@ -439,6 +439,9 @@ private fun AppNav() {
                 onMaterialOut = { nav.navigate("materialouts") },
                 onMaterialReceipt = { nav.navigate("materialreceipts") },
                 onDeliveryNote = { nav.navigate("deliverynotes") },
+                onProduce = { nav.navigate("productionruns") },
+                onProcedures = { nav.navigate("procedures") },
+                onProductionReport = { nav.navigate("productionreport") },
                 onLpoMaterialReport = { nav.navigate("lpomaterialreport") },
                 onItemMovement = { nav.navigate("itemmovement") },
                 onStockReport = { nav.navigate("stockreport") },
@@ -553,16 +556,20 @@ private fun AppNav() {
                 onBack = { nav.popBackStack() },
                 onOpen = { id -> nav.navigate("order/edit/$id") },
                 onNew = { nav.navigate("order") },
+                onQuickNew = { nav.navigate("quickorder") },
                 onReport = { nav.navigate("orderreport") },
+                onStatusReport = { nav.navigate("orderstatusreport") },
                 onConvertToBill = { nav.navigate("billing") }
             )
         }
         composable("order") { com.billing.pos.ui.order.OrderEntryScreen(editId = null, onBack = { nav.popBackStack() }) }
+        composable("quickorder") { com.billing.pos.ui.order.QuickOrderScreen(onBack = { nav.popBackStack() }) }
         composable(
             route = "order/edit/{id}",
             arguments = listOf(navArgument("id") { type = NavType.LongType })
         ) { entry -> com.billing.pos.ui.order.OrderEntryScreen(editId = entry.arguments?.getLong("id"), onBack = { nav.popBackStack() }) }
         composable("orderreport") { com.billing.pos.ui.order.OrderReportScreen(onBack = { nav.popBackStack() }) }
+        composable("orderstatusreport") { com.billing.pos.ui.order.OrderStatusReportScreen(onBack = { nav.popBackStack() }) }
         composable("customers") {
             CustomersScreen(onBack = { nav.popBackStack() })
         }
@@ -792,6 +799,29 @@ private fun AppNav() {
         composable("lpomaterialreport") {
             LpoMaterialReportScreen(onBack = { nav.popBackStack() }, onOpenLpo = { id -> nav.navigate("lpo/edit/$id") })
         }
+
+        // Production: procedures (recipes) + runs that consume raw materials to produce a finished item.
+        composable("procedures") {
+            com.billing.pos.ui.production.ProcedureListScreen(
+                onBack = { nav.popBackStack() },
+                onOpen = { id -> nav.navigate("procedure/edit/$id") },
+                onNew = { nav.navigate("procedure") }
+            )
+        }
+        composable("procedure") { com.billing.pos.ui.production.ProcedureEditScreen(editId = null, onBack = { nav.popBackStack() }) }
+        composable(
+            route = "procedure/edit/{id}",
+            arguments = listOf(navArgument("id") { type = NavType.LongType })
+        ) { entry -> com.billing.pos.ui.production.ProcedureEditScreen(editId = entry.arguments?.getLong("id"), onBack = { nav.popBackStack() }) }
+        composable("productionruns") {
+            com.billing.pos.ui.production.ProductionRunListScreen(
+                onBack = { nav.popBackStack() },
+                onNew = { nav.navigate("productionrun") },
+                onReport = { nav.navigate("productionreport") }
+            )
+        }
+        composable("productionrun") { com.billing.pos.ui.production.ProductionRunScreen(onBack = { nav.popBackStack() }) }
+        composable("productionreport") { com.billing.pos.ui.production.ProductionReportScreen(onBack = { nav.popBackStack() }) }
         composable("stickynote") {
             com.billing.pos.ui.sticky.StickyNoteScreen(
                 onClose = { nav.popBackStack() },

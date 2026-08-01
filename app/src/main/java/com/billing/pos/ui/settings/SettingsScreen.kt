@@ -25,6 +25,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
 import androidx.compose.material.icons.filled.Print
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.Divider
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -679,6 +680,53 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
             if (cloudAutoSync) {
                 Text(cloudSyncStatus, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 6.dp))
             }
+
+            Divider(Modifier.padding(vertical = 16.dp))
+            Text("Salesman mapping", style = MaterialTheme.typography.titleSmall)
+            Text(
+                "Order reports show a Salesman column, resolved from the phone that took the " +
+                    "order. Map each phone's device id to a name here — add one row per phone.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline
+            )
+            val orderRepo = remember { com.billing.pos.data.Repository(context) }
+            val salesmen by orderRepo.salesmen.collectAsState(initial = emptyList())
+            var newSalesmanDeviceId by remember { mutableStateOf("") }
+            var newSalesmanName by remember { mutableStateOf("") }
+            salesmen.forEach { s ->
+                Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(s.name, style = MaterialTheme.typography.bodyMedium)
+                        Text(s.deviceId, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                    }
+                    IconButton(onClick = { scope.launch { orderRepo.deleteSalesman(s.deviceId) } }) {
+                        Icon(Icons.Filled.Delete, "Remove", tint = MaterialTheme.colorScheme.error)
+                    }
+                }
+            }
+            Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                OutlinedTextField(
+                    value = newSalesmanDeviceId, onValueChange = { newSalesmanDeviceId = it },
+                    label = { Text("Device ID") }, singleLine = true, modifier = Modifier.weight(1f)
+                )
+                TextButton(onClick = { newSalesmanDeviceId = com.billing.pos.data.License.deviceId(context) }) { Text("This device") }
+            }
+            OutlinedTextField(
+                value = newSalesmanName, onValueChange = { newSalesmanName = it },
+                label = { Text("Salesman name") }, singleLine = true,
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+            )
+            Button(
+                onClick = {
+                    if (newSalesmanDeviceId.isNotBlank() && newSalesmanName.isNotBlank()) {
+                        scope.launch {
+                            orderRepo.upsertSalesman(newSalesmanDeviceId.trim(), newSalesmanName.trim())
+                            newSalesmanDeviceId = ""; newSalesmanName = ""
+                        }
+                    }
+                },
+                enabled = newSalesmanDeviceId.isNotBlank() && newSalesmanName.isNotBlank(),
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+            ) { Text("Add / update salesman") }
         }
     }
 }

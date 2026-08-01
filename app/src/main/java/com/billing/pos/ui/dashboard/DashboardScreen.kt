@@ -53,6 +53,8 @@ import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.MoneyOff
 import androidx.compose.material.icons.filled.MoveDown
 import androidx.compose.material.icons.filled.MoveToInbox
+import androidx.compose.material.icons.filled.MenuBook
+import androidx.compose.material.icons.filled.PrecisionManufacturing
 import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material.icons.filled.Summarize
 import androidx.compose.material.icons.filled.Payments
@@ -175,6 +177,9 @@ fun DashboardScreen(
     onMaterialOut: () -> Unit,
     onMaterialReceipt: () -> Unit,
     onDeliveryNote: () -> Unit,
+    onProduce: () -> Unit,
+    onProcedures: () -> Unit,
+    onProductionReport: () -> Unit,
     onLpoMaterialReport: () -> Unit,
     onItemMovement: () -> Unit,
     onStockReport: () -> Unit,
@@ -256,6 +261,8 @@ fun DashboardScreen(
         add(Tile("Purchase Quotation", Icons.Filled.RequestQuote, onPurchaseQuotes, "Transactions/Vendor Relation"))
         if (Session.canViewInvoice) add(Tile("Material Receipt", Icons.Filled.MoveToInbox, onMaterialReceipt, "Transactions/Vendor Relation"))
         if (Session.canViewInvoice) add(Tile("Delivery Note", Icons.Filled.LocalShipping, onDeliveryNote, "Transactions/Customer Relation"))
+        add(Tile("Produce", Icons.Filled.PrecisionManufacturing, onProduce, "Transactions/Production"))
+        add(Tile("Procedures", Icons.Filled.MenuBook, onProcedures, "Transactions/Production"))
         if (isLab) {
             add(Tile("Lab Bill", Icons.Filled.Science, onLabBills, "Transactions/Customer Relation"))
             add(Tile("Material Out", Icons.Filled.MoveDown, onMaterialOut, "Transactions/Customer Relation"))
@@ -318,6 +325,7 @@ fun DashboardScreen(
         add(Tile("Stock on Date", Icons.Filled.Inventory, onStockReport, "Reports"))
         if (com.billing.pos.data.AppPrefs(context).requireItemBatch) add(Tile("Expiry Report", Icons.Filled.EventBusy, onExpiryReport, "Reports"))
         add(Tile("Item Movement", Icons.Filled.SwapVert, onItemMovement, "Reports"))
+        add(Tile("Production Cost", Icons.Filled.PrecisionManufacturing, onProductionReport, "Reports"))
         add(Tile("Price Search", Icons.Filled.PriceCheck, onPriceSearch, "Reports"))
         if (Session.canViewInvoice) add(Tile("VAT Report", Icons.Filled.Description, onVatReport, "Reports"))
         // note: Trial Balance / P&L / Balance Sheet moved up into Accounts/Reports above

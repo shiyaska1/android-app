@@ -46,7 +46,9 @@ import androidx.room.TypeConverters
         ReceiptAllocation::class, ExpenseAllocation::class,
         DeliveryNote::class, DeliveryNoteItem::class,
         QuickNote::class, QuickNoteAttachment::class,
-        PurchaseAttachment::class
+        PurchaseAttachment::class,
+        SalesmanMap::class,
+        ProductionProcedure::class, ProductionProcedureMaterial::class, ProductionRun::class
     ],
     // v25 quotations; v26 sales returns; v27 purchase returns; v28 purchase quotations (LPO);
     // v29 dual units; v30 rental; v31 medical lab; v32 lab masters + heading rows;
@@ -63,7 +65,9 @@ import androidx.room.TypeConverters
     // v64 delivery note / material receipt "converted to bill/purchase" tracking.
     // v65 quick notes (dashboard quick-note list, with an optional one-time/daily reminder).
     // v66 purchase supplier-bill-no + remarks + attachments.
-    version = 66,
+    // v67 order line status (pending/delivered/partial/cancelled), order deviceId, salesman map.
+    // v68 production: procedures (recipes), production runs (linked to a MaterialOut + MaterialReceipt).
+    version = 68,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -119,6 +123,8 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun quickNoteDao(): QuickNoteDao
     abstract fun quickNoteAttachmentDao(): QuickNoteAttachmentDao
     abstract fun purchaseAttachmentDao(): PurchaseAttachmentDao
+    abstract fun salesmanMapDao(): SalesmanMapDao
+    abstract fun productionDao(): ProductionDao
 
     companion object {
         @Volatile private var INSTANCE: AppDatabase? = null
@@ -508,6 +514,48 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** Order line status, order-origin deviceId, and the deviceId -> salesman name map. */
+        private val MIGRATION_66_67 = object : androidx.room.migration.Migration(66, 67) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE cust_order_items ADD COLUMN status TEXT NOT NULL DEFAULT 'PENDING'")
+                db.execSQL("ALTER TABLE cust_orders ADD COLUMN deviceId TEXT NOT NULL DEFAULT ''")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS salesman_map (" +
+                        "deviceId TEXT NOT NULL PRIMARY KEY, name TEXT NOT NULL DEFAULT '')"
+                )
+            }
+        }
+
+        /** Production: procedures (recipes) + production runs, and the runs' link fields on material_outs/receipts. */
+        private val MIGRATION_67_68 = object : androidx.room.migration.Migration(67, 68) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS production_procedures (" +
+                        "id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, " +
+                        "producedItemId INTEGER NOT NULL, producedItemName TEXT NOT NULL, " +
+                        "producedQty REAL NOT NULL, unit TEXT NOT NULL DEFAULT '', " +
+                        "labourCost REAL NOT NULL DEFAULT 0, remarks TEXT NOT NULL DEFAULT '')"
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS production_procedure_materials (" +
+                        "id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, procedureId INTEGER NOT NULL, " +
+                        "itemId INTEGER NOT NULL DEFAULT 0, name TEXT NOT NULL, qty REAL NOT NULL, " +
+                        "unit TEXT NOT NULL DEFAULT '')"
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS production_runs (" +
+                        "id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, runNo TEXT NOT NULL, " +
+                        "dateMillis INTEGER NOT NULL, procedureId INTEGER NOT NULL, procedureName TEXT NOT NULL, " +
+                        "producedItemId INTEGER NOT NULL, producedItemName TEXT NOT NULL, qtyProduced REAL NOT NULL, " +
+                        "unit TEXT NOT NULL DEFAULT '', materialCost REAL NOT NULL, labourCost REAL NOT NULL, " +
+                        "totalCost REAL NOT NULL, unitCost REAL NOT NULL, remarks TEXT NOT NULL DEFAULT '', " +
+                        "materialOutId INTEGER NOT NULL DEFAULT 0, materialReceiptId INTEGER NOT NULL DEFAULT 0)"
+                )
+                db.execSQL("ALTER TABLE material_outs ADD COLUMN productionRunId INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE material_receipts ADD COLUMN productionRunId INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
         fun get(context: Context): AppDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -515,7 +563,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "pos_billing.db"
                 )
-                    .addMigrations(MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45, MIGRATION_45_46, MIGRATION_46_47, MIGRATION_47_48, MIGRATION_48_49, MIGRATION_49_50, MIGRATION_50_51, MIGRATION_51_52, MIGRATION_52_53, MIGRATION_53_54, MIGRATION_54_55, MIGRATION_55_56, MIGRATION_56_57, MIGRATION_57_58, MIGRATION_58_59, MIGRATION_59_60, MIGRATION_60_61, MIGRATION_61_62, MIGRATION_62_63, MIGRATION_63_64, MIGRATION_64_65, MIGRATION_65_66)
+                    .addMigrations(MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45, MIGRATION_45_46, MIGRATION_46_47, MIGRATION_47_48, MIGRATION_48_49, MIGRATION_49_50, MIGRATION_50_51, MIGRATION_51_52, MIGRATION_52_53, MIGRATION_53_54, MIGRATION_54_55, MIGRATION_55_56, MIGRATION_56_57, MIGRATION_57_58, MIGRATION_58_59, MIGRATION_59_60, MIGRATION_60_61, MIGRATION_61_62, MIGRATION_62_63, MIGRATION_63_64, MIGRATION_64_65, MIGRATION_65_66, MIGRATION_66_67, MIGRATION_67_68)
                     .fallbackToDestructiveMigration()
                     .build()
                     .also { INSTANCE = it }

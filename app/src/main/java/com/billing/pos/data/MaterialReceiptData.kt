@@ -28,7 +28,9 @@ data class MaterialReceipt(
     val lpoNo: String = "",
     val remarks: String = "",
     /** The purchase entry this receipt was converted into, if any; blank = not yet converted. */
-    val convertedPurchaseNo: String = ""
+    val convertedPurchaseNo: String = "",
+    /** The production run this receipt was generated for; 0 = a standalone material-receipt voucher. */
+    val productionRunId: Long = 0
 )
 
 @Entity(tableName = "material_receipt_items")

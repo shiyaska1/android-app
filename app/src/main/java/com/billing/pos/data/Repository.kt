@@ -367,6 +367,14 @@ class Repository(context: Context) {
         custOrderDao.deleteAttachments(orderId)
         list.forEach { custOrderDao.insertAttachment(it.copy(id = 0, orderId = orderId)) }
     }
+    suspend fun updateOrderItemStatus(id: Long, status: OrderStatus) = custOrderDao.updateItemStatus(id, status.name)
+    suspend fun updateOrderItemStatusBulk(ids: List<Long>, status: OrderStatus) = custOrderDao.updateItemStatusBulk(ids, status.name)
+
+    // ---- salesman (deviceId -> display name) mapping ----
+    private val salesmanMapDao = db.salesmanMapDao()
+    val salesmen: Flow<List<SalesmanMap>> = salesmanMapDao.observeAll()
+    suspend fun upsertSalesman(deviceId: String, name: String) = salesmanMapDao.upsert(SalesmanMap(deviceId, name))
+    suspend fun deleteSalesman(deviceId: String) = salesmanMapDao.delete(deviceId)
 
     private val customerAttachmentDao = db.customerAttachmentDao()
 
@@ -656,6 +664,78 @@ class Repository(context: Context) {
     val saleMovements: Flow<List<MoveRow>> = billDao.observeSaleMovements()
     val purchaseMovements: Flow<List<MoveRow>> = purchaseDao.observePurchaseMovements()
     val materialMovements: Flow<List<MoveRow>> = materialOutDao.observeMovements()
+
+    // ---- production (procedures/recipes, and the runs that use them) ----
+    private val productionDao = db.productionDao()
+    val procedures: Flow<List<ProductionProcedure>> = productionDao.observeProcedures()
+    suspend fun procedureMaterials(id: Long): List<ProductionProcedureMaterial> = productionDao.materialsFor(id)
+    suspend fun saveProcedure(p: ProductionProcedure, materials: List<ProductionProcedureMaterial>): Long = productionDao.saveProcedure(p, materials)
+    suspend fun updateProcedure(p: ProductionProcedure, materials: List<ProductionProcedureMaterial>) = productionDao.updateProcedure(p, materials)
+    suspend fun deleteProcedure(p: ProductionProcedure) = productionDao.deleteProcedure(p)
+    suspend fun procedureById(id: Long): ProductionProcedure? = productionDao.procedureById(id)
+
+    val productionRuns: Flow<List<ProductionRun>> = productionDao.observeRuns()
+    suspend fun nextProductionRunNo(): String = "PROD-" + (productionDao.countRuns() + 1).toString().padStart(4, '0')
+
+    /**
+     * Runs a procedure to actually produce [qtyToProduce] of its item: scales the recipe's raw
+     * materials and labour cost by qtyToProduce/procedure.producedQty, records the consumption
+     * as a MaterialOut and the output as a MaterialReceipt (so stock and every existing stock
+     * report need no Production-specific logic), and syncs the produced item's cost to what this
+     * run actually cost per unit.
+     */
+    suspend fun produceRun(procedureId: Long, qtyToProduce: Double, remarks: String): Result<ProductionRun> = runCatching {
+        require(qtyToProduce > 0) { "Quantity must be greater than zero" }
+        val procedure = productionDao.procedureById(procedureId) ?: error("Procedure not found")
+        require(procedure.producedQty > 0) { "Procedure's batch quantity must be greater than zero" }
+        val materials = productionDao.materialsFor(procedureId)
+        val multiplier = qtyToProduce / procedure.producedQty
+
+        val outLines = materials.map { m ->
+            val item = m.itemId.takeIf { it > 0 }?.let { itemDao.byId(it) }
+            val rate = item?.costRate ?: 0.0
+            val consumedQty = m.qty * multiplier
+            Triple(m, consumedQty, consumedQty * rate)
+        }
+        val materialCost = outLines.sumOf { it.third }
+        val labourCost = procedure.labourCost * multiplier
+        val totalCost = materialCost + labourCost
+        val unitCost = totalCost / qtyToProduce
+
+        val runNo = nextProductionRunNo()
+        val dateMillis = System.currentTimeMillis()
+
+        val outId = materialOutDao.save(
+            MaterialOut(voucherNo = runNo, dateMillis = dateMillis, remarks = "Production: " + procedure.name),
+            outLines.map { (m, consumedQty, _) -> MaterialOutItem(0, 0, m.itemId, m.name, consumedQty, m.unit) }
+        )
+        val receiptId = materialReceiptDao.save(
+            MaterialReceipt(receiptNo = runNo, dateMillis = dateMillis, supplierId = 0, supplierName = "Production", remarks = "Production: " + procedure.name),
+            listOf(MaterialReceiptItem(0, 0, procedure.producedItemId, procedure.producedItemName, qtyToProduce, unitCost, unit = procedure.unit))
+        )
+
+        val run = ProductionRun(
+            runNo = runNo, dateMillis = dateMillis, procedureId = procedure.id, procedureName = procedure.name,
+            producedItemId = procedure.producedItemId, producedItemName = procedure.producedItemName,
+            qtyProduced = qtyToProduce, unit = procedure.unit, materialCost = materialCost, labourCost = labourCost,
+            totalCost = totalCost, unitCost = unitCost, remarks = remarks, materialOutId = outId, materialReceiptId = receiptId
+        )
+        val runId = productionDao.insertRun(run)
+        // Tag both generated vouchers back to the run they belong to, and keep the produced
+        // item's cost current so later reports/receipts reflect what it actually cost to make.
+        materialOutDao.byId(outId)?.let { materialOutDao.updateHeader(it.copy(productionRunId = runId)) }
+        materialReceiptDao.byId(receiptId)?.let { materialReceiptDao.updateHeader(it.copy(productionRunId = runId)) }
+        itemDao.byId(procedure.producedItemId)?.let { itemDao.update(it.copy(purchasePrice = unitCost)) }
+
+        run.copy(id = runId)
+    }
+
+    /** Deletes a run and its linked MaterialOut/MaterialReceipt, reversing its stock effect. */
+    suspend fun deleteProductionRun(run: ProductionRun) {
+        if (run.materialOutId > 0) materialOutDao.byId(run.materialOutId)?.let { materialOutDao.delete(it) }
+        if (run.materialReceiptId > 0) materialReceiptDao.byId(run.materialReceiptId)?.let { materialReceiptDao.delete(it) }
+        productionDao.deleteRun(run)
+    }
 
     // ---- item sizes (variants with their own price) ----
     private val itemSizeDao = db.itemSizeDao()
