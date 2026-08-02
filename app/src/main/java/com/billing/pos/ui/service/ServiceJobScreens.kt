@@ -76,6 +76,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -477,18 +478,24 @@ fun ServiceJobScreen(editId: Long?, onBack: () -> Unit, vm: ServiceJobViewModel 
                 // anything new typed simply becomes a new name.
                 val cards by vm.cards.collectAsStateSafe()
                 var nameMenu by remember { mutableStateOf(false) }
+                var cardNameQuery by remember { mutableStateOf(vm.cardName) }
+                LaunchedEffect(vm.cardName) { if (!nameMenu) cardNameQuery = vm.cardName }
                 ExposedDropdownMenuBox(expanded = nameMenu, onExpandedChange = { nameMenu = it }, modifier = Modifier.weight(1f)) {
                     OutlinedTextField(
-                        value = vm.cardName, onValueChange = { vm.cardName = it; nameMenu = true },
+                        value = cardNameQuery, onValueChange = { cardNameQuery = it; vm.cardName = it; nameMenu = true },
                         label = { Text("Job card name") }, singleLine = true,
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(nameMenu) },
                         modifier = Modifier.menuAnchor().fillMaxWidth()
+                            .onFocusChanged { fs ->
+                                if (fs.isFocused) { cardNameQuery = ""; nameMenu = true }
+                                else if (!nameMenu) cardNameQuery = vm.cardName
+                            }
                     )
                     val nameSuggestions = cards.map { it.name }.filter { it.isNotBlank() }.distinct()
-                        .filter { vm.cardName.isBlank() || it.contains(vm.cardName, true) }.take(5)
+                        .filter { cardNameQuery.isBlank() || it.contains(cardNameQuery, true) }.take(5)
                     if (nameSuggestions.isNotEmpty()) ExposedDropdownMenu(expanded = nameMenu, onDismissRequest = { nameMenu = false }) {
                         nameSuggestions.forEach { n ->
-                            DropdownMenuItem(text = { Text(n) }, onClick = { vm.cardName = n; nameMenu = false })
+                            DropdownMenuItem(text = { Text(n) }, onClick = { vm.cardName = n; cardNameQuery = n; nameMenu = false })
                         }
                     }
                 }
@@ -515,27 +522,33 @@ fun ServiceJobScreen(editId: Long?, onBack: () -> Unit, vm: ServiceJobViewModel 
             // Model / vehicle / item being serviced: type to search the master (five
             // suggestions), or add what was typed as a new master entry.
             var modelMenu by remember { mutableStateOf(false) }
+            var modelNameQuery by remember { mutableStateOf(vm.modelName) }
+            LaunchedEffect(vm.modelName) { if (!modelMenu) modelNameQuery = vm.modelName }
             ExposedDropdownMenuBox(expanded = modelMenu, onExpandedChange = { modelMenu = it }, modifier = Modifier.padding(top = 6.dp)) {
                 OutlinedTextField(
-                    value = vm.modelName,
-                    onValueChange = { vm.modelName = it; vm.modelId = 0; modelMenu = true },
+                    value = modelNameQuery,
+                    onValueChange = { modelNameQuery = it; vm.modelName = it; vm.modelId = 0; modelMenu = true },
                     label = { Text("Model / Vehicle / Item") },
                     placeholder = { Text("Search or type new") },
                     singleLine = true,
                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(modelMenu) },
                     modifier = Modifier.menuAnchor().fillMaxWidth()
+                        .onFocusChanged { fs ->
+                            if (fs.isFocused) { modelNameQuery = ""; modelMenu = true }
+                            else if (!modelMenu) modelNameQuery = vm.modelName
+                        }
                 )
-                val matches = models.filter { vm.modelName.isBlank() || it.name.contains(vm.modelName, true) }.take(5)
-                val exact = models.any { it.name.equals(vm.modelName.trim(), true) }
+                val matches = models.filter { modelNameQuery.isBlank() || it.name.contains(modelNameQuery, true) }.take(5)
+                val exact = models.any { it.name.equals(modelNameQuery.trim(), true) }
                 ExposedDropdownMenu(expanded = modelMenu, onDismissRequest = { modelMenu = false }) {
                     matches.forEach { m ->
-                        DropdownMenuItem(text = { Text(m.name) }, onClick = { vm.modelId = m.id; vm.modelName = m.name; modelMenu = false })
+                        DropdownMenuItem(text = { Text(m.name) }, onClick = { vm.modelId = m.id; vm.modelName = m.name; modelNameQuery = m.name; modelMenu = false })
                     }
-                    if (vm.modelName.isNotBlank() && !exact) {
+                    if (modelNameQuery.isNotBlank() && !exact) {
                         DropdownMenuItem(
-                            text = { Text("Add \"${vm.modelName.trim()}\"") },
+                            text = { Text("Add \"${modelNameQuery.trim()}\"") },
                             leadingIcon = { Icon(Icons.Filled.Add, null) },
-                            onClick = { vm.addModel(vm.modelName); modelMenu = false }
+                            onClick = { vm.addModel(modelNameQuery); modelMenu = false }
                         )
                     }
                 }

@@ -712,15 +712,29 @@ fun BillingScreen(
                     enabled = !readOnly, contentPadding = PaddingValues(horizontal = 8.dp),
                     modifier = Modifier.weight(1f)
                 ) { Icon(Icons.Filled.Share, null, modifier = Modifier.size(18.dp)) }
-                Button(
-                    onClick = {
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !ThermalPrinter.hasConnectPermission(context)) {
-                            printPermission.launch(Manifest.permission.BLUETOOTH_CONNECT)
-                        } else scope.launch { doPrint(context, vm, snackbar, docTitle) }
-                    },
-                    contentPadding = PaddingValues(horizontal = 8.dp),
-                    modifier = Modifier.weight(1f)
-                ) { Icon(Icons.Filled.Print, null, modifier = Modifier.size(18.dp)); Text(" Print", maxLines = 1) }
+                var printMenu by remember { mutableStateOf(false) }
+                androidx.compose.foundation.layout.Box(Modifier.weight(1f)) {
+                    Button(
+                        onClick = { printMenu = true },
+                        contentPadding = PaddingValues(horizontal = 8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Icon(Icons.Filled.Print, null, modifier = Modifier.size(18.dp)); Text(" Print", maxLines = 1) }
+                    androidx.compose.material3.DropdownMenu(expanded = printMenu, onDismissRequest = { printMenu = false }) {
+                        DropdownMenuItem(
+                            text = { Text("Bluetooth (thermal)") },
+                            onClick = {
+                                printMenu = false
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !ThermalPrinter.hasConnectPermission(context)) {
+                                    printPermission.launch(Manifest.permission.BLUETOOTH_CONNECT)
+                                } else scope.launch { doPrint(context, vm, snackbar, docTitle) }
+                            }
+                        )
+                        DropdownMenuItem(
+                            text = { Text("WiFi / System printer") },
+                            onClick = { printMenu = false; scope.launch { doSystemPrint(context, vm, snackbar, docTitle) } }
+                        )
+                    }
+                }
             }
         }
     }
@@ -994,6 +1008,22 @@ private suspend fun doPrint(
     }
     result.onSuccess { snackbar.showSnackbar("Sent to printer") }
         .onFailure { snackbar.showSnackbar(it.message ?: "Print failed") }
+}
+
+/** Prints via Android's system Print framework — reaches WiFi/network printers with no pairing. */
+private suspend fun doSystemPrint(
+    context: android.content.Context,
+    vm: BillingViewModel,
+    snackbar: SnackbarHostState,
+    title: String? = null
+) {
+    val saved = vm.saveCurrent() ?: return
+    val company = com.billing.pos.data.AppPrefs(context).company
+    val imgs = vm.editAttachments.filter { it.mime.startsWith("image/") }.map { it.path }
+    runCatching {
+        val uri = InvoicePdf.make(context, company, saved.bill, saved.lines, imgs, title)
+        com.billing.pos.print.SystemPrint.printPdf(context, uri, "Invoice ${saved.bill.billNo}")
+    }.onFailure { snackbar.showSnackbar(it.message ?: "Print failed") }
 }
 
 private fun pickBillDate(context: android.content.Context, current: Long, onPicked: (Long) -> Unit) {

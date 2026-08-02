@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -117,8 +118,9 @@ fun BillOcrReviewDialog(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Checkbox(checked = row.include, onCheckedChange = { row.include = it })
                             var expanded by remember { mutableStateOf(false) }
-                            val suggestions = remember(row.name, masterItems) {
-                                val q = row.name.trim()
+                            var nameQuery by remember { mutableStateOf(row.name) }
+                            val suggestions = remember(nameQuery, masterItems) {
+                                val q = nameQuery.trim()
                                 if (q.isBlank()) emptyList()
                                 else masterItems.filter { it.name.contains(q, ignoreCase = true) }
                                     .sortedBy { it.name.lowercase() }.take(6)
@@ -129,16 +131,20 @@ fun BillOcrReviewDialog(
                                 modifier = Modifier.weight(1f)
                             ) {
                                 OutlinedTextField(
-                                    value = row.name,
-                                    onValueChange = { row.name = it; expanded = true },
+                                    value = nameQuery,
+                                    onValueChange = { nameQuery = it; row.name = it; expanded = true },
                                     label = { Text("Item name") }, singleLine = true,
                                     modifier = Modifier.menuAnchor().fillMaxWidth()
+                                        .onFocusChanged { fs ->
+                                            if (fs.isFocused) { nameQuery = ""; expanded = true }
+                                            else if (!expanded) nameQuery = row.name
+                                        }
                                 )
                                 ExposedDropdownMenu(expanded = expanded && suggestions.isNotEmpty(), onDismissRequest = { expanded = false }) {
                                     suggestions.forEach { item ->
                                         DropdownMenuItem(
                                             text = { Text("${item.name}   ₹${trimNum(item.price)}") },
-                                            onClick = { row.name = item.name; row.price = trimNum(item.price); expanded = false }
+                                            onClick = { row.name = item.name; nameQuery = item.name; row.price = trimNum(item.price); expanded = false }
                                         )
                                     }
                                 }

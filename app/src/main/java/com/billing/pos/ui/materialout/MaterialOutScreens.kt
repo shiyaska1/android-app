@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.text.KeyboardOptions
@@ -337,19 +338,23 @@ fun MaterialOutListScreen(onBack: () -> Unit, onOpen: (Long) -> Unit, onNew: () 
         Column(Modifier.fillMaxSize().padding(pad)) {
             // Item filter — searchable dropdown.
             var itemMenu by remember { mutableStateOf(false) }
-            var itemQuery by remember { mutableStateOf("") }
+            var itemQuery by remember { mutableStateOf(itemFilter) }
             val itemMatches = remember(itemQuery, items) { if (itemQuery.isBlank()) items else items.filter { it.name.contains(itemQuery, true) } }
             ExposedDropdownMenuBox(expanded = itemMenu, onExpandedChange = { itemMenu = !itemMenu }, modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
                 OutlinedTextField(
-                    value = if (itemFilter.isNotBlank()) itemFilter else itemQuery,
-                    onValueChange = { itemQuery = it; itemFilter = ""; itemMenu = true },
+                    value = itemQuery,
+                    onValueChange = { itemQuery = it; itemFilter = it; itemMenu = true },
                     label = { Text("Filter by item (search)") },
                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(itemMenu) },
                     singleLine = true, modifier = Modifier.menuAnchor().fillMaxWidth()
+                        .onFocusChanged { fs ->
+                            if (fs.isFocused) { itemQuery = ""; itemMenu = true }
+                            else if (!itemMenu) itemQuery = itemFilter
+                        }
                 )
                 ExposedDropdownMenu(expanded = itemMenu, onDismissRequest = { itemMenu = false }) {
                     DropdownMenuItem(text = { Text("All items") }, onClick = { itemFilter = ""; itemQuery = ""; itemMenu = false })
-                    itemMatches.take(30).forEach { it2 -> DropdownMenuItem(text = { Text(it2.name) }, onClick = { itemFilter = it2.name; itemQuery = ""; itemMenu = false }) }
+                    itemMatches.take(30).forEach { it2 -> DropdownMenuItem(text = { Text(it2.name) }, onClick = { itemFilter = it2.name; itemQuery = it2.name; itemMenu = false }) }
                 }
             }
             // Result-invoice filter — dropdown.

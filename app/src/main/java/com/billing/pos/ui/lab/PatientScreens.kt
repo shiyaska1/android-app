@@ -41,6 +41,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.AndroidViewModel
@@ -151,19 +152,24 @@ fun PatientDialog(existing: Patient?, doctorNames: List<String>, onDismiss: () -
                     }
                 }
                 var docMenu by remember { mutableStateOf(false) }
-                val docMatches = remember(referredBy, doctorNames) {
-                    val q = referredBy.trim()
+                var referredByQuery by remember { mutableStateOf(referredBy) }
+                val docMatches = remember(referredByQuery, doctorNames) {
+                    val q = referredByQuery.trim()
                     if (q.isBlank()) doctorNames.take(8) else doctorNames.filter { it.contains(q, true) && !it.equals(q, true) }.take(8)
                 }
                 ExposedDropdownMenuBox(expanded = docMenu && docMatches.isNotEmpty(), onExpandedChange = { docMenu = it }) {
                     OutlinedTextField(
-                        value = referredBy, onValueChange = { referredBy = it; docMenu = true },
+                        value = referredByQuery, onValueChange = { referredByQuery = it; referredBy = it; docMenu = true },
                         label = { Text("Referred by (doctor)") }, singleLine = true,
                         modifier = Modifier.menuAnchor().fillMaxWidth()
+                            .onFocusChanged { fs ->
+                                if (fs.isFocused) { referredByQuery = ""; docMenu = true }
+                                else if (!docMenu) referredByQuery = referredBy
+                            }
                     )
                     ExposedDropdownMenu(expanded = docMenu && docMatches.isNotEmpty(), onDismissRequest = { docMenu = false }) {
                         docMatches.forEach { d ->
-                            DropdownMenuItem(text = { Text(d) }, onClick = { referredBy = d; docMenu = false })
+                            DropdownMenuItem(text = { Text(d) }, onClick = { referredBy = d; referredByQuery = d; docMenu = false })
                         }
                     }
                 }

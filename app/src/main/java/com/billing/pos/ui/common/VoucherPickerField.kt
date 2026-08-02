@@ -16,6 +16,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.unit.dp
 import com.billing.pos.data.Bill
 import com.billing.pos.data.Purchase
@@ -56,6 +57,7 @@ fun InvoicePickerField(
             singleLine = true,
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
             modifier = Modifier.menuAnchor().fillMaxWidth()
+                .onFocusChanged { fs -> if (fs.isFocused) { query = ""; expanded = true } }
         )
         ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             if (filtered.isEmpty()) {
@@ -106,6 +108,7 @@ fun PurchasePickerField(
             singleLine = true,
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
             modifier = Modifier.menuAnchor().fillMaxWidth()
+                .onFocusChanged { fs -> if (fs.isFocused) { query = ""; expanded = true } }
         )
         ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             if (filtered.isEmpty()) {
@@ -158,6 +161,7 @@ fun LpoPickerField(
             singleLine = true,
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
             modifier = Modifier.menuAnchor().fillMaxWidth()
+                .onFocusChanged { fs -> if (fs.isFocused) { query = ""; expanded = true } }
         )
         ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             if (filtered.isEmpty()) {

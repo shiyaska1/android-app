@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.width
@@ -121,6 +122,10 @@ fun SupplierBillMapDialog(
                             label = { Text("Supplier") }, singleLine = true,
                             supportingText = { if (supplierId == null) Text("No match — pick one, or set it in the form below") },
                             modifier = Modifier.menuAnchor().fillMaxWidth()
+                                .onFocusChanged { fs ->
+                                    if (fs.isFocused) { supplierQuery = ""; supplierExpanded = true }
+                                    else if (!supplierExpanded) supplierQuery = suppliers.firstOrNull { it.id == supplierId }?.name ?: supplierQuery
+                                }
                         )
                         ExposedDropdownMenu(
                             expanded = supplierExpanded && supplierSuggestions.isNotEmpty(),
@@ -190,8 +195,9 @@ fun SupplierBillMapDialog(
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Checkbox(checked = row.include, onCheckedChange = { row.include = it })
                                 var expanded by remember { mutableStateOf(false) }
-                                val suggestions = remember(row.name, masterItems) {
-                                    val q = row.name.trim()
+                                var nameQuery by remember { mutableStateOf(row.name) }
+                                val suggestions = remember(nameQuery, masterItems) {
+                                    val q = nameQuery.trim()
                                     if (q.isBlank()) emptyList()
                                     else masterItems.filter { it.name.contains(q, ignoreCase = true) }
                                         .sortedBy { it.name.lowercase() }.take(6)
@@ -202,10 +208,14 @@ fun SupplierBillMapDialog(
                                     modifier = Modifier.weight(1f)
                                 ) {
                                     OutlinedTextField(
-                                        value = row.name,
-                                        onValueChange = { row.name = it; expanded = true },
+                                        value = nameQuery,
+                                        onValueChange = { nameQuery = it; row.name = it; expanded = true },
                                         label = { Text("Item name") }, singleLine = true,
                                         modifier = Modifier.menuAnchor().fillMaxWidth()
+                                            .onFocusChanged { fs ->
+                                                if (fs.isFocused) { nameQuery = ""; expanded = true }
+                                                else if (!expanded) nameQuery = row.name
+                                            }
                                     )
                                     ExposedDropdownMenu(expanded = expanded && suggestions.isNotEmpty(), onDismissRequest = { expanded = false }) {
                                         suggestions.forEach { item ->
@@ -213,6 +223,7 @@ fun SupplierBillMapDialog(
                                                 text = { Text("${item.name}   ₹${trimNum(item.costRate)}") },
                                                 onClick = {
                                                     row.name = item.name
+                                                    nameQuery = item.name
                                                     row.price = trimNum(item.costRate)
                                                     expanded = false
                                                 }

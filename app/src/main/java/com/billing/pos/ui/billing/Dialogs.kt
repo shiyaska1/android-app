@@ -8,6 +8,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -160,12 +161,15 @@ fun NewItemDialog(
     var taxPercent by remember { mutableStateOf("18") }
     var barcode by remember { mutableStateOf("") }
     var category by remember { mutableStateOf("") }
+    var categoryQuery by remember { mutableStateOf(category) }
     var catMenu by remember { mutableStateOf(false) }
     var hsn by remember { mutableStateOf("") }
     var openingStock by remember { mutableStateOf("") }
     var unit by remember { mutableStateOf("PCS") }
+    var unitQuery by remember { mutableStateOf(unit) }
     var unitMenu by remember { mutableStateOf(false) }
     var secondaryUnit by remember { mutableStateOf("PCS") }
+    var secondaryUnitQuery by remember { mutableStateOf(secondaryUnit) }
     var secUnitMenu by remember { mutableStateOf(false) }
     var factorText by remember { mutableStateOf("1") }
     var storeLocation by remember { mutableStateOf("") }
@@ -316,20 +320,24 @@ fun NewItemDialog(
                 Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                     ExposedDropdownMenuBox(expanded = catMenu, onExpandedChange = { catMenu = !catMenu }, modifier = Modifier.weight(1f)) {
                         OutlinedTextField(
-                            value = category, onValueChange = { category = it },
+                            value = categoryQuery, onValueChange = { categoryQuery = it; category = it },
                             label = { Text("Category (optional)") }, singleLine = true,
                             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = catMenu) },
                             modifier = Modifier.menuAnchor().fillMaxWidth()
+                                .onFocusChanged { fs ->
+                                    if (fs.isFocused) { categoryQuery = ""; catMenu = true }
+                                    else if (!catMenu) categoryQuery = category
+                                }
                         )
                         if (categories.isNotEmpty()) {
                             ExposedDropdownMenu(expanded = catMenu, onDismissRequest = { catMenu = false }) {
                                 categories.forEach { c ->
-                                    DropdownMenuItem(text = { Text(c) }, onClick = { category = c; catMenu = false })
+                                    DropdownMenuItem(text = { Text(c) }, onClick = { category = c; categoryQuery = c; catMenu = false })
                                 }
                             }
                         }
                     }
-                    IconButton(onClick = { category = ""; catMenu = false }) {
+                    IconButton(onClick = { category = ""; categoryQuery = ""; catMenu = false }) {
                         Icon(Icons.Filled.Add, contentDescription = "New category")
                     }
                 }
@@ -357,13 +365,17 @@ fun NewItemDialog(
                 // Primary unit.
                 ExposedDropdownMenuBox(expanded = unitMenu, onExpandedChange = { unitMenu = !unitMenu }) {
                     OutlinedTextField(
-                        value = unit, onValueChange = { unit = it }, label = { Text("Primary unit") }, singleLine = true,
+                        value = unitQuery, onValueChange = { unitQuery = it; unit = it }, label = { Text("Primary unit") }, singleLine = true,
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = unitMenu) },
                         modifier = Modifier.menuAnchor().fillMaxWidth()
+                            .onFocusChanged { fs ->
+                                if (fs.isFocused) { unitQuery = ""; unitMenu = true }
+                                else if (!unitMenu) unitQuery = unit
+                            }
                     )
                     ExposedDropdownMenu(expanded = unitMenu, onDismissRequest = { unitMenu = false }) {
                         com.billing.pos.ui.items.ITEM_UNITS.forEach { u ->
-                            DropdownMenuItem(text = { Text(u) }, onClick = { unit = u; unitMenu = false })
+                            DropdownMenuItem(text = { Text(u) }, onClick = { unit = u; unitQuery = u; unitMenu = false })
                         }
                     }
                 }
@@ -371,14 +383,18 @@ fun NewItemDialog(
                     androidx.compose.foundation.layout.Box(Modifier.weight(1f)) {
                         ExposedDropdownMenuBox(expanded = secUnitMenu, onExpandedChange = { secUnitMenu = !secUnitMenu }) {
                             OutlinedTextField(
-                                value = secondaryUnit, onValueChange = { secondaryUnit = it },
+                                value = secondaryUnitQuery, onValueChange = { secondaryUnitQuery = it; secondaryUnit = it },
                                 label = { Text("Secondary unit") }, singleLine = true,
                                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = secUnitMenu) },
                                 modifier = Modifier.menuAnchor().fillMaxWidth()
+                                    .onFocusChanged { fs ->
+                                        if (fs.isFocused) { secondaryUnitQuery = ""; secUnitMenu = true }
+                                        else if (!secUnitMenu) secondaryUnitQuery = secondaryUnit
+                                    }
                             )
                             ExposedDropdownMenu(expanded = secUnitMenu, onDismissRequest = { secUnitMenu = false }) {
                                 com.billing.pos.ui.items.ITEM_UNITS.forEach { u ->
-                                    DropdownMenuItem(text = { Text(u) }, onClick = { secondaryUnit = u; secUnitMenu = false })
+                                    DropdownMenuItem(text = { Text(u) }, onClick = { secondaryUnit = u; secondaryUnitQuery = u; secUnitMenu = false })
                                 }
                             }
                         }

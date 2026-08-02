@@ -72,6 +72,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.ui.Modifier
@@ -814,11 +815,14 @@ private fun ItemDialog(
     var barcode by remember { mutableStateOf(existing?.barcode ?: "") }
     var hsn by remember { mutableStateOf(existing?.hsn ?: "") }
     var category by remember { mutableStateOf(existing?.category ?: "") }
+    var categoryQuery by remember { mutableStateOf(category) }
     var catMenu by remember { mutableStateOf(false) }
     var openingStock by remember { mutableStateOf(if ((existing?.openingStock ?: 0.0) != 0.0) Format.qty(existing!!.openingStock) else "") }
     var unit by remember { mutableStateOf(existing?.unit?.ifBlank { "PCS" } ?: "PCS") }
+    var unitQuery by remember { mutableStateOf(unit) }
     var unitMenu by remember { mutableStateOf(false) }
     var secondaryUnit by remember { mutableStateOf(existing?.secondaryUnit?.ifBlank { "PCS" } ?: "PCS") }
+    var secondaryUnitQuery by remember { mutableStateOf(secondaryUnit) }
     var secUnitMenu by remember { mutableStateOf(false) }
     var factorText by remember {
         mutableStateOf(if ((existing?.conversionFactor ?: 1.0) != 1.0) Format.qty(existing!!.conversionFactor) else "1")
@@ -977,13 +981,17 @@ private fun ItemDialog(
                 // Primary unit — price and stock are always expressed in this unit.
                 ExposedDropdownMenuBox(expanded = unitMenu, onExpandedChange = { unitMenu = !unitMenu }) {
                     OutlinedTextField(
-                        value = unit, onValueChange = { unit = it }, label = { Text("Primary unit") }, singleLine = true,
+                        value = unitQuery, onValueChange = { unitQuery = it; unit = it }, label = { Text("Primary unit") }, singleLine = true,
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = unitMenu) },
                         modifier = Modifier.menuAnchor().fillMaxWidth()
+                            .onFocusChanged { fs ->
+                                if (fs.isFocused) { unitQuery = ""; unitMenu = true }
+                                else if (!unitMenu) unitQuery = unit
+                            }
                     )
                     ExposedDropdownMenu(expanded = unitMenu, onDismissRequest = { unitMenu = false }) {
                         ITEM_UNITS.forEach { u ->
-                            DropdownMenuItem(text = { Text(u) }, onClick = { unit = u; unitMenu = false })
+                            DropdownMenuItem(text = { Text(u) }, onClick = { unit = u; unitQuery = u; unitMenu = false })
                         }
                     }
                 }
@@ -993,14 +1001,18 @@ private fun ItemDialog(
                     Box(Modifier.weight(1f)) {
                         ExposedDropdownMenuBox(expanded = secUnitMenu, onExpandedChange = { secUnitMenu = !secUnitMenu }) {
                             OutlinedTextField(
-                                value = secondaryUnit, onValueChange = { secondaryUnit = it },
+                                value = secondaryUnitQuery, onValueChange = { secondaryUnitQuery = it; secondaryUnit = it },
                                 label = { Text("Secondary unit") }, singleLine = true,
                                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = secUnitMenu) },
                                 modifier = Modifier.menuAnchor().fillMaxWidth()
+                                    .onFocusChanged { fs ->
+                                        if (fs.isFocused) { secondaryUnitQuery = ""; secUnitMenu = true }
+                                        else if (!secUnitMenu) secondaryUnitQuery = secondaryUnit
+                                    }
                             )
                             ExposedDropdownMenu(expanded = secUnitMenu, onDismissRequest = { secUnitMenu = false }) {
                                 ITEM_UNITS.forEach { u ->
-                                    DropdownMenuItem(text = { Text(u) }, onClick = { secondaryUnit = u; secUnitMenu = false })
+                                    DropdownMenuItem(text = { Text(u) }, onClick = { secondaryUnit = u; secondaryUnitQuery = u; secUnitMenu = false })
                                 }
                             }
                         }
@@ -1033,22 +1045,26 @@ private fun ItemDialog(
                         modifier = Modifier.weight(1f)
                     ) {
                         OutlinedTextField(
-                            value = category,
-                            onValueChange = { category = it },
+                            value = categoryQuery,
+                            onValueChange = { categoryQuery = it; category = it },
                             label = { Text("Category") },
                             singleLine = true,
                             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = catMenu) },
                             modifier = Modifier.menuAnchor().fillMaxWidth()
+                                .onFocusChanged { fs ->
+                                    if (fs.isFocused) { categoryQuery = ""; catMenu = true }
+                                    else if (!catMenu) categoryQuery = category
+                                }
                         )
                         if (categories.isNotEmpty()) {
                             ExposedDropdownMenu(expanded = catMenu, onDismissRequest = { catMenu = false }) {
                                 categories.forEach { c ->
-                                    DropdownMenuItem(text = { Text(c) }, onClick = { category = c; catMenu = false })
+                                    DropdownMenuItem(text = { Text(c) }, onClick = { category = c; categoryQuery = c; catMenu = false })
                                 }
                             }
                         }
                     }
-                    IconButton(onClick = { category = ""; catMenu = false }) {
+                    IconButton(onClick = { category = ""; categoryQuery = ""; catMenu = false }) {
                         Icon(Icons.Filled.Add, contentDescription = "New category")
                     }
                 }

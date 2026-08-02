@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Divider
 import androidx.compose.material3.DropdownMenuItem
@@ -97,18 +98,22 @@ fun ItemMovementScreen(onBack: () -> Unit, onOpenVoucher: (String, Long) -> Unit
     ) { pad ->
         Column(Modifier.fillMaxSize().padding(pad)) {
             var itemMenu by remember { mutableStateOf(false) }
-            var q by remember { mutableStateOf("") }
+            var q by remember { mutableStateOf(selected?.name ?: "") }
             val shown = if (q.isBlank()) items else items.filter { it.name.contains(q, true) }
             ExposedDropdownMenuBox(expanded = itemMenu, onExpandedChange = { itemMenu = !itemMenu }, modifier = Modifier.padding(12.dp)) {
                 OutlinedTextField(
-                    value = selected?.name ?: q, onValueChange = { q = it; selected = null; itemMenu = true },
+                    value = q, onValueChange = { q = it; selected = null; itemMenu = true },
                     label = { Text("Pick / search item") },
                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(itemMenu) },
                     singleLine = true, modifier = Modifier.menuAnchor().fillMaxWidth()
+                        .onFocusChanged { fs ->
+                            if (fs.isFocused) { q = ""; itemMenu = true }
+                            else if (!itemMenu) q = selected?.name ?: q
+                        }
                 )
                 ExposedDropdownMenu(expanded = itemMenu, onDismissRequest = { itemMenu = false }) {
                     shown.take(30).forEach { it2 ->
-                        DropdownMenuItem(text = { Text(it2.name) }, onClick = { selected = it2; q = ""; itemMenu = false })
+                        DropdownMenuItem(text = { Text(it2.name) }, onClick = { selected = it2; q = it2.name; itemMenu = false })
                     }
                 }
             }

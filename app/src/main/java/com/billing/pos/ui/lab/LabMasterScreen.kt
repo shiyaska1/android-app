@@ -38,6 +38,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.AndroidViewModel
@@ -148,6 +149,7 @@ private fun EvalMasterDialog(existing: LabEvalMaster?, groups: List<LabGroup>, o
     var unit by remember { mutableStateOf(existing?.unit ?: "") }
     var normal by remember { mutableStateOf(existing?.normalValue ?: "") }
     var group by remember { mutableStateOf(existing?.groupName ?: "") }
+    var groupQuery by remember { mutableStateOf(group) }
     var groupMenu by remember { mutableStateOf(false) }
 
     AlertDialog(
@@ -162,12 +164,16 @@ private fun EvalMasterDialog(existing: LabEvalMaster?, groups: List<LabGroup>, o
                 }
                 ExposedDropdownMenuBox(expanded = groupMenu, onExpandedChange = { groupMenu = !groupMenu }) {
                     OutlinedTextField(
-                        value = group, onValueChange = { group = it }, label = { Text("Group (optional)") }, singleLine = true,
+                        value = groupQuery, onValueChange = { groupQuery = it; group = it }, label = { Text("Group (optional)") }, singleLine = true,
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(groupMenu) },
                         modifier = Modifier.menuAnchor().fillMaxWidth()
+                            .onFocusChanged { fs ->
+                                if (fs.isFocused) { groupQuery = ""; groupMenu = true }
+                                else if (!groupMenu) groupQuery = group
+                            }
                     )
                     if (groups.isNotEmpty()) ExposedDropdownMenu(expanded = groupMenu, onDismissRequest = { groupMenu = false }) {
-                        groups.forEach { g -> DropdownMenuItem(text = { Text(g.name) }, onClick = { group = g.name; groupMenu = false }) }
+                        groups.forEach { g -> DropdownMenuItem(text = { Text(g.name) }, onClick = { group = g.name; groupQuery = g.name; groupMenu = false }) }
                     }
                 }
             }
