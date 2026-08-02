@@ -11,6 +11,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -36,7 +37,8 @@ fun InvoicePickerField(
     modifier: Modifier = Modifier
 ) {
     var expanded by remember { mutableStateOf(false) }
-    var query by remember { mutableStateOf("") }
+    var query by remember { mutableStateOf(selectedNo) }
+    LaunchedEffect(selectedNo) { if (!expanded) query = selectedNo }
     val filtered = remember(query, bills) {
         val q = query.trim()
         (if (q.isBlank()) bills
@@ -50,16 +52,19 @@ fun InvoicePickerField(
         modifier = modifier.fillMaxWidth().padding(top = 6.dp)
     ) {
         OutlinedTextField(
-            value = if (expanded) query else selectedNo,
+            value = query,
             onValueChange = { query = it; expanded = true },
             label = { Text("Return against invoice") },
             placeholder = { Text("Search invoice no or customer…") },
             singleLine = true,
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
             modifier = Modifier.menuAnchor().fillMaxWidth()
-                .onFocusChanged { fs -> if (fs.isFocused) { query = ""; expanded = true } }
+                .onFocusChanged { fs ->
+                    if (fs.isFocused) { query = ""; expanded = true }
+                    else if (!expanded) query = selectedNo
+                }
         )
-        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false; query = selectedNo }) {
             if (filtered.isEmpty()) {
                 DropdownMenuItem(text = { Text("No matching invoice") }, onClick = { expanded = false })
             } else filtered.forEach { b ->
@@ -70,7 +75,7 @@ fun InvoicePickerField(
                             style = MaterialTheme.typography.bodyMedium
                         )
                     },
-                    onClick = { onPick(b); query = ""; expanded = false }
+                    onClick = { onPick(b); query = b.billNo; expanded = false }
                 )
             }
         }
@@ -87,7 +92,8 @@ fun PurchasePickerField(
     modifier: Modifier = Modifier
 ) {
     var expanded by remember { mutableStateOf(false) }
-    var query by remember { mutableStateOf("") }
+    var query by remember { mutableStateOf(selectedNo) }
+    LaunchedEffect(selectedNo) { if (!expanded) query = selectedNo }
     val filtered = remember(query, purchases) {
         val q = query.trim()
         (if (q.isBlank()) purchases
@@ -101,16 +107,19 @@ fun PurchasePickerField(
         modifier = modifier.fillMaxWidth().padding(top = 6.dp)
     ) {
         OutlinedTextField(
-            value = if (expanded) query else selectedNo,
+            value = query,
             onValueChange = { query = it; expanded = true },
             label = { Text("Return against purchase") },
             placeholder = { Text("Search purchase no or supplier…") },
             singleLine = true,
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
             modifier = Modifier.menuAnchor().fillMaxWidth()
-                .onFocusChanged { fs -> if (fs.isFocused) { query = ""; expanded = true } }
+                .onFocusChanged { fs ->
+                    if (fs.isFocused) { query = ""; expanded = true }
+                    else if (!expanded) query = selectedNo
+                }
         )
-        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false; query = selectedNo }) {
             if (filtered.isEmpty()) {
                 DropdownMenuItem(text = { Text("No matching purchase") }, onClick = { expanded = false })
             } else filtered.forEach { p ->
@@ -121,7 +130,7 @@ fun PurchasePickerField(
                             style = MaterialTheme.typography.bodyMedium
                         )
                     },
-                    onClick = { onPick(p); query = ""; expanded = false }
+                    onClick = { onPick(p); query = p.purchaseNo; expanded = false }
                 )
             }
         }
@@ -140,7 +149,8 @@ fun LpoPickerField(
     modifier: Modifier = Modifier
 ) {
     var expanded by remember { mutableStateOf(false) }
-    var query by remember { mutableStateOf("") }
+    var query by remember { mutableStateOf(selectedNo) }
+    LaunchedEffect(selectedNo) { if (!expanded) query = selectedNo }
     val filtered = remember(query, lpos, supplierId) {
         val q = query.trim()
         lpos.filter { (supplierId <= 0 || it.supplierId == supplierId) &&
@@ -154,16 +164,19 @@ fun LpoPickerField(
         modifier = modifier.fillMaxWidth().padding(top = 6.dp)
     ) {
         OutlinedTextField(
-            value = if (expanded) query else selectedNo,
+            value = query,
             onValueChange = { query = it; expanded = true },
             label = { Text(label) },
             placeholder = { Text("Search LPO no or supplier…") },
             singleLine = true,
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
             modifier = Modifier.menuAnchor().fillMaxWidth()
-                .onFocusChanged { fs -> if (fs.isFocused) { query = ""; expanded = true } }
+                .onFocusChanged { fs ->
+                    if (fs.isFocused) { query = ""; expanded = true }
+                    else if (!expanded) query = selectedNo
+                }
         )
-        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false; query = selectedNo }) {
             if (filtered.isEmpty()) {
                 DropdownMenuItem(text = { Text("No matching LPO") }, onClick = { expanded = false })
             } else filtered.forEach { l ->
@@ -174,7 +187,7 @@ fun LpoPickerField(
                             style = MaterialTheme.typography.bodyMedium
                         )
                     },
-                    onClick = { onPick(l); query = ""; expanded = false }
+                    onClick = { onPick(l); query = l.lpoNo; expanded = false }
                 )
             }
         }

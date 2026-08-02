@@ -31,6 +31,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -273,25 +274,29 @@ fun DiaryListScreen(
             Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 // Type to search customers — five suggestions at a time; blank = all.
                 var custMenu by remember { mutableStateOf(false) }
-                var custQuery by remember { mutableStateOf("") }
+                var custQuery by remember { mutableStateOf(custFilter.ifBlank { "All customers" }) }
+                LaunchedEffect(custFilter) { if (!custMenu) custQuery = custFilter.ifBlank { "All customers" } }
                 androidx.compose.material3.ExposedDropdownMenuBox(
                     expanded = custMenu, onExpandedChange = { custMenu = it }, modifier = Modifier.weight(1f)
                 ) {
                     OutlinedTextField(
-                        value = if (custMenu) custQuery else custFilter.ifBlank { "All customers" },
+                        value = custQuery,
                         onValueChange = { custQuery = it; custMenu = true },
                         singleLine = true,
                         trailingIcon = { androidx.compose.material3.ExposedDropdownMenuDefaults.TrailingIcon(custMenu) },
                         modifier = Modifier.menuAnchor().fillMaxWidth()
-                            .onFocusChanged { fs -> if (fs.isFocused) { custQuery = ""; custMenu = true } }
+                            .onFocusChanged { fs ->
+                                if (fs.isFocused) { custQuery = ""; custMenu = true }
+                                else if (!custMenu) custQuery = custFilter.ifBlank { "All customers" }
+                            }
                     )
                     val custMatches = customers
                         .filter { custQuery.isBlank() || it.name.contains(custQuery, true) || it.phone.contains(custQuery) }
                         .take(5)
-                    ExposedDropdownMenu(expanded = custMenu, onDismissRequest = { custMenu = false }) {
-                        androidx.compose.material3.DropdownMenuItem(text = { Text("All customers") }, onClick = { vm.customerFilter.value = ""; custMenu = false })
+                    ExposedDropdownMenu(expanded = custMenu, onDismissRequest = { custMenu = false; custQuery = custFilter.ifBlank { "All customers" } }) {
+                        androidx.compose.material3.DropdownMenuItem(text = { Text("All customers") }, onClick = { vm.customerFilter.value = ""; custQuery = "All customers"; custMenu = false })
                         custMatches.forEach { c ->
-                            androidx.compose.material3.DropdownMenuItem(text = { Text(c.name) }, onClick = { vm.customerFilter.value = c.name; custMenu = false })
+                            androidx.compose.material3.DropdownMenuItem(text = { Text(c.name) }, onClick = { vm.customerFilter.value = c.name; custQuery = c.name; custMenu = false })
                         }
                     }
                 }

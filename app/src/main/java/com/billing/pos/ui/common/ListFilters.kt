@@ -111,24 +111,31 @@ fun PartyFilterField(
     modifier: Modifier = Modifier
 ) {
     var expanded by remember { mutableStateOf(false) }
-    var query by remember { mutableStateOf(selected) }
-    androidx.compose.runtime.LaunchedEffect(selected) { if (!expanded) query = selected }
+    // The field always shows this one value — no separate "committed vs draft" display switch,
+    // which was the bug: switching what's shown based on [expanded] raced with the keyboard on
+    // the very first character typed, so it looked like the old value "auto-filled" back in and
+    // typing further did nothing.
+    var query by remember { mutableStateOf(selected.ifBlank { allLabel }) }
+    androidx.compose.runtime.LaunchedEffect(selected) { if (!expanded) query = selected.ifBlank { allLabel } }
 
     ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }, modifier = modifier) {
         OutlinedTextField(
-            value = if (expanded) query else selected.ifBlank { allLabel },
+            value = query,
             onValueChange = { query = it; expanded = true },
             label = { Text(label) },
             singleLine = true,
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
             modifier = Modifier.menuAnchor().fillMaxWidth()
-                .onFocusChanged { fs -> if (fs.isFocused) { query = ""; expanded = true } }
+                .onFocusChanged { fs ->
+                    if (fs.isFocused) { query = ""; expanded = true }
+                    else if (!expanded) query = selected.ifBlank { allLabel }
+                }
         )
         val matches = names.filter { query.isBlank() || it.contains(query, ignoreCase = true) }
-        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            DropdownMenuItem(text = { Text(allLabel) }, onClick = { onSelect(""); expanded = false })
+        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false; query = selected.ifBlank { allLabel } }) {
+            DropdownMenuItem(text = { Text(allLabel) }, onClick = { onSelect(""); query = allLabel; expanded = false })
             matches.forEach { nm ->
-                DropdownMenuItem(text = { Text(nm) }, onClick = { onSelect(nm); expanded = false })
+                DropdownMenuItem(text = { Text(nm) }, onClick = { onSelect(nm); query = nm; expanded = false })
             }
         }
     }
