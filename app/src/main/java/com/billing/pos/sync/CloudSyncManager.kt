@@ -33,6 +33,8 @@ import java.util.zip.ZipFile
 object CloudSyncManager {
 
     val status = MutableStateFlow("Idle")
+    /** True for the duration of an actual pull/merge/push cycle — drives the global "Syncing…" banner. */
+    val isSyncing = MutableStateFlow(false)
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var autoJob: Job? = null
@@ -56,6 +58,13 @@ object CloudSyncManager {
         autoJob = null
     }
 
+    private fun hasInternet(context: Context): Boolean = runCatching {
+        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+        val net = cm.activeNetwork ?: return@runCatching false
+        val caps = cm.getNetworkCapabilities(net) ?: return@runCatching false
+        caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    }.getOrDefault(false)
+
     /** One pull -> merge -> push cycle. Safe to call directly too (e.g. a "Sync now" button). */
     suspend fun runOnePullMergePush(app: Context): Boolean = gate.withLock {
         val prefs = AppPrefs(app)
@@ -65,6 +74,11 @@ object CloudSyncManager {
             status.value = "Set Push/Pull URL in Settings first"
             return@withLock false
         }
+        if (!hasInternet(app)) {
+            status.value = "No internet connection — skipped this sync"
+            return@withLock false
+        }
+        isSyncing.value = true
         try {
             val org = prefs.backupOrgId.filter { it.isLetterOrDigit() }.ifBlank { "org" }
             val dev = prefs.backupDeviceId.ifBlank { License.deviceId(app) }
@@ -129,6 +143,8 @@ object CloudSyncManager {
         } catch (e: Exception) {
             status.value = "Auto-sync failed: ${e.message}"
             false
+        } finally {
+            isSyncing.value = false
         }
     }
 }

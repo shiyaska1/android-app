@@ -14,6 +14,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -134,11 +135,31 @@ class MainActivity : FragmentActivity() {
                     var unlocked by androidx.compose.runtime.remember {
                         androidx.compose.runtime.mutableStateOf(!lockOn || com.billing.pos.ui.common.AppLockGate.unlocked)
                     }
-                    if (unlocked) AppNav()
-                    else com.billing.pos.ui.common.AppLockScreen(onUnlocked = {
-                        com.billing.pos.ui.common.AppLockGate.unlocked = true
-                        unlocked = true
-                    })
+                    androidx.compose.foundation.layout.Box(Modifier.fillMaxSize()) {
+                        if (unlocked) AppNav()
+                        else com.billing.pos.ui.common.AppLockScreen(onUnlocked = {
+                            com.billing.pos.ui.common.AppLockGate.unlocked = true
+                            unlocked = true
+                        })
+                        // Global "syncing" banner: sits above whichever in-app screen is showing,
+                        // so a sync in progress is visible no matter where the user navigates.
+                        val syncing by com.billing.pos.sync.CloudSyncManager.isSyncing.collectAsState()
+                        if (syncing) {
+                            androidx.compose.foundation.layout.Column(
+                                Modifier.align(androidx.compose.ui.Alignment.TopCenter).fillMaxWidth()
+                            ) {
+                                androidx.compose.material3.LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                                androidx.compose.material3.Surface(color = androidx.compose.material3.MaterialTheme.colorScheme.primaryContainer) {
+                                    androidx.compose.material3.Text(
+                                        "Syncing…",
+                                        modifier = Modifier.fillMaxWidth().padding(4.dp),
+                                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                        style = androidx.compose.material3.MaterialTheme.typography.labelSmall
+                                    )
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
