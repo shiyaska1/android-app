@@ -138,7 +138,9 @@ fun BillingScreen(
     val snackbar = remember { SnackbarHostState() }
 
     // Mode is set before any load or save can happen, so both go to the right table.
-    val docTitle = if (estimate) "ESTIMATE" else "TAX INVOICE"
+    // Non-estimate: null lets each PDF/print builder decide INVOICE vs TAX INVOICE from the
+    // bill's actual tax total, since this is computed once here but tax may not be finalized yet.
+    val docTitle: String? = if (estimate) "ESTIMATE" else null
     LaunchedEffect(estimate, editBillId) {
         vm.updateEstimateMode(estimate)
         if (editBillId != null && editBillId > 0) vm.startEditing(editBillId)
@@ -982,7 +984,7 @@ private suspend fun doPrint(
     context: android.content.Context,
     vm: BillingViewModel,
     snackbar: SnackbarHostState,
-    title: String = "TAX INVOICE"
+    title: String? = null
 ) {
     val saved = vm.saveCurrent() ?: return
     val company = com.billing.pos.data.AppPrefs(context).company
@@ -1006,7 +1008,7 @@ private fun pickBillDate(context: android.content.Context, current: Long, onPick
     ).show()
 }
 
-private fun sharePdf(context: android.content.Context, saved: BillWithItems, imagePaths: List<String> = emptyList(), title: String = "TAX INVOICE") {
+private fun sharePdf(context: android.content.Context, saved: BillWithItems, imagePaths: List<String> = emptyList(), title: String? = null) {
     val company = com.billing.pos.data.AppPrefs(context).company
     val uri = InvoicePdf.make(context, company, saved.bill, saved.lines, imagePaths, title)
     val intent = Intent(Intent.ACTION_SEND).apply {
@@ -1025,7 +1027,7 @@ private fun sendWhatsApp(
     phone: String,
     saved: BillWithItems,
     imagePaths: List<String> = emptyList(),
-    title: String = "TAX INVOICE",
+    title: String? = null,
     onInfo: (String) -> Unit
 ) {
     val company = com.billing.pos.data.AppPrefs(context).company

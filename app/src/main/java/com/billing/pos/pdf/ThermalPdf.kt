@@ -34,12 +34,13 @@ object ThermalPdf {
 
     private data class Line(val text: String, val bold: Boolean = false)
 
-    fun invoice(context: Context, company: CompanyInfo, bill: Bill, lines: List<BillItem>, imagePaths: List<String> = emptyList(), title: String = "TAX INVOICE"): Uri {
+    fun invoice(context: Context, company: CompanyInfo, bill: Bill, lines: List<BillItem>, imagePaths: List<String> = emptyList(), title: String? = null): Uri {
         applyWidth(context)
+        val actualTitle = title ?: if (bill.taxTotal > 0.0) "TAX INVOICE" else "INVOICE"
         val out = ArrayList<Line>()
         fun add(text: String, bold: Boolean = false) { out.add(Line(text, bold)) }
         addHeader(out, company)
-        add(center(title), true)
+        add(center(actualTitle), true)
         add(rule())
         add("Bill: ${bill.billNo}")
         add("Date: ${Format.dateTime(bill.dateMillis)}")
@@ -54,7 +55,7 @@ object ThermalPdf {
         }
         add(rule())
         add(kv("Sub Total", Format.money(bill.subTotal)))
-        add(kv("Tax", Format.money(bill.taxTotal)))
+        if (bill.taxTotal != 0.0) add(kv("Tax", Format.money(bill.taxTotal)))
         if (bill.additionalCharge != 0.0) add(kv("Additional", Format.money(bill.additionalCharge)))
         if (bill.discount != 0.0) add(kv("Discount", "-" + Format.money(bill.discount)))
         add(rule())

@@ -49,7 +49,7 @@ object ThermalPrinter {
     }
 
     @SuppressLint("MissingPermission")
-    fun printBill(context: Context, company: CompanyInfo, bill: Bill, lines: List<BillItem>, imagePaths: List<String> = emptyList(), title: String = "TAX INVOICE") {
+    fun printBill(context: Context, company: CompanyInfo, bill: Bill, lines: List<BillItem>, imagePaths: List<String> = emptyList(), title: String? = null) {
         applyWidth(context)
         val prefs = com.billing.pos.data.AppPrefs(context)
         // Render the UPI QR to a temp PNG so the ESC/POS rasteriser can print it.
@@ -329,12 +329,13 @@ object ThermalPrinter {
         ESC.toByte(), 'G'.code.toByte(), 1
     )
 
-    private fun buildReceipt(company: CompanyInfo, bill: Bill, lines: List<BillItem>, imagePaths: List<String> = emptyList(), title: String = "TAX INVOICE", qrPath: String? = null): ByteArray {
+    private fun buildReceipt(company: CompanyInfo, bill: Bill, lines: List<BillItem>, imagePaths: List<String> = emptyList(), title: String? = null, qrPath: String? = null): ByteArray {
+        val actualTitle = title ?: if (bill.taxTotal > 0.0) "TAX INVOICE" else "INVOICE"
         val sb = StringBuilder()
         sb.append(center(company.name)).append('\n')
         if (company.address.isNotBlank()) sb.append(center(company.address)).append('\n')
         if (company.phone.isNotBlank()) sb.append(center("Ph: ${company.phone}")).append('\n')
-        sb.append(center(title)).append('\n')
+        sb.append(center(actualTitle)).append('\n')
         sb.append(line()).append('\n')
         sb.append("Bill: ${bill.billNo}\n")
         sb.append("Date: ${Format.dateTime(bill.dateMillis)}\n")
@@ -350,7 +351,7 @@ object ThermalPrinter {
         }
         sb.append(line()).append('\n')
         sb.append(kv("Sub Total", Format.money(bill.subTotal))).append('\n')
-        sb.append(kv("Tax", Format.money(bill.taxTotal))).append('\n')
+        if (bill.taxTotal != 0.0) sb.append(kv("Tax", Format.money(bill.taxTotal))).append('\n')
         if (bill.additionalCharge != 0.0)
             sb.append(kv("Additional", Format.money(bill.additionalCharge))).append('\n')
         if (bill.discount != 0.0)

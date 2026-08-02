@@ -394,9 +394,9 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
             Text("Text language (camera & handwriting)", style = MaterialTheme.typography.titleSmall)
             Text(
                 "Used when reading a photo and when reading what you draw. English is fast and " +
-                    "accurate. Malayalam photo reading works offline but is slower and less accurate, " +
-                    "so check the text before saving. Auto tries English first, then Malayalam. " +
-                    "On the drawing pad you can switch language at any time.",
+                    "accurate. Malayalam and Arabic photo reading work offline but are slower and " +
+                    "less accurate, so check the text before saving. Auto tries English first, then " +
+                    "Malayalam. On the drawing pad you can switch language at any time.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline
             )
             var ocrMenu by remember { mutableStateOf(false) }
@@ -417,20 +417,23 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
                 }
             }
             if (ocrLanguage != AppPrefs.OCR_ENGLISH) {
-                // Checks the Malayalam reader can actually load, so a problem shows up here
-                // rather than as a silently empty item name after taking a photo.
+                // Checks the offline reader can actually load, so a problem shows up here
+                // rather than as a silently empty item name after taking a photo. Auto's
+                // offline fallback is Malayalam, same as today.
+                val testLang = if (ocrLanguage == AppPrefs.OCR_ARABIC) com.billing.pos.ocr.TesseractOcr.ARABIC else com.billing.pos.ocr.TesseractOcr.MALAYALAM
+                val testLabel = if (ocrLanguage == AppPrefs.OCR_ARABIC) "Arabic" else "Malayalam"
                 OutlinedButton(
                     onClick = {
                         scope.launch {
-                            snackbar.showSnackbar("Checking Malayalam reader…")
-                            val err = com.billing.pos.ocr.TesseractOcr.selfTest(context)
+                            snackbar.showSnackbar("Checking $testLabel reader…")
+                            val err = com.billing.pos.ocr.TesseractOcr.selfTest(context, testLang)
                             snackbar.showSnackbar(
-                                if (err == null) "Malayalam reader is ready" else "Malayalam reader failed: $err"
+                                if (err == null) "$testLabel reader is ready" else "$testLabel reader failed: $err"
                             )
                         }
                     },
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-                ) { Text("Check Malayalam reader") }
+                ) { Text("Check $testLabel reader") }
             }
 
             Divider(Modifier.padding(vertical = 16.dp))

@@ -12,40 +12,44 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 /**
- * Malayalam OCR.
+ * Malayalam and Arabic OCR.
  *
- * ML Kit has no Malayalam model — its text recognizer only covers Latin, Chinese,
- * Devanagari, Japanese and Korean — so Malayalam goes through Tesseract instead. The
- * `mal.traineddata` model ships inside the APK (assets/tessdata) and is copied to app
- * storage on first use, because Tesseract reads it from a real path, not from assets.
- * Nothing is downloaded and nothing leaves the phone.
+ * ML Kit has no Malayalam or Arabic model — its text recognizer only covers Latin, Chinese,
+ * Devanagari, Japanese and Korean — so both go through Tesseract instead. The
+ * `mal.traineddata`/`ara.traineddata` models ship inside the APK (assets/tessdata) and are
+ * copied to app storage on first use, because Tesseract reads a model from a real path, not
+ * from assets. Nothing is downloaded and nothing leaves the phone.
  */
 object TesseractOcr {
-    private const val LANG = "mal"
+    const val MALAYALAM = "mal"
+    const val ARABIC = "ara"
+
     /** Guards the copy + the API itself; TessBaseAPI is not safe to share across threads. */
     private val lock = Any()
-    @Volatile private var dataDir: File? = null
+    private val modelReady = HashMap<String, Boolean>()
 
     /** Set when the model could not be prepared, so the UI can say why instead of going quiet. */
     @Volatile var lastError: String? = null
         private set
 
     /**
-     * True once the model is on disk and usable. Copies it out of assets on first call.
+     * True once [lang]'s model is on disk and usable. Copies it out of assets on first call
+     * for that language; other already-prepared languages are untouched.
      *
      * Deliberately avoids AssetManager.openFd() — that throws for any asset the build
      * compressed, which is how this silently returned nothing on every scan before.
      * A marker file records which app build did the copy, so an updated model replaces
      * an older one without an expensive length check on every call.
      */
-    private fun ensureModel(context: Context): File? = synchronized(lock) {
-        dataDir?.let { return it }
+    private fun ensureModel(context: Context, lang: String): File? = synchronized(lock) {
+        // Tesseract wants <dir>/tessdata/<lang>.traineddata and is given <dir>; the same
+        // <dir> is shared by every language, only the file inside tessdata/ differs.
+        val root = File(context.filesDir, "tesseract")
+        if (modelReady[lang] == true) return root
         return runCatching {
-            // Tesseract wants <dir>/tessdata/<lang>.traineddata and is given <dir>.
-            val root = File(context.filesDir, "tesseract")
             val tessdata = File(root, "tessdata").apply { mkdirs() }
-            val target = File(tessdata, "$LANG.traineddata")
-            val marker = File(root, "$LANG.version")
+            val target = File(tessdata, "$lang.traineddata")
+            val marker = File(root, "$lang.version")
 
             val build = runCatching {
                 context.packageManager.getPackageInfo(context.packageName, 0).versionName.orEmpty()
@@ -53,27 +57,28 @@ object TesseractOcr {
             val copied = marker.takeIf { it.exists() }?.readText().orEmpty()
 
             if (!target.exists() || target.length() < 1_000_000L || copied != build) {
-                context.assets.open("tessdata/$LANG.traineddata").use { input ->
+                context.assets.open("tessdata/$lang.traineddata").use { input ->
                     target.outputStream().use { input.copyTo(it) }
                 }
                 marker.writeText(build)
             }
             if (target.length() < 1_000_000L) error("model copy failed (${target.length()} bytes)")
             lastError = null
-            root.also { dataDir = it }
+            modelReady[lang] = true
+            root
         }.onFailure { lastError = it.message ?: it.javaClass.simpleName }.getOrNull()
     }
 
     /**
-     * Prepares the model and runs a no-op init, so Settings can report a real result
+     * Prepares [lang]'s model and runs a no-op init, so Settings can report a real result
      * instead of the user discovering the problem through a blank item name.
      */
-    suspend fun selfTest(context: Context): String? = withContext(Dispatchers.IO) {
-        val root = ensureModel(context) ?: return@withContext lastError ?: "model not available"
+    suspend fun selfTest(context: Context, lang: String = MALAYALAM): String? = withContext(Dispatchers.IO) {
+        val root = ensureModel(context, lang) ?: return@withContext lastError ?: "model not available"
         synchronized(lock) {
             val api = TessBaseAPI()
             try {
-                if (!api.init(root.absolutePath, LANG)) "Tesseract could not load the Malayalam model"
+                if (!api.init(root.absolutePath, lang)) "Tesseract could not load the model"
                 else null
             } catch (t: Throwable) {
                 t.message ?: t.javaClass.simpleName
@@ -84,19 +89,19 @@ object TesseractOcr {
     }
 
     /**
-     * Recognises Malayalam text in [uri].
+     * Recognises text in [uri] using [lang] (Tesseract language code, e.g. "mal" or "ara").
      *
      * [singleLine] picks the page-segmentation mode: a cropped box holding one item name
      * reads far better as SINGLE_LINE, while a whole printed list needs AUTO.
      */
-    suspend fun text(context: Context, uri: Uri, singleLine: Boolean): List<String> =
+    suspend fun text(context: Context, uri: Uri, singleLine: Boolean, lang: String = MALAYALAM): List<String> =
         withContext(Dispatchers.IO) {
-            val root = ensureModel(context) ?: return@withContext emptyList()
+            val root = ensureModel(context, lang) ?: return@withContext emptyList()
             val bitmap = decodeUpright(context, uri) ?: return@withContext emptyList()
             synchronized(lock) {
                 val api = TessBaseAPI()
                 try {
-                    if (!api.init(root.absolutePath, LANG)) return@withContext emptyList()
+                    if (!api.init(root.absolutePath, lang)) return@withContext emptyList()
                     api.pageSegMode =
                         if (singleLine) TessBaseAPI.PageSegMode.PSM_SINGLE_LINE
                         else TessBaseAPI.PageSegMode.PSM_AUTO

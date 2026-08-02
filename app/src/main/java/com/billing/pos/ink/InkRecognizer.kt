@@ -19,16 +19,24 @@ import kotlinx.coroutines.withContext
 object InkLang {
     const val ENGLISH = "en-US"
     const val MALAYALAM = "ml"
+    const val ARABIC = "ar"
 
     /**
      * Which language the pad should start on, taken from the OCR language setting.
      * "Auto" can't apply to handwriting — nothing has been written yet to detect — so it
      * starts on English and the user can switch on the pad itself.
      */
-    fun default(context: Context): String =
-        if (AppPrefs(context).ocrLanguage == AppPrefs.OCR_MALAYALAM) MALAYALAM else ENGLISH
+    fun default(context: Context): String = when (AppPrefs(context).ocrLanguage) {
+        AppPrefs.OCR_MALAYALAM -> MALAYALAM
+        AppPrefs.OCR_ARABIC -> ARABIC
+        else -> ENGLISH
+    }
 
-    fun label(tag: String): String = if (tag == MALAYALAM) "മലയാളം" else "English"
+    fun label(tag: String): String = when (tag) {
+        MALAYALAM -> "മലയാളം"
+        ARABIC -> "العربية"
+        else -> "English"
+    }
 }
 
 /**

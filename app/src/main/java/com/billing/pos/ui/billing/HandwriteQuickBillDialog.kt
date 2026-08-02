@@ -116,7 +116,7 @@ fun HandwriteQuickBillDialog(
             Spacer(Modifier.height(6.dp))
             // Which language the handwriting is read as.
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf(com.billing.pos.ink.InkLang.ENGLISH, com.billing.pos.ink.InkLang.MALAYALAM).forEach { tag ->
+                listOf(com.billing.pos.ink.InkLang.ENGLISH, com.billing.pos.ink.InkLang.MALAYALAM, com.billing.pos.ink.InkLang.ARABIC).forEach { tag ->
                     androidx.compose.material3.FilterChip(
                         selected = inkLang == tag,
                         onClick = { if (inkLang != tag && !busy) { itemStrokes.clear(); inkLang = tag } },

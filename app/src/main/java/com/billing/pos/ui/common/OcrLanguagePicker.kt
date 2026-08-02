@@ -21,18 +21,26 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.billing.pos.data.AppPrefs
 
-/** Shared naming for the two OCR languages, so every screen asks the same way. */
+/** Shared naming for the OCR languages, so every screen asks the same way. */
 object OcrLang {
     const val ENGLISH = AppPrefs.OCR_ENGLISH
     const val MALAYALAM = AppPrefs.OCR_MALAYALAM
+    const val ARABIC = AppPrefs.OCR_ARABIC
 
-    val choices = listOf(ENGLISH, MALAYALAM)
+    val choices = listOf(ENGLISH, MALAYALAM, ARABIC)
 
-    fun label(lang: String): String = if (lang == MALAYALAM) "മലയാളം Malayalam" else "English"
+    fun label(lang: String): String = when (lang) {
+        MALAYALAM -> "മലയാളം Malayalam"
+        ARABIC -> "العربية Arabic"
+        else -> "English"
+    }
 
     /** Which language the chooser should start on: the Settings default, English for Auto. */
-    fun default(context: android.content.Context): String =
-        if (AppPrefs(context).ocrLanguage == MALAYALAM) MALAYALAM else ENGLISH
+    fun default(context: android.content.Context): String = when (AppPrefs(context).ocrLanguage) {
+        MALAYALAM -> MALAYALAM
+        ARABIC -> ARABIC
+        else -> ENGLISH
+    }
 }
 
 /**

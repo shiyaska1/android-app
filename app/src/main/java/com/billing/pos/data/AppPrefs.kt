@@ -221,8 +221,9 @@ class AppPrefs(context: Context) {
 
         const val OCR_ENGLISH = "English"
         const val OCR_MALAYALAM = "Malayalam"
+        const val OCR_ARABIC = "Arabic"
         const val OCR_AUTO = "Auto"
-        val OCR_LANGUAGES = listOf(OCR_ENGLISH, OCR_MALAYALAM, OCR_AUTO)
+        val OCR_LANGUAGES = listOf(OCR_ENGLISH, OCR_MALAYALAM, OCR_ARABIC, OCR_AUTO)
         /** Monospace columns for a given width. */
         fun colsFor(width: String): Int = when (width) { "80mm" -> 48; "A4" -> 64; else -> 32 }
         /** PDF page width in points for a given width (58mm ≈ 165pt). */

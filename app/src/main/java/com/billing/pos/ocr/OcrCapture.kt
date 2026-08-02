@@ -73,10 +73,11 @@ object TextOcr {
         lang: String? = null
     ): List<String> =
         when (lang ?: AppPrefs(context).ocrLanguage) {
-            AppPrefs.OCR_MALAYALAM -> TesseractOcr.text(context, uri, singleLine)
+            AppPrefs.OCR_MALAYALAM -> TesseractOcr.text(context, uri, singleLine, TesseractOcr.MALAYALAM)
+            AppPrefs.OCR_ARABIC -> TesseractOcr.text(context, uri, singleLine, TesseractOcr.ARABIC)
             AppPrefs.OCR_AUTO -> {
                 val latin = latinLines(context, uri)
-                if (looksEmpty(latin)) TesseractOcr.text(context, uri, singleLine) else latin
+                if (looksEmpty(latin)) TesseractOcr.text(context, uri, singleLine, TesseractOcr.MALAYALAM) else latin
             }
             else -> latinLines(context, uri)
         }

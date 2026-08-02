@@ -129,7 +129,7 @@ fun HandwriteTextDialog(onResult: (String) -> Unit, onDismiss: () -> Unit) {
                 Modifier.fillMaxWidth().padding(top = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                listOf(InkLang.ENGLISH, InkLang.MALAYALAM).forEach { tag ->
+                listOf(InkLang.ENGLISH, InkLang.MALAYALAM, InkLang.ARABIC).forEach { tag ->
                     FilterChip(
                         selected = lang == tag,
                         onClick = { if (lang != tag && !busy) { strokes.clear(); redoStack.clear(); strokeVersion++; lang = tag } },

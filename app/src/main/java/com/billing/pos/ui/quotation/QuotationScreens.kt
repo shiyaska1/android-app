@@ -9,12 +9,15 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
@@ -22,6 +25,7 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.FormatBold
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.NoteAdd
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.AlertDialog
@@ -36,6 +40,7 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -103,6 +108,8 @@ class QuotationViewModel(private val app: Application) : AndroidViewModel(app) {
         repo.items.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val quotations: StateFlow<List<Quotation>> =
         repo.quotations.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val noteSuggestions: StateFlow<List<String>> =
+        repo.quotationNoteSuggestions.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     var selectedCustomer by mutableStateOf<Customer?>(null); private set
     val cart: SnapshotStateList<CartLine> = mutableStateListOf()
@@ -227,6 +234,7 @@ fun QuotationScreen(editId: Long?, onBack: () -> Unit, vm: QuotationViewModel = 
     val snackbar = remember { SnackbarHostState() }
     val items by vm.items.collectAsStateSafe()
     val customers by vm.customers.collectAsStateSafe()
+    val noteSuggestions by vm.noteSuggestions.collectAsStateSafe()
     val message by vm.message.collectAsStateSafe()
     LaunchedEffect(Unit) {
         val copyId = QuotationCopy.take()
@@ -243,6 +251,7 @@ fun QuotationScreen(editId: Long?, onBack: () -> Unit, vm: QuotationViewModel = 
     var noteFor by remember { mutableStateOf<Int?>(null) }
     var unitPickFor by remember { mutableStateOf<Item?>(null) }
     var showTerms by remember { mutableStateOf(false) }
+    var showNoteSuggestions by remember { mutableStateOf(false) }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
@@ -288,8 +297,34 @@ fun QuotationScreen(editId: Long?, onBack: () -> Unit, vm: QuotationViewModel = 
             }
             OutlinedTextField(
                 value = vm.remarks, onValueChange = { vm.remarks = it }, label = { Text("Note (optional)") },
-                singleLine = true, modifier = Modifier.fillMaxWidth().padding(top = 6.dp)
+                singleLine = true,
+                trailingIcon = {
+                    if (noteSuggestions.isNotEmpty()) {
+                        IconButton(onClick = { showNoteSuggestions = !showNoteSuggestions }) {
+                            Icon(Icons.Filled.History, "Past notes")
+                        }
+                    }
+                },
+                modifier = Modifier.fillMaxWidth().padding(top = 6.dp)
             )
+            if (showNoteSuggestions && noteSuggestions.isNotEmpty()) {
+                Card(Modifier.fillMaxWidth().padding(top = 2.dp)) {
+                    Column(
+                        Modifier.fillMaxWidth().heightIn(max = 180.dp).verticalScroll(rememberScrollState())
+                    ) {
+                        noteSuggestions.forEach { note ->
+                            Text(
+                                note,
+                                style = MaterialTheme.typography.bodyMedium,
+                                maxLines = 1,
+                                modifier = Modifier.fillMaxWidth()
+                                    .clickable { vm.remarks = note; showNoteSuggestions = false }
+                                    .padding(horizontal = 12.dp, vertical = 10.dp)
+                            )
+                        }
+                    }
+                }
+            }
             Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Button(onClick = { showItemPicker = true }, modifier = Modifier.weight(1f)) {
                     Icon(Icons.Filled.Add, null); Text("  Add item")
@@ -428,11 +463,23 @@ fun QuotationScreen(editId: Long?, onBack: () -> Unit, vm: QuotationViewModel = 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun QuotationListScreen(onBack: () -> Unit, onOpen: (Long) -> Unit, onNew: () -> Unit, vm: QuotationViewModel = viewModel()) {
+    val context = LocalContext.current
     val snackbar = remember { SnackbarHostState() }
     val quotations by vm.quotations.collectAsStateSafe()
+    val customers by vm.customers.collectAsStateSafe()
     val message by vm.message.collectAsStateSafe()
     LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); vm.consumeMessage() } }
     var deleteFor by remember { mutableStateOf<Quotation?>(null) }
+
+    // Default window: the last month, like other document lists in the app.
+    var fromMillis by remember { mutableStateOf<Long?>(com.billing.pos.ui.common.oneMonthAgoMillis()) }
+    var toMillis by remember { mutableStateOf<Long?>(System.currentTimeMillis()) }
+    var customerFilter by remember { mutableStateOf("") }
+    val filtered = quotations.filter { q ->
+        (fromMillis == null || q.dateMillis >= com.billing.pos.ui.common.startOfDay(fromMillis!!)) &&
+            (toMillis == null || q.dateMillis <= com.billing.pos.ui.common.endOfDay(toMillis!!)) &&
+            (customerFilter.isBlank() || q.customerName.equals(customerFilter, ignoreCase = true))
+    }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
@@ -449,9 +496,28 @@ fun QuotationListScreen(onBack: () -> Unit, onOpen: (Long) -> Unit, onNew: () ->
         },
         floatingActionButton = { FloatingActionButton(onClick = onNew) { Icon(Icons.Filled.Add, "New quotation") } }
     ) { pad ->
-        if (quotations.isEmpty()) Box(Modifier.fillMaxSize().padding(pad), contentAlignment = Alignment.Center) { Text("No quotations yet", color = MaterialTheme.colorScheme.outline) }
-        else LazyColumn(Modifier.fillMaxSize().padding(pad).padding(horizontal = 12.dp)) {
-            items(quotations, key = { it.id }) { q ->
+        Column(Modifier.fillMaxSize().padding(pad)) {
+            com.billing.pos.ui.common.PartyFilterField(
+                names = customers.map { it.name }, selected = customerFilter,
+                onSelect = { customerFilter = it }, label = "Customer", allLabel = "All customers",
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)
+            )
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(onClick = { pickQuotationDate(context, fromMillis ?: System.currentTimeMillis()) { fromMillis = it } }, modifier = Modifier.weight(1f)) {
+                    Text("From: " + (fromMillis?.let { Format.date(it) } ?: "any"))
+                }
+                OutlinedButton(onClick = { pickQuotationDate(context, toMillis ?: System.currentTimeMillis()) { toMillis = it } }, modifier = Modifier.weight(1f)) {
+                    Text("To: " + (toMillis?.let { Format.date(it) } ?: "any"))
+                }
+                if (fromMillis != null || toMillis != null) TextButton(onClick = { fromMillis = null; toMillis = null }) { Text("Clear") }
+            }
+            Divider()
+            if (filtered.isEmpty()) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("No quotations match", color = MaterialTheme.colorScheme.outline) }
+            else LazyColumn(Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
+            items(filtered, key = { it.id }) { q ->
                 Row(Modifier.fillMaxWidth().clickable { onOpen(q.id) }.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(q.quotationNo, fontWeight = FontWeight.Bold)
@@ -465,6 +531,7 @@ fun QuotationListScreen(onBack: () -> Unit, onOpen: (Long) -> Unit, onNew: () ->
                 }
                 Divider()
             }
+            }
         }
     }
 
@@ -476,4 +543,16 @@ fun QuotationListScreen(onBack: () -> Unit, onOpen: (Long) -> Unit, onNew: () ->
             dismissButton = { TextButton(onClick = { deleteFor = null }) { Text("Cancel") } }
         )
     }
+}
+
+private fun pickQuotationDate(context: android.content.Context, current: Long, onPicked: (Long) -> Unit) {
+    val c = java.util.Calendar.getInstance().apply { timeInMillis = current }
+    android.app.DatePickerDialog(
+        context,
+        { _, y, m, d ->
+            c.set(java.util.Calendar.YEAR, y); c.set(java.util.Calendar.MONTH, m); c.set(java.util.Calendar.DAY_OF_MONTH, d)
+            onPicked(c.timeInMillis)
+        },
+        c.get(java.util.Calendar.YEAR), c.get(java.util.Calendar.MONTH), c.get(java.util.Calendar.DAY_OF_MONTH)
+    ).show()
 }

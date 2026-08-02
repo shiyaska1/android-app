@@ -1,5 +1,8 @@
 package com.billing.pos.ui.common
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
@@ -25,11 +28,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
+import com.billing.pos.ocr.rememberImageCamera
 import com.billing.pos.util.RichText
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -49,6 +54,30 @@ fun ItemNoteDialog(
     onDismiss: () -> Unit
 ) {
     var text by remember { mutableStateOf(initialNote) }
+    val context = LocalContext.current
+
+    // Draw, or scan a photo and drag a box over the text to fill the note.
+    var drawNote by remember { mutableStateOf(false) }
+    var noteOcrUri by remember { mutableStateOf<android.net.Uri?>(null) }
+    fun appendNote(t: String) { if (t.isNotBlank()) text = (text.trimEnd() + " " + t).trim() }
+    if (drawNote) {
+        HandwriteTextDialog(
+            onResult = { appendNote(it); drawNote = false },
+            onDismiss = { drawNote = false }
+        )
+    }
+    noteOcrUri?.let { u ->
+        RegionOcrDialog(
+            uri = u,
+            fieldLabel = "the description",
+            onResult = { appendNote(it); noteOcrUri = null },
+            onDismiss = { noteOcrUri = null }
+        )
+    }
+    val noteCamera = rememberImageCamera { uri -> noteOcrUri = uri }
+    val noteGallery = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickVisualMedia()
+    ) { uri -> if (uri != null) noteOcrUri = uri }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -85,6 +114,25 @@ fun ItemNoteDialog(
                 color = MaterialTheme.colorScheme.outline,
                 modifier = Modifier.padding(horizontal = 14.dp)
             )
+
+            // Fill the description by hand or from a photo (drag a box over the text).
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                OutlinedButton(onClick = { drawNote = true }, modifier = Modifier.weight(1f)) {
+                    Text("Draw", style = MaterialTheme.typography.labelMedium)
+                }
+                OutlinedButton(onClick = { noteCamera() }, modifier = Modifier.weight(1f)) {
+                    Text("Camera", style = MaterialTheme.typography.labelMedium)
+                }
+                OutlinedButton(
+                    onClick = {
+                        noteGallery.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                    },
+                    modifier = Modifier.weight(1f)
+                ) { Text("Gallery", style = MaterialTheme.typography.labelMedium) }
+            }
 
             RichTextEditor(
                 value = text,
