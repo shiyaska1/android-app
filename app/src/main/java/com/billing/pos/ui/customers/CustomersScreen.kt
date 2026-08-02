@@ -23,8 +23,11 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Campaign
 import androidx.compose.material.icons.filled.Chat
+import androidx.compose.material.icons.filled.DriveFileMove
+import androidx.compose.material.icons.filled.GridOn
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material.icons.filled.UploadFile
 import androidx.compose.material3.AlertDialog
@@ -74,7 +77,11 @@ import com.billing.pos.data.AppPrefs
 import com.billing.pos.data.Customer
 import com.billing.pos.data.CustomerAttachment
 import com.billing.pos.data.Repository
+import com.billing.pos.data.XlsxWriter
+import com.billing.pos.pdf.TablePdf
 import com.billing.pos.ui.billing.collectAsStateSafe
+import com.billing.pos.ui.common.rememberPdfDownloader
+import com.billing.pos.ui.common.rememberXlsxDownloader
 import com.billing.pos.util.Format
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -158,6 +165,15 @@ class CustomersViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Moves several customers to a different customer type at once. */
+    fun moveToType(targets: List<Customer>, type: String) {
+        if (targets.isEmpty()) { message.value = "Select at least one customer"; return }
+        viewModelScope.launch {
+            targets.forEach { repo.updateCustomer(it.copy(customerType = type)) }
+            message.value = "Moved ${targets.size} customer(s) to $type"
+        }
+    }
+
     fun delete(customer: Customer) {
         viewModelScope.launch {
             val result = repo.deleteCustomer(customer)
@@ -205,6 +221,39 @@ fun CustomersScreen(
         (q.isBlank() || listOf(c.name, c.phone, c.address, c.gstin).any { it.contains(q, ignoreCase = true) }) &&
             (typeFilter == "All" || c.customerType.equals(typeFilter, true))
     }
+    var showMoveType by remember { mutableStateOf(false) }
+
+    val downloadPdf = rememberPdfDownloader { msg -> vm.message.value = msg }
+    val downloadXlsx = rememberXlsxDownloader { msg -> vm.message.value = msg }
+    fun buildCustomersPdf(): java.io.File {
+        val cols = listOf(
+            TablePdf.Col("Name", 2f), TablePdf.Col("Type", 1.2f), TablePdf.Col("Phone", 1.4f),
+            TablePdf.Col("Address", 2.2f), TablePdf.Col("GSTIN", 1.4f), TablePdf.Col("Balance", 1.2f, right = true)
+        )
+        val data = visible.map {
+            listOf(it.name, it.customerType, it.phone, it.address, it.gstin, Format.money(balances[it.name] ?: 0.0))
+        }
+        return TablePdf.generate(context, AppPrefs(context).company, "Customers", "Count: ${visible.size}", cols, data)
+    }
+    fun buildCustomersXlsx(): java.io.File {
+        val rows = mutableListOf(
+            XlsxWriter.row(
+                XlsxWriter.text("Name"), XlsxWriter.text("Type"), XlsxWriter.text("Phone"),
+                XlsxWriter.text("Address"), XlsxWriter.text("GSTIN"), XlsxWriter.text("Balance")
+            )
+        )
+        visible.forEach {
+            rows.add(
+                XlsxWriter.row(
+                    XlsxWriter.text(it.name), XlsxWriter.text(it.customerType), XlsxWriter.text(it.phone),
+                    XlsxWriter.text(it.address), XlsxWriter.text(it.gstin), XlsxWriter.num(balances[it.name] ?: 0.0)
+                )
+            )
+        }
+        val file = java.io.File(java.io.File(context.cacheDir, "shared").apply { mkdirs() }, "customers.xlsx")
+        XlsxWriter.write(file, "Customers", rows)
+        return file
+    }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
@@ -231,6 +280,10 @@ fun CustomersScreen(
                                 enabled = selected.isNotEmpty()
                             ) { Icon(Icons.Filled.ReceiptLong, "Add invoice to selected") }
                             IconButton(
+                                onClick = { showMoveType = true },
+                                enabled = selected.isNotEmpty()
+                            ) { Icon(Icons.Filled.DriveFileMove, "Move to customer type") }
+                            IconButton(
                                 onClick = {
                                     val chosen = customers.filter { it.id in selected }
                                     if (chosen.isNotEmpty()) com.billing.pos.util.ShareText.share(context, customerShareText(chosen), "Customer details")
@@ -242,6 +295,12 @@ fun CustomersScreen(
                             }
                         }
                         else -> {
+                            IconButton(onClick = { downloadPdf { buildCustomersPdf() } }) {
+                                Icon(Icons.Filled.PictureAsPdf, "Download PDF")
+                            }
+                            IconButton(onClick = { downloadXlsx { buildCustomersXlsx() } }) {
+                                Icon(Icons.Filled.GridOn, "Download Excel")
+                            }
                             IconButton(onClick = { marketing = true; selected.clear() }) {
                                 Icon(Icons.Filled.Campaign, "WhatsApp marketing")
                             }
@@ -469,6 +528,19 @@ fun CustomersScreen(
             onConfirm = { amount, note, date ->
                 vm.addInvoiceToCustomers(customers.filter { it.id in selected }, amount, note, date)
                 showBulkInvoice = false
+                selecting = false
+                selected.clear()
+            }
+        )
+    }
+    if (showMoveType) {
+        MoveToTypeDialog(
+            count = selected.size,
+            types = customerTypes,
+            onDismiss = { showMoveType = false },
+            onConfirm = { type ->
+                vm.moveToType(customers.filter { it.id in selected }, type)
+                showMoveType = false
                 selecting = false
                 selected.clear()
             }
@@ -746,6 +818,30 @@ private fun BulkInvoiceDialog(count: Int, onDismiss: () -> Unit, onConfirm: (Dou
                 enabled = (amount.toDoubleOrNull() ?: 0.0) > 0.0
             ) { Text("Add") }
         },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
+@Composable
+private fun MoveToTypeDialog(count: Int, types: List<String>, onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
+    var type by remember { mutableStateOf(types.firstOrNull { it != "All" } ?: "General") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Move $count customer(s) to type") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                types.filter { it != "All" }.forEach { t ->
+                    Row(
+                        Modifier.fillMaxWidth().clickable { type = t }.padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        androidx.compose.material3.RadioButton(selected = type == t, onClick = { type = t })
+                        Text(t)
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = { onConfirm(type) }) { Text("Move") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
 }

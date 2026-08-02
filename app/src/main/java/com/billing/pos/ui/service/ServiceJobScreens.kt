@@ -34,6 +34,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.automirrored.filled.ListAlt
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Gesture
+import androidx.compose.material.icons.filled.GridOn
 import androidx.compose.material.icons.filled.NoteAdd
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.PhotoCamera
@@ -96,10 +97,12 @@ import com.billing.pos.data.ServiceJobMaster
 import com.billing.pos.data.ServiceRepository
 import com.billing.pos.data.ServiceStatus
 import com.billing.pos.data.ServiceType
+import com.billing.pos.data.XlsxWriter
 import com.billing.pos.pdf.DocumentPdf
 import com.billing.pos.print.ThermalPrinter
 import com.billing.pos.pdf.PdfDoc
 import com.billing.pos.pdf.PdfLine
+import com.billing.pos.pdf.TablePdf
 import com.billing.pos.ui.billing.BillPrefillLine
 import com.billing.pos.ui.billing.NewCustomerDialog
 import com.billing.pos.ui.billing.OrderToBillLink
@@ -107,6 +110,7 @@ import com.billing.pos.ui.billing.collectAsStateSafe
 import com.billing.pos.ui.common.CustomerPickField
 import com.billing.pos.ui.common.DocumentPdfAction
 import com.billing.pos.ui.common.rememberPdfDownloader
+import com.billing.pos.ui.common.rememberXlsxDownloader
 import com.billing.pos.util.Format
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -964,16 +968,46 @@ fun ServiceJobListScreen(
             c.dateMillis >= jcStartOfDay(fromMillis) && c.dateMillis <= jcEndOfDay(toMillis)
     }.sortedWith(compareBy({ priorityRank(it.priority) }, { -it.dateMillis }))
 
+    val downloadListXlsx = rememberXlsxDownloader { msg -> scope.launch { snackbar.showSnackbar(msg) } }
+    fun buildJobCardsPdf(): java.io.File {
+        val cols = listOf(
+            TablePdf.Col("Job No", 1.3f), TablePdf.Col("Date", 1.1f), TablePdf.Col("Customer", 1.6f),
+            TablePdf.Col("Model", 1.3f), TablePdf.Col("Status", 1.1f), TablePdf.Col("Amount", 1.1f, right = true)
+        )
+        val data = filtered.map { listOf(it.jobNo, Format.date(it.dateMillis), it.customerName, it.modelName, it.status, Format.money(it.grandTotal)) }
+        return TablePdf.generate(context, AppPrefs(context).company, "Job Cards", "Count: ${filtered.size}", cols, data)
+    }
+    fun buildJobCardsXlsx(): java.io.File {
+        val rows = mutableListOf(XlsxWriter.row(
+            XlsxWriter.text("Job No"), XlsxWriter.text("Date"), XlsxWriter.text("Customer"),
+            XlsxWriter.text("Model"), XlsxWriter.text("Status"), XlsxWriter.text("Amount")
+        ))
+        filtered.forEach {
+            rows.add(XlsxWriter.row(
+                XlsxWriter.text(it.jobNo), XlsxWriter.text(Format.date(it.dateMillis)), XlsxWriter.text(it.customerName),
+                XlsxWriter.text(it.modelName), XlsxWriter.text(it.status), XlsxWriter.num(it.grandTotal)
+            ))
+        }
+        val file = java.io.File(java.io.File(context.cacheDir, "shared").apply { mkdirs() }, "job_cards.xlsx")
+        XlsxWriter.write(file, "Job Cards", rows)
+        return file
+    }
+
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             TopAppBar(
                 title = { Text("Job Cards") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
+                actions = {
+                    IconButton(onClick = { downloadPdf { buildJobCardsPdf() } }) { Icon(Icons.Filled.PictureAsPdf, "Download PDF") }
+                    IconButton(onClick = { downloadListXlsx { buildJobCardsXlsx() } }) { Icon(Icons.Filled.GridOn, "Download Excel") }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                     titleContentColor = MaterialTheme.colorScheme.onPrimary,
-                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary
+                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary,
+                    actionIconContentColor = MaterialTheme.colorScheme.onPrimary
                 )
             )
         },

@@ -28,7 +28,9 @@ data class Quotation(
     /** Terms and conditions printed at the foot of the quotation. */
     val terms: String = "",
     /** [License.deviceId] of the phone this quotation was created on — used to dedupe cloud-sync merges. */
-    val deviceId: String = ""
+    val deviceId: String = "",
+    /** The sales bill this quotation was converted into, if any; blank = not yet converted. */
+    val convertedBillNo: String = ""
 )
 
 @Entity(tableName = "quotation_items")

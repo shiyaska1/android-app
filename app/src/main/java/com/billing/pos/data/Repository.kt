@@ -392,6 +392,11 @@ class Repository(private val context: Context) {
             .sortedByDescending { it.value }
             .map { it.key }
 
+    /** Marks these quotations as converted into [billNo], so they show as used and aren't offered again. */
+    suspend fun markQuotationsConverted(ids: List<Long>, billNo: String) {
+        ids.forEach { id -> quotationDao.byId(id)?.let { quotationDao.updateHeader(it.copy(convertedBillNo = billNo)) } }
+    }
+
     // ---- payment attachments ----
     private val custOrderDao = db.custOrderDao()
 

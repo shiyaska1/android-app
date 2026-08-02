@@ -24,9 +24,11 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Draw
+import androidx.compose.material.icons.filled.GridOn
 import androidx.compose.material.icons.filled.NoteAdd
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -59,27 +61,33 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.billing.pos.data.AppPrefs
 import com.billing.pos.data.Item
 import com.billing.pos.data.PurchaseQuote
 import com.billing.pos.data.PurchaseQuoteItem
 import com.billing.pos.data.Repository
 import com.billing.pos.data.Supplier
 import com.billing.pos.data.UnitChoice
+import com.billing.pos.data.XlsxWriter
 import com.billing.pos.data.hasTwoUnits
 import com.billing.pos.data.primaryCostChoice
 import com.billing.pos.pdf.PdfDoc
 import com.billing.pos.pdf.PdfLine
+import com.billing.pos.pdf.TablePdf
 import com.billing.pos.ui.billing.CartLine
 import com.billing.pos.ui.billing.ItemPickerDialog
 import com.billing.pos.ui.billing.UnitPickDialog
 import com.billing.pos.ui.billing.collectAsStateSafe
 import com.billing.pos.ui.common.DocumentPdfAction
+import com.billing.pos.ui.common.rememberPdfDownloader
+import com.billing.pos.ui.common.rememberXlsxDownloader
 import com.billing.pos.util.Format
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -430,11 +438,30 @@ private fun TypedItemDialog(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PurchaseQuoteListScreen(onBack: () -> Unit, onOpen: (Long) -> Unit, onNew: () -> Unit, vm: PurchaseQuoteViewModel = viewModel()) {
+    val context = LocalContext.current
     val snackbar = remember { SnackbarHostState() }
     val quotes by vm.quotes.collectAsStateSafe()
     val message by vm.message.collectAsStateSafe()
     LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); vm.consumeMessage() } }
     var deleteFor by remember { mutableStateOf<PurchaseQuote?>(null) }
+
+    val downloadPdf = rememberPdfDownloader { msg -> vm.message.value = msg }
+    val downloadXlsx = rememberXlsxDownloader { msg -> vm.message.value = msg }
+    fun buildPurchaseQuotesPdf(): java.io.File {
+        val cols = listOf(
+            TablePdf.Col("Quote No", 1.6f), TablePdf.Col("Date", 1.2f),
+            TablePdf.Col("Supplier", 2f), TablePdf.Col("Amount", 1.2f, right = true)
+        )
+        val data = quotes.map { listOf(it.quoteNo, Format.date(it.dateMillis), it.supplierName, Format.money(it.grandTotal)) }
+        return TablePdf.generate(context, AppPrefs(context).company, "Purchase Quotations", "Count: ${quotes.size}", cols, data)
+    }
+    fun buildPurchaseQuotesXlsx(): java.io.File {
+        val rows = mutableListOf(XlsxWriter.row(XlsxWriter.text("Quote No"), XlsxWriter.text("Date"), XlsxWriter.text("Supplier"), XlsxWriter.text("Amount")))
+        quotes.forEach { rows.add(XlsxWriter.row(XlsxWriter.text(it.quoteNo), XlsxWriter.text(Format.date(it.dateMillis)), XlsxWriter.text(it.supplierName), XlsxWriter.num(it.grandTotal))) }
+        val file = java.io.File(java.io.File(context.cacheDir, "shared").apply { mkdirs() }, "purchase_quotations.xlsx")
+        XlsxWriter.write(file, "Purchase Quotations", rows)
+        return file
+    }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
@@ -442,10 +469,15 @@ fun PurchaseQuoteListScreen(onBack: () -> Unit, onOpen: (Long) -> Unit, onNew: (
             TopAppBar(
                 title = { Text("Purchase Quotations") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
+                actions = {
+                    IconButton(onClick = { downloadPdf { buildPurchaseQuotesPdf() } }) { Icon(Icons.Filled.PictureAsPdf, "Download PDF") }
+                    IconButton(onClick = { downloadXlsx { buildPurchaseQuotesXlsx() } }) { Icon(Icons.Filled.GridOn, "Download Excel") }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                     titleContentColor = MaterialTheme.colorScheme.onPrimary,
-                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary
+                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary,
+                    actionIconContentColor = MaterialTheme.colorScheme.onPrimary
                 )
             )
         },

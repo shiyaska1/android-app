@@ -20,6 +20,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.GridOn
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
@@ -57,11 +58,13 @@ import com.billing.pos.data.Backup
 import com.billing.pos.data.Bill
 import com.billing.pos.data.AppPrefs
 import com.billing.pos.data.Repository
+import com.billing.pos.data.XlsxWriter
 import com.billing.pos.pdf.TablePdf
 import com.billing.pos.ui.billing.collectAsStateSafe
 import com.billing.pos.ui.common.DateSearchFilter
 import com.billing.pos.ui.common.endOfDay
 import com.billing.pos.ui.common.rememberPdfDownloader
+import com.billing.pos.ui.common.rememberXlsxDownloader
 import com.billing.pos.ui.common.startOfDay
 import com.billing.pos.util.Format
 import kotlinx.coroutines.Dispatchers
@@ -172,6 +175,26 @@ fun InvoiceListScreen(
         val footer = listOf("TOTAL" to Format.money(filtered.sumOf { it.grandTotal }))
         return TablePdf.generate(context, AppPrefs(context).company, "Invoices", "Count: ${filtered.size}", cols, data, footer)
     }
+    val downloadXlsx = rememberXlsxDownloader { msg -> scope.launch { snackbar.showSnackbar(msg) } }
+    fun buildInvoicesXlsx(): java.io.File {
+        val rows = mutableListOf(
+            XlsxWriter.row(
+                XlsxWriter.text("Bill No"), XlsxWriter.text("Date"), XlsxWriter.text("Customer"),
+                XlsxWriter.text("Pay"), XlsxWriter.text("Status"), XlsxWriter.text("Total")
+            )
+        )
+        filtered.sortedByDescending { it.dateMillis }.forEach {
+            rows.add(
+                XlsxWriter.row(
+                    XlsxWriter.text(it.billNo), XlsxWriter.text(Format.date(it.dateMillis)), XlsxWriter.text(it.customerName),
+                    XlsxWriter.text(it.paymentMethod), XlsxWriter.text(it.paymentStatus), XlsxWriter.num(it.grandTotal)
+                )
+            )
+        }
+        val file = java.io.File(java.io.File(context.cacheDir, "shared").apply { mkdirs() }, "invoices.xlsx")
+        XlsxWriter.write(file, "Invoices", rows)
+        return file
+    }
 
     LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); vm.consumeMessage() } }
 
@@ -206,6 +229,9 @@ fun InvoiceListScreen(
                 actions = {
                     IconButton(onClick = { downloadPdf { buildInvoicesPdf() } }) {
                         Icon(Icons.Filled.PictureAsPdf, contentDescription = "Download list PDF")
+                    }
+                    IconButton(onClick = { downloadXlsx { buildInvoicesXlsx() } }) {
+                        Icon(Icons.Filled.GridOn, contentDescription = "Download Excel")
                     }
                     if (Session.canExport) {
                         IconButton(onClick = { vm.exportAndShare(context) }) {

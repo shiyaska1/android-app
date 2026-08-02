@@ -19,7 +19,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.GridOn
 import androidx.compose.material.icons.filled.NoteAdd
+import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -74,8 +76,12 @@ import com.billing.pos.ui.billing.UnitPickDialog
 import com.billing.pos.ui.billing.collectAsStateSafe
 import com.billing.pos.ui.common.InvoicePickerField
 import com.billing.pos.ui.common.DocumentPdfAction
+import com.billing.pos.ui.common.rememberPdfDownloader
+import com.billing.pos.ui.common.rememberXlsxDownloader
 import com.billing.pos.pdf.PdfDoc
 import com.billing.pos.pdf.PdfLine
+import com.billing.pos.pdf.TablePdf
+import com.billing.pos.data.XlsxWriter
 import com.billing.pos.util.Format
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -386,11 +392,30 @@ fun SalesReturnScreen(editId: Long?, onBack: () -> Unit, vm: SalesReturnViewMode
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SalesReturnListScreen(onBack: () -> Unit, onOpen: (Long) -> Unit, onNew: () -> Unit, vm: SalesReturnViewModel = viewModel()) {
+    val context = LocalContext.current
     val snackbar = remember { SnackbarHostState() }
     val returns by vm.returns.collectAsStateSafe()
     val message by vm.message.collectAsStateSafe()
     LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); vm.consumeMessage() } }
     var deleteFor by remember { mutableStateOf<SalesReturn?>(null) }
+
+    val downloadPdf = rememberPdfDownloader { msg -> vm.message.value = msg }
+    val downloadXlsx = rememberXlsxDownloader { msg -> vm.message.value = msg }
+    fun buildSalesReturnsPdf(): java.io.File {
+        val cols = listOf(
+            TablePdf.Col("Return No", 1.6f), TablePdf.Col("Date", 1.2f),
+            TablePdf.Col("Customer", 2f), TablePdf.Col("Amount", 1.2f, right = true)
+        )
+        val data = returns.map { listOf(it.returnNo, Format.date(it.dateMillis), it.customerName, Format.money(it.grandTotal)) }
+        return TablePdf.generate(context, AppPrefs(context).company, "Sales Returns", "Count: ${returns.size}", cols, data)
+    }
+    fun buildSalesReturnsXlsx(): java.io.File {
+        val rows = mutableListOf(XlsxWriter.row(XlsxWriter.text("Return No"), XlsxWriter.text("Date"), XlsxWriter.text("Customer"), XlsxWriter.text("Amount")))
+        returns.forEach { rows.add(XlsxWriter.row(XlsxWriter.text(it.returnNo), XlsxWriter.text(Format.date(it.dateMillis)), XlsxWriter.text(it.customerName), XlsxWriter.num(it.grandTotal))) }
+        val file = java.io.File(java.io.File(context.cacheDir, "shared").apply { mkdirs() }, "sales_returns.xlsx")
+        XlsxWriter.write(file, "Sales Returns", rows)
+        return file
+    }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
@@ -398,10 +423,15 @@ fun SalesReturnListScreen(onBack: () -> Unit, onOpen: (Long) -> Unit, onNew: () 
             TopAppBar(
                 title = { Text("Sales Returns") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
+                actions = {
+                    IconButton(onClick = { downloadPdf { buildSalesReturnsPdf() } }) { Icon(Icons.Filled.PictureAsPdf, "Download PDF") }
+                    IconButton(onClick = { downloadXlsx { buildSalesReturnsXlsx() } }) { Icon(Icons.Filled.GridOn, "Download Excel") }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                     titleContentColor = MaterialTheme.colorScheme.onPrimary,
-                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary
+                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary,
+                    actionIconContentColor = MaterialTheme.colorScheme.onPrimary
                 )
             )
         },

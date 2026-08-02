@@ -25,7 +25,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.GridOn
 import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
@@ -78,12 +80,16 @@ import com.billing.pos.data.Repository
 import com.billing.pos.data.hasTwoUnits
 import com.billing.pos.data.primaryChoice
 import com.billing.pos.pdf.DeliveryNotePdf
+import com.billing.pos.pdf.TablePdf
+import com.billing.pos.data.XlsxWriter
 import com.billing.pos.print.ThermalPrinter
 import com.billing.pos.ui.billing.CartLine
 import com.billing.pos.ui.billing.ItemPickerDialog
 import com.billing.pos.ui.billing.NewItemDialog
 import com.billing.pos.ui.billing.UnitPickDialog
 import com.billing.pos.ui.billing.collectAsStateSafe
+import com.billing.pos.ui.common.rememberPdfDownloader
+import com.billing.pos.ui.common.rememberXlsxDownloader
 import com.billing.pos.util.Format
 import com.billing.pos.util.Permissions
 import kotlinx.coroutines.Dispatchers
@@ -504,6 +510,24 @@ fun DeliveryNoteListScreen(
             (toMillis == null || it.dateMillis <= com.billing.pos.ui.common.endOfDay(toMillis!!))
     }
 
+    val downloadPdf = rememberPdfDownloader { msg -> vm.message.value = msg }
+    val downloadXlsx = rememberXlsxDownloader { msg -> vm.message.value = msg }
+    fun buildDeliveryNotesPdf(): java.io.File {
+        val cols = listOf(
+            TablePdf.Col("Delivery No", 1.6f), TablePdf.Col("Date", 1.2f),
+            TablePdf.Col("Customer", 2f), TablePdf.Col("Status", 1.6f)
+        )
+        val data = shown.map { listOf(it.deliveryNo, Format.date(it.dateMillis), it.customerName, if (it.convertedBillNo.isNotBlank()) "Billed as ${it.convertedBillNo}" else "") }
+        return TablePdf.generate(context, AppPrefs(context).company, "Delivery Notes", "Count: ${shown.size}", cols, data)
+    }
+    fun buildDeliveryNotesXlsx(): java.io.File {
+        val rows = mutableListOf(XlsxWriter.row(XlsxWriter.text("Delivery No"), XlsxWriter.text("Date"), XlsxWriter.text("Customer"), XlsxWriter.text("Status")))
+        shown.forEach { rows.add(XlsxWriter.row(XlsxWriter.text(it.deliveryNo), XlsxWriter.text(Format.date(it.dateMillis)), XlsxWriter.text(it.customerName), XlsxWriter.text(if (it.convertedBillNo.isNotBlank()) "Billed as ${it.convertedBillNo}" else ""))) }
+        val file = java.io.File(java.io.File(context.cacheDir, "shared").apply { mkdirs() }, "delivery_notes.xlsx")
+        XlsxWriter.write(file, "Delivery Notes", rows)
+        return file
+    }
+
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
@@ -514,6 +538,8 @@ fun DeliveryNoteListScreen(
                     if (selecting) {
                         IconButton(onClick = { selecting = false; selected.clear() }) { Icon(Icons.Filled.Delete, "Cancel selection") }
                     } else {
+                        IconButton(onClick = { downloadPdf { buildDeliveryNotesPdf() } }) { Icon(Icons.Filled.PictureAsPdf, "Download PDF") }
+                        IconButton(onClick = { downloadXlsx { buildDeliveryNotesXlsx() } }) { Icon(Icons.Filled.GridOn, "Download Excel") }
                         IconButton(onClick = { selecting = true }) { Icon(Icons.Filled.Add, "Convert delivery notes to a bill") }
                     }
                 },

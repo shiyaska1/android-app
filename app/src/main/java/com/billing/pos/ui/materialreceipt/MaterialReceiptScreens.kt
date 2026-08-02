@@ -9,6 +9,7 @@ import java.util.Calendar
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -25,7 +26,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.GridOn
 import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
@@ -77,10 +80,12 @@ import com.billing.pos.data.MaterialReceiptWithItems
 import com.billing.pos.data.PurchaseQuotation
 import com.billing.pos.data.Repository
 import com.billing.pos.data.Supplier
+import com.billing.pos.data.XlsxWriter
 import com.billing.pos.data.costRate
 import com.billing.pos.data.hasTwoUnits
 import com.billing.pos.data.primaryCostChoice
 import com.billing.pos.pdf.MaterialReceiptPdf
+import com.billing.pos.pdf.TablePdf
 import com.billing.pos.print.ThermalPrinter
 import com.billing.pos.ui.billing.CartLine
 import com.billing.pos.ui.billing.ItemPickerDialog
@@ -90,6 +95,8 @@ import com.billing.pos.ui.billing.collectAsStateSafe
 import com.billing.pos.ui.common.LpoPickerField
 import com.billing.pos.ui.common.endOfDay
 import com.billing.pos.ui.common.oneMonthAgoMillis
+import com.billing.pos.ui.common.rememberPdfDownloader
+import com.billing.pos.ui.common.rememberXlsxDownloader
 import com.billing.pos.ui.common.startOfDay
 import com.billing.pos.util.Format
 import com.billing.pos.util.Permissions
@@ -322,16 +329,26 @@ fun MaterialReceiptScreen(editId: Long?, onBack: () -> Unit, vm: MaterialReceipt
                 OutlinedButton(onClick = { pickDate(context, vm.dateMillis) { vm.dateMillis = it } }) { Text(Format.date(vm.dateMillis)) }
             }
             var supMenu by remember { mutableStateOf(false) }
+            var supQuery by remember { mutableStateOf(vm.selectedSupplier?.name ?: "") }
+            LaunchedEffect(vm.selectedSupplier?.id) { if (!supMenu) supQuery = vm.selectedSupplier?.name ?: "" }
+            val supMatches = remember(supQuery, suppliers) {
+                if (supQuery.isBlank()) suppliers else suppliers.filter { it.name.contains(supQuery, ignoreCase = true) }
+            }
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 6.dp)) {
                 ExposedDropdownMenuBox(expanded = supMenu, onExpandedChange = { supMenu = !supMenu }, modifier = Modifier.weight(1f)) {
                     OutlinedTextField(
-                        readOnly = true, value = vm.selectedSupplier?.name ?: "", onValueChange = {},
+                        value = supQuery, onValueChange = { supQuery = it; supMenu = true },
                         label = { Text("Supplier *") },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(supMenu) },
                         modifier = Modifier.menuAnchor().fillMaxWidth()
+                            .onFocusChanged { fs ->
+                                if (fs.isFocused) { supQuery = ""; supMenu = true }
+                                else if (!supMenu) supQuery = vm.selectedSupplier?.name ?: ""
+                            }
                     )
                     ExposedDropdownMenu(expanded = supMenu, onDismissRequest = { supMenu = false }) {
-                        suppliers.forEach { s -> DropdownMenuItem(text = { Text(s.name) }, onClick = { vm.selectSupplier(s); supMenu = false }) }
+                        if (supMatches.isEmpty()) DropdownMenuItem(text = { Text("No match") }, onClick = { supMenu = false })
+                        supMatches.forEach { s -> DropdownMenuItem(text = { Text(s.name) }, onClick = { vm.selectSupplier(s); supQuery = s.name; supMenu = false }) }
                     }
                 }
                 IconButton(onClick = { showNewSupplier = true }) { Icon(Icons.Filled.PersonAdd, "New supplier") }
@@ -529,6 +546,31 @@ fun MaterialReceiptListScreen(
             (toMillis == null || it.dateMillis <= endOfDay(toMillis!!))
     }
 
+    val downloadPdf = rememberPdfDownloader { msg -> vm.message.value = msg }
+    val downloadXlsx = rememberXlsxDownloader { msg -> vm.message.value = msg }
+    fun buildReceiptsPdf(): java.io.File {
+        val cols = listOf(
+            TablePdf.Col("Receipt No", 1.6f), TablePdf.Col("Date", 1.2f),
+            TablePdf.Col("Supplier", 2f), TablePdf.Col("Status", 1.8f)
+        )
+        val data = shown.map {
+            listOf(it.receiptNo, Format.date(it.dateMillis), it.supplierName, if (it.convertedPurchaseNo.isNotBlank()) "Purchased as ${it.convertedPurchaseNo}" else "")
+        }
+        return TablePdf.generate(context, AppPrefs(context).company, "Material Receipts", "Count: ${shown.size}", cols, data)
+    }
+    fun buildReceiptsXlsx(): java.io.File {
+        val rows = mutableListOf(XlsxWriter.row(XlsxWriter.text("Receipt No"), XlsxWriter.text("Date"), XlsxWriter.text("Supplier"), XlsxWriter.text("Status")))
+        shown.forEach {
+            rows.add(XlsxWriter.row(
+                XlsxWriter.text(it.receiptNo), XlsxWriter.text(Format.date(it.dateMillis)), XlsxWriter.text(it.supplierName),
+                XlsxWriter.text(if (it.convertedPurchaseNo.isNotBlank()) "Purchased as ${it.convertedPurchaseNo}" else "")
+            ))
+        }
+        val file = java.io.File(java.io.File(context.cacheDir, "shared").apply { mkdirs() }, "material_receipts.xlsx")
+        XlsxWriter.write(file, "Material Receipts", rows)
+        return file
+    }
+
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
@@ -540,6 +582,8 @@ fun MaterialReceiptListScreen(
                         IconButton(onClick = { selecting = false; selected.clear() }) { Icon(Icons.Filled.Delete, "Cancel selection") }
                     } else {
                         IconButton(onClick = { selecting = true }) { Icon(Icons.Filled.Add, "Convert receipts to a purchase") }
+                        IconButton(onClick = { downloadPdf { buildReceiptsPdf() } }) { Icon(Icons.Filled.PictureAsPdf, "Download PDF") }
+                        IconButton(onClick = { downloadXlsx { buildReceiptsXlsx() } }) { Icon(Icons.Filled.GridOn, "Download Excel") }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(

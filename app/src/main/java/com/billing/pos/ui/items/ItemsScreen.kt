@@ -35,6 +35,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DocumentScanner
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.EventBusy
+import androidx.compose.material.icons.filled.GridOn
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Gesture
 import androidx.compose.material.icons.filled.PhotoCamera
@@ -94,10 +95,12 @@ import com.billing.pos.data.Item
 import com.billing.pos.data.ItemAttachment
 import com.billing.pos.data.Repository
 import com.billing.pos.items.ItemAttachmentStore
+import com.billing.pos.data.XlsxWriter
 import com.billing.pos.pdf.BarcodePdf
 import com.billing.pos.pdf.TablePdf
 import com.billing.pos.ui.billing.collectAsStateSafe
 import com.billing.pos.ui.common.rememberPdfDownloader
+import com.billing.pos.ui.common.rememberXlsxDownloader
 import com.billing.pos.ui.common.rememberThumbnail
 import com.billing.pos.util.Format
 import com.journeyapps.barcodescanner.ScanContract
@@ -405,6 +408,26 @@ fun ItemsScreen(
         }
         return TablePdf.generate(context, company, "Item List", subtitle, cols, data)
     }
+    val downloadXlsx = rememberXlsxDownloader { msg -> scope.launch { snackbar.showSnackbar(msg) } }
+    fun buildItemsXlsx(): java.io.File {
+        val rows = mutableListOf(
+            XlsxWriter.row(
+                XlsxWriter.text("Item"), XlsxWriter.text("Category"), XlsxWriter.text("Unit"),
+                XlsxWriter.text("Stock"), XlsxWriter.text("Buy"), XlsxWriter.text("Sell"), XlsxWriter.text("Last Supplier")
+            )
+        )
+        filteredRows.forEach { r ->
+            rows.add(
+                XlsxWriter.row(
+                    XlsxWriter.text(r.item.name), XlsxWriter.text(r.item.category), XlsxWriter.text(r.item.unit),
+                    XlsxWriter.num(r.stock), XlsxWriter.num(r.purchaseRate), XlsxWriter.num(r.item.price), XlsxWriter.text(r.lastSupplier)
+                )
+            )
+        }
+        val file = java.io.File(java.io.File(context.cacheDir, "shared").apply { mkdirs() }, "items.xlsx")
+        XlsxWriter.write(file, "Items", rows)
+        return file
+    }
 
     var showDialog by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<Item?>(null) }
@@ -580,6 +603,9 @@ fun ItemsScreen(
                     }
                     IconButton(onClick = { downloadPdf { buildItemsPdf() } }) {
                         Icon(Icons.Filled.Download, contentDescription = "Download list PDF")
+                    }
+                    IconButton(onClick = { downloadXlsx { buildItemsXlsx() } }) {
+                        Icon(Icons.Filled.GridOn, contentDescription = "Download Excel")
                     }
                 }
             )

@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.GridOn
 import androidx.compose.material.icons.filled.LibraryAdd
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PhotoCamera
@@ -79,6 +80,7 @@ import com.billing.pos.pdf.TablePdf
 import com.billing.pos.ui.common.DateSearchFilter
 import com.billing.pos.ui.common.endOfDay
 import com.billing.pos.ui.common.rememberPdfDownloader
+import com.billing.pos.ui.common.rememberXlsxDownloader
 import com.billing.pos.ui.common.startOfDay
 import com.billing.pos.data.Bill
 import com.billing.pos.data.DownloadSaver
@@ -316,6 +318,26 @@ fun ReceiptsScreen(
             (toMillis?.let { "  To: ${Format.date(it)}" } ?: "") + (if (query.isNotBlank()) "  Search: $query" else "")
         return TablePdf.generate(context, AppPrefs(context).company, "Receipts", sub, cols, data, listOf("TOTAL" to Format.money(total)))
     }
+    val downloadXlsx = rememberXlsxDownloader { msg -> scope.launch { snackbar.showSnackbar(msg) } }
+    fun buildReceiptsXlsx(): java.io.File {
+        val rows = mutableListOf(
+            XlsxWriter.row(
+                XlsxWriter.text("No"), XlsxWriter.text("Date"), XlsxWriter.text("From"),
+                XlsxWriter.text("Mode"), XlsxWriter.text("Amount")
+            )
+        )
+        filtered.sortedByDescending { it.dateMillis }.forEach {
+            rows.add(
+                XlsxWriter.row(
+                    XlsxWriter.text(it.receiptNo), XlsxWriter.text(Format.date(it.dateMillis)), XlsxWriter.text(it.payFrom.ifBlank { it.customerName }),
+                    XlsxWriter.text(it.paymentMode), XlsxWriter.num(it.amount)
+                )
+            )
+        }
+        val file = java.io.File(java.io.File(context.cacheDir, "shared").apply { mkdirs() }, "receipts.xlsx")
+        XlsxWriter.write(file, "Receipts", rows)
+        return file
+    }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
@@ -346,6 +368,9 @@ fun ReceiptsScreen(
                     if (Session.canViewReceipt) {
                         IconButton(onClick = { downloadPdf { buildReceiptsPdf() } }) {
                             Icon(Icons.Filled.Download, contentDescription = "Download PDF")
+                        }
+                        IconButton(onClick = { downloadXlsx { buildReceiptsXlsx() } }) {
+                            Icon(Icons.Filled.GridOn, contentDescription = "Download Excel")
                         }
                     }
                     if (Session.canCreateReceipt) {

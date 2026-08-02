@@ -24,6 +24,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.GridOn
 import androidx.compose.material.icons.filled.LibraryAdd
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Print
@@ -85,6 +86,7 @@ import com.billing.pos.ui.billing.collectAsStateSafe
 import com.billing.pos.ui.common.DateSearchFilter
 import com.billing.pos.ui.common.endOfDay
 import com.billing.pos.ui.common.rememberPdfDownloader
+import com.billing.pos.ui.common.rememberXlsxDownloader
 import com.billing.pos.ui.common.startOfDay
 import com.billing.pos.util.Format
 import com.billing.pos.util.Permissions
@@ -304,6 +306,27 @@ fun ExpensesScreen(
             (toMillis?.let { "  To: ${Format.date(it)}" } ?: "") + (if (query.isNotBlank()) "  Search: $query" else "")
         return TablePdf.generate(context, AppPrefs(context).company, "Payments", sub, cols, data, listOf("TOTAL" to Format.money(total)))
     }
+    val downloadXlsx = rememberXlsxDownloader { msg -> scope.launch { snackbar.showSnackbar(msg) } }
+    fun buildPaymentsXlsx(): java.io.File {
+        val rows = mutableListOf(
+            XlsxWriter.row(
+                XlsxWriter.text("No"), XlsxWriter.text("Date"), XlsxWriter.text("To / Desc"),
+                XlsxWriter.text("Mode"), XlsxWriter.text("Amount")
+            )
+        )
+        filtered.sortedByDescending { it.dateMillis }.forEach {
+            rows.add(
+                XlsxWriter.row(
+                    XlsxWriter.text(it.voucherNo), XlsxWriter.text(Format.date(it.dateMillis)),
+                    XlsxWriter.text(it.payTo.ifBlank { it.description.ifBlank { "Expense" } }),
+                    XlsxWriter.text(it.paymentMode), XlsxWriter.num(it.amount)
+                )
+            )
+        }
+        val file = java.io.File(java.io.File(context.cacheDir, "shared").apply { mkdirs() }, "payments.xlsx")
+        XlsxWriter.write(file, "Payments", rows)
+        return file
+    }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
@@ -330,6 +353,9 @@ fun ExpensesScreen(
                     if (Session.canViewPayment) {
                         IconButton(onClick = { downloadPdf { buildPaymentsPdf() } }) {
                             Icon(Icons.Filled.Download, contentDescription = "Download PDF")
+                        }
+                        IconButton(onClick = { downloadXlsx { buildPaymentsXlsx() } }) {
+                            Icon(Icons.Filled.GridOn, contentDescription = "Download Excel")
                         }
                     }
                     if (Session.canCreatePayment) {

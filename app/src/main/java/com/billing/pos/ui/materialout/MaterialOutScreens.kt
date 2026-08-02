@@ -22,8 +22,10 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Draw
+import androidx.compose.material.icons.filled.GridOn
 import androidx.compose.material.icons.filled.NoteAdd
 import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -63,13 +65,16 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.billing.pos.data.AppPrefs
 import com.billing.pos.data.Item
 import com.billing.pos.data.MaterialOut
 import com.billing.pos.data.MaterialOutItem
 import com.billing.pos.data.Repository
 import com.billing.pos.data.UnitChoice
+import com.billing.pos.data.XlsxWriter
 import com.billing.pos.data.hasTwoUnits
 import com.billing.pos.data.primaryChoice
+import com.billing.pos.pdf.TablePdf
 import com.billing.pos.ui.billing.BillOcrReviewDialog
 import com.billing.pos.ui.billing.CartLine
 import com.billing.pos.ui.billing.EditLineNameDialog
@@ -78,6 +83,8 @@ import com.billing.pos.ui.billing.ItemPickerDialog
 import com.billing.pos.ui.billing.NewItemDialog
 import com.billing.pos.ui.billing.UnitPickDialog
 import com.billing.pos.ui.billing.collectAsStateSafe
+import com.billing.pos.ui.common.rememberPdfDownloader
+import com.billing.pos.ui.common.rememberXlsxDownloader
 import com.billing.pos.ocr.ScannedItem
 import com.billing.pos.ocr.rememberListScanner
 import com.billing.pos.util.Format
@@ -320,16 +327,39 @@ fun MaterialOutListScreen(onBack: () -> Unit, onOpen: (Long) -> Unit, onNew: () 
             m.dateMillis >= matStartOfDay(fromMillis) && m.dateMillis <= matEndOfDay(toMillis)
     }
 
+    val downloadPdf = rememberPdfDownloader { msg -> vm.message.value = msg }
+    val downloadXlsx = rememberXlsxDownloader { msg -> vm.message.value = msg }
+    fun buildMaterialOutPdf(): java.io.File {
+        val cols = listOf(
+            TablePdf.Col("Voucher No", 1.6f), TablePdf.Col("Date", 1.2f),
+            TablePdf.Col("Result Invoice", 1.6f), TablePdf.Col("Result Tests", 1.6f)
+        )
+        val data = filtered.map { listOf(it.voucherNo, Format.date(it.dateMillis), it.resultRef, it.resultTests) }
+        return TablePdf.generate(context, AppPrefs(context).company, "Material Out", "Count: ${filtered.size}", cols, data)
+    }
+    fun buildMaterialOutXlsx(): java.io.File {
+        val rows = mutableListOf(XlsxWriter.row(XlsxWriter.text("Voucher No"), XlsxWriter.text("Date"), XlsxWriter.text("Result Invoice"), XlsxWriter.text("Result Tests")))
+        filtered.forEach { rows.add(XlsxWriter.row(XlsxWriter.text(it.voucherNo), XlsxWriter.text(Format.date(it.dateMillis)), XlsxWriter.text(it.resultRef), XlsxWriter.text(it.resultTests))) }
+        val file = java.io.File(java.io.File(context.cacheDir, "shared").apply { mkdirs() }, "material_out.xlsx")
+        XlsxWriter.write(file, "Material Out", rows)
+        return file
+    }
+
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             TopAppBar(
                 title = { Text("Material Out") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
+                actions = {
+                    IconButton(onClick = { downloadPdf { buildMaterialOutPdf() } }) { Icon(Icons.Filled.PictureAsPdf, "Download PDF") }
+                    IconButton(onClick = { downloadXlsx { buildMaterialOutXlsx() } }) { Icon(Icons.Filled.GridOn, "Download Excel") }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                     titleContentColor = MaterialTheme.colorScheme.onPrimary,
-                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary
+                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary,
+                    actionIconContentColor = MaterialTheme.colorScheme.onPrimary
                 )
             )
         },

@@ -14,6 +14,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.GridOn
+import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Divider
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -43,9 +45,14 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.billing.pos.data.AppPrefs
 import com.billing.pos.data.Repository
 import com.billing.pos.data.Supplier
+import com.billing.pos.data.XlsxWriter
+import com.billing.pos.pdf.TablePdf
 import com.billing.pos.ui.billing.collectAsStateSafe
+import com.billing.pos.ui.common.rememberPdfDownloader
+import com.billing.pos.ui.common.rememberXlsxDownloader
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -91,6 +98,25 @@ fun SuppliersScreen(
     var showDialog by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<Supplier?>(null) }
     var deleteFor by remember { mutableStateOf<Supplier?>(null) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    val downloadPdf = rememberPdfDownloader { msg -> vm.message.value = msg }
+    val downloadXlsx = rememberXlsxDownloader { msg -> vm.message.value = msg }
+    fun buildSuppliersPdf(): java.io.File {
+        val cols = listOf(
+            TablePdf.Col("Name", 2f), TablePdf.Col("Phone", 1.4f),
+            TablePdf.Col("Address", 2.4f), TablePdf.Col("GSTIN", 1.6f)
+        )
+        val data = suppliers.map { listOf(it.name, it.phone, it.address, it.gstin) }
+        return TablePdf.generate(context, AppPrefs(context).company, "Suppliers", "Count: ${suppliers.size}", cols, data)
+    }
+    fun buildSuppliersXlsx(): java.io.File {
+        val rows = mutableListOf(XlsxWriter.row(XlsxWriter.text("Name"), XlsxWriter.text("Phone"), XlsxWriter.text("Address"), XlsxWriter.text("GSTIN")))
+        suppliers.forEach { rows.add(XlsxWriter.row(XlsxWriter.text(it.name), XlsxWriter.text(it.phone), XlsxWriter.text(it.address), XlsxWriter.text(it.gstin))) }
+        val file = java.io.File(java.io.File(context.cacheDir, "shared").apply { mkdirs() }, "suppliers.xlsx")
+        XlsxWriter.write(file, "Suppliers", rows)
+        return file
+    }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
@@ -98,10 +124,15 @@ fun SuppliersScreen(
             TopAppBar(
                 title = { Text("Suppliers") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } },
+                actions = {
+                    IconButton(onClick = { downloadPdf { buildSuppliersPdf() } }) { Icon(Icons.Filled.PictureAsPdf, "Download PDF") }
+                    IconButton(onClick = { downloadXlsx { buildSuppliersXlsx() } }) { Icon(Icons.Filled.GridOn, "Download Excel") }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                     titleContentColor = MaterialTheme.colorScheme.onPrimary,
-                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary
+                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary,
+                    actionIconContentColor = MaterialTheme.colorScheme.onPrimary
                 )
             )
         },

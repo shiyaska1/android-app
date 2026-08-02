@@ -23,7 +23,10 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.FormatBold
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.GridOn
 import androidx.compose.material.icons.filled.NoteAdd
+import androidx.compose.material.icons.filled.PictureAsPdf
+import androidx.compose.material.icons.filled.PostAdd
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -66,10 +69,12 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.billing.pos.data.Customer
+import com.billing.pos.data.AppPrefs
 import com.billing.pos.data.Item
 import com.billing.pos.data.Quotation
 import com.billing.pos.data.QuotationItem
 import com.billing.pos.data.Repository
+import com.billing.pos.data.XlsxWriter
 import com.billing.pos.ui.billing.CartLine
 import com.billing.pos.data.UnitChoice
 import com.billing.pos.data.hasTwoUnits
@@ -78,8 +83,11 @@ import com.billing.pos.ui.billing.ItemPickerDialog
 import com.billing.pos.ui.billing.UnitPickDialog
 import com.billing.pos.ui.billing.collectAsStateSafe
 import com.billing.pos.ui.common.DocumentPdfAction
+import com.billing.pos.ui.common.rememberPdfDownloader
+import com.billing.pos.ui.common.rememberXlsxDownloader
 import com.billing.pos.pdf.PdfDoc
 import com.billing.pos.pdf.PdfLine
+import com.billing.pos.pdf.TablePdf
 import com.billing.pos.util.Format
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -174,6 +182,29 @@ class QuotationViewModel(private val app: Application) : AndroidViewModel(app) {
         dateMillis = System.currentTimeMillis(); editingId = null; editingDeviceId = ""
         selectedCustomer = customers.value.firstOrNull { it.isDefault } ?: customers.value.firstOrNull()
         viewModelScope.launch { quotationNo = repo.nextQuotationNo() }
+    }
+
+    /** Converts the ticked quotations (must be one customer) into a prefilled sales bill. */
+    fun convertToBill(ids: List<Long>, onReady: () -> Unit) {
+        viewModelScope.launch {
+            val chosen = quotations.value.filter { it.id in ids }
+            if (chosen.isEmpty()) { message.value = "Tick at least one quotation"; return@launch }
+            if (chosen.map { it.customerId }.distinct().size > 1) { message.value = "Tick quotations of one customer only"; return@launch }
+            val custId = chosen.first().customerId
+            val custName = chosen.first().customerName
+            val agg = LinkedHashMap<String, com.billing.pos.ui.billing.BillPrefillLine>()
+            chosen.forEach { q ->
+                repo.quotationLines(q.id).forEach { l ->
+                    val key = l.name.lowercase() + "|" + l.price + "|" + l.unit
+                    val ex = agg[key]
+                    agg[key] = if (ex == null) com.billing.pos.ui.billing.BillPrefillLine(0, l.name, l.qty, l.price, l.unit, l.taxPercent)
+                    else ex.copy(qty = ex.qty + l.qty)
+                }
+            }
+            if (agg.isEmpty()) { message.value = "These quotations have no items"; return@launch }
+            com.billing.pos.ui.billing.OrderToBillLink.set(custId, custName, agg.values.toList(), "quotation", chosen.map { it.id })
+            onReady()
+        }
     }
 
     fun save(onDone: () -> Unit) {
@@ -428,7 +459,10 @@ fun QuotationScreen(editId: Long?, onBack: () -> Unit, vm: QuotationViewModel = 
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun QuotationListScreen(onBack: () -> Unit, onOpen: (Long) -> Unit, onNew: () -> Unit, vm: QuotationViewModel = viewModel()) {
+fun QuotationListScreen(
+    onBack: () -> Unit, onOpen: (Long) -> Unit, onNew: () -> Unit, onConvertToBill: () -> Unit,
+    vm: QuotationViewModel = viewModel()
+) {
     val context = LocalContext.current
     val snackbar = remember { SnackbarHostState() }
     val quotations by vm.quotations.collectAsStateSafe()
@@ -440,26 +474,64 @@ fun QuotationListScreen(onBack: () -> Unit, onOpen: (Long) -> Unit, onNew: () ->
     var fromMillis by remember { mutableStateOf<Long?>(com.billing.pos.ui.common.oneMonthAgoMillis()) }
     var toMillis by remember { mutableStateOf<Long?>(System.currentTimeMillis()) }
     var customerFilter by remember { mutableStateOf("") }
+    // Selecting quotations to convert to one sales bill. Off by default, plain list otherwise.
+    var selecting by remember { mutableStateOf(false) }
+    val selected = remember { mutableStateListOf<Long>() }
     val filtered = quotations.filter { q ->
         (fromMillis == null || q.dateMillis >= com.billing.pos.ui.common.startOfDay(fromMillis!!)) &&
             (toMillis == null || q.dateMillis <= com.billing.pos.ui.common.endOfDay(toMillis!!)) &&
             (customerFilter.isBlank() || q.customerName.contains(customerFilter, ignoreCase = true))
     }
 
+    val downloadPdf = rememberPdfDownloader { msg -> vm.message.value = msg }
+    val downloadXlsx = rememberXlsxDownloader { msg -> vm.message.value = msg }
+    fun buildQuotationsPdf(): java.io.File {
+        val cols = listOf(
+            TablePdf.Col("Quotation No", 1.6f), TablePdf.Col("Date", 1.2f), TablePdf.Col("Customer", 2f),
+            TablePdf.Col("Amount", 1.2f, right = true), TablePdf.Col("Status", 1.6f)
+        )
+        val data = filtered.map {
+            listOf(it.quotationNo, Format.date(it.dateMillis), it.customerName, Format.money(it.grandTotal), if (it.convertedBillNo.isNotBlank()) "Billed as ${it.convertedBillNo}" else "")
+        }
+        return TablePdf.generate(context, AppPrefs(context).company, "Quotations", "Count: ${filtered.size}", cols, data)
+    }
+    fun buildQuotationsXlsx(): java.io.File {
+        val rows = mutableListOf(XlsxWriter.row(XlsxWriter.text("Quotation No"), XlsxWriter.text("Date"), XlsxWriter.text("Customer"), XlsxWriter.text("Amount"), XlsxWriter.text("Status")))
+        filtered.forEach {
+            rows.add(XlsxWriter.row(
+                XlsxWriter.text(it.quotationNo), XlsxWriter.text(Format.date(it.dateMillis)), XlsxWriter.text(it.customerName),
+                XlsxWriter.num(it.grandTotal), XlsxWriter.text(if (it.convertedBillNo.isNotBlank()) "Billed as ${it.convertedBillNo}" else "")
+            ))
+        }
+        val file = java.io.File(java.io.File(context.cacheDir, "shared").apply { mkdirs() }, "quotations.xlsx")
+        XlsxWriter.write(file, "Quotations", rows)
+        return file
+    }
+
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             TopAppBar(
-                title = { Text("Quotations") },
+                title = { Text(if (selecting) "${selected.size} selected" else "Quotations") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
+                actions = {
+                    if (selecting) {
+                        IconButton(onClick = { selecting = false; selected.clear() }) { Icon(Icons.Filled.Close, "Cancel selection") }
+                    } else {
+                        IconButton(onClick = { selecting = true }) { Icon(Icons.Filled.PostAdd, "Convert quotations to a bill") }
+                        IconButton(onClick = { downloadPdf { buildQuotationsPdf() } }) { Icon(Icons.Filled.PictureAsPdf, "Download PDF") }
+                        IconButton(onClick = { downloadXlsx { buildQuotationsXlsx() } }) { Icon(Icons.Filled.GridOn, "Download Excel") }
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                     titleContentColor = MaterialTheme.colorScheme.onPrimary,
-                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary
+                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary,
+                    actionIconContentColor = MaterialTheme.colorScheme.onPrimary
                 )
             )
         },
-        floatingActionButton = { FloatingActionButton(onClick = onNew) { Icon(Icons.Filled.Add, "New quotation") } }
+        floatingActionButton = { if (!selecting) FloatingActionButton(onClick = onNew) { Icon(Icons.Filled.Add, "New quotation") } }
     ) { pad ->
         Column(Modifier.fillMaxSize().padding(pad)) {
             OutlinedTextField(
@@ -488,19 +560,51 @@ fun QuotationListScreen(onBack: () -> Unit, onOpen: (Long) -> Unit, onNew: () ->
             if (filtered.isEmpty()) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("No quotations match", color = MaterialTheme.colorScheme.outline) }
             else LazyColumn(Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
             items(filtered, key = { it.id }) { q ->
-                Row(Modifier.fillMaxWidth().clickable { onOpen(q.id) }.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                val converted = q.convertedBillNo.isNotBlank()
+                Row(
+                    Modifier.fillMaxWidth()
+                        .clickable {
+                            if (selecting) { if (converted) Unit else if (q.id in selected) selected.remove(q.id) else selected.add(q.id) }
+                            else onOpen(q.id)
+                        }
+                        .padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (selecting) {
+                        androidx.compose.material3.Checkbox(
+                            checked = q.id in selected, enabled = !converted,
+                            onCheckedChange = { if (q.id in selected) selected.remove(q.id) else selected.add(q.id) }
+                        )
+                    }
                     Column(Modifier.weight(1f)) {
-                        Text(q.quotationNo, fontWeight = FontWeight.Bold)
-                        Text("${q.customerName} • ${Format.date(q.dateMillis)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                        Text(
+                            q.quotationNo, fontWeight = FontWeight.Bold,
+                            color = if (converted) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            "${q.customerName} • ${Format.date(q.dateMillis)}" + (if (converted) "  •  Billed as ${q.convertedBillNo}" else ""),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (converted) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.outline
+                        )
                     }
                     Text(Format.rupee(q.grandTotal), fontWeight = FontWeight.Bold)
-                    IconButton(onClick = { QuotationCopy.pending = q.id; onNew() }) {
-                        Icon(Icons.Filled.ContentCopy, "Copy to a new quotation", tint = MaterialTheme.colorScheme.primary)
+                    if (!selecting) {
+                        IconButton(onClick = { QuotationCopy.pending = q.id; onNew() }) {
+                            Icon(Icons.Filled.ContentCopy, "Copy to a new quotation", tint = MaterialTheme.colorScheme.primary)
+                        }
+                        IconButton(onClick = { deleteFor = q }) { Icon(Icons.Filled.Delete, "Delete", tint = MaterialTheme.colorScheme.error) }
                     }
-                    IconButton(onClick = { deleteFor = q }) { Icon(Icons.Filled.Delete, "Delete", tint = MaterialTheme.colorScheme.error) }
                 }
                 Divider()
             }
+            }
+            if (selecting) {
+                Divider(thickness = 2.dp)
+                Button(
+                    onClick = { vm.convertToBill(selected.toList()) { selecting = false; selected.clear(); onConvertToBill() } },
+                    enabled = selected.isNotEmpty(),
+                    modifier = Modifier.fillMaxWidth().padding(14.dp)
+                ) { Text("Convert ${selected.size} quotation(s) to a sales bill") }
             }
         }
     }

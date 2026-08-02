@@ -515,6 +515,7 @@ class BillingViewModel(private val app: Application) : AndroidViewModel(app) {
             if (pendingSourceIds.isNotEmpty()) {
                 when (pendingSourceKind) {
                     "delivery" -> repo.markDeliveryNotesConverted(pendingSourceIds, billNo)
+                    "quotation" -> repo.markQuotationsConverted(pendingSourceIds, billNo)
                 }
                 pendingSourceKind = ""; pendingSourceIds = emptyList()
             }

@@ -18,6 +18,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.GridOn
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
@@ -66,9 +67,11 @@ import com.billing.pos.data.Expense
 import com.billing.pos.data.PayMode
 import com.billing.pos.data.Receipt
 import com.billing.pos.data.Repository
+import com.billing.pos.data.XlsxWriter
 import com.billing.pos.pdf.TablePdf
 import com.billing.pos.ui.billing.collectAsStateSafe
 import com.billing.pos.ui.common.rememberPdfDownloader
+import com.billing.pos.ui.common.rememberXlsxDownloader
 import com.billing.pos.util.Format
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -253,6 +256,27 @@ fun CashBookScreen(
         return TablePdf.generate(context, AppPrefs(context).company, "Cash Book", crit, cols, data, footer)
     }
     val downloadPdf = rememberPdfDownloader { msg -> scope.launch { snackbar.showSnackbar(msg) } }
+    val downloadXlsx = rememberXlsxDownloader { msg -> scope.launch { snackbar.showSnackbar(msg) } }
+    fun buildCashBookXlsx(): File {
+        val rows = mutableListOf(
+            XlsxWriter.row(
+                XlsxWriter.text("Date"), XlsxWriter.text("Type"), XlsxWriter.text("Details"),
+                XlsxWriter.text("Mode"), XlsxWriter.text("Amount"), XlsxWriter.text("Balance")
+            )
+        )
+        visibleRows.forEach { (t, bal) ->
+            rows.add(
+                XlsxWriter.row(
+                    XlsxWriter.text(Format.date(t.date)), XlsxWriter.text(t.kind.lowercase().replaceFirstChar { it.uppercase() }),
+                    XlsxWriter.text(t.title), XlsxWriter.text(t.mode),
+                    XlsxWriter.num(if (t.isIn) t.amount else -t.amount), XlsxWriter.num(bal)
+                )
+            )
+        }
+        val file = File(File(context.cacheDir, "shared").apply { mkdirs() }, "cashbook.xlsx")
+        XlsxWriter.write(file, "Cash Book", rows)
+        return file
+    }
     fun shareCashBook() {
         scope.launch {
             val file = withContext(Dispatchers.IO) { buildCashBookPdf() }
@@ -292,6 +316,9 @@ fun CashBookScreen(
                     if (Session.canViewCashbook) {
                         IconButton(onClick = { downloadPdf { buildCashBookPdf() } }) {
                             Icon(Icons.Filled.PictureAsPdf, contentDescription = "Download PDF")
+                        }
+                        IconButton(onClick = { downloadXlsx { buildCashBookXlsx() } }) {
+                            Icon(Icons.Filled.GridOn, contentDescription = "Download Excel")
                         }
                         IconButton(onClick = { shareCashBook() }) {
                             Icon(Icons.Filled.Share, contentDescription = "Share")

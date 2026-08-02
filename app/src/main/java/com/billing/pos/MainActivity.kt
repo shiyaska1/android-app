@@ -667,7 +667,8 @@ private fun AppNav() {
             QuotationListScreen(
                 onBack = { nav.popBackStack() },
                 onOpen = { id -> nav.navigate("quotation/edit/$id") },
-                onNew = { nav.navigate("quotation") }
+                onNew = { nav.navigate("quotation") },
+                onConvertToBill = { nav.navigate("billing") }
             )
         }
         composable("quotation") { QuotationScreen(editId = null, onBack = { nav.popBackStack() }) }

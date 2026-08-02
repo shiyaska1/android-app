@@ -31,8 +31,10 @@ import androidx.compose.material.icons.filled.Gesture
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.GridOn
 import androidx.compose.material.icons.filled.NoteAdd
 import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.UnfoldLess
@@ -74,6 +76,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.billing.pos.data.AppPrefs
 import com.billing.pos.data.CustOrder
 import com.billing.pos.data.CustOrderAttachment
 import com.billing.pos.data.CustOrderItem
@@ -81,13 +84,17 @@ import com.billing.pos.data.Customer
 import com.billing.pos.data.Item
 import com.billing.pos.data.OrderAttachmentStore
 import com.billing.pos.data.Repository
+import com.billing.pos.data.XlsxWriter
 import com.billing.pos.data.hasTwoUnits
 import com.billing.pos.data.primaryChoice
 import com.billing.pos.data.UnitChoice
+import com.billing.pos.pdf.TablePdf
 import com.billing.pos.ui.billing.CartLine
 import com.billing.pos.ui.billing.ItemPickerDialog
 import com.billing.pos.ui.billing.UnitPickDialog
 import com.billing.pos.ui.billing.collectAsStateSafe
+import com.billing.pos.ui.common.rememberPdfDownloader
+import com.billing.pos.ui.common.rememberXlsxDownloader
 import com.billing.pos.util.Format
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -393,6 +400,24 @@ fun OrderListScreen(onBack: () -> Unit, onOpen: (Long) -> Unit, onNew: () -> Uni
     }
     val total = shown.sumOf { it.grandTotal }
 
+    val downloadPdf = rememberPdfDownloader { msg -> vm.message.value = msg }
+    val downloadXlsx = rememberXlsxDownloader { msg -> vm.message.value = msg }
+    fun buildOrdersPdf(): java.io.File {
+        val cols = listOf(
+            TablePdf.Col("Order No", 1.6f), TablePdf.Col("Date", 1.2f),
+            TablePdf.Col("Customer", 2f), TablePdf.Col("Amount", 1.2f, right = true)
+        )
+        val data = shown.map { listOf(it.orderNo, Format.date(it.dateMillis), it.customerName, Format.money(it.grandTotal)) }
+        return TablePdf.generate(context, AppPrefs(context).company, "Orders", "Count: ${shown.size}", cols, data, footer = listOf("Total" to Format.money(total)))
+    }
+    fun buildOrdersXlsx(): java.io.File {
+        val rows = mutableListOf(XlsxWriter.row(XlsxWriter.text("Order No"), XlsxWriter.text("Date"), XlsxWriter.text("Customer"), XlsxWriter.text("Amount")))
+        shown.forEach { rows.add(XlsxWriter.row(XlsxWriter.text(it.orderNo), XlsxWriter.text(Format.date(it.dateMillis)), XlsxWriter.text(it.customerName), XlsxWriter.num(it.grandTotal))) }
+        val file = java.io.File(java.io.File(context.cacheDir, "shared").apply { mkdirs() }, "orders.xlsx")
+        XlsxWriter.write(file, "Orders", rows)
+        return file
+    }
+
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
@@ -406,6 +431,8 @@ fun OrderListScreen(onBack: () -> Unit, onOpen: (Long) -> Unit, onNew: () -> Uni
                         IconButton(onClick = { selecting = true }) { Icon(Icons.Filled.Add, "Convert orders to a bill") }
                         IconButton(onClick = onReport) { Icon(Icons.Filled.NoteAdd, "Consolidated report") }
                         IconButton(onClick = onStatusReport) { Icon(Icons.Filled.Checklist, "Order status report") }
+                        IconButton(onClick = { downloadPdf { buildOrdersPdf() } }) { Icon(Icons.Filled.PictureAsPdf, "Download PDF") }
+                        IconButton(onClick = { downloadXlsx { buildOrdersXlsx() } }) { Icon(Icons.Filled.GridOn, "Download Excel") }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
