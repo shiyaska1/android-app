@@ -13,8 +13,10 @@ android {
         applicationId = "com.billing.pos"
         minSdk = 26
         targetSdk = 36
-        versionCode = 166
-        versionName = "1.71.1"
+        // CI sets VERSION_CODE per build (see .github/workflows/build.yml and release.yml) so every
+        // APK/AAB gets a unique, always-increasing code without hand-editing this file each time.
+        versionCode = System.getenv("VERSION_CODE")?.toIntOrNull() ?: 167
+        versionName = "1.72.0"
         vectorDrawables { useSupportLibrary = true }
 
         // Real Android phones are arm. The x86/x86_64 native libs are emulator-only

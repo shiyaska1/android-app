@@ -44,6 +44,9 @@ interface AccountDao {
     @Query("SELECT * FROM account_heads WHERE name = :name AND groupId = :groupId COLLATE NOCASE LIMIT 1")
     suspend fun headByNameGroup(name: String, groupId: Long): AccountHead?
 
+    @Query("SELECT * FROM account_heads WHERE id = :id LIMIT 1")
+    suspend fun headById(id: Long): AccountHead?
+
     @Insert
     suspend fun insertHead(head: AccountHead): Long
 

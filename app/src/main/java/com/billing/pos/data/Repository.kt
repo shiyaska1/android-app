@@ -263,6 +263,43 @@ class Repository(private val context: Context) {
         return Result.success(Unit)
     }
 
+    // ---- customer opening balance (lives on the customer's ledger head, like any other account) ----
+    suspend fun customerOpeningBalance(customerName: String): Pair<Double, Boolean> {
+        val gid = accountDao.allGroups().firstOrNull { it.name == "Sundry Debtors" }?.id ?: return 0.0 to true
+        val head = accountDao.headByNameGroup(customerName.trim(), gid) ?: return 0.0 to true
+        return head.openingBalance to head.openingIsDebit
+    }
+
+    suspend fun setCustomerOpeningBalance(customerName: String, amount: Double, isDebit: Boolean) {
+        val headId = ensureCustomerHead(customerName)
+        val head = accountDao.headById(headId) ?: return
+        accountDao.updateHead(head.copy(openingBalance = amount, openingIsDebit = isDebit))
+    }
+
+    // ---- quick invoices: a customer-dialog shortcut for a legacy due (amount+note+date, no items) ----
+    suspend fun addQuickInvoice(customer: Customer, amount: Double, note: String, dateMillis: Long): Long {
+        ensureCustomerHead(customer.name)
+        val bill = Bill(
+            billNo = nextBillNo(),
+            dateMillis = dateMillis,
+            customerId = customer.id,
+            customerName = customer.name,
+            paymentMethod = PaymentMethod.CREDIT.label,
+            subTotal = amount,
+            taxTotal = 0.0,
+            additionalCharge = 0.0,
+            discount = 0.0,
+            grandTotal = amount,
+            paidAmount = 0.0,
+            customerGstin = customer.gstin,
+            remarks = note.trim(),
+            isLegacy = true
+        )
+        return billDao.saveBill(bill, emptyList())
+    }
+
+    fun quickInvoicesForCustomer(customerId: Long): Flow<List<Bill>> = billDao.quickInvoicesForCustomer(customerId)
+
     val allCustomers: Flow<List<Customer>> get() = customers
 
     suspend fun addItem(
@@ -452,6 +489,17 @@ class Repository(private val context: Context) {
     suspend fun deleteSalesReturn(r: SalesReturn) = salesReturnDao.delete(r)
     suspend fun salesReturnById(id: Long): SalesReturn? = salesReturnDao.byId(id)
     suspend fun salesReturnLines(id: Long): List<SalesReturnItem> = salesReturnDao.linesFor(id)
+
+    /** Each customer's net receivable (opening balance + credit bills − receipts − returns), by name. */
+    val customerBalances: Flow<Map<String, Double>> = kotlinx.coroutines.flow.combine(
+        accountHeads, accountGroups, allBills, allReceipts, salesReturns
+    ) { heads, groups, bills, receipts, returns ->
+        com.billing.pos.report.AccountingEngine.build(
+            heads, groups, bills, emptyList(), receipts, emptyList(), emptyList(), emptyList(), returns, emptyList()
+        ).filter { it.group == "Sundry Debtors" }
+            .groupBy { it.head }
+            .mapValues { (_, postings) -> postings.sumOf { it.debit - it.credit } }
+    }
 
     // ---- purchase returns ----
     private val purchaseReturnDao = db.purchaseReturnDao()

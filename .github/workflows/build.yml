@@ -36,7 +36,14 @@ jobs:
           cp /tmp/wrapgen/gradlew /tmp/wrapgen/gradlew.bat $GITHUB_WORKSPACE/
           chmod +x $GITHUB_WORKSPACE/gradlew
 
+      - name: Compute version code
+        # Always increasing and always ahead of any hand-set versionCode in build.gradle.kts,
+        # so a debug APK installs as an upgrade over the previous one without uninstalling.
+        run: echo "VERSION_CODE=$(( ${{ github.run_number }} + 1000 ))" >> "$GITHUB_ENV"
+
       - name: Build debug APK
+        env:
+          VERSION_CODE: ${{ env.VERSION_CODE }}
         run: |
           set -o pipefail
           ./gradlew assembleDebug --stacktrace 2>&1 | tee build-log.txt

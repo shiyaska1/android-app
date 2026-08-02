@@ -91,7 +91,7 @@ class DashboardChartsViewModel(app: Application) : AndroidViewModel(app) {
         DashboardFigures(
             byMode = byMode,
             cashInHand = byMode.sumOf { it.value },
-            salesThisMonth = bills.filter { it.dateMillis >= monthStart }.sumOf { it.grandTotal },
+            salesThisMonth = bills.filter { !it.isLegacy && it.dateMillis >= monthStart }.sumOf { it.grandTotal },
             purchaseThisMonth = purchases.filter { it.dateMillis >= monthStart }.sumOf { it.grandTotal },
             receivable = bills.sumOf { it.balance },
             payable = purchases.sumOf { it.balance }

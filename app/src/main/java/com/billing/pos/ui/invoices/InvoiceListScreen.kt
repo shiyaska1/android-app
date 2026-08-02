@@ -78,7 +78,8 @@ class InvoiceListViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = Repository(app)
 
     val bills: StateFlow<List<Bill>> =
-        repo.allBills.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+        repo.allBills.map { it.filter { b -> !b.isLegacy } }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     /** Phone/WhatsApp number keyed by customer id (0 for walk-in). */
     val phoneByCustomer: StateFlow<Map<Long, String>> =

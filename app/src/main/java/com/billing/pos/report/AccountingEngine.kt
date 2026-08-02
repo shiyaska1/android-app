@@ -95,9 +95,13 @@ object AccountingEngine {
                 val (nm, grp, nat) = cashBank(0, b.paymentMethod)
                 out.add(Posting(nm, grp, nat, b.grandTotal, 0.0, b.dateMillis, part, b.billNo))
             }
-            out.add(Posting("Sales", "Sales Account", natureOfGroup("Sales Account"), 0.0, net, b.dateMillis, part, b.billNo))
-            if (b.taxTotal != 0.0)
-                out.add(Posting("Output Tax (GST/VAT)", "Duties & Taxes", natureOfGroup("Duties & Taxes"), 0.0, b.taxTotal, b.dateMillis, part, b.billNo))
+            // A legacy quick-invoice (attached from the Customer dialog) is a pre-existing due,
+            // not a new sale — it only moves the debtor balance, like an opening balance does.
+            if (!b.isLegacy) {
+                out.add(Posting("Sales", "Sales Account", natureOfGroup("Sales Account"), 0.0, net, b.dateMillis, part, b.billNo))
+                if (b.taxTotal != 0.0)
+                    out.add(Posting("Output Tax (GST/VAT)", "Duties & Taxes", natureOfGroup("Duties & Taxes"), 0.0, b.taxTotal, b.dateMillis, part, b.billNo))
+            }
         }
 
         // purchases

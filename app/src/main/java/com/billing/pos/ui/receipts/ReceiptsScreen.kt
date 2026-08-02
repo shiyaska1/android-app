@@ -94,7 +94,6 @@ import com.billing.pos.util.Format
 import com.billing.pos.util.Permissions
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
@@ -113,25 +112,32 @@ class ReceiptsViewModel(app: Application) : AndroidViewModel(app) {
     val customers: StateFlow<List<com.billing.pos.data.Customer>> =
         repo.customers.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val payFromOptions = MutableStateFlow<List<String>>(emptyList())
-    val message = MutableStateFlow<String?>(null)
-    fun consumeMessage() { message.value = null }
+    private val suppliers = repo.suppliers.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    private val sundryHeads = repo.sundryHeads.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    private val usedPayFrom = MutableStateFlow<List<String>>(emptyList())
 
     /**
-     * Names offered under "Pay from": everyone in the customer master, plus any name typed
-     * on an earlier receipt. A name typed here is never written back to the master, but it
-     * is remembered for the next search because past receipts are part of this list.
+     * Names offered under "Pay from": customers, suppliers and any Sundry ledger head — the
+     * same universe the Payment screen searches for "Paid to" — plus any name typed on an
+     * earlier receipt that isn't in any of those masters.
      */
-    private suspend fun refreshPayFrom() {
-        val used = repo.payFromNames()
-        val masters = repo.customers.first().map { it.name }
-        payFromOptions.value = (masters + used)
+    val payFromOptions: StateFlow<List<String>> = kotlinx.coroutines.flow.combine(
+        customers, suppliers, sundryHeads, usedPayFrom
+    ) { c, s, h, used ->
+        (c.filter { !it.isDefault }.map { it.name } + s.filter { !it.isDefault }.map { it.name } + h.map { it.name } + used)
             .map { it.trim() }.filter { it.isNotBlank() }
             .distinctBy { it.lowercase() }
             .sortedBy { it.lowercase() }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val message = MutableStateFlow<String?>(null)
+    fun consumeMessage() { message.value = null }
+
+    private fun refreshPayFrom() {
+        viewModelScope.launch { usedPayFrom.value = repo.payFromNames() }
     }
 
-    init { viewModelScope.launch { refreshPayFrom() } }
+    init { refreshPayFrom() }
 
     /** One or more invoices settled by a single receipt (one ledger entry for the total). */
     fun addAgainstInvoices(shares: List<Pair<Bill, Double>>, mode: PayMode, dateMillis: Long, attachments: List<com.billing.pos.data.ReceiptAttachment> = emptyList()) {

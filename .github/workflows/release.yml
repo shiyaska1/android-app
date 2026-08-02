@@ -43,12 +43,18 @@ jobs:
           cp /tmp/wrapgen/gradlew /tmp/wrapgen/gradlew.bat $GITHUB_WORKSPACE/
           chmod +x $GITHUB_WORKSPACE/gradlew
 
+      - name: Compute version code
+        # Always increasing and always ahead of any hand-set versionCode in build.gradle.kts —
+        # the Play Store rejects an upload whose versionCode doesn't exceed the last one.
+        run: echo "VERSION_CODE=$(( ${{ github.run_number }} + 1000 ))" >> "$GITHUB_ENV"
+
       - name: Build signed AAB
         env:
           UPLOAD_STORE_FILE: ${{ runner.temp }}/upload-keystore.jks
           UPLOAD_STORE_PASSWORD: ${{ secrets.UPLOAD_STORE_PASSWORD }}
           UPLOAD_KEY_ALIAS: ${{ secrets.UPLOAD_KEY_ALIAS }}
           UPLOAD_KEY_PASSWORD: ${{ secrets.UPLOAD_KEY_PASSWORD }}
+          VERSION_CODE: ${{ env.VERSION_CODE }}
         run: ./gradlew bundleRelease --stacktrace
 
       - name: Publish AAB to GitHub Release

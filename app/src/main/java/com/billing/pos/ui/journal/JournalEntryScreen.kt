@@ -246,7 +246,11 @@ fun JournalEntryScreen(
                                     singleLine = true,
                                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
                                     modifier = Modifier.menuAnchor().fillMaxWidth()
-                                        .onFocusChanged { fs -> if (!fs.isFocused && !expanded) headQuery = line.headName }
+                                        .onFocusChanged { fs ->
+                                            // Tapping in to search shouldn't require deleting the current selection first.
+                                            if (fs.isFocused) { headQuery = ""; expanded = true }
+                                            else if (!expanded) headQuery = line.headName
+                                        }
                                 )
                                 val matches = heads.filter { headQuery.isBlank() || it.name.contains(headQuery, true) }.take(5)
                                 ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false; headQuery = line.headName }) {

@@ -77,7 +77,10 @@ data class Bill(
     /** Free-text note; printed on the bill only when non-blank. */
     val remarks: String = "",
     /** [License.deviceId] of the phone this bill was created on — used to dedupe cloud-sync merges. */
-    val deviceId: String = ""
+    val deviceId: String = "",
+    /** True for a quick invoice attached from the Customer dialog (amount+note+date, no items) —
+     * a legacy due, not a real sale. Excluded from the Invoice list and Sales figures. */
+    val isLegacy: Boolean = false
 ) {
     val balance: Double get() = (grandTotal - paidAmount).coerceAtLeast(0.0)
     val paymentStatus: String

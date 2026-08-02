@@ -169,6 +169,10 @@ interface BillDao {
     @Query("SELECT COUNT(*) FROM bills WHERE customerId = :customerId OR customerName = :name")
     suspend fun countForCustomer(customerId: Long, name: String): Int
 
+    /** Quick invoices attached from the Customer dialog (amount+note+date, no items). */
+    @Query("SELECT * FROM bills WHERE customerId = :customerId AND isLegacy = 1 ORDER BY dateMillis DESC")
+    fun quickInvoicesForCustomer(customerId: Long): Flow<List<Bill>>
+
     @Query("SELECT * FROM bill_items WHERE billId = :billId")
     suspend fun linesFor(billId: Long): List<BillItem>
 
