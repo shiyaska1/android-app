@@ -4,8 +4,10 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Column
@@ -16,12 +18,14 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
 import androidx.compose.material3.Divider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -50,11 +54,17 @@ import androidx.compose.ui.window.DialogProperties
 fun ItemNoteDialog(
     itemName: String,
     initialNote: String,
+    loadSuggestions: suspend () -> List<String> = { emptyList() },
     onSave: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
     var text by remember { mutableStateOf(initialNote) }
     val context = LocalContext.current
+
+    // Past notes typed on other items — most-used first, tap to fill (still editable after).
+    var suggestions by remember { mutableStateOf<List<String>>(emptyList()) }
+    var showSuggestions by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { suggestions = loadSuggestions() }
 
     // Draw, or scan a photo and drag a box over the text to fill the note.
     var drawNote by remember { mutableStateOf(false) }
@@ -115,7 +125,7 @@ fun ItemNoteDialog(
                 modifier = Modifier.padding(horizontal = 14.dp)
             )
 
-            // Fill the description by hand or from a photo (drag a box over the text).
+            // Fill the description by hand, from a photo (drag a box over the text), or pick a past note.
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -132,6 +142,27 @@ fun ItemNoteDialog(
                     },
                     modifier = Modifier.weight(1f)
                 ) { Text("Gallery", style = MaterialTheme.typography.labelMedium) }
+                if (suggestions.isNotEmpty()) {
+                    OutlinedButton(onClick = { showSuggestions = !showSuggestions }, modifier = Modifier.weight(1f)) {
+                        Text("Suggest", style = MaterialTheme.typography.labelMedium)
+                    }
+                }
+            }
+            if (showSuggestions && suggestions.isNotEmpty()) {
+                Card(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 4.dp)) {
+                    Column(Modifier.fillMaxWidth().heightIn(max = 180.dp).verticalScroll(rememberScrollState())) {
+                        suggestions.forEach { note ->
+                            Text(
+                                note,
+                                style = MaterialTheme.typography.bodyMedium,
+                                maxLines = 1,
+                                modifier = Modifier.fillMaxWidth()
+                                    .clickable { text = note; showSuggestions = false }
+                                    .padding(horizontal = 12.dp, vertical = 10.dp)
+                            )
+                        }
+                    }
+                }
             }
 
             RichTextEditor(

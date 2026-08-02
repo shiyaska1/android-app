@@ -385,13 +385,12 @@ class Repository(private val context: Context) {
     suspend fun quotationById(id: Long): Quotation? = quotationDao.byId(id)
     suspend fun quotationLines(id: Long): List<QuotationItem> = quotationDao.linesFor(id)
 
-    /** Past quotation notes, most-used first — the note field's "history" suggestion list. */
-    val quotationNoteSuggestions: Flow<List<String>> = quotations.map { list ->
-        list.map { it.remarks.trim() }.filter { it.isNotBlank() }
+    /** Past item notes typed on any quotation line, most-used first — the note editor's suggestions. */
+    suspend fun quotationItemNoteSuggestions(): List<String> =
+        quotationDao.allLines().map { it.note.trim() }.filter { it.isNotBlank() }
             .groupingBy { it }.eachCount().entries
             .sortedByDescending { it.value }
             .map { it.key }
-    }
 
     // ---- payment attachments ----
     private val custOrderDao = db.custOrderDao()
