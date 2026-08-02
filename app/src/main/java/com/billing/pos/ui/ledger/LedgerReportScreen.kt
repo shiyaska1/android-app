@@ -35,6 +35,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -189,16 +190,20 @@ fun LedgerReportScreen(onBack: () -> Unit, vm: LedgerReportViewModel = viewModel
                 }
             }
             OutlinedTextField(
-                value = if (selected != null) selected!! else accQuery,
+                value = accQuery,
                 onValueChange = { accQuery = it; selected = null; result = null },
                 label = { Text("Account (type to search)") },
                 trailingIcon = { if (selected != null) IconButton(onClick = { selected = null; accQuery = "" }) { Icon(Icons.Filled.ArrowDropDown, "Clear") } },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                    .onFocusChanged { fs ->
+                        if (fs.isFocused) { accQuery = ""; selected = null }
+                        else if (selected != null) accQuery = selected!!
+                    }
             )
             if (selected == null && accQuery.isNotBlank()) {
                 names.filter { it.contains(accQuery, ignoreCase = true) }.take(5).forEach { nm ->
-                    Text(nm, modifier = Modifier.fillMaxWidth().clickable { selected = nm; accQuery = "" }.padding(vertical = 10.dp, horizontal = 8.dp),
+                    Text(nm, modifier = Modifier.fillMaxWidth().clickable { selected = nm; accQuery = nm }.padding(vertical = 10.dp, horizontal = 8.dp),
                         style = MaterialTheme.typography.bodyMedium)
                     HorizontalDivider()
                 }

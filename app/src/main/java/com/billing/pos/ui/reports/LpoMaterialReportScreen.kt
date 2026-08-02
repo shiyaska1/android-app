@@ -31,12 +31,14 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -143,15 +145,25 @@ fun LpoMaterialReportScreen(onBack: () -> Unit, onOpenLpo: (Long) -> Unit, vm: L
     ) { pad ->
         Column(Modifier.fillMaxSize().padding(pad).padding(12.dp)) {
             var supMenu by remember { mutableStateOf(false) }
+            var supQuery by remember { mutableStateOf(supplier?.name ?: "") }
+            LaunchedEffect(supplier?.id) { if (!supMenu) supQuery = supplier?.name ?: "" }
+            val supMatches = remember(supQuery, suppliers) {
+                if (supQuery.isBlank()) suppliers else suppliers.filter { it.name.contains(supQuery, ignoreCase = true) }
+            }
             ExposedDropdownMenuBox(expanded = supMenu, onExpandedChange = { supMenu = !supMenu }) {
                 OutlinedTextField(
-                    readOnly = true, value = supplier?.name ?: "", onValueChange = {},
+                    value = supQuery, onValueChange = { supQuery = it; supMenu = true },
                     label = { Text("Supplier *  (required)") },
                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(supMenu) },
                     modifier = Modifier.menuAnchor().fillMaxWidth()
+                        .onFocusChanged { fs ->
+                            if (fs.isFocused) { supQuery = ""; supMenu = true }
+                            else if (!supMenu) supQuery = supplier?.name ?: ""
+                        }
                 )
-                ExposedDropdownMenu(expanded = supMenu, onDismissRequest = { supMenu = false }) {
-                    suppliers.forEach { s -> DropdownMenuItem(text = { Text(s.name) }, onClick = { supplier = s; lpoId = 0; lpoNo = ""; supMenu = false }) }
+                ExposedDropdownMenu(expanded = supMenu, onDismissRequest = { supMenu = false; supQuery = supplier?.name ?: "" }) {
+                    if (supMatches.isEmpty()) DropdownMenuItem(text = { Text("No match") }, onClick = { supMenu = false })
+                    supMatches.forEach { s -> DropdownMenuItem(text = { Text(s.name) }, onClick = { supplier = s; supQuery = s.name; lpoId = 0; lpoNo = ""; supMenu = false }) }
                 }
             }
             LpoPickerField(

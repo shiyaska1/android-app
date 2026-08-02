@@ -151,20 +151,11 @@ fun ReceiptPaymentReportScreen(onBack: () -> Unit, vm: RpReportViewModel = viewM
                 }
             }
             Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                var accMenu by remember { mutableStateOf(false) }
-                ExposedDropdownMenuBox(expanded = accMenu, onExpandedChange = { accMenu = !accMenu }, modifier = Modifier.weight(1f)) {
-                    OutlinedTextField(
-                        readOnly = true, value = accountFilter.ifBlank { "All accounts" }, onValueChange = {},
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(accMenu) },
-                        modifier = Modifier.menuAnchor().fillMaxWidth()
-                    )
-                    ExposedDropdownMenu(expanded = accMenu, onDismissRequest = { accMenu = false }) {
-                        DropdownMenuItem(text = { Text("All accounts") }, onClick = { accountFilter = ""; accMenu = false })
-                        accountNames.forEach { n ->
-                            DropdownMenuItem(text = { Text(n) }, onClick = { accountFilter = n; accMenu = false })
-                        }
-                    }
-                }
+                com.billing.pos.ui.common.PartyFilterField(
+                    names = accountNames, selected = accountFilter, onSelect = { accountFilter = it },
+                    label = "Account", allLabel = "All accounts",
+                    modifier = Modifier.weight(1f)
+                )
                 var modeMenu by remember { mutableStateOf(false) }
                 ExposedDropdownMenuBox(expanded = modeMenu, onExpandedChange = { modeMenu = !modeMenu }, modifier = Modifier.weight(1f)) {
                     OutlinedTextField(

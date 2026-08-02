@@ -112,20 +112,12 @@ fun SalesProfitScreen(onBack: () -> Unit, onOpenInvoice: (Long) -> Unit, vm: Sal
                 OutlinedButton(onClick = { pickDate(context, fromMillis) { fromMillis = it } }, modifier = Modifier.weight(1f)) { Text("From ${Format.date(fromMillis)}", maxLines = 1) }
                 OutlinedButton(onClick = { pickDate(context, toMillis) { toMillis = it } }, modifier = Modifier.weight(1f)) { Text("To ${Format.date(toMillis)}", maxLines = 1) }
             }
-            var custMenu by remember { mutableStateOf(false) }
             val customerNames = remember(bills) { bills.map { it.customerName }.filter { it.isNotBlank() }.distinct().sorted() }
-            ExposedDropdownMenuBox(expanded = custMenu, onExpandedChange = { custMenu = !custMenu }, modifier = Modifier.padding(horizontal = 12.dp)) {
-                OutlinedTextField(
-                    readOnly = true, value = customer.ifBlank { "All customers" }, onValueChange = {},
-                    label = { Text("Customer") },
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(custMenu) },
-                    modifier = Modifier.menuAnchor().fillMaxWidth()
-                )
-                ExposedDropdownMenu(expanded = custMenu, onDismissRequest = { custMenu = false }) {
-                    DropdownMenuItem(text = { Text("All customers") }, onClick = { customer = ""; custMenu = false })
-                    customerNames.forEach { n -> DropdownMenuItem(text = { Text(n) }, onClick = { customer = n; custMenu = false }) }
-                }
-            }
+            com.billing.pos.ui.common.PartyFilterField(
+                names = customerNames, selected = customer, onSelect = { customer = it },
+                label = "Customer", allLabel = "All customers",
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)
+            )
             Divider(Modifier.padding(top = 6.dp))
             if (rows.isEmpty()) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("No invoices in this range", color = MaterialTheme.colorScheme.outline) }
             else LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
