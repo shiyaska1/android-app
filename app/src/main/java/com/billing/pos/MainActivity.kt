@@ -121,17 +121,9 @@ class MainActivity : FragmentActivity() {
                 }
             }
         }
-        // Resume the cloud auto pull+merge+push loop across app restarts if the user left it on
-        // — otherwise it would only (re)start the next time they happened to open Settings.
-        // Bills/purchases/receipts/expenses/quotations/estimates/orders are deduped on merge by
-        // (deviceId, document number); other record types (diary, lab, hire, service, gym,
-        // coaching, material movements, returns, LPOs, production, bundles) are not yet, so
-        // repeated merges can still duplicate those specifically.
-        AppPrefs(this).let { p ->
-            if (p.cloudAutoSync) {
-                com.billing.pos.sync.CloudSyncManager.startAuto(this, p.cloudAutoSyncIntervalSec.coerceAtLeast(60) * 1000L)
-            }
-        }
+        // The cloud auto-sync loop itself is started/stopped from onStart()/onStop() below, so
+        // it runs no matter which in-app screen is showing (this is a single-Activity app) but
+        // pauses the moment the app is actually backgrounded/closed, resuming on reopen.
         enableEdgeToEdge()
         setContent {
             POSTheme {
@@ -163,6 +155,25 @@ class MainActivity : FragmentActivity() {
         // update actually mandatory: backing out of the Play update screen just returns here
         // and immediately re-blocks, instead of leaving the customer on the old build.
         com.billing.pos.update.AppUpdater.check(this)
+    }
+
+    // Cloud auto-sync tracks the app being open/closed, not any single screen (this whole app is
+    // one Activity, so onStart/onStop fire exactly on "app came to foreground"/"app left the
+    // foreground" regardless of which in-app screen is showing) — it runs no matter where the
+    // user navigates inside the app, but pauses the moment the app is actually backgrounded or
+    // closed, and resumes automatically the next time it's opened.
+    override fun onStart() {
+        super.onStart()
+        AppPrefs(this).let { p ->
+            if (p.cloudAutoSync) {
+                com.billing.pos.sync.CloudSyncManager.startAuto(this, p.cloudAutoSyncIntervalSec.coerceAtLeast(60) * 1000L)
+            }
+        }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        com.billing.pos.sync.CloudSyncManager.stopAuto()
     }
 
     /**
