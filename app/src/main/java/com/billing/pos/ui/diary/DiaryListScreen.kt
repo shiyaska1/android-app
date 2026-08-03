@@ -81,39 +81,51 @@ class DiaryListViewModel(app: Application) : AndroidViewModel(app) {
     val types: StateFlow<List<com.billing.pos.data.DiaryType>> =
         repo.types.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    private data class Filter(
-        val q: String, val from: Long, val to: Long, val typeId: Long, val useDate: Boolean
-    )
-    private val filter = combine(query, fromMillis, toMillis, typeId, useDateRange) { a ->
-        Filter((a[0] as String).trim(), a[1] as Long, a[2] as Long, a[3] as Long, a[4] as Boolean)
-    }
-
-    /**
-     * Entries within the date range, reminders first then newest first. When a search finds
-     * nothing in the range, the date filter is dropped and the search runs over all dates —
-     * so a match outside the window is still found, and the UI can say the filter was ignored.
-     */
-    private val baseResult = filter
-        .flatMapLatest { f ->
-            val anyType = f.typeId == 0L
-            repo.searchFiltered(f.q, anyType, f.typeId, f.useDate, f.from, f.to)
-                .flatMapLatest { inRange ->
-                    if (f.q.isNotBlank() && f.useDate && inRange.isEmpty()) {
-                        // Nothing in the range — drop the dates and search everything.
-                        repo.searchFiltered(f.q, anyType, f.typeId, false, f.from, f.to)
-                            .map { DiaryListResult(it, dateFilterBypassed = true) }
-                    } else {
-                        kotlinx.coroutines.flow.flowOf(DiaryListResult(inRange, dateFilterBypassed = false))
-                    }
-                }
-        }
-
     // ---- customer filters (default: all) ----
     private val posRepo = com.billing.pos.data.Repository(app)
     val customers: StateFlow<List<com.billing.pos.data.Customer>> =
         posRepo.customers.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val customerFilter = MutableStateFlow("")
     val customerTypeFilter = MutableStateFlow("")
+
+    private data class Filter(
+        val q: String, val from: Long, val to: Long, val typeId: Long, val useDate: Boolean,
+        val customerFilter: String, val customerTypeFilter: String
+    )
+    private val filter = combine(query, fromMillis, toMillis, typeId, useDateRange, customerFilter, customerTypeFilter) { a ->
+        Filter(
+            (a[0] as String).trim(), a[1] as Long, a[2] as Long, a[3] as Long, a[4] as Boolean,
+            (a[5] as String).trim(), (a[6] as String).trim()
+        )
+    }
+
+    /**
+     * Entries within the date range, reminders first then newest first. When a search finds
+     * nothing in the range, the date filter is dropped and the search runs over all dates —
+     * so a match outside the window is still found, and the UI can say the filter was ignored.
+     * With no search text and no filter picked, the list stays empty instead of loading
+     * everything — the entry count can get large over time, so nothing loads until the user
+     * actually searches or narrows down by type/customer.
+     */
+    private val baseResult = filter
+        .flatMapLatest { f ->
+            val anyType = f.typeId == 0L
+            val isDefault = f.q.isBlank() && anyType && f.customerFilter.isBlank() && f.customerTypeFilter.isBlank()
+            if (isDefault) {
+                kotlinx.coroutines.flow.flowOf(DiaryListResult(emptyList(), dateFilterBypassed = false))
+            } else {
+                repo.searchFiltered(f.q, anyType, f.typeId, f.useDate, f.from, f.to)
+                    .flatMapLatest { inRange ->
+                        if (f.q.isNotBlank() && f.useDate && inRange.isEmpty()) {
+                            // Nothing in the range — drop the dates and search everything.
+                            repo.searchFiltered(f.q, anyType, f.typeId, false, f.from, f.to)
+                                .map { DiaryListResult(it, dateFilterBypassed = true) }
+                        } else {
+                            kotlinx.coroutines.flow.flowOf(DiaryListResult(inRange, dateFilterBypassed = false))
+                        }
+                    }
+            }
+        }
 
     val result: StateFlow<DiaryListResult> =
         combine(baseResult, customerFilter, customerTypeFilter, customers) { r, cf, ctf, custs ->
@@ -339,11 +351,17 @@ fun DiaryListScreen(
             }
 
             if (entries.isEmpty()) {
+                val isDefault = query.isBlank() && typeId == 0L && custFilter.isBlank() && custTypeFilter.isBlank()
                 Column(
                     Modifier.fillMaxSize(),
                     verticalArrangement = Arrangement.Center,
                     horizontalAlignment = Alignment.CenterHorizontally
-                ) { Text("No diary entries", color = MaterialTheme.colorScheme.outline) }
+                ) {
+                    Text(
+                        if (isDefault) "Search or pick a type/customer to see diary entries" else "No matching entries",
+                        color = MaterialTheme.colorScheme.outline
+                    )
+                }
             } else {
                 LazyColumn(Modifier.fillMaxWidth().padding(top = 8.dp)) {
                     items(entries, key = { it.id }) { entry ->
