@@ -161,7 +161,10 @@ object CloudSyncManager {
             ok = true
             true
         } catch (e: Exception) {
-            status.value = "Auto-sync failed: ${e.message}"
+            // e.message is often null for plain NPEs/IO edge cases — the exception's own class
+            // name still says something ("MalformedURLException" vs "SocketTimeoutException")
+            // instead of the previous unhelpful "Auto-sync failed: null".
+            status.value = "Auto-sync failed: ${e.javaClass.simpleName}" + (e.message?.let { " — $it" } ?: "")
             false
         } finally {
             isSyncing.value = false

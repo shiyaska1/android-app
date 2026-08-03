@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -172,14 +173,27 @@ fun ChequeRegisterScreen(onBack: () -> Unit, vm: ChequeViewModel = viewModel()) 
                         }
                         IconButton(onClick = { deleteFor = c }) { Icon(Icons.Filled.Delete, "Delete", tint = MaterialTheme.colorScheme.error) }
                     }
-                    // Quick status transitions, one tap.
+                    // Quick status transitions, one tap. Compact + weighted so 1-3 buttons always
+                    // share the row width evenly instead of overflowing/wrapping vertically.
                     Row(Modifier.fillMaxWidth().padding(bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         if (c.status != ChequeStatus.DEPOSITED && c.status != ChequeStatus.CLEARED)
-                            OutlinedButton(onClick = { vm.setStatus(c, ChequeStatus.DEPOSITED) }) { Text("Mark Deposited") }
+                            OutlinedButton(
+                                onClick = { vm.setStatus(c, ChequeStatus.DEPOSITED) },
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp),
+                                modifier = Modifier.weight(1f)
+                            ) { Text("Deposited", style = MaterialTheme.typography.labelSmall, maxLines = 1) }
                         if (c.status != ChequeStatus.CLEARED)
-                            OutlinedButton(onClick = { vm.setStatus(c, ChequeStatus.CLEARED) }) { Text("Mark Cleared") }
+                            OutlinedButton(
+                                onClick = { vm.setStatus(c, ChequeStatus.CLEARED) },
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp),
+                                modifier = Modifier.weight(1f)
+                            ) { Text("Cleared", style = MaterialTheme.typography.labelSmall, maxLines = 1) }
                         if (c.status != ChequeStatus.BOUNCED)
-                            OutlinedButton(onClick = { bounceWarningFor = c }) { Text("Mark Bounced") }
+                            OutlinedButton(
+                                onClick = { bounceWarningFor = c },
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp),
+                                modifier = Modifier.weight(1f)
+                            ) { Text("Bounced", style = MaterialTheme.typography.labelSmall, maxLines = 1, color = MaterialTheme.colorScheme.error) }
                     }
                     Divider()
                 }
