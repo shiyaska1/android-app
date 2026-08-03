@@ -115,9 +115,6 @@ interface ItemAttachmentDao {
 
     @Query("DELETE FROM item_attachments WHERE itemId = :itemId")
     suspend fun deleteForItem(itemId: Long)
-
-    @Query("DELETE FROM item_attachments")
-    suspend fun deleteAll()
 }
 
 @Dao
