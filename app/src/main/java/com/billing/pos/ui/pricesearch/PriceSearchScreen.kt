@@ -219,9 +219,12 @@ fun PriceSearchScreen(
             visualMatches = found
             if (found.isEmpty()) {
                 snackbar.showSnackbar(
-                    if (atts.none { it.mime.startsWith("image/") })
-                        "No item has a photo yet — add photos to items first"
-                    else "No visual match found"
+                    when {
+                        atts.none { it.mime.startsWith("image/") } -> "No item has a photo yet — add photos to items first"
+                        com.billing.pos.vision.ItemImageMatcher.lastError != null ->
+                            "Photo matching failed: ${com.billing.pos.vision.ItemImageMatcher.lastError}"
+                        else -> "No visual match found"
+                    }
                 )
             }
         }

@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.util.Log
 import com.billing.pos.data.AppDatabase
 import com.billing.pos.data.ItemAttachment
 import com.billing.pos.data.ItemPhotoVector
@@ -39,6 +40,10 @@ object ItemImageMatcher {
 
     @Volatile private var embedder: ImageEmbedder? = null
 
+    /** Last failure reason (embedder init or a single embed call) — surfaced by the UI so a
+     * silent "no match" can be told apart from "matching is broken on this device/photo". */
+    @Volatile var lastError: String? = null; private set
+
     private fun embedder(context: Context): ImageEmbedder? {
         embedder?.let { return it }
         return synchronized(this) {
@@ -49,15 +54,21 @@ object ItemImageMatcher {
                     .setRunningMode(RunningMode.IMAGE)
                     .build()
                 ImageEmbedder.createFromOptions(context.applicationContext, options)
-            }.getOrNull()?.also { embedder = it }
+            }.onFailure { e ->
+                Log.e("ItemImageMatcher", "Failed to load image embedder model", e)
+                lastError = "Could not load the image model: ${e.javaClass.simpleName} — ${e.message}"
+            }.getOrNull()?.also { embedder = it; lastError = null }
         }
     }
 
-    /** Fingerprints one bitmap. Null when the model could not be loaded. */
+    /** Fingerprints one bitmap. Null when the model could not be loaded or embedding failed. */
     private fun embed(context: Context, bitmap: Bitmap): FloatArray? = runCatching {
         val e = embedder(context) ?: return null
         val result = e.embed(BitmapImageBuilder(bitmap).build())
         result.embeddingResult().embeddings().firstOrNull()?.floatEmbedding()
+    }.onFailure { e ->
+        Log.e("ItemImageMatcher", "Failed to embed photo", e)
+        lastError = "Could not analyze the photo: ${e.javaClass.simpleName} — ${e.message}"
     }.getOrNull()
 
     /** Decodes at a modest size — the model works on a small square anyway. */

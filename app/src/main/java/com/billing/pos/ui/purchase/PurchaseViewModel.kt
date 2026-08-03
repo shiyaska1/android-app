@@ -25,6 +25,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -42,6 +43,11 @@ class PurchaseViewModel(private val app: Application) : AndroidViewModel(app) {
     /** All item batches, for the purchase batch dialog (pick existing / create new). */
     val allBatches: StateFlow<List<com.billing.pos.data.ItemBatch>> =
         repo.itemBatches.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    /** itemId -> all product image paths, for the item-picker image viewer. */
+    val imagesByItem: StateFlow<Map<Long, List<String>>> =
+        repo.itemAttachments.map { atts ->
+            atts.filter { it.mime.startsWith("image/") }.groupBy { it.itemId }.mapValues { (_, l) -> l.map { it.path } }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
     var selectedSupplier by mutableStateOf<Supplier?>(null); private set
     val cart: SnapshotStateList<CartLine> = mutableStateListOf()

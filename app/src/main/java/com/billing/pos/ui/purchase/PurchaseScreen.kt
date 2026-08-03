@@ -519,6 +519,7 @@ fun PurchaseScreen(
         CustomLineDialog(onDismiss = { showCustomLine = false }, onAdd = { desc, price, tax, saveToMaster, sellingPrice -> vm.addCustomLine(desc, price, tax, saveToMaster, sellingPrice) })
     }
     if (showItemPicker) {
+        val photosByItem by vm.imagesByItem.collectAsStateSafe()
         ItemPickerDialog(
             items = items,
             onDismiss = { showItemPicker = false },
@@ -530,7 +531,8 @@ fun PurchaseScreen(
                     else -> vm.addItemToCart(picked)
                 }
             },
-            onNewItem = { q -> showItemPicker = false; newItemName = q; showNewItem = true }
+            onNewItem = { q -> showItemPicker = false; newItemName = q; showNewItem = true },
+            photosByItem = photosByItem
         )
     }
     // Photo → ask Camera or Gallery.

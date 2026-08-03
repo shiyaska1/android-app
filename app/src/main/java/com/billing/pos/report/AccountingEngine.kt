@@ -8,6 +8,7 @@ import com.billing.pos.data.CostCenter
 import com.billing.pos.data.Expense
 import com.billing.pos.data.JournalEntry
 import com.billing.pos.data.JournalLine
+import com.billing.pos.data.JournalVoucherType
 import com.billing.pos.data.Purchase
 import com.billing.pos.data.PurchaseReturn
 import com.billing.pos.data.Receipt

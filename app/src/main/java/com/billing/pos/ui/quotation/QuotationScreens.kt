@@ -93,6 +93,7 @@ import com.billing.pos.util.Format
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -115,6 +116,11 @@ class QuotationViewModel(private val app: Application) : AndroidViewModel(app) {
     val itemPhotos: StateFlow<Map<String, String>> =
         repo.itemPhotoByName.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
     var includeImages by mutableStateOf(false)
+    /** itemId -> all product image paths, for the item-picker image viewer. */
+    val imagesByItem: StateFlow<Map<Long, List<String>>> =
+        repo.itemAttachments.map { atts ->
+            atts.filter { it.mime.startsWith("image/") }.groupBy { it.itemId }.mapValues { (_, l) -> l.map { it.path } }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
     val quotations: StateFlow<List<Quotation>> =
         repo.quotations.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -441,6 +447,7 @@ fun QuotationScreen(editId: Long?, onBack: () -> Unit, vm: QuotationViewModel = 
     }
 
     if (showItemPicker) {
+        val photosByItem by vm.imagesByItem.collectAsStateSafe()
         ItemPickerDialog(
             items = items,
             onDismiss = { showItemPicker = false },
@@ -448,7 +455,8 @@ fun QuotationScreen(editId: Long?, onBack: () -> Unit, vm: QuotationViewModel = 
                 showItemPicker = false
                 if (picked.hasTwoUnits) unitPickFor = picked else vm.addItemToCart(picked)
             },
-            onNewItem = { showItemPicker = false }
+            onNewItem = { showItemPicker = false },
+            photosByItem = photosByItem
         )
     }
     if (showBundlePicker) {
