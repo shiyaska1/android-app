@@ -153,21 +153,3 @@ private fun decodeBarcode(bmp: Bitmap): String? {
     }
     return null
 }
-
-/** Maps the on-screen selection rectangle back to bitmap pixels and crops; whole image if none. */
-private fun cropToSelection(bmp: Bitmap, start: Offset?, end: Offset?, canvas: IntSize): Bitmap {
-    if (start == null || end == null || canvas.width == 0) return bmp
-    val bw = bmp.width.toFloat(); val bh = bmp.height.toFloat()
-    val scale = min(canvas.width / bw, canvas.height / bh)
-    val dw = bw * scale; val dh = bh * scale
-    val ox = (canvas.width - dw) / 2f; val oy = (canvas.height - dh) / 2f
-    fun toBx(x: Float) = ((x - ox) / scale).coerceIn(0f, bw)
-    fun toBy(y: Float) = ((y - oy) / scale).coerceIn(0f, bh)
-    val left = min(toBx(start.x), toBx(end.x)).toInt()
-    val top = min(toBy(start.y), toBy(end.y)).toInt()
-    val right = max(toBx(start.x), toBx(end.x)).toInt()
-    val bottom = max(toBy(start.y), toBy(end.y)).toInt()
-    val w = (right - left); val h = (bottom - top)
-    if (w < 8 || h < 8) return bmp
-    return Bitmap.createBitmap(bmp, left, top, w, h)
-}
