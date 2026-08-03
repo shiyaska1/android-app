@@ -43,7 +43,9 @@ data class Purchase(
     val deviceId: String = "",
     /** True for a quick purchase invoice attached from the Supplier dialog (amount+note+date,
      * no items) — a legacy due, not a real purchase. Excluded from the Purchase list and figures. */
-    val isLegacy: Boolean = false
+    val isLegacy: Boolean = false,
+    /** Last created/edited time — drives the cloud-sync "only push recent changes" window. */
+    val updatedAt: Long = 0
 ) {
     val balance: Double get() = (grandTotal - paidAmount).coerceAtLeast(0.0)
     val paymentStatus: String

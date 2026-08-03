@@ -30,7 +30,9 @@ data class Quotation(
     /** [License.deviceId] of the phone this quotation was created on — used to dedupe cloud-sync merges. */
     val deviceId: String = "",
     /** The sales bill this quotation was converted into, if any; blank = not yet converted. */
-    val convertedBillNo: String = ""
+    val convertedBillNo: String = "",
+    /** Last created/edited time — drives the cloud-sync "only push recent changes" window. */
+    val updatedAt: Long = 0
 )
 
 @Entity(tableName = "quotation_items")

@@ -80,7 +80,10 @@ data class Bill(
     val deviceId: String = "",
     /** True for a quick invoice attached from the Customer dialog (amount+note+date, no items) —
      * a legacy due, not a real sale. Excluded from the Invoice list and Sales figures. */
-    val isLegacy: Boolean = false
+    val isLegacy: Boolean = false,
+    /** Last created/edited time — distinct from [dateMillis] (the invoice date the user picks).
+     * Drives the cloud-sync "only push recent changes" window. */
+    val updatedAt: Long = 0
 ) {
     val balance: Double get() = (grandTotal - paidAmount).coerceAtLeast(0.0)
     val paymentStatus: String
@@ -154,7 +157,9 @@ data class Receipt(
     /** Cash/Bank account head the money was received into (0 = unspecified/legacy). */
     val toAccountId: Long = 0,
     /** [License.deviceId] of the phone this receipt was created on — used to dedupe cloud-sync merges. */
-    val deviceId: String = ""
+    val deviceId: String = "",
+    /** Last created/edited time — drives the cloud-sync "only push recent changes" window. */
+    val updatedAt: Long = 0
 )
 
 /**
@@ -176,7 +181,9 @@ data class Expense(
     /** Cash/Bank account head the money was paid from (0 = unspecified/legacy). */
     val fromAccountId: Long = 0,
     /** [License.deviceId] of the phone this expense was created on — used to dedupe cloud-sync merges. */
-    val deviceId: String = ""
+    val deviceId: String = "",
+    /** Last created/edited time — drives the cloud-sync "only push recent changes" window. */
+    val updatedAt: Long = 0
 )
 
 enum class Role(val label: String) {

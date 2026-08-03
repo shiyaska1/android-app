@@ -225,6 +225,7 @@ fun DashboardScreen(
     val context = androidx.compose.ui.platform.LocalContext.current
     val syncScope = rememberCoroutineScope()
     var syncingNow by remember { mutableStateOf(false) }
+    var syncFailureMessage by remember { mutableStateOf<String?>(null) }
     val businessType = remember { com.billing.pos.data.AppPrefs(context).businessType }
     val isRental = businessType == "Rental"
     val isPersonal = businessType == "Personal"
@@ -360,9 +361,13 @@ fun DashboardScreen(
                                 if (!syncingNow) {
                                     syncingNow = true
                                     syncScope.launch {
-                                        com.billing.pos.sync.CloudSyncManager.runOnePullMergePush(context)
+                                        val ok = com.billing.pos.sync.CloudSyncManager.runOnePullMergePush(context)
                                         syncingNow = false
-                                        android.widget.Toast.makeText(context, com.billing.pos.sync.CloudSyncManager.status.value, android.widget.Toast.LENGTH_LONG).show()
+                                        if (ok) {
+                                            android.widget.Toast.makeText(context, com.billing.pos.sync.CloudSyncManager.status.value, android.widget.Toast.LENGTH_LONG).show()
+                                        } else {
+                                            syncFailureMessage = com.billing.pos.sync.CloudSyncManager.status.value
+                                        }
                                     }
                                 }
                             }
@@ -734,6 +739,16 @@ fun DashboardScreen(
     }
     if (showMobileBoard) {
         com.billing.pos.ui.billing.MobileNumberDialog(onDismiss = { showMobileBoard = false })
+    }
+    syncFailureMessage?.let { msg ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { syncFailureMessage = null },
+            title = { Text("Sync failed") },
+            text = { Text(msg) },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = { syncFailureMessage = null }) { Text("OK") }
+            }
+        )
     }
 }
 

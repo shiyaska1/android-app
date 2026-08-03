@@ -16,7 +16,9 @@ data class JournalEntry(
     val cashIsIn: Boolean = true,
     /** Amount to reflect in the Cash Book (set to the voucher total when cashMode is used). */
     val cashAmount: Double = 0.0,
-    val source: String = ""
+    val source: String = "",
+    /** Last created/edited time — drives the cloud-sync "only push recent changes" window. */
+    val updatedAt: Long = 0
 )
 
 /** One posting line of a journal voucher (a debit or a credit to an account head). */

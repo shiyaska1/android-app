@@ -56,6 +56,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.billing.pos.data.AppPrefs
+import com.billing.pos.util.Format
 import kotlinx.coroutines.launch
 
 /** Copies a picked file (image or PDF) into app storage, keeping a sensible extension. */
@@ -686,6 +687,54 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
             )
             if (cloudAutoSync) {
                 Text(cloudSyncStatus, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 6.dp))
+            }
+
+            var pushWindowDaysText by remember { mutableStateOf(prefs.cloudPushWindowDays.toString()) }
+            OutlinedTextField(
+                value = pushWindowDaysText,
+                onValueChange = { txt ->
+                    pushWindowDaysText = txt.filter { it.isDigit() }
+                    pushWindowDaysText.toIntOrNull()?.let { prefs.cloudPushWindowDays = it }
+                },
+                label = { Text("Push window (days, 0 = all)") }, singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                modifier = Modifier.fillMaxWidth().padding(top = 12.dp)
+            )
+            Text(
+                "Only records created or edited in this window are pushed, to keep uploads small. " +
+                    "A device syncing for the first time (or after a long gap) will only receive this " +
+                    "recent window on Pull — use \"Full resync now\" below after setting one up, or any " +
+                    "time you suspect a device is missing older data.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline,
+                modifier = Modifier.padding(top = 4.dp)
+            )
+            var resyncing by remember { mutableStateOf(false) }
+            var lastSyncAt by remember { mutableStateOf(prefs.lastCloudSyncAt) }
+            var lastSyncOk by remember { mutableStateOf(prefs.lastCloudSyncOk) }
+            var lastSyncMessage by remember { mutableStateOf(prefs.lastCloudSyncMessage) }
+            OutlinedButton(
+                onClick = {
+                    if (!resyncing) {
+                        resyncing = true
+                        scope.launch {
+                            com.billing.pos.sync.CloudSyncManager.runFullResync(context)
+                            resyncing = false
+                            lastSyncAt = prefs.lastCloudSyncAt
+                            lastSyncOk = prefs.lastCloudSyncOk
+                            lastSyncMessage = prefs.lastCloudSyncMessage
+                        }
+                    }
+                },
+                enabled = !resyncing,
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+            ) { Text(if (resyncing) "Resyncing…" else "Full resync now (ignores the window, once)") }
+            if (lastSyncAt > 0) {
+                Text(
+                    "Last sync: ${Format.dateTime(lastSyncAt)} — " + if (lastSyncOk) "Success" else "Failed: $lastSyncMessage",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = if (lastSyncOk) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(top = 6.dp)
+                )
             }
 
             Divider(Modifier.padding(vertical = 16.dp))

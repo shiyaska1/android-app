@@ -38,7 +38,9 @@ data class Estimate(
     val customerGstin: String = "",
     val remarks: String = "",
     /** [License.deviceId] of the phone this estimate was created on — used to dedupe cloud-sync merges. */
-    val deviceId: String = ""
+    val deviceId: String = "",
+    /** Last created/edited time — drives the cloud-sync "only push recent changes" window. */
+    val updatedAt: Long = 0
 )
 
 /** A single line on an estimate. No batch or primary-qty: nothing here moves stock. */

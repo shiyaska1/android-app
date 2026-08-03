@@ -26,9 +26,16 @@ object FullBackup {
     // running at once would race and could produce a truncated zip.
     private val ioGate = Mutex()
 
-    suspend fun create(context: Context, includeAttachments: Boolean = true): File = ioGate.withLock {
+    /**
+     * @param pushWindowDays When > 0, only bills/purchases/receipts/expenses/quotations/estimates/
+     * journal entries created or edited in the last N days are included (and their line items,
+     * to actually shrink the payload) — everything else (masters, returns, LPOs, ...) is always
+     * included in full. 0 (the default) keeps today's behavior: everything, every time.
+     */
+    suspend fun create(context: Context, includeAttachments: Boolean = true, pushWindowDays: Int = 0): File = ioGate.withLock {
         val db = AppDatabase.get(context)
         val prefs = AppPrefs(context)
+        val cutoff = if (pushWindowDays > 0) System.currentTimeMillis() - pushWindowDays * 24L * 60 * 60 * 1000 else null
 
         val root = JSONObject()
         root.put("app", "pos-billing-full")
@@ -44,10 +51,16 @@ object FullBackup {
 
         root.put("customers", JSONArray().apply { db.customerDao().all().forEach { put(custJson(it)) } })
         root.put("items", JSONArray().apply { db.itemDao().all().forEach { put(itemJson(it)) } })
-        root.put("bills", JSONArray().apply { db.billDao().all().forEach { put(billJson(it)) } })
-        root.put("billItems", JSONArray().apply { db.billDao().allLines().forEach { put(lineJson(it)) } })
-        root.put("receipts", JSONArray().apply { db.receiptDao().all().forEach { put(receiptJson(it)) } })
-        root.put("expenses", JSONArray().apply { db.expenseDao().all().forEach { put(expenseJson(it)) } })
+        val bills = db.billDao().all().let { all -> if (cutoff == null) all else all.filter { it.updatedAt >= cutoff } }
+        val billIds = bills.map { it.id }.toSet()
+        root.put("bills", JSONArray().apply { bills.forEach { put(billJson(it)) } })
+        root.put("billItems", JSONArray().apply {
+            db.billDao().allLines().filter { cutoff == null || it.billId in billIds }.forEach { put(lineJson(it)) }
+        })
+        val receipts = db.receiptDao().all().let { all -> if (cutoff == null) all else all.filter { it.updatedAt >= cutoff } }
+        root.put("receipts", JSONArray().apply { receipts.forEach { put(receiptJson(it)) } })
+        val expenses = db.expenseDao().all().let { all -> if (cutoff == null) all else all.filter { it.updatedAt >= cutoff } }
+        root.put("expenses", JSONArray().apply { expenses.forEach { put(expenseJson(it)) } })
         root.put("users", JSONArray().apply { db.userDao().all().forEach { put(userJson(it)) } })
         root.put("diaryEntries", JSONArray().apply { db.diaryDao().allEntries().forEach { put(entryJson(it)) } })
         root.put("diaryTypes", JSONArray().apply { db.diaryTypeDao().all().forEach { t -> put(JSONObject().put("id", t.id).put("name", t.name)) } })
@@ -57,20 +70,36 @@ object FullBackup {
         root.put("diaryBlocks", JSONArray().apply { diaryBlocks.forEach { put(blockJson(it)) } })
 
         root.put("suppliers", JSONArray().apply { db.supplierDao().all().forEach { put(supplierJson(it)) } })
-        root.put("purchases", JSONArray().apply { db.purchaseDao().all().forEach { put(purchaseJson(it)) } })
-        root.put("purchaseItems", JSONArray().apply { db.purchaseDao().allLines().forEach { put(pLineJson(it)) } })
+        val purchases = db.purchaseDao().all().let { all -> if (cutoff == null) all else all.filter { it.updatedAt >= cutoff } }
+        val purchaseIds = purchases.map { it.id }.toSet()
+        root.put("purchases", JSONArray().apply { purchases.forEach { put(purchaseJson(it)) } })
+        root.put("purchaseItems", JSONArray().apply {
+            db.purchaseDao().allLines().filter { cutoff == null || it.purchaseId in purchaseIds }.forEach { put(pLineJson(it)) }
+        })
         root.put("accountGroups", JSONArray().apply { db.accountDao().allGroups().forEach { put(groupJson(it)) } })
         root.put("accountHeads", JSONArray().apply { db.accountDao().allHeads().forEach { put(headJson(it)) } })
-        root.put("journalEntries", JSONArray().apply { db.journalDao().allEntries().forEach { put(jEntryJson(it)) } })
-        root.put("journalLines", JSONArray().apply { db.journalDao().allLines().forEach { put(jLineJson(it)) } })
+        val jEntries = db.journalDao().allEntries().let { all -> if (cutoff == null) all else all.filter { it.updatedAt >= cutoff } }
+        val jEntryIds = jEntries.map { it.id }.toSet()
+        root.put("journalEntries", JSONArray().apply { jEntries.forEach { put(jEntryJson(it)) } })
+        root.put("journalLines", JSONArray().apply {
+            db.journalDao().allLines().filter { cutoff == null || it.entryId in jEntryIds }.forEach { put(jLineJson(it)) }
+        })
         val itemAtts = db.itemAttachmentDao().all()
         root.put("itemAttachments", JSONArray().apply { itemAtts.forEach { put(itemAttJson(it)) } })
         root.put("itemBatches", JSONArray().apply { db.itemBatchDao().all().forEach { put(batchJson(it)) } })
         root.put("itemSizes", JSONArray().apply { db.itemSizeDao().all().forEach { put(sizeJson(it)) } })
-        root.put("quotations", JSONArray().apply { db.quotationDao().all().forEach { put(quotationJson(it)) } })
-        root.put("quotationItems", JSONArray().apply { db.quotationDao().allLines().forEach { put(qItemJson(it)) } })
-        root.put("estimates", JSONArray().apply { db.estimateDao().all().forEach { put(estimateJson(it)) } })
-        root.put("estimateItems", JSONArray().apply { db.estimateDao().allLines().forEach { put(eItemJson(it)) } })
+        val quotations = db.quotationDao().all().let { all -> if (cutoff == null) all else all.filter { it.updatedAt >= cutoff } }
+        val quotationIds = quotations.map { it.id }.toSet()
+        root.put("quotations", JSONArray().apply { quotations.forEach { put(quotationJson(it)) } })
+        root.put("quotationItems", JSONArray().apply {
+            db.quotationDao().allLines().filter { cutoff == null || it.quotationId in quotationIds }.forEach { put(qItemJson(it)) }
+        })
+        val estimates = db.estimateDao().all().let { all -> if (cutoff == null) all else all.filter { it.updatedAt >= cutoff } }
+        val estimateIds = estimates.map { it.id }.toSet()
+        root.put("estimates", JSONArray().apply { estimates.forEach { put(estimateJson(it)) } })
+        root.put("estimateItems", JSONArray().apply {
+            db.estimateDao().allLines().filter { cutoff == null || it.estimateId in estimateIds }.forEach { put(eItemJson(it)) }
+        })
         root.put("salesReturns", JSONArray().apply { db.salesReturnDao().all().forEach { put(salesReturnJson(it)) } })
         root.put("salesReturnItems", JSONArray().apply { db.salesReturnDao().allLines().forEach { put(srItemJson(it)) } })
         root.put("purchaseReturns", JSONArray().apply { db.purchaseReturnDao().all().forEach { put(purchaseReturnJson(it)) } })

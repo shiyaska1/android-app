@@ -214,8 +214,10 @@ class Repository(private val context: Context) {
     suspend fun nextJournalNo(): String =
         "JV-" + (journalDao.localCount() + 1).toString().padStart(4, '0')
 
-    suspend fun saveJournal(entry: JournalEntry, lines: List<JournalLine>): Long = journalDao.saveJournal(entry, lines)
-    suspend fun updateJournal(entry: JournalEntry, lines: List<JournalLine>) = journalDao.updateJournal(entry, lines)
+    suspend fun saveJournal(entry: JournalEntry, lines: List<JournalLine>): Long =
+        journalDao.saveJournal(entry.copy(updatedAt = System.currentTimeMillis()), lines)
+    suspend fun updateJournal(entry: JournalEntry, lines: List<JournalLine>) =
+        journalDao.updateJournal(entry.copy(updatedAt = System.currentTimeMillis()), lines)
     suspend fun deleteJournal(entry: JournalEntry) = journalDao.deleteJournal(entry)
     suspend fun journalById(id: Long): JournalEntry? = journalDao.byId(id)
     suspend fun journalLinesFor(id: Long): List<JournalLine> = journalDao.linesFor(id)
@@ -319,7 +321,8 @@ class Repository(private val context: Context) {
             paidAmount = 0.0,
             customerGstin = customer.gstin,
             remarks = note.trim(),
-            isLegacy = true
+            isLegacy = true,
+            updatedAt = System.currentTimeMillis()
         )
         return billDao.saveBill(bill, emptyList())
     }
@@ -405,8 +408,10 @@ class Repository(private val context: Context) {
     private val quotationDao = db.quotationDao()
     val quotations: Flow<List<Quotation>> = quotationDao.observeAll()
     suspend fun nextQuotationNo(): String = "QT-" + (quotationDao.count() + 1).toString().padStart(4, '0')
-    suspend fun saveQuotation(q: Quotation, lines: List<QuotationItem>): Long = quotationDao.save(q, lines)
-    suspend fun updateQuotation(q: Quotation, lines: List<QuotationItem>) = quotationDao.update(q, lines)
+    suspend fun saveQuotation(q: Quotation, lines: List<QuotationItem>): Long =
+        quotationDao.save(q.copy(updatedAt = System.currentTimeMillis()), lines)
+    suspend fun updateQuotation(q: Quotation, lines: List<QuotationItem>) =
+        quotationDao.update(q.copy(updatedAt = System.currentTimeMillis()), lines)
     suspend fun deleteQuotation(q: Quotation) = quotationDao.delete(q)
     suspend fun quotationById(id: Long): Quotation? = quotationDao.byId(id)
     suspend fun quotationLines(id: Long): List<QuotationItem> = quotationDao.linesFor(id)
@@ -420,7 +425,7 @@ class Repository(private val context: Context) {
 
     /** Marks these quotations as converted into [billNo], so they show as used and aren't offered again. */
     suspend fun markQuotationsConverted(ids: List<Long>, billNo: String) {
-        ids.forEach { id -> quotationDao.byId(id)?.let { quotationDao.updateHeader(it.copy(convertedBillNo = billNo)) } }
+        ids.forEach { id -> quotationDao.byId(id)?.let { quotationDao.updateHeader(it.copy(convertedBillNo = billNo, updatedAt = System.currentTimeMillis())) } }
     }
 
     // ---- payment attachments ----
@@ -512,8 +517,10 @@ class Repository(private val context: Context) {
     private val estimateDao = db.estimateDao()
     val estimates: Flow<List<Estimate>> = estimateDao.observeAll()
     suspend fun nextEstimateNo(): String = "EST-" + (estimateDao.count() + 1).toString().padStart(4, '0')
-    suspend fun saveEstimate(e: Estimate, lines: List<EstimateItem>): Long = estimateDao.save(e, lines)
-    suspend fun updateEstimate(e: Estimate, lines: List<EstimateItem>) = estimateDao.update(e, lines)
+    suspend fun saveEstimate(e: Estimate, lines: List<EstimateItem>): Long =
+        estimateDao.save(e.copy(updatedAt = System.currentTimeMillis()), lines)
+    suspend fun updateEstimate(e: Estimate, lines: List<EstimateItem>) =
+        estimateDao.update(e.copy(updatedAt = System.currentTimeMillis()), lines)
     suspend fun deleteEstimate(e: Estimate) = estimateDao.delete(e)
     suspend fun estimateById(id: Long): Estimate? = estimateDao.byId(id)
     suspend fun estimateLines(id: Long): List<EstimateItem> = estimateDao.linesFor(id)
@@ -892,8 +899,10 @@ class Repository(private val context: Context) {
     }
 
     // ---- bills ----
-    suspend fun saveBill(bill: Bill, lines: List<BillItem>): Long = billDao.saveBill(bill, lines)
-    suspend fun updateBill(bill: Bill, lines: List<BillItem>) = billDao.updateBill(bill, lines)
+    suspend fun saveBill(bill: Bill, lines: List<BillItem>): Long =
+        billDao.saveBill(bill.copy(updatedAt = System.currentTimeMillis()), lines)
+    suspend fun updateBill(bill: Bill, lines: List<BillItem>) =
+        billDao.updateBill(bill.copy(updatedAt = System.currentTimeMillis()), lines)
     suspend fun deleteBill(bill: Bill) {
         billAttachmentDao.forBill(bill.id).forEach { com.billing.pos.bills.BillAttachmentStore.delete(it) }
         billAttachmentDao.deleteForBill(bill.id)
@@ -920,11 +929,12 @@ class Repository(private val context: Context) {
             paymentMode = mode.label,
             payFrom = bill.customerName,
             toAccountId = if (toAccountId != 0L) toAccountId else ensureModeAccount(mode.label),
-            deviceId = License.deviceId(context)
+            deviceId = License.deviceId(context),
+            updatedAt = System.currentTimeMillis()
         )
         val newId = receiptDao.insert(receipt)
         val newPaid = (bill.paidAmount + amount).coerceAtMost(bill.grandTotal)
-        billDao.updateBillHeader(bill.copy(paidAmount = newPaid))
+        billDao.updateBillHeader(bill.copy(paidAmount = newPaid, updatedAt = System.currentTimeMillis()))
         return receipt.copy(id = newId)
     }
 
@@ -951,12 +961,13 @@ class Repository(private val context: Context) {
             paymentMode = mode.label,
             payFrom = party,
             toAccountId = if (toAccountId != 0L) toAccountId else ensureModeAccount(mode.label),
-            deviceId = License.deviceId(context)
+            deviceId = License.deviceId(context),
+            updatedAt = System.currentTimeMillis()
         )
         val newId = receiptDao.insert(receipt)
         shares.forEach { (bill, amount) ->
             val newPaid = (bill.paidAmount + amount).coerceAtMost(bill.grandTotal)
-            billDao.updateBillHeader(bill.copy(paidAmount = newPaid))
+            billDao.updateBillHeader(bill.copy(paidAmount = newPaid, updatedAt = System.currentTimeMillis()))
         }
         if (shares.size > 1) {
             receiptAllocationDao.insertAll(shares.map { (bill, amount) ->
@@ -978,7 +989,8 @@ class Repository(private val context: Context) {
             amount = amount,
             paymentMode = mode.label,
             payFrom = payFrom.trim(),
-            toAccountId = if (toAccountId != 0L) toAccountId else ensureModeAccount(mode.label)
+            toAccountId = if (toAccountId != 0L) toAccountId else ensureModeAccount(mode.label),
+            updatedAt = System.currentTimeMillis()
         )
         val newId = receiptDao.insert(receipt)
         return receipt.copy(id = newId)
@@ -999,7 +1011,8 @@ class Repository(private val context: Context) {
             amount = amount,
             paymentMode = mode.label,
             fromAccountId = if (fromAccountId != 0L) fromAccountId else ensureModeAccount(mode.label),
-            deviceId = License.deviceId(context)
+            deviceId = License.deviceId(context),
+            updatedAt = System.currentTimeMillis()
         )
         // Return the row with its generated id — callers attach files to it, and an id of 0
         // silently orphans them.
@@ -1018,7 +1031,8 @@ class Repository(private val context: Context) {
             paymentMode = mode.label,
             payTo = payTo.trim(),
             fromAccountId = if (fromAccountId != 0L) fromAccountId else ensureModeAccount(mode.label),
-            deviceId = License.deviceId(context)
+            deviceId = License.deviceId(context),
+            updatedAt = System.currentTimeMillis()
         )
         // Return the row with its generated id — callers attach files to it, and an id of 0
         // silently orphans them.
@@ -1032,10 +1046,10 @@ class Repository(private val context: Context) {
             billDao.byId(old.billId)?.let { bill ->
                 val adjusted = (bill.paidAmount - old.amount + newAmount)
                     .coerceIn(0.0, bill.grandTotal)
-                billDao.updateBillHeader(bill.copy(paidAmount = adjusted))
+                billDao.updateBillHeader(bill.copy(paidAmount = adjusted, updatedAt = System.currentTimeMillis()))
             }
         }
-        receiptDao.update(old.copy(amount = newAmount, paymentMode = mode.label))
+        receiptDao.update(old.copy(amount = newAmount, paymentMode = mode.label, updatedAt = System.currentTimeMillis()))
     }
 
     /** Invoices covered by a (possibly multi-invoice) receipt; empty for a single/standalone one. */
@@ -1048,14 +1062,14 @@ class Repository(private val context: Context) {
             allocations.forEach { a ->
                 billDao.byId(a.billId)?.let { bill ->
                     val adjusted = (bill.paidAmount - a.amount).coerceAtLeast(0.0)
-                    billDao.updateBillHeader(bill.copy(paidAmount = adjusted))
+                    billDao.updateBillHeader(bill.copy(paidAmount = adjusted, updatedAt = System.currentTimeMillis()))
                 }
             }
             receiptAllocationDao.deleteForReceipt(receipt.id)
         } else if (receipt.billId > 0) {
             billDao.byId(receipt.billId)?.let { bill ->
                 val adjusted = (bill.paidAmount - receipt.amount).coerceAtLeast(0.0)
-                billDao.updateBillHeader(bill.copy(paidAmount = adjusted))
+                billDao.updateBillHeader(bill.copy(paidAmount = adjusted, updatedAt = System.currentTimeMillis()))
             }
         }
         receiptAttachmentDao.forReceipt(receipt.id).forEach { ReceiptAttachmentStore.delete(it) }
@@ -1076,11 +1090,12 @@ class Repository(private val context: Context) {
             purchaseNo = purchase.purchaseNo,
             payTo = purchase.supplierName,
             fromAccountId = if (fromAccountId != 0L) fromAccountId else ensureModeAccount(mode.label),
-            deviceId = License.deviceId(context)
+            deviceId = License.deviceId(context),
+            updatedAt = System.currentTimeMillis()
         )
         val id = expenseDao.insert(expense)
         val newPaid = (purchase.paidAmount + amount).coerceAtMost(purchase.grandTotal)
-        purchaseDao.updateHeader(purchase.copy(paidAmount = newPaid))
+        purchaseDao.updateHeader(purchase.copy(paidAmount = newPaid, updatedAt = System.currentTimeMillis()))
         return expense.copy(id = id)
     }
 
@@ -1107,12 +1122,13 @@ class Repository(private val context: Context) {
             purchaseNo = single?.first?.purchaseNo ?: "${shares.size} purchases",
             payTo = supplier,
             fromAccountId = if (fromAccountId != 0L) fromAccountId else ensureModeAccount(mode.label),
-            deviceId = License.deviceId(context)
+            deviceId = License.deviceId(context),
+            updatedAt = System.currentTimeMillis()
         )
         val id = expenseDao.insert(expense)
         shares.forEach { (purchase, amount) ->
             val newPaid = (purchase.paidAmount + amount).coerceAtMost(purchase.grandTotal)
-            purchaseDao.updateHeader(purchase.copy(paidAmount = newPaid))
+            purchaseDao.updateHeader(purchase.copy(paidAmount = newPaid, updatedAt = System.currentTimeMillis()))
         }
         if (shares.size > 1) {
             expenseAllocationDao.insertAll(shares.map { (purchase, amount) ->
@@ -1126,10 +1142,10 @@ class Repository(private val context: Context) {
         if (expense.purchaseId > 0) {
             purchaseDao.byId(expense.purchaseId)?.let { pur ->
                 val adjusted = (pur.paidAmount - expense.amount + amount).coerceIn(0.0, pur.grandTotal)
-                purchaseDao.updateHeader(pur.copy(paidAmount = adjusted))
+                purchaseDao.updateHeader(pur.copy(paidAmount = adjusted, updatedAt = System.currentTimeMillis()))
             }
         }
-        expenseDao.update(expense.copy(description = description.trim(), amount = amount, paymentMode = mode.label))
+        expenseDao.update(expense.copy(description = description.trim(), amount = amount, paymentMode = mode.label, updatedAt = System.currentTimeMillis()))
     }
 
     /** Purchases covered by a (possibly multi-purchase) payment; empty for a single/general one. */
@@ -1142,14 +1158,14 @@ class Repository(private val context: Context) {
             allocations.forEach { a ->
                 purchaseDao.byId(a.purchaseId)?.let { pur ->
                     val adjusted = (pur.paidAmount - a.amount).coerceAtLeast(0.0)
-                    purchaseDao.updateHeader(pur.copy(paidAmount = adjusted))
+                    purchaseDao.updateHeader(pur.copy(paidAmount = adjusted, updatedAt = System.currentTimeMillis()))
                 }
             }
             expenseAllocationDao.deleteForExpense(expense.id)
         } else if (expense.purchaseId > 0) {
             purchaseDao.byId(expense.purchaseId)?.let { pur ->
                 val adjusted = (pur.paidAmount - expense.amount).coerceAtLeast(0.0)
-                purchaseDao.updateHeader(pur.copy(paidAmount = adjusted))
+                purchaseDao.updateHeader(pur.copy(paidAmount = adjusted, updatedAt = System.currentTimeMillis()))
             }
         }
         expenseDao.delete(expense)
@@ -1215,7 +1231,8 @@ class Repository(private val context: Context) {
             paidAmount = 0.0,
             supplierGstin = supplier.gstin,
             remarks = note.trim(),
-            isLegacy = true
+            isLegacy = true,
+            updatedAt = System.currentTimeMillis()
         )
         return purchaseDao.savePurchase(purchase, emptyList())
     }
@@ -1227,10 +1244,10 @@ class Repository(private val context: Context) {
         "PUR-" + (purchaseDao.localCount() + 1).toString().padStart(4, '0')
 
     suspend fun savePurchase(purchase: Purchase, lines: List<PurchaseItem>): Long =
-        purchaseDao.savePurchase(purchase, lines)
+        purchaseDao.savePurchase(purchase.copy(updatedAt = System.currentTimeMillis()), lines)
 
     suspend fun updatePurchase(purchase: Purchase, lines: List<PurchaseItem>) =
-        purchaseDao.updatePurchase(purchase, lines)
+        purchaseDao.updatePurchase(purchase.copy(updatedAt = System.currentTimeMillis()), lines)
 
     suspend fun deletePurchase(purchase: Purchase) = purchaseDao.deletePurchase(purchase)
 
@@ -1371,7 +1388,8 @@ class Repository(private val context: Context) {
                         if (o.optString("paymentMethod") == PaymentMethod.CREDIT.label) 0.0
                         else o.optDouble("grandTotal", 0.0)
                     ),
-                    source = source
+                    source = source,
+                    updatedAt = System.currentTimeMillis()
                 )
                 val lines = mutableListOf<BillItem>()
                 o.optJSONArray("lines")?.let { la ->

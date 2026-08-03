@@ -105,6 +105,23 @@ class AppPrefs(context: Context) {
     var cloudAutoSyncIntervalSec: Int
         get() = p.getInt("cloud_auto_sync_interval_sec", 300)
         set(v) { p.edit().putInt("cloud_auto_sync_interval_sec", v).apply() }
+    /** Only push records created/edited in the last N days (0 = push everything, the default).
+     * Reduces upload size on a phone with years of history, at the cost of a device syncing for
+     * the first time only receiving this recent window — use "Full resync now" for that case. */
+    var cloudPushWindowDays: Int
+        get() = p.getInt("cloud_push_window_days", 0)
+        set(v) { p.edit().putInt("cloud_push_window_days", v.coerceAtLeast(0)).apply() }
+    /** Result of the most recent sync attempt (manual or automatic), so the user can check what
+     * happened without needing to catch a toast in the moment. */
+    var lastCloudSyncAt: Long
+        get() = p.getLong("last_cloud_sync_at", 0)
+        set(v) { p.edit().putLong("last_cloud_sync_at", v).apply() }
+    var lastCloudSyncOk: Boolean
+        get() = p.getBoolean("last_cloud_sync_ok", true)
+        set(v) { p.edit().putBoolean("last_cloud_sync_ok", v).apply() }
+    var lastCloudSyncMessage: String
+        get() = p.getString("last_cloud_sync_message", "") ?: ""
+        set(v) { p.edit().putString("last_cloud_sync_message", v).apply() }
 
     // ---- Bulk SMS gateway (generic, provider-agnostic) ----
     /**

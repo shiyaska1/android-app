@@ -66,19 +66,37 @@ object CloudSyncManager {
     }.getOrDefault(false)
 
     /** One pull -> merge -> push cycle. Safe to call directly too (e.g. a "Sync now" button). */
-    suspend fun runOnePullMergePush(app: Context): Boolean = gate.withLock {
+    suspend fun runOnePullMergePush(app: Context): Boolean = runCycle(app, forceFullPush = false)
+
+    /** Same cycle, but ignores [AppPrefs.cloudPushWindowDays] for this one push — for a "Full
+     * resync now" button, so a new device (or one that's been off the window too long) can be
+     * brought fully up to date without turning the window off in Settings first. */
+    suspend fun runFullResync(app: Context): Boolean = runCycle(app, forceFullPush = true)
+
+    /** Records what happened so the user can check later, without needing to catch a toast. */
+    private fun logResult(app: Context, ok: Boolean) {
+        val prefs = AppPrefs(app)
+        prefs.lastCloudSyncAt = System.currentTimeMillis()
+        prefs.lastCloudSyncOk = ok
+        prefs.lastCloudSyncMessage = status.value
+    }
+
+    private suspend fun runCycle(app: Context, forceFullPush: Boolean): Boolean = gate.withLock {
         val prefs = AppPrefs(app)
         val pullUrl = prefs.backupPullUrl
         val pushUrl = prefs.backupPushUrl
         if (pullUrl.isBlank() || pushUrl.isBlank()) {
             status.value = "Set Push/Pull URL in Settings first"
+            logResult(app, false)
             return@withLock false
         }
         if (!hasInternet(app)) {
             status.value = "No internet connection — skipped this sync"
+            logResult(app, false)
             return@withLock false
         }
         isSyncing.value = true
+        var ok = false
         try {
             val org = prefs.backupOrgId.filter { it.isLetterOrDigit() }.ifBlank { "org" }
             val dev = prefs.backupDeviceId.ifBlank { License.deviceId(app) }
@@ -118,7 +136,8 @@ object CloudSyncManager {
             }
 
             // --- Push (data only, no attachments) ---
-            val zip = FullBackup.create(app, includeAttachments = false)
+            val windowDays = if (forceFullPush) 0 else prefs.cloudPushWindowDays
+            val zip = FullBackup.create(app, includeAttachments = false, pushWindowDays = windowDays)
             if (runCatching { ZipFile(zip).use { it.size() } }.isFailure) {
                 status.value = "Auto-sync: local backup came out corrupt, skipped push"
                 return@withLock false
@@ -139,12 +158,14 @@ object CloudSyncManager {
                 return@withLock false
             }
             status.value = "Auto-synced at " + SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
+            ok = true
             true
         } catch (e: Exception) {
             status.value = "Auto-sync failed: ${e.message}"
             false
         } finally {
             isSyncing.value = false
+            logResult(app, ok)
         }
     }
 }
