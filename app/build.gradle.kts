@@ -15,8 +15,8 @@ android {
         targetSdk = 36
         // CI sets VERSION_CODE per build (see .github/workflows/build.yml and release.yml) so every
         // APK/AAB gets a unique, always-increasing code without hand-editing this file each time.
-        versionCode = System.getenv("VERSION_CODE")?.toIntOrNull() ?: 189
-        versionName = "1.86.0"
+        versionCode = System.getenv("VERSION_CODE")?.toIntOrNull() ?: 190
+        versionName = "1.87.0"
         vectorDrawables { useSupportLibrary = true }
 
         // Real Android phones are arm. The x86/x86_64 native libs are emulator-only
@@ -157,4 +157,15 @@ dependencies {
     implementation("androidx.exifinterface:exifinterface:1.3.7")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
+}
+
+// MediaPipe's tasks-vision (image embedder, for "find item by photo") and the ML Kit libraries
+// (digital-ink-recognition, text-recognition) both pull in protobuf-lite generated classes, and
+// Gradle can resolve two incompatible versions of the same class onto the classpath. At runtime
+// this surfaces as "Field X_ for Y not found" the moment MediaPipe's embedder tries to load —
+// the fix is to force one consistent protobuf-javalite version everywhere.
+configurations.all {
+    resolutionStrategy {
+        force("com.google.protobuf:protobuf-javalite:3.25.5")
+    }
 }

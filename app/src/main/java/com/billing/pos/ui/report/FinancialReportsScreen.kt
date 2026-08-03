@@ -101,10 +101,10 @@ fun balanceSheetOf(p: List<Posting>, to: Long): List<Any> {
 }
 
 private fun monthAgo(): Long = Calendar.getInstance().apply { add(Calendar.MONTH, -1) }.timeInMillis
-private fun today(): Long = Calendar.getInstance().timeInMillis
+fun today(): Long = Calendar.getInstance().timeInMillis
 
 @Composable
-private fun DateBtn(label: String, millis: Long, onPick: (Long) -> Unit, modifier: Modifier = Modifier) {
+fun DateBtn(label: String, millis: Long, onPick: (Long) -> Unit, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     OutlinedButton(onClick = {
         val c = Calendar.getInstance().apply { timeInMillis = millis }
