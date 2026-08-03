@@ -371,7 +371,14 @@ class StickyNoteViewModel(app: Application) : AndroidViewModel(app) {
         val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
         val c = AndroidCanvas(bmp)
         c.drawColor(0xFFFFFFFF.toInt())
-        p.bg?.let { path -> runCatching { BitmapFactory.decodeFile(path) }.getOrNull()?.let { c.drawBitmap(it, null, Rect(0, 0, w, h), null); it.recycle() } }
+        p.bg?.let { path -> runCatching { BitmapFactory.decodeFile(path) }.getOrNull()?.let { bg ->
+            val bw = bg.width.toFloat(); val bh = bg.height.toFloat()
+            val scale = minOf(w / bw, h / bh)
+            val dw = (bw * scale).toInt(); val dh = (bh * scale).toInt()
+            val ox = (w - dw) / 2; val oy = (h - dh) / 2
+            c.drawBitmap(bg, null, Rect(ox, oy, ox + dw, oy + dh), null)
+            bg.recycle()
+        } }
         val paint = AndroidPaint().apply { color = 0xFF111111.toInt(); isAntiAlias = true; style = AndroidPaint.Style.STROKE; strokeWidth = 4f; strokeCap = AndroidPaint.Cap.ROUND; strokeJoin = AndroidPaint.Join.ROUND }
         p.strokes.forEach { pts ->
             val path = AndroidPath(); pts.forEachIndexed { i, pt -> if (i == 0) path.moveTo(pt.x, pt.y) else path.lineTo(pt.x, pt.y) }
@@ -470,7 +477,13 @@ fun StickyNoteScreen(onClose: () -> Unit, onOcrToSales: () -> Unit = {}, vm: Sti
         val bmp = Bitmap.createBitmap(canvasSize.width, canvasSize.height, Bitmap.Config.ARGB_8888)
         AndroidCanvas(bmp).apply {
             drawColor(0xFFFFFFFF.toInt())
-            page.bg?.let { p -> runCatching { BitmapFactory.decodeFile(p) }.getOrNull()?.let { drawBitmap(it, null, Rect(0, 0, canvasSize.width, canvasSize.height), null) } }
+            page.bg?.let { p -> runCatching { BitmapFactory.decodeFile(p) }.getOrNull()?.let { bg ->
+                val bw = bg.width.toFloat(); val bh = bg.height.toFloat()
+                val scale = minOf(canvasSize.width / bw, canvasSize.height / bh)
+                val dw = (bw * scale).toInt(); val dh = (bh * scale).toInt()
+                val ox = (canvasSize.width - dw) / 2; val oy = (canvasSize.height - dh) / 2
+                drawBitmap(bg, null, Rect(ox, oy, ox + dw, oy + dh), null)
+            } }
             val paint = AndroidPaint().apply { color = 0xFF111111.toInt(); isAntiAlias = true; style = AndroidPaint.Style.STROKE; strokeWidth = 4f; strokeCap = AndroidPaint.Cap.ROUND }
             page.strokes.forEach { pts -> val pa = AndroidPath(); pts.forEachIndexed { i, pt -> if (i == 0) pa.moveTo(pt.x, pt.y) else pa.lineTo(pt.x, pt.y) }; drawPath(pa, paint) }
             drawNoteTexts(this, page.texts.map { it.snapshot() })
@@ -557,7 +570,15 @@ fun StickyNoteScreen(onClose: () -> Unit, onOcrToSales: () -> Unit = {}, vm: Sti
                     }
                 }
         ) {
-            bgImage?.let { drawImage(it, srcOffset = IntOffset.Zero, srcSize = IntSize(it.width, it.height), dstOffset = IntOffset.Zero, dstSize = IntSize(size.width.toInt(), size.height.toInt())) }
+            bgImage?.let { img ->
+                // Fit within the canvas (contain) instead of stretching to fill it, so the
+                // photo keeps its original aspect ratio.
+                val bw = img.width.toFloat(); val bh = img.height.toFloat()
+                val scale = minOf(size.width / bw, size.height / bh)
+                val dw = (bw * scale).toInt(); val dh = (bh * scale).toInt()
+                val ox = ((size.width - dw) / 2f).toInt(); val oy = ((size.height - dh) / 2f).toInt()
+                drawImage(img, srcOffset = IntOffset.Zero, srcSize = IntSize(img.width, img.height), dstOffset = IntOffset(ox, oy), dstSize = IntSize(dw, dh))
+            }
             val ink = Color.Black
             pages.getOrNull(pageIndex)?.strokes?.forEach { pts ->
                 val path = Path().apply { pts.forEachIndexed { i, p -> if (i == 0) moveTo(p.x, p.y) else lineTo(p.x, p.y) } }
@@ -661,12 +682,43 @@ fun StickyNoteScreen(onClose: () -> Unit, onOcrToSales: () -> Unit = {}, vm: Sti
                             onDismiss = { drawNm = false }
                         )
                     }
+                    var camNmUri by remember { mutableStateOf<android.net.Uri?>(null) }
+                    val camNmCamera = com.billing.pos.ocr.rememberImageCamera { uri -> camNmUri = uri }
+                    val camNmGallery = rememberLauncherForActivityResult(
+                        ActivityResultContracts.PickVisualMedia()
+                    ) { uri -> if (uri != null) camNmUri = uri }
+                    camNmUri?.let { u ->
+                        com.billing.pos.ui.common.RegionOcrDialog(
+                            uri = u,
+                            onResult = { if (it.isNotBlank()) newName = it; camNmUri = null },
+                            onDismiss = { camNmUri = null }
+                        )
+                    }
+                    val startVoiceNm = com.billing.pos.ui.common.rememberVoiceInput { if (it.isNotBlank()) newName = it }
                     Column {
                         OutlinedTextField(
                             value = newName, onValueChange = { newName = it }, label = { Text("Name") }, singleLine = true,
                             trailingIcon = {
-                                androidx.compose.material3.IconButton(onClick = { drawNm = true }) {
-                                    androidx.compose.material3.Icon(Icons.Filled.Gesture, "Write name")
+                                Row {
+                                    val ib = Modifier.size(38.dp)
+                                    val ic = Modifier.size(20.dp)
+                                    androidx.compose.material3.IconButton(onClick = { drawNm = true }, modifier = ib) {
+                                        androidx.compose.material3.Icon(Icons.Filled.Gesture, "Write name", ic)
+                                    }
+                                    androidx.compose.material3.IconButton(onClick = { camNmCamera() }, modifier = ib) {
+                                        androidx.compose.material3.Icon(Icons.Filled.PhotoCamera, "Photo — draw a box to read the name", ic)
+                                    }
+                                    androidx.compose.material3.IconButton(
+                                        onClick = {
+                                            camNmGallery.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                                        },
+                                        modifier = ib
+                                    ) {
+                                        androidx.compose.material3.Icon(Icons.Filled.PhotoLibrary, "Gallery — draw a box to read the name", ic)
+                                    }
+                                    androidx.compose.material3.IconButton(onClick = startVoiceNm, modifier = ib) {
+                                        androidx.compose.material3.Icon(Icons.Filled.Mic, "Speak name", ic)
+                                    }
                                 }
                             }
                         )
