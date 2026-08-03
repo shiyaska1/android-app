@@ -129,6 +129,14 @@ fun PurchaseScreen(
     val items by vm.items.collectAsStateSafe()
     val message by vm.message.collectAsStateSafe()
 
+    // Items ticked in Price Search and sent here via "Send to > Purchase Entry".
+    LaunchedEffect(items) {
+        if (items.isNotEmpty()) {
+            val picked = com.billing.pos.ui.pricesearch.PriceSearchLink.take(com.billing.pos.ui.pricesearch.PriceSearchLink.PURCHASE)
+            picked.forEach { id -> items.firstOrNull { it.id == id }?.let { vm.addItemToCart(it) } }
+        }
+    }
+
     var showNewSupplier by remember { mutableStateOf(false) }
     var showNewItem by remember { mutableStateOf(false) }
     var newItemName by remember { mutableStateOf("") }

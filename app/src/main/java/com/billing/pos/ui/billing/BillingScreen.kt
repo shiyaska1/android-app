@@ -194,9 +194,8 @@ fun BillingScreen(
     // Items ticked in price search and sent here with "To sale". Waits for the item list
     // to load, since the ids have to be resolved against it.
     LaunchedEffect(items) {
-        val picked = com.billing.pos.ui.pricesearch.PriceSearchLink.itemIds
-        if (picked.isNotEmpty() && items.isNotEmpty()) {
-            com.billing.pos.ui.pricesearch.PriceSearchLink.take()
+        if (items.isNotEmpty()) {
+            val picked = com.billing.pos.ui.pricesearch.PriceSearchLink.take(com.billing.pos.ui.pricesearch.PriceSearchLink.SALE)
             picked.forEach { id -> items.firstOrNull { it.id == id }?.let { vm.addItemToCart(it) } }
         }
     }

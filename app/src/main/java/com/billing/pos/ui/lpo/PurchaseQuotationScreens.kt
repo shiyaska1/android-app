@@ -186,6 +186,14 @@ fun PurchaseQuotationScreen(editId: Long?, onBack: () -> Unit, vm: PurchaseQuota
     LaunchedEffect(Unit) { if (editId != null && editId > 0) vm.load(editId) }
     LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); vm.consumeMessage() } }
 
+    // Items ticked in Price Search and sent here via "Send to > Purchase Order".
+    LaunchedEffect(items) {
+        if (items.isNotEmpty()) {
+            val picked = com.billing.pos.ui.pricesearch.PriceSearchLink.take(com.billing.pos.ui.pricesearch.PriceSearchLink.PURCHASE_ORDER)
+            picked.forEach { id -> items.firstOrNull { it.id == id }?.let { vm.addItemToCart(it) } }
+        }
+    }
+
     var showItemPicker by remember { mutableStateOf(false) }
     var unitPickFor by remember { mutableStateOf<Item?>(null) }
 

@@ -949,7 +949,11 @@ private fun AppNav() {
             PriceSearchScreen(
                 onBack = { nav.popBackStack() },
                 onEditItem = { id -> nav.navigate("items/edit/$id") },
-                onAddToSale = { nav.navigate("billing") }
+                onAddToSale = { nav.navigate("billing") },
+                onAddToQuotation = { nav.navigate("quotation") },
+                onAddToPurchaseQuote = { nav.navigate("pquote") },
+                onAddToPurchaseOrder = { nav.navigate("lpo") },
+                onAddToPurchase = { nav.navigate("purchase") }
             )
         }
         composable("vat") {

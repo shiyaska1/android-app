@@ -270,6 +270,14 @@ fun QuotationScreen(editId: Long?, onBack: () -> Unit, vm: QuotationViewModel = 
     }
     LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); vm.consumeMessage() } }
 
+    // Items ticked in Price Search and sent here via "Send to > Quotation".
+    LaunchedEffect(items) {
+        if (items.isNotEmpty()) {
+            val picked = com.billing.pos.ui.pricesearch.PriceSearchLink.take(com.billing.pos.ui.pricesearch.PriceSearchLink.QUOTATION)
+            picked.forEach { id -> items.firstOrNull { it.id == id }?.let { vm.addItemToCart(it) } }
+        }
+    }
+
     var showItemPicker by remember { mutableStateOf(false) }
     var showBundlePicker by remember { mutableStateOf(false) }
     val bundleRepo = remember { Repository(context) }

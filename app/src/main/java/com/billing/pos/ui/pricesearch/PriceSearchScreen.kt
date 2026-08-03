@@ -37,10 +37,13 @@ import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -105,10 +108,25 @@ data class PriceRow(
     val attachments: List<ItemAttachment>
 )
 
-/** One-shot hand-off of items picked in price search to a new sales entry. */
+/** One-shot hand-off of items picked in price search to a new entry of some kind. */
 object PriceSearchLink {
+    const val SALE = "sale"
+    const val QUOTATION = "quotation"
+    const val PURCHASE_QUOTE = "purchasequote"
+    const val PURCHASE_ORDER = "purchaseorder"
+    const val PURCHASE = "purchase"
+
     @Volatile var itemIds: List<Long> = emptyList()
-    fun take(): List<Long> { val v = itemIds; itemIds = emptyList(); return v }
+    @Volatile var kind: String = ""
+
+    /** Consumes the pending items only if they were meant for [forKind]; leaves them untouched
+     * (for whichever screen they're actually meant for) otherwise. */
+    fun take(forKind: String): List<Long> {
+        if (kind != forKind || itemIds.isEmpty()) return emptyList()
+        val v = itemIds
+        itemIds = emptyList(); kind = ""
+        return v
+    }
 }
 
 class PriceSearchViewModel(app: Application) : AndroidViewModel(app) {
@@ -147,6 +165,10 @@ fun PriceSearchScreen(
     onBack: () -> Unit,
     onEditItem: (Long) -> Unit = {},
     onAddToSale: () -> Unit = {},
+    onAddToQuotation: () -> Unit = {},
+    onAddToPurchaseQuote: () -> Unit = {},
+    onAddToPurchaseOrder: () -> Unit = {},
+    onAddToPurchase: () -> Unit = {},
     vm: PriceSearchViewModel = viewModel()
 ) {
     val context = LocalContext.current
@@ -433,14 +455,26 @@ fun PriceSearchScreen(
                         Icon(Icons.Filled.Share, contentDescription = null, modifier = Modifier.size(18.dp))
                         Text(" WhatsApp", style = MaterialTheme.typography.labelMedium)
                     }
-                    Button(
-                        onClick = {
-                            PriceSearchLink.itemIds = selected.toList()
-                            selected.clear()
-                            onAddToSale()
-                        },
-                        modifier = Modifier.weight(1f)
-                    ) { Text("To sale", style = MaterialTheme.typography.labelMedium) }
+                    var sendMenu by remember { mutableStateOf(false) }
+                    fun sendSelected(kind: String, go: () -> Unit) {
+                        PriceSearchLink.itemIds = selected.toList()
+                        PriceSearchLink.kind = kind
+                        selected.clear()
+                        sendMenu = false
+                        go()
+                    }
+                    Box {
+                        IconButton(onClick = { sendMenu = true }) {
+                            Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send selected to")
+                        }
+                        DropdownMenu(expanded = sendMenu, onDismissRequest = { sendMenu = false }) {
+                            DropdownMenuItem(text = { Text("To Sale") }, onClick = { sendSelected(PriceSearchLink.SALE, onAddToSale) })
+                            DropdownMenuItem(text = { Text("To Quotation") }, onClick = { sendSelected(PriceSearchLink.QUOTATION, onAddToQuotation) })
+                            DropdownMenuItem(text = { Text("To Purchase Quote") }, onClick = { sendSelected(PriceSearchLink.PURCHASE_QUOTE, onAddToPurchaseQuote) })
+                            DropdownMenuItem(text = { Text("To Purchase Order") }, onClick = { sendSelected(PriceSearchLink.PURCHASE_ORDER, onAddToPurchaseOrder) })
+                            DropdownMenuItem(text = { Text("To Purchase Entry") }, onClick = { sendSelected(PriceSearchLink.PURCHASE, onAddToPurchase) })
+                        }
+                    }
                     TextButton(onClick = { selected.clear() }) { Text("Clear") }
                 }
             }
