@@ -227,7 +227,7 @@ fun RegionLinesOcrDialog(uri: Uri, onResult: (List<String>) -> Unit, onDismiss: 
 }
 
 /** Maps the on-screen selection rectangle back to bitmap pixels and crops; whole image if none. */
-private fun cropToSelection(bmp: Bitmap, start: Offset?, end: Offset?, canvas: IntSize): Bitmap {
+fun cropToSelection(bmp: Bitmap, start: Offset?, end: Offset?, canvas: IntSize): Bitmap {
     if (start == null || end == null || canvas.width == 0) return bmp
     val bw = bmp.width.toFloat(); val bh = bmp.height.toFloat()
     val scale = min(canvas.width / bw, canvas.height / bh)

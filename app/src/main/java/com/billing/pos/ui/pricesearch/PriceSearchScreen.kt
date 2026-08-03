@@ -177,17 +177,20 @@ fun PriceSearchScreen(
         )
     }
 
-    // "Match photo": rank items by how much they look like a photo you take.
+    // "Match photo": rank items by how much they look like a photo you take. The photo goes
+    // through RegionMatchDialog first so the user can mark just the product — a photo that's
+    // mostly background otherwise swamps the embedding and hides the real match.
     var visualMatches by remember { mutableStateOf<List<com.billing.pos.vision.ItemImageMatcher.Match>?>(null) }
     var matching by remember { mutableStateOf(false) }
     var matchDone by remember { mutableStateOf(0) }
     var matchTotal by remember { mutableStateOf(0) }
-    val visualCamera = com.billing.pos.ocr.rememberImageCamera { uri ->
+    var regionMatchUri by remember { mutableStateOf<Uri?>(null) }
+    fun runVisualMatch(bitmap: android.graphics.Bitmap) {
         scope.launch {
             matching = true; matchDone = 0; matchTotal = 0
             val atts = rows.flatMap { it.attachments }
-            val found = com.billing.pos.vision.ItemImageMatcher.search(
-                context, uri, atts,
+            val found = com.billing.pos.vision.ItemImageMatcher.searchBitmap(
+                context, bitmap, atts,
                 onProgress = { done, total -> matchDone = done; matchTotal = total }
             )
             matching = false
@@ -196,10 +199,21 @@ fun PriceSearchScreen(
                 snackbar.showSnackbar(
                     if (atts.none { it.mime.startsWith("image/") })
                         "No item has a photo yet — add photos to items first"
-                    else "No close visual match"
+                    else "No visual match found"
                 )
             }
         }
+    }
+    val visualCamera = com.billing.pos.ocr.rememberImageCamera { uri -> regionMatchUri = uri }
+    val visualGallery = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickVisualMedia()
+    ) { uri -> if (uri != null) regionMatchUri = uri }
+    regionMatchUri?.let { u ->
+        com.billing.pos.ui.common.RegionMatchDialog(
+            uri = u,
+            onResult = { bmp -> regionMatchUri = null; runVisualMatch(bmp) },
+            onDismiss = { regionMatchUri = null }
+        )
     }
 
     // ---- Multi-select: tick items to share their photos or send them to a sale ----
@@ -378,19 +392,31 @@ fun PriceSearchScreen(
 
             // Separate from the OCR buttons above: this one matches the picture itself,
             // rather than reading text off it.
-            Button(
-                onClick = { visualCamera() },
-                enabled = !matching,
-                modifier = Modifier.fillMaxWidth().padding(top = 6.dp)
-            ) {
-                Icon(Icons.Filled.PhotoCamera, contentDescription = null, modifier = Modifier.size(18.dp))
-                Text(
-                    when {
-                        matching && matchTotal > 0 -> "  Indexing photos $matchDone/$matchTotal…"
-                        matching -> "  Matching…"
-                        else -> "  Find item by photo (visual match)"
+            if (matching) {
+                Button(onClick = {}, enabled = false, modifier = Modifier.fillMaxWidth().padding(top = 6.dp)) {
+                    Icon(Icons.Filled.PhotoCamera, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Text(if (matchTotal > 0) "  Indexing photos $matchDone/$matchTotal…" else "  Matching…")
+                }
+            } else {
+                Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Button(onClick = { visualCamera() }, modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Filled.PhotoCamera, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Text(" Match by camera", style = MaterialTheme.typography.labelMedium)
                     }
-                )
+                    Button(
+                        onClick = {
+                            visualGallery.launch(
+                                androidx.activity.result.PickVisualMediaRequest(
+                                    androidx.activity.result.contract.ActivityResultContracts.PickVisualMedia.ImageOnly
+                                )
+                            )
+                        },
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(Icons.Filled.PhotoLibrary, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Text(" Match by gallery", style = MaterialTheme.typography.labelMedium)
+                    }
+                }
             }
             if (selected.isNotEmpty()) {
                 Row(

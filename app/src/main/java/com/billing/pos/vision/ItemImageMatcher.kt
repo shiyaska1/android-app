@@ -31,10 +31,11 @@ object ItemImageMatcher {
 
     private const val MODEL = "models/item_embedder.tflite"
 
-    /** Below this the match is too weak to be worth showing. */
-    const val MIN_SCORE = 0.55f
-
-    data class Match(val itemId: Long, val score: Float)
+    data class Match(val itemId: Long, val score: Float) {
+        /** Rounded 0-100 for display — cosine similarity clamped so a rare negative score
+         * doesn't show as a confusing negative percentage. */
+        val percent: Int get() = (score.coerceIn(0f, 1f) * 100).toInt()
+    }
 
     @Volatile private var embedder: ImageEmbedder? = null
 
@@ -89,7 +90,36 @@ object ItemImageMatcher {
         onProgress: (done: Int, total: Int) -> Unit = { _, _ -> }
     ): List<Match> = withContext(Dispatchers.IO) {
         val query = decode(context, photo)?.let { embed(context, it) } ?: return@withContext emptyList()
+        rank(context, query, attachments, onProgress)
+    }
 
+    /**
+     * Same as [search], but against an already-decoded [bitmap] — used when the user has marked
+     * just the product area of a photo (cropping out background clutter that would otherwise
+     * dominate the whole-photo embedding and hide the real match).
+     */
+    suspend fun searchBitmap(
+        context: Context,
+        bitmap: Bitmap,
+        attachments: List<ItemAttachment>,
+        onProgress: (done: Int, total: Int) -> Unit = { _, _ -> }
+    ): List<Match> = withContext(Dispatchers.IO) {
+        val query = embed(context, bitmap) ?: return@withContext emptyList()
+        rank(context, query, attachments, onProgress)
+    }
+
+    /**
+     * Brings the fingerprint cache up to date for [attachments], then ranks every item against
+     * [query] — best score first, down to the weakest. No cutoff: an approximate/similar-looking
+     * item (color, shape, ...) still shows, just lower in the list, so the user judges it rather
+     * than the match silently disappearing.
+     */
+    private suspend fun rank(
+        context: Context,
+        query: FloatArray,
+        attachments: List<ItemAttachment>,
+        onProgress: (done: Int, total: Int) -> Unit
+    ): List<Match> {
         val dao = AppDatabase.get(context).itemPhotoVectorDao()
         val cached = dao.all().associateBy { it.path }
         val photos = attachments.filter { it.mime.startsWith("image/") && it.path.isNotBlank() }
@@ -114,10 +144,7 @@ object ItemImageMatcher {
             val prev = best[row.itemId]
             if (prev == null || score > prev) best[row.itemId] = score
         }
-        best.entries
-            .filter { it.value >= MIN_SCORE }
-            .sortedByDescending { it.value }
-            .map { Match(it.key, it.value) }
+        return best.entries.sortedByDescending { it.value }.map { Match(it.key, it.value) }
     }
 
     private fun cosine(a: FloatArray, b: FloatArray): Float {
