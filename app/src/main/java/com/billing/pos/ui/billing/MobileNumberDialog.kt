@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Draw
 import androidx.compose.material.icons.filled.NoteAdd
 import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -74,6 +75,19 @@ fun MobileNumberDialog(
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
     val scope = androidx.compose.runtime.rememberCoroutineScope()
+
+    // Camera → drag a box over just the printed number → OCR only that region → fill the field
+    // for the user to verify (and edit) before it's used anywhere.
+    var numberOcrUri by remember { mutableStateOf<android.net.Uri?>(null) }
+    val numberCamera = com.billing.pos.ocr.rememberImageCamera { uri -> numberOcrUri = uri }
+    numberOcrUri?.let { u ->
+        com.billing.pos.ui.common.RegionOcrDialog(
+            uri = u,
+            fieldLabel = "the mobile number",
+            onResult = { if (it.isNotBlank()) number = it.filter { c -> c.isDigit() }.take(15); numberOcrUri = null },
+            onDismiss = { numberOcrUri = null }
+        )
+    }
 
     // "Add to diary": note popup, then one diary entry titled with the number and the time.
     noteFor?.let { num ->
@@ -324,6 +338,11 @@ fun MobileNumberDialog(
                         fontWeight = FontWeight.Bold, textAlign = TextAlign.Center
                     ),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                    trailingIcon = {
+                        androidx.compose.material3.IconButton(onClick = { numberCamera() }) {
+                            Icon(Icons.Filled.PhotoCamera, "Photo — draw a box to read the mobile number")
+                        }
+                    },
                     modifier = Modifier.fillMaxWidth()
                 )
             }
