@@ -45,7 +45,7 @@ interface DiaryDao {
             "WHERE (title LIKE '%' || :q || '%' OR remarks LIKE '%' || :q || '%') " +
             "AND (:anyType = 1 OR typeId = :typeId) " +
             "AND (:useDate = 0 OR updatedAt BETWEEN :from AND :to) " +
-            "ORDER BY reminderEnabled DESC, updatedAt DESC"
+            "ORDER BY reminderEnabled DESC, updatedAt DESC LIMIT 50"
     )
     fun searchFiltered(
         q: String,

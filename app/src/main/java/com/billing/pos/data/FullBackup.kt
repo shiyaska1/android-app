@@ -1948,8 +1948,14 @@ object FullBackup {
         canManageUsers = o.optBoolean("canManageUsers", false), active = o.optBoolean("active", true)
     )
 
+    /** Android's SQLite CursorWindow caps a single row at ~2MB — a diary/attachment import
+     * carrying a multi-megabyte text field (garbage data, a bad export, ...) would otherwise
+     * make every future SELECT that touches that row crash. Capped well under that limit. */
+    private fun capText(s: String, max: Int = 200000): String =
+        if (s.length <= max) s else s.take(max) + " … [truncated — original was too large to store safely]"
+
     private fun readEntry(o: JSONObject) = DiaryEntry(
-        id = o.optLong("id"), title = o.optString("title"), remarks = o.optString("remarks"),
+        id = o.optLong("id"), title = o.optString("title"), remarks = capText(o.optString("remarks")),
         createdAt = o.optLong("createdAt"), updatedAt = o.optLong("updatedAt"),
         typeId = o.optLong("typeId", 0L),
         reminderEnabled = o.optBoolean("reminderEnabled", false), reminderAt = o.optLong("reminderAt"),
@@ -2037,7 +2043,7 @@ object FullBackup {
         val path = if (file.isBlank()) "" else File(AttachmentStore.dir(context), file).absolutePath
         return DiaryBlock(
             id = o.optLong("id"), entryId = o.optLong("entryId"), position = o.optInt("position"),
-            type = type, text = o.optString("text"), path = path,
+            type = type, text = capText(o.optString("text")), path = path,
             name = o.optString("name"), mime = o.optString("mime"), durationMs = o.optLong("durationMs")
         )
     }
