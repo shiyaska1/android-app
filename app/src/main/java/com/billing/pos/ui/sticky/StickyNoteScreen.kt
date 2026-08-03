@@ -433,6 +433,11 @@ fun StickyNoteScreen(onClose: () -> Unit, onOcrToSales: () -> Unit = {}, vm: Sti
     var ocrResult by remember { mutableStateOf<List<com.billing.pos.ocr.ScannedItem>?>(null) }
     var ocrModeAsk by remember { mutableStateOf(false) }
     var ocrText by remember { mutableStateOf<String?>(null) }
+    // One-tap "Read" flow: tap the icon, pick a photo if there isn't one yet, drag a box over
+    // just the part to read, and the Numbers/Text prompt opens by itself — no separate toggles.
+    var ocrPhotoChoice by remember { mutableStateOf(false) }
+    var guidedOcr by remember { mutableStateOf(false) }
+    var awaitingOcrDrag by remember { mutableStateOf(false) }
     var addToCustomer by remember { mutableStateOf(false) }
     val customers by vm.customers.collectAsState()
 
@@ -443,7 +448,16 @@ fun StickyNoteScreen(onClose: () -> Unit, onOcrToSales: () -> Unit = {}, vm: Sti
         val dest = AttachmentStore.newFile(context, "jpg")
         val ok = runCatching { AttachmentStore.compressImageTo(context, uri, dest) }.getOrDefault(false)
         if (!ok) return
-        if (bgMode) pages.getOrNull(pageIndex)?.bg = dest.absolutePath else images.add(dest.absolutePath)
+        if (bgMode) {
+            val pg = pages.getOrNull(pageIndex)
+            pg?.bg = dest.absolutePath
+            // Guided "Read" flow: the photo just landed, so move straight into marking the area.
+            if (guidedOcr) {
+                guidedOcr = false
+                bgMode = false; regionMode = true; awaitingOcrDrag = true
+                pg?.clearSelection()
+            }
+        } else images.add(dest.absolutePath)
     }
     val camera = com.billing.pos.ocr.rememberImageCamera { uri -> handleImage(uri) }
     val gallery = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri -> if (uri != null) handleImage(uri) }
@@ -533,6 +547,14 @@ fun StickyNoteScreen(onClose: () -> Unit, onOcrToSales: () -> Unit = {}, vm: Sti
             }
             if (vm.recording) Text("● REC", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall)
         }
+        if (awaitingOcrDrag) {
+            Text(
+                "Drag a box over the text/numbers to read",
+                color = MaterialTheme.colorScheme.primary,
+                style = MaterialTheme.typography.labelMedium,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 2.dp)
+            )
+        }
         Canvas(
             Modifier.weight(1f).fillMaxWidth().background(Color.White)
                 .onSizeChanged { canvasSize = it }
@@ -557,6 +579,10 @@ fun StickyNoteScreen(onClose: () -> Unit, onOcrToSales: () -> Unit = {}, vm: Sti
                             if (!textMode && !regionMode && current.isNotEmpty()) {
                                 while (pages.size <= pageIndex) pages.add(NotePage())
                                 pages[pageIndex].strokes.add(current.toList())
+                            } else if (regionMode && awaitingOcrDrag && pages.getOrNull(pageIndex)?.regionRect() != null) {
+                                // The guided "Read" flow: the box is marked, so ask Numbers/Text right away.
+                                awaitingOcrDrag = false
+                                ocrModeAsk = true
                             }
                             draggingText = null
                             current.clear()
@@ -632,7 +658,18 @@ fun StickyNoteScreen(onClose: () -> Unit, onOcrToSales: () -> Unit = {}, vm: Sti
                 shareCurrent()
                 vm.save(pages.map { PageData(it.strokes.toList(), it.bg, null, it.texts.map { t -> t.snapshot() }) }, canvasSize.width, canvasSize.height, images.toList(), audios.toList(), videos.toList()) { }
             }, modifier = actBtn, contentPadding = noPad) { Icon(Icons.Filled.Share, "Share", modifier = bigIcon) }
-            OutlinedButton(onClick = { ocrModeAsk = true }, modifier = actBtn, contentPadding = noPad) { Icon(Icons.Filled.TextFields, "Read", modifier = bigIcon) }
+            OutlinedButton(
+                onClick = {
+                    val pg = pages.getOrNull(pageIndex)
+                    if (pg?.bg == null) {
+                        ocrPhotoChoice = true
+                    } else {
+                        bgMode = false; regionMode = true; awaitingOcrDrag = true
+                        pg.clearSelection()
+                    }
+                },
+                modifier = actBtn, contentPadding = noPad
+            ) { Icon(Icons.Filled.TextFields, "Read", modifier = bigIcon) }
             OutlinedButton(onClick = { addToCustomer = true }, modifier = actBtn, contentPadding = noPad) { Icon(Icons.Filled.PersonAdd, "Add to customer", modifier = bigIcon) }
         }
         // Row 3: close / save
@@ -834,6 +871,28 @@ fun StickyNoteScreen(onClose: () -> Unit, onOcrToSales: () -> Unit = {}, vm: Sti
                     pages[pageIndex].texts.add(NoteText(text, 60f, 80f, colorInt, sizePx))
                 }
                 addingText = false; editingText = null
+            }
+        )
+    }
+
+    // Guided "Read" flow, step 1: no photo on this page yet — ask which source, then jump
+    // straight into marking the area once it lands (see handleImage).
+    if (ocrPhotoChoice) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { ocrPhotoChoice = false },
+            title = { Text("Read text from a photo") },
+            text = { Text("Take or pick a photo, then drag a box over just the part you want read.") },
+            confirmButton = {
+                Button(onClick = {
+                    ocrPhotoChoice = false; guidedOcr = true; bgMode = true
+                    camera()
+                }) { Icon(Icons.Filled.PhotoCamera, null); Text("  Camera") }
+            },
+            dismissButton = {
+                OutlinedButton(onClick = {
+                    ocrPhotoChoice = false; guidedOcr = true; bgMode = true
+                    gallery.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                }) { Icon(Icons.Filled.PhotoLibrary, null); Text("  Gallery") }
             }
         )
     }
