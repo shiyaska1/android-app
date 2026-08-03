@@ -60,13 +60,15 @@ import com.billing.pos.util.Format
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 class PurchaseListViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = Repository(app)
     val purchases: StateFlow<List<Purchase>> =
-        repo.allPurchases.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+        repo.allPurchases.map { it.filter { p -> !p.isLegacy } }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val message = MutableStateFlow<String?>(null)
     fun consumeMessage() { message.value = null }
     fun delete(p: Purchase) {

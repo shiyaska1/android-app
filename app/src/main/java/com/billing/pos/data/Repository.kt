@@ -516,6 +516,17 @@ class Repository(private val context: Context) {
     // ---- purchase returns ----
     private val purchaseReturnDao = db.purchaseReturnDao()
     val purchaseReturns: Flow<List<PurchaseReturn>> = purchaseReturnDao.observeAll()
+
+    /** Each supplier's net payable (opening balance + credit purchases − payments − returns), by name. */
+    val supplierBalances: Flow<Map<String, Double>> = kotlinx.coroutines.flow.combine(
+        accountHeads, accountGroups, allPurchases, allExpenses, purchaseReturns
+    ) { heads, groups, purchases, expenses, returns ->
+        com.billing.pos.report.AccountingEngine.build(
+            heads, groups, emptyList(), purchases, emptyList(), expenses, emptyList(), emptyList(), emptyList(), returns
+        ).filter { it.group == "Sundry Creditors" }
+            .groupBy { it.head }
+            .mapValues { (_, postings) -> postings.sumOf { it.credit - it.debit } }
+    }
     suspend fun nextPurchaseReturnNo(): String = "PR-" + (purchaseReturnDao.count() + 1).toString().padStart(4, '0')
     suspend fun savePurchaseReturn(r: PurchaseReturn, lines: List<PurchaseReturnItem>): Long = purchaseReturnDao.save(r, lines)
     suspend fun updatePurchaseReturn(r: PurchaseReturn, lines: List<PurchaseReturnItem>) = purchaseReturnDao.update(r, lines)
@@ -1147,6 +1158,43 @@ class Repository(private val context: Context) {
         supplierDao.delete(supplier)
         return Result.success(Unit)
     }
+
+    // ---- supplier opening balance (lives on the supplier's ledger head, like any other account) ----
+    suspend fun supplierOpeningBalance(supplierName: String): Pair<Double, Boolean> {
+        val gid = accountDao.allGroups().firstOrNull { it.name == "Sundry Creditors" }?.id ?: return 0.0 to false
+        val head = accountDao.headByNameGroup(supplierName.trim(), gid) ?: return 0.0 to false
+        return head.openingBalance to head.openingIsDebit
+    }
+
+    suspend fun setSupplierOpeningBalance(supplierName: String, amount: Double, isDebit: Boolean) {
+        val headId = ensureSupplierHead(supplierName)
+        val head = accountDao.headById(headId) ?: return
+        accountDao.updateHead(head.copy(openingBalance = amount, openingIsDebit = isDebit))
+    }
+
+    // ---- quick purchases: a supplier-dialog shortcut for a legacy due (amount+note+date, no items) ----
+    suspend fun addQuickPurchase(supplier: Supplier, amount: Double, note: String, dateMillis: Long): Long {
+        ensureSupplierHead(supplier.name)
+        val purchase = Purchase(
+            purchaseNo = nextPurchaseNo(),
+            dateMillis = dateMillis,
+            supplierId = supplier.id,
+            supplierName = supplier.name,
+            paymentMethod = PaymentMethod.CREDIT.label,
+            subTotal = amount,
+            taxTotal = 0.0,
+            additionalCharge = 0.0,
+            discount = 0.0,
+            grandTotal = amount,
+            paidAmount = 0.0,
+            supplierGstin = supplier.gstin,
+            remarks = note.trim(),
+            isLegacy = true
+        )
+        return purchaseDao.savePurchase(purchase, emptyList())
+    }
+
+    fun quickPurchasesForSupplier(supplierId: Long): Flow<List<Purchase>> = purchaseDao.quickPurchasesForSupplier(supplierId)
 
     // ---- purchases ----
     suspend fun nextPurchaseNo(): String =

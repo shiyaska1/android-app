@@ -120,6 +120,10 @@ interface PurchaseDao {
     @Query("SELECT COUNT(*) FROM purchases WHERE supplierId = :supplierId OR supplierName = :name")
     suspend fun countForSupplier(supplierId: Long, name: String): Int
 
+    /** Quick purchase invoices attached from the Supplier dialog (amount+note+date, no items). */
+    @Query("SELECT * FROM purchases WHERE supplierId = :supplierId AND isLegacy = 1 ORDER BY dateMillis DESC")
+    fun quickPurchasesForSupplier(supplierId: Long): Flow<List<Purchase>>
+
     @Query("SELECT * FROM purchase_items WHERE purchaseId = :purchaseId")
     suspend fun linesFor(purchaseId: Long): List<PurchaseItem>
 

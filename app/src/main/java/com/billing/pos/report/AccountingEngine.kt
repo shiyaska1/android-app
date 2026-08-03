@@ -108,9 +108,13 @@ object AccountingEngine {
         purchases.forEach { p ->
             val net = p.subTotal + p.additionalCharge - p.discount
             val part = "Purchase - ${p.supplierName}"
-            out.add(Posting("Purchase", "Purchase Account", natureOfGroup("Purchase Account"), net, 0.0, p.dateMillis, part, p.purchaseNo))
-            if (p.taxTotal != 0.0)
-                out.add(Posting("Input Tax (GST/VAT)", "Duties & Taxes", natureOfGroup("Duties & Taxes"), p.taxTotal, 0.0, p.dateMillis, part, p.purchaseNo))
+            // A legacy quick-purchase (attached from the Supplier dialog) is a pre-existing due,
+            // not a new purchase — it only moves the creditor balance, like an opening balance does.
+            if (!p.isLegacy) {
+                out.add(Posting("Purchase", "Purchase Account", natureOfGroup("Purchase Account"), net, 0.0, p.dateMillis, part, p.purchaseNo))
+                if (p.taxTotal != 0.0)
+                    out.add(Posting("Input Tax (GST/VAT)", "Duties & Taxes", natureOfGroup("Duties & Taxes"), p.taxTotal, 0.0, p.dateMillis, part, p.purchaseNo))
+            }
             if (p.paymentMethod == "Credit") {
                 out.add(Posting(p.supplierName, "Sundry Creditors", AccountNature.LIABILITY, 0.0, p.grandTotal, p.dateMillis, part, p.purchaseNo))
             } else {
