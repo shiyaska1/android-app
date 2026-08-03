@@ -339,7 +339,7 @@ fun PriceSearchScreen(
     }
 
     val q = query.trim().lowercase()
-    val textResults = if (q.isBlank()) rows else rows.filter {
+    val textResults = if (q.isBlank()) emptyList() else rows.filter {
         it.item.name.lowercase().contains(q) ||
             it.item.category.lowercase().contains(q) ||
             it.item.barcode.lowercase().contains(q)
