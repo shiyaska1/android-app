@@ -632,18 +632,28 @@ fun ItemsScreen(
                     )
                 }
                 var catMenu by remember { mutableStateOf(false) }
+                var catQuery by remember { mutableStateOf(filterCategory.ifBlank { "All categories" }) }
                 ExposedDropdownMenuBox(expanded = catMenu, onExpandedChange = { catMenu = !catMenu }) {
                     OutlinedTextField(
-                        readOnly = true, value = filterCategory.ifBlank { "All categories" }, onValueChange = {},
+                        value = catQuery,
+                        onValueChange = { catQuery = it; catMenu = true },
                         label = { Text("Category") },
+                        placeholder = { Text("Search category") },
+                        singleLine = true,
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(catMenu) },
                         modifier = Modifier.menuAnchor().fillMaxWidth()
+                            .onFocusChanged { fs ->
+                                if (fs.isFocused) { catQuery = ""; catMenu = true }
+                                else if (!catMenu) catQuery = filterCategory.ifBlank { "All categories" }
+                            }
                     )
-                    ExposedDropdownMenu(expanded = catMenu, onDismissRequest = { catMenu = false }) {
-                        DropdownMenuItem(text = { Text("All categories") }, onClick = { filterCategory = ""; catMenu = false })
-                        categories.forEach { cat ->
-                            DropdownMenuItem(text = { Text(cat) }, onClick = { filterCategory = cat; catMenu = false })
+                    val catMatches = categories.filter { catQuery.isBlank() || it.contains(catQuery, true) }
+                    ExposedDropdownMenu(expanded = catMenu, onDismissRequest = { catMenu = false; catQuery = filterCategory.ifBlank { "All categories" } }) {
+                        DropdownMenuItem(text = { Text("All categories") }, onClick = { filterCategory = ""; catQuery = "All categories"; catMenu = false })
+                        catMatches.forEach { cat ->
+                            DropdownMenuItem(text = { Text(cat) }, onClick = { filterCategory = cat; catQuery = cat; catMenu = false })
                         }
+                        if (catMatches.isEmpty() && catQuery.isNotBlank()) DropdownMenuItem(text = { Text("No match") }, onClick = { catMenu = false })
                     }
                 }
             }
@@ -1095,10 +1105,12 @@ private fun ItemDialog(
                                 }
                         )
                         if (categories.isNotEmpty()) {
+                            val catMatches = categories.filter { categoryQuery.isBlank() || it.contains(categoryQuery, true) }
                             ExposedDropdownMenu(expanded = catMenu, onDismissRequest = { catMenu = false }) {
-                                categories.forEach { c ->
+                                catMatches.forEach { c ->
                                     DropdownMenuItem(text = { Text(c) }, onClick = { category = c; categoryQuery = c; catMenu = false })
                                 }
+                                if (catMatches.isEmpty()) DropdownMenuItem(text = { Text("No match") }, onClick = { catMenu = false })
                             }
                         }
                     }

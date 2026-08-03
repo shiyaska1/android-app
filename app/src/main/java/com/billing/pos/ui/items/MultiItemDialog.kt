@@ -48,6 +48,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.foundation.clickable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -270,9 +271,8 @@ fun MultiItemDialog(
                                 Box(Modifier.weight(1f)) {
                                     var catMenu by remember { mutableStateOf(false) }
                                     OutlinedTextField(
-                                        readOnly = true,
                                         value = row.category,
-                                        onValueChange = {},
+                                        onValueChange = { row.category = it; catMenu = true },
                                         label = { Text("Category") },
                                         singleLine = true,
                                         trailingIcon = {
@@ -286,13 +286,15 @@ fun MultiItemDialog(
                                             }
                                         },
                                         modifier = Modifier.fillMaxWidth()
+                                            .onFocusChanged { fs -> if (fs.isFocused) catMenu = true }
                                     )
+                                    val catMatches = allCategories.filter { row.category.isBlank() || it.contains(row.category, true) }
                                     DropdownMenu(expanded = catMenu, onDismissRequest = { catMenu = false }) {
-                                        if (allCategories.isEmpty()) DropdownMenuItem(
-                                            text = { Text("No categories yet — use +") },
+                                        if (catMatches.isEmpty()) DropdownMenuItem(
+                                            text = { Text(if (allCategories.isEmpty()) "No categories yet — use +" else "No match") },
                                             onClick = { catMenu = false }
                                         )
-                                        allCategories.forEach { c ->
+                                        catMatches.forEach { c ->
                                             DropdownMenuItem(
                                                 text = { Text(c) },
                                                 onClick = { row.category = c; catMenu = false }
@@ -550,9 +552,8 @@ fun PhotoItemsDialog(
                                 Box(Modifier.weight(1f)) {
                                     var catMenu by remember { mutableStateOf(false) }
                                     OutlinedTextField(
-                                        readOnly = true,
                                         value = row.category,
-                                        onValueChange = {},
+                                        onValueChange = { row.category = it; catMenu = true },
                                         label = { Text("Category") },
                                         singleLine = true,
                                         trailingIcon = {
@@ -566,13 +567,15 @@ fun PhotoItemsDialog(
                                             }
                                         },
                                         modifier = Modifier.fillMaxWidth()
+                                            .onFocusChanged { fs -> if (fs.isFocused) catMenu = true }
                                     )
+                                    val catMatches = allCategories.filter { row.category.isBlank() || it.contains(row.category, true) }
                                     DropdownMenu(expanded = catMenu, onDismissRequest = { catMenu = false }) {
-                                        if (allCategories.isEmpty()) DropdownMenuItem(
-                                            text = { Text("No categories yet — use +") },
+                                        if (catMatches.isEmpty()) DropdownMenuItem(
+                                            text = { Text(if (allCategories.isEmpty()) "No categories yet — use +" else "No match") },
                                             onClick = { catMenu = false }
                                         )
-                                        allCategories.forEach { c ->
+                                        catMatches.forEach { c ->
                                             DropdownMenuItem(
                                                 text = { Text(c) },
                                                 onClick = { row.category = c; catMenu = false }

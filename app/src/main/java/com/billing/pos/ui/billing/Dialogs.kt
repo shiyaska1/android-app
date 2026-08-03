@@ -595,6 +595,7 @@ fun ItemPickerDialog(
     var query by remember { mutableStateOf("") }
     var category by remember { mutableStateOf("All") }   // defaults to All on every open
     var catMenu by remember { mutableStateOf(false) }
+    var catQuery by remember { mutableStateOf("All") }
     var viewImages by remember { mutableStateOf<List<String>?>(null) }
     val categories = remember(items) {
         listOf("All") + items.map { it.category }.filter { it.isNotBlank() }.distinct().sortedBy { it.lowercase() }
@@ -676,15 +677,24 @@ fun ItemPickerDialog(
                 if (categories.size > 1) {
                     ExposedDropdownMenuBox(expanded = catMenu, onExpandedChange = { catMenu = !catMenu }, modifier = Modifier.padding(top = 6.dp)) {
                         OutlinedTextField(
-                            readOnly = true, value = category, onValueChange = {},
-                            label = { Text("Category") }, singleLine = true,
+                            value = catQuery,
+                            onValueChange = { catQuery = it; catMenu = true },
+                            label = { Text("Category") },
+                            placeholder = { Text("Search category") },
+                            singleLine = true,
                             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = catMenu) },
                             modifier = Modifier.menuAnchor().fillMaxWidth()
+                                .onFocusChanged { fs ->
+                                    if (fs.isFocused) { catQuery = ""; catMenu = true }
+                                    else if (!catMenu) catQuery = category
+                                }
                         )
-                        ExposedDropdownMenu(expanded = catMenu, onDismissRequest = { catMenu = false }) {
-                            categories.forEach { c ->
-                                DropdownMenuItem(text = { Text(c) }, onClick = { category = c; catMenu = false })
+                        val catMatches = categories.filter { catQuery.isBlank() || it.contains(catQuery, true) }
+                        ExposedDropdownMenu(expanded = catMenu, onDismissRequest = { catMenu = false; catQuery = category }) {
+                            catMatches.forEach { c ->
+                                DropdownMenuItem(text = { Text(c) }, onClick = { category = c; catQuery = c; catMenu = false })
                             }
+                            if (catMatches.isEmpty()) DropdownMenuItem(text = { Text("No match") }, onClick = { catMenu = false })
                         }
                     }
                 }
