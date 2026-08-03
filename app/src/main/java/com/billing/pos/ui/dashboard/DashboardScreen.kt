@@ -113,7 +113,7 @@ private val BULK_SMS_TILES = setOf(
     "Send SMS", "Bulk SMS", "Attendance", "Contacts", "SMS Templates", "SMS Settings", "SMS Report",
     "Calculator", "Mobile number", "My Diary", "Poster maker",
     "Receipts", "Payments", "Cash Book", "Outstanding", "Accounts", "Journal", "Contra Entry", "Bank Reconciliation", "Recurring Journals",
-    "Ledger", "Trial Balance", "Profit & Loss", "Balance Sheet", "Day Book",
+    "Ledger", "Trial Balance", "Profit & Loss", "Balance Sheet", "Day Book", "Cash Flow Statement",
     "Settings", "Backup"
 ) + SERVICE_TILES
 
@@ -121,7 +121,7 @@ private val BULK_SMS_TILES = setOf(
 private val GYM_TILES = setOf(
     "Members", "Fees Due", "Slots", "Calculator", "My Diary",
     "Receipts", "Payments", "Cash Book", "Outstanding", "Accounts", "Journal", "Contra Entry", "Bank Reconciliation", "Recurring Journals",
-    "Ledger", "Trial Balance", "Profit & Loss", "Balance Sheet", "Day Book",
+    "Ledger", "Trial Balance", "Profit & Loss", "Balance Sheet", "Day Book", "Cash Flow Statement",
     "Settings", "Backup"
 ) + SERVICE_TILES
 
@@ -129,7 +129,7 @@ private val GYM_TILES = setOf(
 private val COACHING_TILES = setOf(
     "Students", "Coaching Masters", "Enquiries", "Attendance", "Attendance Report", "Fees Due", "Calculator", "My Diary",
     "Receipts", "Payments", "Cash Book", "Outstanding", "Accounts", "Journal", "Contra Entry", "Bank Reconciliation", "Recurring Journals",
-    "Ledger", "Trial Balance", "Profit & Loss", "Balance Sheet", "Day Book",
+    "Ledger", "Trial Balance", "Profit & Loss", "Balance Sheet", "Day Book", "Cash Flow Statement",
     "Settings", "Backup"
 ) + SERVICE_TILES
 
@@ -202,6 +202,7 @@ fun DashboardScreen(
     onProfitLoss: () -> Unit,
     onBalanceSheet: () -> Unit,
     onDayBook: () -> Unit,
+    onCashFlow: () -> Unit,
     onBankRecon: () -> Unit,
     onRecurringJournal: () -> Unit,
     onCheques: () -> Unit,
@@ -340,6 +341,7 @@ fun DashboardScreen(
         if (Session.canManageUsers) add(Tile("Profit & Loss", Icons.Filled.TrendingUp, onProfitLoss, "Accounts/Reports"))
         if (Session.canManageUsers) add(Tile("Balance Sheet", Icons.Filled.AccountBalance, onBalanceSheet, "Accounts/Reports"))
         if (Session.canManageUsers) add(Tile("Day Book", Icons.Filled.Book, onDayBook, "Accounts/Reports"))
+        if (Session.canManageUsers) add(Tile("Cash Flow Statement", Icons.Filled.SwapVert, onCashFlow, "Accounts/Reports"))
 
         // ---- Reports ----
         if (Session.canViewInvoice) add(Tile("Sales Report", Icons.Filled.Assessment, onReports, "Reports"))

@@ -510,6 +510,7 @@ private fun AppNav() {
                 onProfitLoss = { nav.navigate("profitloss") },
                 onBalanceSheet = { nav.navigate("balancesheet") },
                 onDayBook = { nav.navigate("daybook") },
+                onCashFlow = { nav.navigate("cashflow") },
                 onBankRecon = { nav.navigate("bankrecon") },
                 onCheques = { nav.navigate("cheques") },
                 onCostCenters = { nav.navigate("costcenters") },
@@ -983,6 +984,9 @@ private fun AppNav() {
         }
         composable("daybook") {
             com.billing.pos.ui.report.DayBookScreen(onBack = { nav.popBackStack() })
+        }
+        composable("cashflow") {
+            com.billing.pos.ui.report.CashFlowScreen(onBack = { nav.popBackStack() })
         }
         composable("bankrecon") {
             com.billing.pos.ui.report.BankReconciliationScreen(onBack = { nav.popBackStack() })

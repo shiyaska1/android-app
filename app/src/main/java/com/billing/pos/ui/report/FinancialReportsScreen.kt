@@ -140,6 +140,55 @@ fun groupBalanceSheetOf(groups: List<AccountGroup>, postings: List<Posting>, to:
     return rows
 }
 
+data class CashFlowResult(
+    val operating: Double, val investing: Double, val financing: Double,
+    val openingCash: Double, val closingCash: Double
+) {
+    val netChange: Double get() = operating + investing + financing
+}
+
+/**
+ * Direct-method Cash Flow Statement. Rather than starting from Net Profit and reconciling
+ * every non-cash adjustment (the indirect method), this walks each voucher's postings (grouped
+ * by [Posting.vch]) and looks only at vouchers that actually move Cash-in-hand/Bank money —
+ * non-cash entries like Depreciation or a credit sale simply have no cash leg and are skipped
+ * automatically, no manual add-back needed. Each cash-moving voucher is classified by the
+ * *other* leg(s) of the same voucher: Fixed Assets -> Investing, Capital Account -> Financing,
+ * everything else (sales, purchases, expenses, debtors/creditors, tax...) -> Operating. A
+ * voucher whose other legs span more than one category (rare for this app) falls back to
+ * Operating rather than guessing which category dominates.
+ */
+fun cashFlowOf(groups: List<AccountGroup>, postings: List<Posting>, from: Long, to: Long): CashFlowResult {
+    val byId = groups.associateBy { it.id }
+    fun topGroupName(startName: String): String {
+        var cur = groups.firstOrNull { it.name == startName } ?: return startName
+        while (cur.parentGroupId != null) cur = byId[cur.parentGroupId] ?: break
+        return cur.name
+    }
+    val topByName = HashMap<String, String>()
+    fun top(name: String) = topByName.getOrPut(name) { topGroupName(name) }
+    fun isCashBank(name: String) = top(name) == "Cash-in-hand" || top(name) == "Bank Accounts"
+    fun isInvesting(name: String) = top(name) == "Fixed Assets"
+    fun isFinancing(name: String) = top(name) == "Capital Account"
+
+    var operating = 0.0; var investing = 0.0; var financing = 0.0
+    postings.filter { it.date in from..to }.groupBy { it.vch }.forEach { (_, legs) ->
+        val cashLegs = legs.filter { isCashBank(it.group) }
+        if (cashLegs.isEmpty()) return@forEach
+        val cashNet = cashLegs.sumOf { it.debit - it.credit }
+        if (cashNet == 0.0) return@forEach
+        val otherLegs = legs.filter { !isCashBank(it.group) }
+        when {
+            otherLegs.isNotEmpty() && otherLegs.all { isInvesting(it.group) } -> investing += cashNet
+            otherLegs.isNotEmpty() && otherLegs.all { isFinancing(it.group) } -> financing += cashNet
+            else -> operating += cashNet
+        }
+    }
+    val openingCash = postings.filter { it.date < from && isCashBank(it.group) }.sumOf { it.debit - it.credit }
+    val closingCash = postings.filter { it.date <= to && isCashBank(it.group) }.sumOf { it.debit - it.credit }
+    return CashFlowResult(operating, investing, financing, openingCash, closingCash)
+}
+
 fun monthAgo(): Long = Calendar.getInstance().apply { add(Calendar.MONTH, -1) }.timeInMillis
 fun today(): Long = Calendar.getInstance().timeInMillis
 
@@ -382,6 +431,45 @@ fun BalanceSheetScreen(onBack: () -> Unit, vm: FinancialReportViewModel = viewMo
                         }
                         items(assets) { rowLine(it.first, Format.money(it.second)) }
                         item { rowLine("Total Assets", Format.money(totalAssets), bold = true) }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun CashFlowScreen(onBack: () -> Unit, vm: FinancialReportViewModel = viewModel()) {
+    val postings by vm.postings.collectAsState()
+    val groups by vm.accountGroups.collectAsState()
+    var from by remember { mutableStateOf(monthAgo()) }
+    var to by remember { mutableStateOf(today()) }
+    var res by remember { mutableStateOf<CashFlowResult?>(null) }
+    ReportScaffold("Cash Flow Statement", onBack) { m ->
+        Column(m) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                DateBtn("From", from, { from = it }, Modifier.weight(1f))
+                DateBtn("To", to, { to = it }, Modifier.weight(1f))
+            }
+            Button(
+                onClick = {
+                    res = cashFlowOf(groups, postings, com.billing.pos.ui.common.startOfDay(from), com.billing.pos.ui.common.endOfDay(to))
+                },
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+            ) { Text("View") }
+            res?.let { r ->
+                LazyColumn(Modifier.weight(1f).padding(top = 8.dp)) {
+                    item { rowLine("Opening cash & bank balance", Format.money(r.openingCash), bold = true); HorizontalDivider(Modifier.padding(vertical = 6.dp)) }
+                    item { Text("Operating Activities", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary); HorizontalDivider() }
+                    item { rowLine("Net cash from operations", Format.money(r.operating), bold = true) }
+                    item { HorizontalDivider(Modifier.padding(vertical = 6.dp)); Text("Investing Activities", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary); HorizontalDivider() }
+                    item { rowLine("Net cash from investing", Format.money(r.investing), bold = true) }
+                    item { HorizontalDivider(Modifier.padding(vertical = 6.dp)); Text("Financing Activities", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary); HorizontalDivider() }
+                    item { rowLine("Net cash from financing", Format.money(r.financing), bold = true) }
+                    item {
+                        HorizontalDivider(Modifier.padding(vertical = 6.dp))
+                        rowLine(if (r.netChange >= 0) "Net increase in cash" else "Net decrease in cash", Format.money(kotlin.math.abs(r.netChange)), bold = true)
+                        rowLine("Closing cash & bank balance", Format.money(r.closingCash), bold = true)
                     }
                 }
             }
