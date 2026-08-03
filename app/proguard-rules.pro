@@ -14,6 +14,16 @@
 -keep class com.google.android.odml.** { *; }
 -dontwarn com.google.mlkit.**
 
+# MediaPipe (item-photo embedder) and its protobuf-lite messages look up fields by name via
+# reflection at runtime (GeneratedMessageLite.newMessageInfo) to build their schema. R8 can't
+# see that reflective use, so without these keep rules it strips "unused" fields — which is
+# exactly the "Field X_ for Y not found" crash seen loading the embedder model.
+-keep class com.google.mediapipe.** { *; }
+-keep class com.google.protobuf.** { *; }
+-keepclassmembers class * extends com.google.protobuf.GeneratedMessageLite { <fields>; }
+-dontwarn com.google.mediapipe.**
+-dontwarn com.google.protobuf.**
+
 # ZXing barcode scanning/generation
 -keep class com.google.zxing.** { *; }
 -keep class com.journeyapps.barcodescanner.** { *; }

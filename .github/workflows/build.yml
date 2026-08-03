@@ -48,25 +48,6 @@ jobs:
           set -o pipefail
           ./gradlew assembleDebug --stacktrace 2>&1 | tee build-log.txt
 
-      # TEMPORARY diagnostic for the MediaPipe "Field hostEnvironment_ not found" crash — prints
-      # the resolved runtime classpath so we can see which artifact is pulling a conflicting
-      # version of MediaPipe's proto classes. Remove once the real conflict is found and fixed.
-      - name: Dump dependency tree (temporary diagnostic)
-        run: |
-          ./gradlew :app:dependencies --configuration debugRuntimeClasspath > deps-full.txt 2>&1 || true
-          grep -i -E "mediapipe|protobuf|odml|play-services-mlkit" deps-full.txt > deps-filtered.txt || true
-
-      - name: Publish dependency tree (temporary diagnostic)
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: deps-${{ github.run_number }}
-          name: Dependency tree ${{ github.run_number }}
-          files: |
-            deps-full.txt
-            deps-filtered.txt
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       # A failed compile publishes its log as a release asset, so the errors are
       # readable without Actions log access.
       - name: Publish build log on failure
