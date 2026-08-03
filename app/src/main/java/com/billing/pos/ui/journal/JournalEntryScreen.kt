@@ -3,6 +3,7 @@ package com.billing.pos.ui.journal
 import android.app.Application
 import android.content.Context
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -20,6 +21,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Divider
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -59,6 +61,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.billing.pos.data.AccountHead
+import com.billing.pos.data.CostCenter
 import com.billing.pos.data.JournalEntry
 import com.billing.pos.data.JournalLine
 import com.billing.pos.data.Repository
@@ -72,7 +75,7 @@ import kotlinx.coroutines.launch
 import java.util.Calendar
 import kotlin.math.abs
 
-data class JLine(val uid: Long, val headId: Long, val headName: String, val amount: Double, val isDebit: Boolean) {
+data class JLine(val uid: Long, val headId: Long, val headName: String, val amount: Double, val isDebit: Boolean, val costCenterId: Long? = null) {
     companion object {
         private var counter = 0L
         fun next(): Long = ++counter
@@ -86,6 +89,8 @@ class JournalEntryViewModel(app: Application) : AndroidViewModel(app) {
         repo.accountHeads.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val groups: StateFlow<List<com.billing.pos.data.AccountGroup>> =
         repo.accountGroups.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val costCenters: StateFlow<List<CostCenter>> =
+        repo.costCenters.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     /** Creates a head from the inline "+" dialog and puts it straight on the line. */
     fun createHead(index: Int, name: String, groupId: Long, opening: Double, isDebit: Boolean) {
@@ -134,6 +139,9 @@ class JournalEntryViewModel(app: Application) : AndroidViewModel(app) {
     fun setDrCr(index: Int, isDebit: Boolean) {
         lines.getOrNull(index)?.let { lines[index] = it.copy(isDebit = isDebit) }
     }
+    fun setCostCenter(index: Int, costCenterId: Long?) {
+        lines.getOrNull(index)?.let { lines[index] = it.copy(costCenterId = costCenterId) }
+    }
 
     fun load(id: Long) {
         if (loaded) return
@@ -149,7 +157,7 @@ class JournalEntryViewModel(app: Application) : AndroidViewModel(app) {
             cashMode = entry.cashMode
             cashIsIn = entry.cashIsIn
             lines.clear()
-            jlines.forEach { lines.add(JLine(JLine.next(), it.headId, it.headName, it.amount, it.isDebit)) }
+            jlines.forEach { lines.add(JLine(JLine.next(), it.headId, it.headName, it.amount, it.isDebit, it.costCenterId)) }
         }
     }
 
@@ -163,7 +171,7 @@ class JournalEntryViewModel(app: Application) : AndroidViewModel(app) {
                 cashMode = cashMode, cashIsIn = cashIsIn,
                 cashAmount = if (cashMode.isNotBlank()) totalDr else 0.0
             )
-            val jlines = valid.map { JournalLine(0, 0, it.headId, it.headName, it.amount, it.isDebit) }
+            val jlines = valid.map { JournalLine(0, 0, it.headId, it.headName, it.amount, it.isDebit, it.costCenterId) }
             if (editingId != null) repo.updateJournal(entry, jlines) else repo.saveJournal(entry, jlines)
             message.value = "Journal saved"
             onDone()
@@ -183,6 +191,7 @@ fun JournalEntryScreen(
     val snackbar = remember { SnackbarHostState() }
     val heads by vm.heads.collectAsStateSafe()
     val groups by vm.groups.collectAsStateSafe()
+    val costCenters by vm.costCenters.collectAsStateSafe()
     val message by vm.message.collectAsStateSafe()
     var newHeadFor by remember { mutableStateOf(-1) }
     var newHeadName by remember { mutableStateOf("") }
@@ -274,6 +283,20 @@ fun JournalEntryScreen(
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                                 modifier = Modifier.width(160.dp).padding(start = 8.dp)
                             )
+                        }
+                        if (costCenters.isNotEmpty()) {
+                            var ccMenu by remember { mutableStateOf(false) }
+                            Box(Modifier.padding(top = 4.dp)) {
+                                OutlinedButton(onClick = { ccMenu = true }) {
+                                    Text(costCenters.firstOrNull { it.id == line.costCenterId }?.name ?: "Cost center (optional)")
+                                }
+                                DropdownMenu(expanded = ccMenu, onDismissRequest = { ccMenu = false }) {
+                                    DropdownMenuItem(text = { Text("None") }, onClick = { vm.setCostCenter(index, null); ccMenu = false })
+                                    costCenters.forEach { cc ->
+                                        DropdownMenuItem(text = { Text(cc.name) }, onClick = { vm.setCostCenter(index, cc.id); ccMenu = false })
+                                    }
+                                }
+                            }
                         }
                     }
                     Divider()

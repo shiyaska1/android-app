@@ -507,6 +507,9 @@ private fun AppNav() {
                 onTrialBalance = { nav.navigate("trialbalance") },
                 onProfitLoss = { nav.navigate("profitloss") },
                 onBalanceSheet = { nav.navigate("balancesheet") },
+                onCheques = { nav.navigate("cheques") },
+                onCostCenters = { nav.navigate("costcenters") },
+                onFixedAssets = { nav.navigate("fixedassets") },
                 onGymMembers = { nav.navigate("gym/members") },
                 onGymDue = { nav.navigate("gym/due") },
                 onGymSlots = { nav.navigate("gym/slots") },
@@ -969,6 +972,15 @@ private fun AppNav() {
         }
         composable("balancesheet") {
             com.billing.pos.ui.report.BalanceSheetScreen(onBack = { nav.popBackStack() })
+        }
+        composable("cheques") {
+            com.billing.pos.ui.cheque.ChequeRegisterScreen(onBack = { nav.popBackStack() })
+        }
+        composable("costcenters") {
+            com.billing.pos.ui.costcenter.CostCenterScreen(onBack = { nav.popBackStack() })
+        }
+        composable("fixedassets") {
+            com.billing.pos.ui.asset.FixedAssetScreen(onBack = { nav.popBackStack() })
         }
         composable("gym/members") {
             com.billing.pos.ui.gym.GymMembersScreen(

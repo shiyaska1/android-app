@@ -199,6 +199,9 @@ fun DashboardScreen(
     onTrialBalance: () -> Unit,
     onProfitLoss: () -> Unit,
     onBalanceSheet: () -> Unit,
+    onCheques: () -> Unit,
+    onCostCenters: () -> Unit,
+    onFixedAssets: () -> Unit,
     onGymMembers: () -> Unit,
     onGymDue: () -> Unit,
     onGymSlots: () -> Unit,
@@ -317,6 +320,9 @@ fun DashboardScreen(
         if (Session.canViewCashbook) add(Tile("Cash Book", Icons.Filled.AccountBalanceWallet, onCashbook, "Accounts/Transactions"))
         if (Session.canViewInvoice) add(Tile("Outstanding", Icons.Filled.AccountBalance, onOutstanding, "Accounts/Transactions"))
         if (Session.canManageUsers) add(Tile("Accounts", Icons.Filled.AccountTree, onAccounts, "Accounts/Masters"))
+        if (Session.canManageUsers) add(Tile("Cost Centers", Icons.Filled.AccountTree, onCostCenters, "Accounts/Masters"))
+        if (Session.canManageUsers) add(Tile("Fixed Assets", Icons.Filled.AccountBalance, onFixedAssets, "Accounts/Masters"))
+        if (Session.canManageUsers) add(Tile("Cheques", Icons.Filled.Payments, onCheques, "Accounts/Masters"))
         if (Session.canManageUsers) add(Tile("Journal", Icons.Filled.Book, onJournal, "Accounts/Transactions"))
         if (Session.canViewCashbook) add(Tile("Ledger", Icons.Filled.Summarize, onLedger, "Accounts/Reports"))
         if (Session.canViewCashbook) add(Tile("Receipt & Payment", Icons.Filled.Summarize, onRpReport, "Accounts/Reports"))

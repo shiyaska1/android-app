@@ -14,7 +14,9 @@ data class AccountGroup(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val name: String,
     val nature: AccountNature,
-    val isSystem: Boolean = false
+    val isSystem: Boolean = false,
+    /** Optional parent group, so groups can nest (e.g. "Bank Accounts" -> "HDFC"). Null = top-level. */
+    val parentGroupId: Long? = null
 )
 
 /** An account head (ledger) under a group (e.g. Cash, a customer, Sales). */

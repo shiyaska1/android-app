@@ -49,7 +49,8 @@ import androidx.room.TypeConverters
         PurchaseAttachment::class,
         SalesmanMap::class,
         ProductionProcedure::class, ProductionProcedureMaterial::class, ProductionRun::class,
-        ItemBundle::class, ItemBundleComponent::class
+        ItemBundle::class, ItemBundleComponent::class,
+        ChequeEntry::class, CostCenter::class, FixedAsset::class
     ],
     // v25 quotations; v26 sales returns; v27 purchase returns; v28 purchase quotations (LPO);
     // v29 dual units; v30 rental; v31 medical lab; v32 lab masters + heading rows;
@@ -75,7 +76,9 @@ import androidx.room.TypeConverters
     // v72 convertedBillNo on quotations — marks a quotation as already turned into a sale.
     // v73 isLegacy on purchases — quick purchase invoices attached from the Supplier dialog
     // (amount+note+date, no items), mirroring the customer opening-balance/quick-invoice feature.
-    version = 73,
+    // v74 accounting module batch 1 (Master): nested account groups (parentGroupId), cheque
+    // register, cost centers (+ tag on journal lines), fixed asset register.
+    version = 74,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -134,6 +137,9 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun salesmanMapDao(): SalesmanMapDao
     abstract fun productionDao(): ProductionDao
     abstract fun itemBundleDao(): ItemBundleDao
+    abstract fun chequeDao(): ChequeDao
+    abstract fun costCenterDao(): CostCenterDao
+    abstract fun fixedAssetDao(): FixedAssetDao
 
     companion object {
         @Volatile private var INSTANCE: AppDatabase? = null
@@ -616,6 +622,36 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** Accounting module batch 1 (Master): nested account groups, cheque register, cost
+         * centers (+ tag on journal lines), fixed asset register. */
+        private val MIGRATION_73_74 = object : androidx.room.migration.Migration(73, 74) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE account_groups ADD COLUMN parentGroupId INTEGER")
+                db.execSQL("ALTER TABLE journal_lines ADD COLUMN costCenterId INTEGER")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS cheque_entries (" +
+                        "id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, chequeNo TEXT NOT NULL, " +
+                        "bankName TEXT NOT NULL DEFAULT '', partyName TEXT NOT NULL, amount REAL NOT NULL, " +
+                        "dateMillis INTEGER NOT NULL, isReceived INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'Pending', " +
+                        "linkedType TEXT NOT NULL DEFAULT '', linkedId INTEGER NOT NULL DEFAULT 0, " +
+                        "remarks TEXT NOT NULL DEFAULT '', deviceId TEXT NOT NULL DEFAULT '')"
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS cost_centers (" +
+                        "id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, " +
+                        "isSystem INTEGER NOT NULL DEFAULT 0)"
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS fixed_assets (" +
+                        "id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, " +
+                        "category TEXT NOT NULL DEFAULT '', purchaseDate INTEGER NOT NULL, purchaseCost REAL NOT NULL, " +
+                        "depreciationMethod TEXT NOT NULL DEFAULT 'StraightLine', ratePercent REAL NOT NULL DEFAULT 0, " +
+                        "accumulatedDepreciation REAL NOT NULL DEFAULT 0, linkedPurchaseId INTEGER NOT NULL DEFAULT 0, " +
+                        "remarks TEXT NOT NULL DEFAULT '', deviceId TEXT NOT NULL DEFAULT '')"
+                )
+            }
+        }
+
         fun get(context: Context): AppDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -623,7 +659,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "pos_billing.db"
                 )
-                    .addMigrations(MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45, MIGRATION_45_46, MIGRATION_46_47, MIGRATION_47_48, MIGRATION_48_49, MIGRATION_49_50, MIGRATION_50_51, MIGRATION_51_52, MIGRATION_52_53, MIGRATION_53_54, MIGRATION_54_55, MIGRATION_55_56, MIGRATION_56_57, MIGRATION_57_58, MIGRATION_58_59, MIGRATION_59_60, MIGRATION_60_61, MIGRATION_61_62, MIGRATION_62_63, MIGRATION_63_64, MIGRATION_64_65, MIGRATION_65_66, MIGRATION_66_67, MIGRATION_67_68, MIGRATION_68_69, MIGRATION_69_70, MIGRATION_70_71, MIGRATION_71_72, MIGRATION_72_73)
+                    .addMigrations(MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45, MIGRATION_45_46, MIGRATION_46_47, MIGRATION_47_48, MIGRATION_48_49, MIGRATION_49_50, MIGRATION_50_51, MIGRATION_51_52, MIGRATION_52_53, MIGRATION_53_54, MIGRATION_54_55, MIGRATION_55_56, MIGRATION_56_57, MIGRATION_57_58, MIGRATION_58_59, MIGRATION_59_60, MIGRATION_60_61, MIGRATION_61_62, MIGRATION_62_63, MIGRATION_63_64, MIGRATION_64_65, MIGRATION_65_66, MIGRATION_66_67, MIGRATION_67_68, MIGRATION_68_69, MIGRATION_69_70, MIGRATION_70_71, MIGRATION_71_72, MIGRATION_72_73, MIGRATION_73_74)
                     .fallbackToDestructiveMigration()
                     .build()
                     .also { INSTANCE = it }

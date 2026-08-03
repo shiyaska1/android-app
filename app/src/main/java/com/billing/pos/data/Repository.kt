@@ -31,6 +31,9 @@ class Repository(private val context: Context) {
     private val purchaseDao = db.purchaseDao()
     private val accountDao = db.accountDao()
     private val journalDao = db.journalDao()
+    private val chequeDao = db.chequeDao()
+    private val costCenterDao = db.costCenterDao()
+    private val fixedAssetDao = db.fixedAssetDao()
     private val appPrefs = AppPrefs(context)
 
     /** Device letter/name prefix for document numbers (e.g. "A-"), blank if not set. Keeps two synced phones from clashing. */
@@ -54,6 +57,9 @@ class Repository(private val context: Context) {
     val accountHeads: Flow<List<AccountHead>> = accountDao.observeHeads()
     val journalEntries: Flow<List<JournalEntry>> = journalDao.observeAll()
     val journalLines: Flow<List<JournalLine>> = journalDao.observeAllLines()
+    val cheques: Flow<List<ChequeEntry>> = chequeDao.observeAll()
+    val costCenters: Flow<List<CostCenter>> = costCenterDao.observeAll()
+    val fixedAssets: Flow<List<FixedAsset>> = fixedAssetDao.observeAll()
     val purchaseLines: Flow<List<PurchaseLineInfo>> = purchaseDao.observePurchaseLines()
     val purchaseLineParties: Flow<List<PurchaseLineParty>> = purchaseDao.observePurchaseLineParties()
     val soldQty: Flow<List<NameQty>> = billDao.observeSoldQty()
@@ -123,14 +129,15 @@ class Repository(private val context: Context) {
         h("Opening Capital", capital)
     }
 
-    suspend fun addAccountGroup(name: String, nature: AccountNature): Long =
-        accountDao.insertGroup(AccountGroup(name = name.trim(), nature = nature))
+    suspend fun addAccountGroup(name: String, nature: AccountNature, parentGroupId: Long? = null): Long =
+        accountDao.insertGroup(AccountGroup(name = name.trim(), nature = nature, parentGroupId = parentGroupId))
 
     suspend fun updateAccountGroup(group: AccountGroup) = accountDao.updateGroup(group)
 
     suspend fun deleteAccountGroup(group: AccountGroup): Result<Unit> {
         if (group.isSystem) return Result.failure(IllegalStateException("System group cannot be deleted"))
         if (accountDao.headCountInGroup(group.id) > 0) return Result.failure(IllegalStateException("Group has account heads"))
+        if (accountDao.allGroups().any { it.parentGroupId == group.id }) return Result.failure(IllegalStateException("Group has sub-groups"))
         accountDao.deleteGroup(group)
         return Result.success(Unit)
     }
@@ -183,6 +190,25 @@ class Repository(private val context: Context) {
         accountDao.deleteHead(head)
         return Result.success(Unit)
     }
+
+    // ---- cheque / instrument register ----
+    suspend fun saveCheque(cheque: ChequeEntry): Long = chequeDao.insert(cheque)
+    suspend fun updateCheque(cheque: ChequeEntry) = chequeDao.update(cheque)
+    suspend fun deleteCheque(cheque: ChequeEntry) = chequeDao.delete(cheque)
+
+    // ---- cost centers ----
+    suspend fun addCostCenter(name: String): Long = costCenterDao.insert(CostCenter(name = name.trim()))
+    suspend fun updateCostCenter(costCenter: CostCenter) = costCenterDao.update(costCenter)
+    suspend fun deleteCostCenter(costCenter: CostCenter): Result<Unit> {
+        if (costCenter.isSystem) return Result.failure(IllegalStateException("System cost center cannot be deleted"))
+        costCenterDao.delete(costCenter)
+        return Result.success(Unit)
+    }
+
+    // ---- fixed assets ----
+    suspend fun saveFixedAsset(asset: FixedAsset): Long = fixedAssetDao.insert(asset)
+    suspend fun updateFixedAsset(asset: FixedAsset) = fixedAssetDao.update(asset)
+    suspend fun deleteFixedAsset(asset: FixedAsset) = fixedAssetDao.delete(asset)
 
     // ---- journal ----
     suspend fun nextJournalNo(): String =

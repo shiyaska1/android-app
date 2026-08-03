@@ -27,5 +27,7 @@ data class JournalLine(
     val headId: Long,
     val headName: String,
     val amount: Double,
-    val isDebit: Boolean
+    val isDebit: Boolean,
+    /** Optional cost center this line is tagged with, for cost-center-wise ledger filtering. */
+    val costCenterId: Long? = null
 )

@@ -70,11 +70,11 @@ class ChartOfAccountsViewModel(app: Application) : AndroidViewModel(app) {
     val message = MutableStateFlow<String?>(null)
     fun consumeMessage() { message.value = null }
 
-    fun saveGroup(existing: AccountGroup?, name: String, nature: AccountNature, onDone: () -> Unit) {
+    fun saveGroup(existing: AccountGroup?, name: String, nature: AccountNature, parentGroupId: Long?, onDone: () -> Unit) {
         if (name.isBlank()) { message.value = "Enter a name"; return }
         viewModelScope.launch {
-            if (existing == null) repo.addAccountGroup(name, nature)
-            else repo.updateAccountGroup(existing.copy(name = name.trim(), nature = nature))
+            if (existing == null) repo.addAccountGroup(name, nature, parentGroupId)
+            else repo.updateAccountGroup(existing.copy(name = name.trim(), nature = nature, parentGroupId = parentGroupId))
             message.value = "Saved"; onDone()
         }
     }
@@ -157,7 +157,12 @@ fun ChartOfAccountsScreen(
                         Row(Modifier.fillMaxWidth().clickable { editGroup = g; showGroupDialog = true }.padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
                                 Text(g.name, fontWeight = FontWeight.Bold)
-                                Text(g.nature.label + if (g.isSystem) "  •  system" else "", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                                Text(
+                                    g.nature.label +
+                                        (g.parentGroupId?.let { pid -> "  •  under ${groupName[pid] ?: "?"}" } ?: "") +
+                                        (if (g.isSystem) "  •  system" else ""),
+                                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline
+                                )
                             }
                             if (!g.isSystem) IconButton(onClick = { deleteGroupFor = g }) { Icon(Icons.Filled.Delete, "Delete", tint = MaterialTheme.colorScheme.error) }
                         }
@@ -186,7 +191,10 @@ fun ChartOfAccountsScreen(
     }
 
     if (showGroupDialog) {
-        GroupDialog(existing = editGroup, onDismiss = { showGroupDialog = false }, onSave = { n, nat -> vm.saveGroup(editGroup, n, nat) { showGroupDialog = false } })
+        GroupDialog(
+            existing = editGroup, groups = groups, onDismiss = { showGroupDialog = false },
+            onSave = { n, nat, parentId -> vm.saveGroup(editGroup, n, nat, parentId) { showGroupDialog = false } }
+        )
     }
     if (showHeadDialog) {
         HeadDialog(existing = editHead, groups = groups, onDismiss = { showHeadDialog = false }, onSave = { n, gid, op, dr -> vm.saveHead(editHead, n, gid, op, dr) { showHeadDialog = false } })
@@ -205,12 +213,27 @@ fun ChartOfAccountsScreen(
     }
 }
 
+/** Walks up parentGroupId from [start] and returns every group id in the chain (start included). */
+private fun ancestryChain(start: Long, groups: List<AccountGroup>): Set<Long> {
+    val byId = groups.associateBy { it.id }
+    val chain = mutableSetOf<Long>()
+    var cur: Long? = start
+    while (cur != null && chain.add(cur)) cur = byId[cur]?.parentGroupId
+    return chain
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun GroupDialog(existing: AccountGroup?, onDismiss: () -> Unit, onSave: (String, AccountNature) -> Unit) {
+private fun GroupDialog(existing: AccountGroup?, groups: List<AccountGroup>, onDismiss: () -> Unit, onSave: (String, AccountNature, Long?) -> Unit) {
     var name by remember { mutableStateOf(existing?.name ?: "") }
     var nature by remember { mutableStateOf(existing?.nature ?: AccountNature.ASSET) }
+    // A group can't be its own parent or a descendant of itself — for a new group there's no
+    // self/descendant chain to exclude yet.
+    val excluded = remember(existing, groups) { existing?.let { ancestryChain(it.id, groups) + descendantsOf(it.id, groups) } ?: emptySet() }
+    val parentOptions = remember(groups, excluded) { groups.filter { it.id !in excluded } }
+    var parent by remember { mutableStateOf(parentOptions.firstOrNull { it.id == existing?.parentGroupId }) }
     var expanded by remember { mutableStateOf(false) }
+    var parentMenu by remember { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (existing == null) "New group" else "Edit group") },
@@ -224,11 +247,30 @@ private fun GroupDialog(existing: AccountGroup?, onDismiss: () -> Unit, onSave: 
                         AccountNature.values().forEach { n -> DropdownMenuItem(text = { Text(n.label) }, onClick = { nature = n; expanded = false }) }
                     }
                 }
+                ExposedDropdownMenuBox(expanded = parentMenu, onExpandedChange = { parentMenu = it }, modifier = Modifier.padding(top = 8.dp)) {
+                    OutlinedTextField(readOnly = true, value = parent?.name ?: "None (top-level)", onValueChange = {}, label = { Text("Parent group (optional)") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(parentMenu) }, modifier = Modifier.menuAnchor().fillMaxWidth())
+                    ExposedDropdownMenu(expanded = parentMenu, onDismissRequest = { parentMenu = false }) {
+                        DropdownMenuItem(text = { Text("None (top-level)") }, onClick = { parent = null; parentMenu = false })
+                        parentOptions.forEach { g -> DropdownMenuItem(text = { Text(g.name) }, onClick = { parent = g; parentMenu = false }) }
+                    }
+                }
             }
         },
-        confirmButton = { TextButton(onClick = { onSave(name, nature) }) { Text("Save") } },
+        confirmButton = { TextButton(onClick = { onSave(name, nature, parent?.id) }) { Text("Save") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
+}
+
+/** Every group id that has [id] anywhere in its parent chain (children, grandchildren, ...). */
+private fun descendantsOf(id: Long, groups: List<AccountGroup>): Set<Long> {
+    val result = mutableSetOf<Long>()
+    var frontier = groups.filter { it.parentGroupId == id }.map { it.id }.toSet()
+    while (frontier.isNotEmpty()) {
+        result += frontier
+        frontier = groups.filter { it.parentGroupId in frontier }.map { it.id }.toSet()
+    }
+    return result
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

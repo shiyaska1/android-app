@@ -4,6 +4,7 @@ import com.billing.pos.data.AccountGroup
 import com.billing.pos.data.AccountHead
 import com.billing.pos.data.AccountNature
 import com.billing.pos.data.Bill
+import com.billing.pos.data.CostCenter
 import com.billing.pos.data.Expense
 import com.billing.pos.data.JournalEntry
 import com.billing.pos.data.JournalLine
@@ -21,7 +22,9 @@ data class Posting(
     val credit: Double,
     val date: Long,
     val particulars: String = "",
-    val vch: String = ""
+    val vch: String = "",
+    /** Cost center this posting is tagged with (currently only populated from journal lines). */
+    val costCenter: String = ""
 )
 
 /**
@@ -43,10 +46,12 @@ object AccountingEngine {
         jEntries: List<JournalEntry>,
         jLines: List<JournalLine>,
         salesReturns: List<SalesReturn> = emptyList(),
-        purchaseReturns: List<PurchaseReturn> = emptyList()
+        purchaseReturns: List<PurchaseReturn> = emptyList(),
+        costCenters: List<CostCenter> = emptyList()
     ): List<Posting> {
         val groupById = groups.associateBy { it.id }
         val headById = heads.associateBy { it.id }
+        val costCenterById = costCenters.associateBy { it.id }
         val out = ArrayList<Posting>()
 
         fun natureOfGroup(name: String): AccountNature =
@@ -170,11 +175,34 @@ object AccountingEngine {
             val e = entryById[l.entryId] ?: return@forEach
             val h = headById[l.headId]
             val g = h?.let { groupById[it.groupId] }
+            val ccName = l.costCenterId?.let { costCenterById[it]?.name } ?: ""
             out.add(Posting(l.headName, g?.name ?: "", g?.nature ?: AccountNature.ASSET,
                 if (l.isDebit) l.amount else 0.0, if (!l.isDebit) l.amount else 0.0, e.dateMillis,
-                e.narration.ifBlank { "Journal" }, e.voucherNo))
+                e.narration.ifBlank { "Journal" }, e.voucherNo, ccName))
         }
 
         return out
+    }
+
+    /**
+     * Rolls each group's own postings up together with every descendant group's postings —
+     * the group-wise view for Trial Balance/Balance Sheet once groups can nest. Returns net
+     * (debit − credit) per group id; the caller applies the group's nature to decide the
+     * Dr/Cr side to display, same as it already does for a single head's balance.
+     */
+    fun rollUp(groups: List<AccountGroup>, postings: List<Posting>): Map<Long, Double> {
+        val byGroupName = postings.groupBy { it.group }
+        val childrenOf = groups.groupBy { it.parentGroupId }
+        val result = HashMap<Long, Double>()
+        fun computeFor(g: AccountGroup): Double {
+            result[g.id]?.let { return it }
+            val own = (byGroupName[g.name] ?: emptyList()).sumOf { it.debit - it.credit }
+            val childTotal = (childrenOf[g.id] ?: emptyList()).sumOf { computeFor(it) }
+            val total = own + childTotal
+            result[g.id] = total
+            return total
+        }
+        groups.forEach { computeFor(it) }
+        return result
     }
 }

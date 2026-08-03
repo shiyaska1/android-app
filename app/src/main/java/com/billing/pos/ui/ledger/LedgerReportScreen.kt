@@ -66,13 +66,15 @@ class LedgerReportViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = Repository(app)
 
     val groups = repo.accountGroups.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val costCenters = repo.costCenters.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     /** The unified account-transaction view — same source used by P&L / Balance Sheet. */
     val postings: kotlinx.coroutines.flow.StateFlow<List<Posting>> =
         combine(
             listOf<Flow<Any?>>(
                 repo.accountHeads, repo.accountGroups, repo.allBills, repo.allPurchases, repo.allReceipts,
-                repo.allExpenses, repo.journalEntries, repo.journalLines, repo.salesReturns, repo.purchaseReturns
+                repo.allExpenses, repo.journalEntries, repo.journalLines, repo.salesReturns, repo.purchaseReturns,
+                repo.costCenters
             )
         ) { a ->
             @Suppress("UNCHECKED_CAST")
@@ -81,7 +83,8 @@ class LedgerReportViewModel(app: Application) : AndroidViewModel(app) {
                 a[2] as List<com.billing.pos.data.Bill>, a[3] as List<com.billing.pos.data.Purchase>,
                 a[4] as List<com.billing.pos.data.Receipt>, a[5] as List<com.billing.pos.data.Expense>,
                 a[6] as List<com.billing.pos.data.JournalEntry>, a[7] as List<com.billing.pos.data.JournalLine>,
-                a[8] as List<com.billing.pos.data.SalesReturn>, a[9] as List<com.billing.pos.data.PurchaseReturn>
+                a[8] as List<com.billing.pos.data.SalesReturn>, a[9] as List<com.billing.pos.data.PurchaseReturn>,
+                a[10] as List<com.billing.pos.data.CostCenter>
             )
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 }
@@ -126,8 +129,8 @@ private fun shareLedger(context: android.content.Context, res: LedgerResult, nam
     }
 }
 
-private fun buildLedger(postings: List<Posting>, head: String, from: Long, to: Long): LedgerResult {
-    val mine = postings.filter { it.head.equals(head, ignoreCase = true) }
+private fun buildLedger(postings: List<Posting>, head: String, from: Long, to: Long, costCenter: String? = null): LedgerResult {
+    val mine = postings.filter { it.head.equals(head, ignoreCase = true) && (costCenter == null || it.costCenter == costCenter) }
     var opening = mine.filter { it.date < from }.sumOf { it.debit - it.credit }
     var running = opening
     val rows = mine.filter { it.date in from..to }.sortedBy { it.date }.map { p ->
@@ -142,10 +145,13 @@ private fun buildLedger(postings: List<Posting>, head: String, from: Long, to: L
 fun LedgerReportScreen(onBack: () -> Unit, vm: LedgerReportViewModel = viewModel()) {
     val context = LocalContext.current
     val groups by vm.groups.collectAsState()
+    val costCenters by vm.costCenters.collectAsState()
     val postings by vm.postings.collectAsState()
 
     var groupId by remember { mutableStateOf(0L) }
     var groupMenu by remember { mutableStateOf(false) }
+    var costCenterFilter by remember { mutableStateOf<String?>(null) }
+    var costCenterMenu by remember { mutableStateOf(false) }
     var selected by remember { mutableStateOf<String?>(null) }
     var accQuery by remember { mutableStateOf("") }
     val cal = remember { Calendar.getInstance() }
@@ -189,6 +195,20 @@ fun LedgerReportScreen(onBack: () -> Unit, vm: LedgerReportViewModel = viewModel
                     groups.forEach { g -> DropdownMenuItem(text = { Text(g.name) }, onClick = { groupId = g.id; selected = null; result = null; groupMenu = false }) }
                 }
             }
+            if (costCenters.isNotEmpty()) {
+                Box(Modifier.padding(top = 8.dp)) {
+                    OutlinedTextField(
+                        value = costCenterFilter ?: "All cost centers",
+                        onValueChange = {}, readOnly = true, label = { Text("Cost center (optional)") },
+                        trailingIcon = { IconButton(onClick = { costCenterMenu = true }) { Icon(Icons.Filled.ArrowDropDown, null) } },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    DropdownMenu(expanded = costCenterMenu, onDismissRequest = { costCenterMenu = false }) {
+                        DropdownMenuItem(text = { Text("All cost centers") }, onClick = { costCenterFilter = null; result = null; costCenterMenu = false })
+                        costCenters.forEach { cc -> DropdownMenuItem(text = { Text(cc.name) }, onClick = { costCenterFilter = cc.name; result = null; costCenterMenu = false }) }
+                    }
+                }
+            }
             OutlinedTextField(
                 value = accQuery,
                 onValueChange = { accQuery = it; selected = null; result = null },
@@ -213,7 +233,7 @@ fun LedgerReportScreen(onBack: () -> Unit, vm: LedgerReportViewModel = viewModel
                 OutlinedButton(onClick = { pickDate(toMillis) { toMillis = it } }, modifier = Modifier.weight(1f)) { Text("To: ${Format.date(toMillis)}") }
             }
             Button(
-                onClick = { selected?.let { result = buildLedger(postings, it, com.billing.pos.ui.common.startOfDay(fromMillis), com.billing.pos.ui.common.endOfDay(toMillis)) } },
+                onClick = { selected?.let { result = buildLedger(postings, it, com.billing.pos.ui.common.startOfDay(fromMillis), com.billing.pos.ui.common.endOfDay(toMillis), costCenterFilter) } },
                 enabled = selected != null, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
             ) { Text("View ledger") }
 
