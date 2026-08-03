@@ -102,6 +102,7 @@ interface CustOrderDao {
     @Insert suspend fun insertAttachment(a: CustOrderAttachment): Long
     @Query("SELECT * FROM cust_order_attachments WHERE orderId = :id") suspend fun attachmentsFor(id: Long): List<CustOrderAttachment>
     @Query("SELECT * FROM cust_order_attachments") suspend fun allAttachments(): List<CustOrderAttachment>
+    @Query("DELETE FROM cust_order_attachments") suspend fun deleteAllAttachments()
     @Query("DELETE FROM cust_order_attachments WHERE orderId = :id") suspend fun deleteAttachments(id: Long)
 
     @Query("UPDATE cust_order_items SET status = :status WHERE id = :id") suspend fun updateItemStatus(id: Long, status: String)

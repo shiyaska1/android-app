@@ -30,6 +30,8 @@ interface ExpenseAttachmentDao {
 
     @Query("SELECT * FROM expense_attachments") suspend fun all(): List<ExpenseAttachment>
 
+    @Query("DELETE FROM expense_attachments") suspend fun deleteAll()
+
     @Insert suspend fun insert(a: ExpenseAttachment): Long
 
     @Query("DELETE FROM expense_attachments WHERE expenseId = :expenseId")

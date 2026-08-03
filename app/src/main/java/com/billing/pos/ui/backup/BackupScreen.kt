@@ -71,6 +71,9 @@ fun BackupScreen(
     // Holds the picker to launch after the user confirms a restore.
     var restoreAction by remember { mutableStateOf<(() -> Unit)?>(null) }
     var restoreMerge by remember { mutableStateOf(false) }
+    // "full" or "attachments" — the confirm dialog's wording differs since Replace means
+    // "wipe everything" for a full backup but only "wipe the 10 attachment tables" here.
+    var restoreKind by remember { mutableStateOf("full") }
 
     fun saveBackup() {
         scope.launch {
@@ -224,6 +227,54 @@ fun BackupScreen(
         ActivityResultContracts.OpenDocument()
     ) { uri -> if (uri != null) runRestore(uri) }
 
+    // --- Attachments-only backup: just the photos/documents, separate from the full backup ---
+    var attachmentSinceMillis by remember { mutableStateOf<Long?>(null) }
+    fun pickAttachmentSinceDate() {
+        val cal = java.util.Calendar.getInstance().apply { attachmentSinceMillis?.let { timeInMillis = it } }
+        android.app.DatePickerDialog(
+            context,
+            { _, y, m, d ->
+                val c = java.util.Calendar.getInstance()
+                c.set(y, m, d, 0, 0, 0); c.set(java.util.Calendar.MILLISECOND, 0)
+                attachmentSinceMillis = c.timeInMillis
+            },
+            cal.get(java.util.Calendar.YEAR), cal.get(java.util.Calendar.MONTH), cal.get(java.util.Calendar.DAY_OF_MONTH)
+        ).show()
+    }
+    fun downloadAttachments() {
+        scope.launch {
+            busy = true
+            val zip = withContext(Dispatchers.IO) { FullBackup.createAttachmentsZip(context, attachmentSinceMillis ?: 0) }
+            val stamp = java.text.SimpleDateFormat("yyyy-MM-dd_HHmmss", java.util.Locale.getDefault()).format(java.util.Date())
+            val ok = withContext(Dispatchers.IO) {
+                DownloadSaver.save(context, zip, "pos-attachments-$stamp.zip", "application/zip")
+            }
+            busy = false
+            snackbar.showSnackbar(if (ok) "Attachments saved to Downloads" else "Could not save attachments")
+        }
+    }
+    fun runAttachmentRestore(uri: Uri) {
+        val merge = restoreMerge
+        scope.launch {
+            busy = true
+            val result = withContext(Dispatchers.IO) { FullBackup.restoreAttachmentsZip(context, uri, merge) }
+            busy = false
+            val r = result.getOrNull()
+            if (r != null) {
+                snackbar.showSnackbar(
+                    "Restored ${r.restored} attachment(s)" +
+                        (if (r.skippedNoParent > 0) ", ${r.skippedNoParent} skipped (no matching record)" else "") +
+                        (if (r.skippedDuplicate > 0) ", ${r.skippedDuplicate} already present" else "")
+                )
+            } else {
+                snackbar.showSnackbar("Attachment restore failed: ${result.exceptionOrNull()?.message}")
+            }
+        }
+    }
+    val attachmentRestorePicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.GetContent()
+    ) { uri -> if (uri != null) runAttachmentRestore(uri) }
+
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
@@ -289,17 +340,17 @@ fun BackupScreen(
 
             if (Session.canImport) {
                 OutlinedButton(
-                    onClick = { restoreAction = { restorePicker.launch("*/*") } },
+                    onClick = { restoreKind = "full"; restoreAction = { restorePicker.launch("*/*") } },
                     enabled = !busy,
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
                 ) { Icon(Icons.Filled.Restore, null); Text("  Restore from file") }
                 OutlinedButton(
-                    onClick = { restoreAction = { driveRestore.launch(arrayOf("application/zip", "application/octet-stream", "*/*")) } },
+                    onClick = { restoreKind = "full"; restoreAction = { driveRestore.launch(arrayOf("application/zip", "application/octet-stream", "*/*")) } },
                     enabled = !busy,
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
                 ) { Icon(Icons.Filled.CloudDownload, null); Text("  Restore from Google Drive") }
                 OutlinedButton(
-                    onClick = { restoreAction = { pullAndRestore() } },
+                    onClick = { restoreKind = "full"; restoreAction = { pullAndRestore() } },
                     enabled = !busy,
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
                 ) { Icon(Icons.Filled.CloudDownload, null); Text("  Pull backup from server") }
@@ -311,6 +362,45 @@ fun BackupScreen(
                         modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
                     ) { Icon(Icons.Filled.Restore, null); Text("  View last merge log") }
                 }
+            }
+
+            androidx.compose.material3.Divider(Modifier.padding(vertical = 16.dp))
+            Text("Attachments only", style = MaterialTheme.typography.titleSmall)
+            Text(
+                "Back up or restore just the photos/documents attached across the app (bills, " +
+                    "purchases, customers, items, and more) — separate from the full backup above. " +
+                    "Each attachment is matched back to its invoice/purchase/customer by number or " +
+                    "name, not a raw id, so it reattaches correctly even after a full restore.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline,
+                modifier = Modifier.padding(top = 4.dp)
+            )
+            if (Session.canExport) {
+                OutlinedButton(
+                    onClick = { pickAttachmentSinceDate() },
+                    enabled = !busy,
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                ) {
+                    Text(
+                        attachmentSinceMillis?.let {
+                            "From: " + java.text.SimpleDateFormat("dd-MM-yyyy", java.util.Locale.getDefault()).format(java.util.Date(it))
+                        } ?: "From date: all attachments"
+                    )
+                }
+                if (attachmentSinceMillis != null) {
+                    TextButton(onClick = { attachmentSinceMillis = null }, enabled = !busy) { Text("Clear date (back to all)") }
+                }
+                Button(
+                    onClick = { downloadAttachments() },
+                    enabled = !busy,
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                ) { Icon(Icons.Filled.Download, null); Text("  Download attachments (.zip)") }
+            }
+            if (Session.canImport) {
+                OutlinedButton(
+                    onClick = { restoreKind = "attachments"; restoreAction = { attachmentRestorePicker.launch("*/*") } },
+                    enabled = !busy,
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                ) { Icon(Icons.Filled.Restore, null); Text("  Restore attachments from .zip") }
             }
 
             if (busy) {
@@ -331,12 +421,19 @@ fun BackupScreen(
     restoreAction?.let { action ->
         AlertDialog(
             onDismissRequest = { restoreAction = null },
-            title = { Text("Restore backup") },
+            title = { Text(if (restoreKind == "attachments") "Restore attachments" else "Restore backup") },
             text = {
                 Text(
-                    "Replace all: wipes current data (including users) and restores the backup.\n\n" +
-                        "Merge (append): keeps current data and adds the backup's invoices, payments, " +
-                        "items, etc. — for combining data from another phone. Nothing is lost."
+                    if (restoreKind == "attachments")
+                        "Replace all: wipes only the existing attachments (photos/documents on bills, " +
+                            "customers, items, etc. — not your invoices, customers or any other data) " +
+                            "and restores the ones in this file.\n\n" +
+                            "Merge (append): keeps existing attachments and adds the ones in this file, " +
+                            "skipping any that already exist. Nothing is lost."
+                    else
+                        "Replace all: wipes current data (including users) and restores the backup.\n\n" +
+                            "Merge (append): keeps current data and adds the backup's invoices, payments, " +
+                            "items, etc. — for combining data from another phone. Nothing is lost."
                 )
             },
             confirmButton = {

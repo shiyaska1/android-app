@@ -213,6 +213,356 @@ object FullBackup {
         zip
     }
 
+    /** One row of the attachments-only zip's manifest. */
+    private data class AttEntry(val type: String, val key: String, val file: String, val name: String, val mime: String, val loc: String = "")
+
+    /**
+     * A standalone zip of just the attachment files (photos/documents) across every module,
+     * independent of [create]'s full-database backup. Each entry carries its parent's natural
+     * key (invoice/purchase number, customer name, item name, ...) instead of a local numeric
+     * id, so [restoreAttachmentsZip] can reattach it to the matching record even on a different
+     * device/database where that record's local id differs.
+     *
+     * @param sinceMillis When > 0, only attachments whose FILE was added/changed on or after
+     * this time are included (0 = every attachment) — keyed off the file's own last-modified
+     * time, not the parent record's date, since adding a photo to an old bill today should count
+     * as "recent" regardless of how old the bill itself is.
+     */
+    suspend fun createAttachmentsZip(context: Context, sinceMillis: Long = 0): File = ioGate.withLock {
+        val db = AppDatabase.get(context)
+        fun keep(path: String) = sinceMillis <= 0 || File(path).lastModified() >= sinceMillis
+
+        val billNo = db.billDao().all().associate { it.id to it.billNo }
+        val purchaseNo = db.purchaseDao().all().associate { it.id to it.purchaseNo }
+        val customerName = db.customerDao().all().associate { it.id to it.name }
+        val itemName = db.itemDao().all().associate { it.id to it.name }
+        val expenseNo = db.expenseDao().all().associate { it.id to it.voucherNo }
+        val receiptNo = db.receiptDao().all().associate { it.id to it.receiptNo }
+        val orderNo = db.custOrderDao().all().associate { it.id to it.orderNo }
+        val jobNo = db.serviceDao().allCards().associate { it.id to it.jobNo }
+        val diaryTitle = db.diaryDao().allEntries().associate { it.id to it.title }
+        val noteText = db.quickNoteDao().all().associate { it.id to it.text.take(60) }
+
+        val entries = ArrayList<AttEntry>()
+        db.billAttachmentDao().all().filter { keep(it.path) }.forEach { a ->
+            entries.add(AttEntry("bill", billNo[a.billId] ?: "", File(a.path).name, a.name, a.mime))
+        }
+        db.purchaseAttachmentDao().all().filter { keep(it.path) }.forEach { a ->
+            entries.add(AttEntry("purchase", purchaseNo[a.purchaseId] ?: "", File(a.path).name, a.name, a.mime))
+        }
+        db.customerAttachmentDao().all().filter { keep(it.path) }.forEach { a ->
+            entries.add(AttEntry("customer", customerName[a.customerId] ?: "", File(a.path).name, a.name, a.mime))
+        }
+        db.itemAttachmentDao().all().filter { keep(it.path) }.forEach { a ->
+            entries.add(AttEntry("item", itemName[a.itemId] ?: "", File(a.path).name, a.name, a.mime))
+        }
+        db.expenseAttachmentDao().all().filter { keep(it.path) }.forEach { a ->
+            entries.add(AttEntry("expense", expenseNo[a.expenseId] ?: "", File(a.path).name, a.name, a.mime))
+        }
+        db.receiptAttachmentDao().all().filter { keep(it.path) }.forEach { a ->
+            entries.add(AttEntry("receipt", receiptNo[a.receiptId] ?: "", File(a.path).name, a.name, a.mime))
+        }
+        db.custOrderDao().allAttachments().filter { keep(it.path) }.forEach { a ->
+            entries.add(AttEntry("order", orderNo[a.orderId] ?: "", File(a.path).name, a.name, a.mime))
+        }
+        db.serviceDao().allAttachments().filter { keep(it.path) }.forEach { a ->
+            entries.add(AttEntry("service", jobNo[a.cardId] ?: "", File(a.path).name, a.name, a.mime))
+        }
+        db.quickNoteAttachmentDao().all().filter { keep(it.path) }.forEach { a ->
+            entries.add(AttEntry("quicknote", noteText[a.noteId] ?: "", File(a.path).name, a.name, a.mime))
+        }
+        db.diaryDao().allAttachments().filter { it.type == AttachmentType.LOCATION || keep(it.path) }.forEach { a ->
+            if (a.type == AttachmentType.LOCATION) {
+                entries.add(AttEntry("diary", diaryTitle[a.entryId] ?: "", "", a.name, a.mime, loc = a.path))
+            } else {
+                entries.add(AttEntry("diary", diaryTitle[a.entryId] ?: "", File(a.path).name, a.name, a.mime))
+            }
+        }
+
+        val root = JSONObject()
+        root.put("app", "pos-billing-attachments")
+        root.put("version", 1)
+        root.put("createdAt", System.currentTimeMillis())
+        val arr = JSONArray()
+        entries.forEach { e ->
+            arr.put(
+                JSONObject().put("type", e.type).put("key", e.key).put("file", e.file)
+                    .put("name", e.name).put("mime", e.mime).put("loc", e.loc)
+            )
+        }
+        root.put("entries", arr)
+
+        val dir = File(context.cacheDir, "shared").apply { mkdirs() }
+        val zip = File(dir, "pos-attachments.zip")
+        ZipOutputStream(zip.outputStream().buffered()).use { zos ->
+            zos.putNextEntry(ZipEntry("attachments.json"))
+            zos.write(root.toString().toByteArray(Charsets.UTF_8))
+            zos.closeEntry()
+            val written = HashSet<String>()
+            // Re-walk each source list to stream file bytes — AttEntry (above) only kept the
+            // bare filename for the manifest, so the original absolute path is looked up again
+            // here rather than threaded through.
+            suspend fun <T> writeAll(list: List<T>, path: (T) -> String, type: String) {
+                list.forEach { item ->
+                    val p = path(item)
+                    if (p.isNotBlank() && keep(p)) {
+                        val f = File(p)
+                        if (f.exists()) {
+                            val entryPath = "$type/${f.name}"
+                            if (written.add(entryPath)) {
+                                zos.putNextEntry(ZipEntry(entryPath))
+                                f.inputStream().use { it.copyTo(zos) }
+                                zos.closeEntry()
+                            }
+                        }
+                    }
+                }
+            }
+            writeAll(db.billAttachmentDao().all(), { it.path }, "bill")
+            writeAll(db.purchaseAttachmentDao().all(), { it.path }, "purchase")
+            writeAll(db.customerAttachmentDao().all(), { it.path }, "customer")
+            writeAll(db.itemAttachmentDao().all(), { it.path }, "item")
+            writeAll(db.expenseAttachmentDao().all(), { it.path }, "expense")
+            writeAll(db.receiptAttachmentDao().all(), { it.path }, "receipt")
+            writeAll(db.custOrderDao().allAttachments(), { it.path }, "order")
+            writeAll(db.serviceDao().allAttachments(), { it.path }, "service")
+            writeAll(db.quickNoteAttachmentDao().all(), { it.path }, "quicknote")
+            writeAll(db.diaryDao().allAttachments().filter { it.type != AttachmentType.LOCATION }, { it.path }, "diary")
+        }
+        zip
+    }
+
+    /** Outcome of an attachments-only restore, shown to the user afterward. */
+    data class AttachmentRestoreReport(val restored: Int, val skippedNoParent: Int, val skippedDuplicate: Int)
+
+    /**
+     * Restores an attachments-only zip produced by [createAttachmentsZip]. Each entry is
+     * reattached to its parent by natural key (invoice no, customer name, ...) resolved against
+     * the CURRENT local data — not by the numeric id it was exported with, which may not match
+     * on this device. Entries whose parent can't be found are skipped and counted, not silently
+     * dropped.
+     *
+     * @param merge When true, keeps existing attachments and skips an incoming one if the same
+     * parent already has an attachment with the same original filename (avoids duplicates on a
+     * repeated restore). When false (Replace), every existing attachment of these 10 types —
+     * rows and files — is deleted first, then everything in the zip is imported.
+     */
+    suspend fun restoreAttachmentsZip(context: Context, uri: Uri, merge: Boolean): Result<AttachmentRestoreReport> = ioGate.withLock { runCatching {
+        val db = AppDatabase.get(context)
+
+        // Stage every file into a temp holding folder first (streamed, never loaded whole),
+        // then apply once the manifest is known — the zip can list files before or after the
+        // manifest entry depending on how it was written.
+        val stageDir = File(context.cacheDir, "attrestore_stage").apply { deleteRecursively(); mkdirs() }
+        var json: String? = null
+        val input = context.contentResolver.openInputStream(uri) ?: error("Cannot read the file")
+        ZipInputStream(input.buffered()).use { zis ->
+            var e = zis.nextEntry
+            while (e != null) {
+                if (!e.isDirectory) {
+                    if (e.name == "attachments.json") {
+                        json = zis.readBytes().toString(Charsets.UTF_8)
+                    } else {
+                        val out = File(stageDir, e.name.replace("/", "__"))
+                        out.parentFile?.mkdirs()
+                        out.outputStream().use { zis.copyTo(it) }
+                    }
+                }
+                e = zis.nextEntry
+            }
+        }
+        val data = json ?: error("Not a valid attachments backup file")
+        val root = JSONObject(data)
+
+        if (!merge) {
+            // Delete every existing attachment file across all 10 stores, then clear their DB
+            // rows — Replace means these attachment tables end up containing only what's in the
+            // zip, same intent as db.clearAllTables() in the full restore but scoped to just
+            // these 10 tables.
+            listOf(
+                com.billing.pos.items.ItemAttachmentStore.dir(context),
+                com.billing.pos.bills.BillAttachmentStore.dir(context),
+                CustomerAttachmentStore.dir(context),
+                com.billing.pos.expenses.ExpenseAttachmentStore.dir(context),
+                com.billing.pos.purchase.PurchaseAttachmentStore.dir(context),
+                ReceiptAttachmentStore.dir(context),
+                OrderAttachmentStore.dir(context),
+                ServiceAttachmentStore.dir(context),
+                com.billing.pos.quicknote.QuickNoteAttachmentStore.dir(context),
+                AttachmentStore.dir(context)
+            ).forEach { d -> d.listFiles()?.forEach { it.delete() } }
+            db.billAttachmentDao().deleteAll()
+            db.purchaseAttachmentDao().deleteAll()
+            db.customerAttachmentDao().deleteAll()
+            db.itemAttachmentDao().deleteAll()
+            db.expenseAttachmentDao().deleteAll()
+            db.receiptAttachmentDao().deleteAll()
+            db.custOrderDao().deleteAllAttachments()
+            db.serviceDao().deleteAllAttachments()
+            db.quickNoteAttachmentDao().deleteAll()
+            db.diaryDao().deleteAllAttachments()
+        }
+
+        var restored = 0
+        var skippedNoParent = 0
+        var skippedDuplicate = 0
+
+        val billIdByNo = db.billDao().all().associate { it.billNo to it.id }
+        val purchaseIdByNo = db.purchaseDao().all().associate { it.purchaseNo to it.id }
+        val customerIdByName = db.customerDao().all().associate { it.name.lowercase() to it.id }
+        val itemIdByName = db.itemDao().all().associate { it.name.lowercase() to it.id }
+        val expenseIdByNo = db.expenseDao().all().associate { it.voucherNo to it.id }
+        val receiptIdByNo = db.receiptDao().all().associate { it.receiptNo to it.id }
+        val orderIdByNo = db.custOrderDao().all().associate { it.orderNo to it.id }
+        val jobIdByNo = db.serviceDao().allCards().associate { it.jobNo to it.id }
+        val diaryIdByTitle = db.diaryDao().allEntries().associate { it.title to it.id }
+        val noteIdByText = db.quickNoteDao().all().associate { it.text.take(60) to it.id }
+
+        val existingBillNames = db.billAttachmentDao().all().groupBy { it.billId }.mapValues { (_, l) -> l.map { it.name }.toSet() }
+        val existingPurchaseNames = db.purchaseAttachmentDao().all().groupBy { it.purchaseId }.mapValues { (_, l) -> l.map { it.name }.toSet() }
+        val existingCustomerNames = db.customerAttachmentDao().all().groupBy { it.customerId }.mapValues { (_, l) -> l.map { it.name }.toSet() }
+        val existingItemNames = db.itemAttachmentDao().all().groupBy { it.itemId }.mapValues { (_, l) -> l.map { it.name }.toSet() }
+        val existingExpenseNames = db.expenseAttachmentDao().all().groupBy { it.expenseId }.mapValues { (_, l) -> l.map { it.name }.toSet() }
+        val existingReceiptNames = db.receiptAttachmentDao().all().groupBy { it.receiptId }.mapValues { (_, l) -> l.map { it.name }.toSet() }
+        val existingOrderNames = db.custOrderDao().allAttachments().groupBy { it.orderId }.mapValues { (_, l) -> l.map { it.name }.toSet() }
+        val existingServiceNames = db.serviceDao().allAttachments().groupBy { it.cardId }.mapValues { (_, l) -> l.map { it.name }.toSet() }
+        val existingQuickNoteNames = db.quickNoteAttachmentDao().all().groupBy { it.noteId }.mapValues { (_, l) -> l.map { it.name }.toSet() }
+        val existingDiaryNames = db.diaryDao().allAttachments().groupBy { it.entryId }.mapValues { (_, l) -> l.map { it.name }.toSet() }
+
+        fun stagedFile(type: String, file: String): File? {
+            if (file.isBlank()) return null
+            val f = File(stageDir, "$type/$file".replace("/", "__"))
+            return if (f.exists()) f else null
+        }
+
+        val entries = root.optJSONArray("entries") ?: JSONArray()
+        for (i in 0 until entries.length()) {
+            val o = entries.getJSONObject(i)
+            val type = o.optString("type")
+            val key = o.optString("key")
+            val file = o.optString("file")
+            val name = o.optString("name")
+            val mime = o.optString("mime")
+            val loc = o.optString("loc")
+
+            when (type) {
+                "bill" -> {
+                    val parentId = billIdByNo[key]
+                    if (parentId == null) { skippedNoParent++; continue }
+                    if (merge && existingBillNames[parentId]?.contains(name) == true) { skippedDuplicate++; continue }
+                    val staged = stagedFile("bill", file) ?: continue
+                    val dest = File(com.billing.pos.bills.BillAttachmentStore.dir(context), "restored_${System.nanoTime()}_$file")
+                    staged.copyTo(dest, overwrite = true)
+                    db.billAttachmentDao().insert(BillAttachment(billId = parentId, path = dest.absolutePath, name = name, mime = mime))
+                    restored++
+                }
+                "purchase" -> {
+                    val parentId = purchaseIdByNo[key]
+                    if (parentId == null) { skippedNoParent++; continue }
+                    if (merge && existingPurchaseNames[parentId]?.contains(name) == true) { skippedDuplicate++; continue }
+                    val staged = stagedFile("purchase", file) ?: continue
+                    val dest = File(com.billing.pos.purchase.PurchaseAttachmentStore.dir(context), "restored_${System.nanoTime()}_$file")
+                    staged.copyTo(dest, overwrite = true)
+                    db.purchaseAttachmentDao().insert(PurchaseAttachment(purchaseId = parentId, path = dest.absolutePath, name = name, mime = mime))
+                    restored++
+                }
+                "customer" -> {
+                    val parentId = customerIdByName[key.lowercase()]
+                    if (parentId == null) { skippedNoParent++; continue }
+                    if (merge && existingCustomerNames[parentId]?.contains(name) == true) { skippedDuplicate++; continue }
+                    val staged = stagedFile("customer", file) ?: continue
+                    val dest = File(CustomerAttachmentStore.dir(context), "restored_${System.nanoTime()}_$file")
+                    staged.copyTo(dest, overwrite = true)
+                    db.customerAttachmentDao().insert(CustomerAttachment(customerId = parentId, path = dest.absolutePath, name = name, mime = mime))
+                    restored++
+                }
+                "item" -> {
+                    val parentId = itemIdByName[key.lowercase()]
+                    if (parentId == null) { skippedNoParent++; continue }
+                    if (merge && existingItemNames[parentId]?.contains(name) == true) { skippedDuplicate++; continue }
+                    val staged = stagedFile("item", file) ?: continue
+                    val dest = File(com.billing.pos.items.ItemAttachmentStore.dir(context), "restored_${System.nanoTime()}_$file")
+                    staged.copyTo(dest, overwrite = true)
+                    db.itemAttachmentDao().insert(ItemAttachment(itemId = parentId, path = dest.absolutePath, name = name, mime = mime, kind = "PHOTO"))
+                    restored++
+                }
+                "expense" -> {
+                    val parentId = expenseIdByNo[key]
+                    if (parentId == null) { skippedNoParent++; continue }
+                    if (merge && existingExpenseNames[parentId]?.contains(name) == true) { skippedDuplicate++; continue }
+                    val staged = stagedFile("expense", file) ?: continue
+                    val dest = File(com.billing.pos.expenses.ExpenseAttachmentStore.dir(context), "restored_${System.nanoTime()}_$file")
+                    staged.copyTo(dest, overwrite = true)
+                    db.expenseAttachmentDao().insert(ExpenseAttachment(expenseId = parentId, path = dest.absolutePath, name = name, mime = mime))
+                    restored++
+                }
+                "receipt" -> {
+                    val parentId = receiptIdByNo[key]
+                    if (parentId == null) { skippedNoParent++; continue }
+                    if (merge && existingReceiptNames[parentId]?.contains(name) == true) { skippedDuplicate++; continue }
+                    val staged = stagedFile("receipt", file) ?: continue
+                    val dest = File(ReceiptAttachmentStore.dir(context), "restored_${System.nanoTime()}_$file")
+                    staged.copyTo(dest, overwrite = true)
+                    db.receiptAttachmentDao().insertAll(listOf(ReceiptAttachment(receiptId = parentId, path = dest.absolutePath, name = name, mime = mime)))
+                    restored++
+                }
+                "order" -> {
+                    val parentId = orderIdByNo[key]
+                    if (parentId == null) { skippedNoParent++; continue }
+                    if (merge && existingOrderNames[parentId]?.contains(name) == true) { skippedDuplicate++; continue }
+                    val staged = stagedFile("order", file) ?: continue
+                    val dest = File(OrderAttachmentStore.dir(context), "restored_${System.nanoTime()}_$file")
+                    staged.copyTo(dest, overwrite = true)
+                    db.custOrderDao().insertAttachment(CustOrderAttachment(orderId = parentId, path = dest.absolutePath, name = name, mime = mime))
+                    restored++
+                }
+                "service" -> {
+                    val parentId = jobIdByNo[key]
+                    if (parentId == null) { skippedNoParent++; continue }
+                    if (merge && existingServiceNames[parentId]?.contains(name) == true) { skippedDuplicate++; continue }
+                    val staged = stagedFile("service", file) ?: continue
+                    val dest = File(ServiceAttachmentStore.dir(context), "restored_${System.nanoTime()}_$file")
+                    staged.copyTo(dest, overwrite = true)
+                    db.serviceDao().insertAttachments(listOf(ServiceJobAttachment(cardId = parentId, path = dest.absolutePath, name = name, mime = mime)))
+                    restored++
+                }
+                "quicknote" -> {
+                    val parentId = noteIdByText[key]
+                    if (parentId == null) { skippedNoParent++; continue }
+                    if (merge && existingQuickNoteNames[parentId]?.contains(name) == true) { skippedDuplicate++; continue }
+                    val staged = stagedFile("quicknote", file) ?: continue
+                    val dest = File(com.billing.pos.quicknote.QuickNoteAttachmentStore.dir(context), "restored_${System.nanoTime()}_$file")
+                    staged.copyTo(dest, overwrite = true)
+                    db.quickNoteAttachmentDao().insert(QuickNoteAttachment(noteId = parentId, path = dest.absolutePath, name = name, mime = mime))
+                    restored++
+                }
+                "diary" -> {
+                    val parentId = diaryIdByTitle[key]
+                    if (parentId == null) { skippedNoParent++; continue }
+                    if (merge && existingDiaryNames[parentId]?.contains(name) == true) { skippedDuplicate++; continue }
+                    if (loc.isNotBlank()) {
+                        db.diaryDao().insertAttachment(DiaryAttachment(entryId = parentId, path = loc, name = name, mime = mime, type = AttachmentType.LOCATION))
+                        restored++
+                    } else {
+                        val staged = stagedFile("diary", file) ?: continue
+                        val dest = File(AttachmentStore.dir(context), "restored_${System.nanoTime()}_$file")
+                        staged.copyTo(dest, overwrite = true)
+                        val kind = when {
+                            mime.startsWith("image/") -> AttachmentType.IMAGE
+                            mime.startsWith("video/") -> AttachmentType.VIDEO
+                            mime.startsWith("audio/") -> AttachmentType.AUDIO
+                            else -> AttachmentType.DOCUMENT
+                        }
+                        db.diaryDao().insertAttachment(DiaryAttachment(entryId = parentId, path = dest.absolutePath, name = name, mime = mime, type = kind))
+                        restored++
+                    }
+                }
+            }
+        }
+        stageDir.deleteRecursively()
+        AttachmentRestoreReport(restored, skippedNoParent, skippedDuplicate)
+    } }
+
     suspend fun restore(context: Context, uri: Uri, merge: Boolean = false): Result<String> = ioGate.withLock { runCatching {
         val filesDir = AttachmentStore.dir(context)
         val itemFilesDir = com.billing.pos.items.ItemAttachmentStore.dir(context)

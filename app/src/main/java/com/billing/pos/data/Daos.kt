@@ -77,6 +77,9 @@ interface BillAttachmentDao {
     @Query("SELECT * FROM bill_attachments")
     suspend fun all(): List<BillAttachment>
 
+    @Query("DELETE FROM bill_attachments")
+    suspend fun deleteAll()
+
     @Query("SELECT * FROM bill_attachments WHERE billId = :billId ORDER BY id")
     suspend fun forBill(billId: Long): List<BillAttachment>
 
@@ -97,6 +100,9 @@ interface ItemAttachmentDao {
 
     @Query("SELECT * FROM item_attachments")
     suspend fun all(): List<ItemAttachment>
+
+    @Query("DELETE FROM item_attachments")
+    suspend fun deleteAll()
 
     @Query("SELECT * FROM item_attachments WHERE itemId = :itemId ORDER BY id")
     suspend fun forItem(itemId: Long): List<ItemAttachment>

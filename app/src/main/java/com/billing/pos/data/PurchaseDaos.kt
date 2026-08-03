@@ -206,6 +206,12 @@ interface PurchaseAttachmentDao {
     @Query("SELECT * FROM purchase_attachments WHERE purchaseId = :purchaseId ORDER BY id")
     suspend fun forPurchase(purchaseId: Long): List<PurchaseAttachment>
 
+    @Query("SELECT * FROM purchase_attachments")
+    suspend fun all(): List<PurchaseAttachment>
+
+    @Query("DELETE FROM purchase_attachments")
+    suspend fun deleteAll()
+
     @Insert
     suspend fun insert(attachment: PurchaseAttachment): Long
 

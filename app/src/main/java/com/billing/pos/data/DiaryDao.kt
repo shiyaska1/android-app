@@ -68,6 +68,9 @@ interface DiaryDao {
     @Query("SELECT * FROM diary_attachments")
     suspend fun allAttachments(): List<DiaryAttachment>
 
+    @Query("DELETE FROM diary_attachments")
+    suspend fun deleteAllAttachments()
+
     @Insert
     suspend fun insert(entry: DiaryEntry): Long
 

@@ -27,8 +27,10 @@ data class ReceiptAttachment(
 @Dao
 interface ReceiptAttachmentDao {
     @Query("SELECT * FROM receipt_attachments WHERE receiptId = :id") suspend fun forReceipt(id: Long): List<ReceiptAttachment>
+    @Query("SELECT * FROM receipt_attachments") suspend fun all(): List<ReceiptAttachment>
     @Insert suspend fun insertAll(list: List<ReceiptAttachment>)
     @Query("DELETE FROM receipt_attachments WHERE receiptId = :id") suspend fun deleteForReceipt(id: Long)
+    @Query("DELETE FROM receipt_attachments") suspend fun deleteAll()
 }
 
 /** Copies picked/captured files attached to a receipt into app storage. */

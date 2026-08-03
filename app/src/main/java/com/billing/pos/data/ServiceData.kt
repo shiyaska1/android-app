@@ -151,6 +151,7 @@ interface ServiceDao {
     // job cards
     @Query("SELECT COUNT(*) FROM service_job_cards") suspend fun cardCount(): Int
     @Query("SELECT * FROM service_job_cards ORDER BY dateMillis DESC") fun cards(): Flow<List<ServiceJobCard>>
+    @Query("SELECT * FROM service_job_cards") suspend fun allCards(): List<ServiceJobCard>
     @Query("SELECT * FROM service_job_cards WHERE id = :id LIMIT 1") suspend fun cardById(id: Long): ServiceJobCard?
     @Query("SELECT * FROM service_job_lines") fun allLines(): Flow<List<ServiceJobLine>>
     @Query("SELECT * FROM service_job_lines WHERE cardId = :id ORDER BY id") suspend fun linesFor(id: Long): List<ServiceJobLine>
@@ -177,6 +178,8 @@ interface ServiceDao {
 
     // attachments
     @Query("SELECT * FROM service_job_attachments WHERE cardId = :id") suspend fun attachmentsFor(id: Long): List<ServiceJobAttachment>
+    @Query("DELETE FROM service_job_attachments") suspend fun deleteAllAttachments()
+    @Query("SELECT * FROM service_job_attachments") suspend fun allAttachments(): List<ServiceJobAttachment>
     @Insert suspend fun insertAttachments(a: List<ServiceJobAttachment>)
     @Query("DELETE FROM service_job_attachments WHERE cardId = :id") suspend fun deleteAttachmentsFor(id: Long)
 }

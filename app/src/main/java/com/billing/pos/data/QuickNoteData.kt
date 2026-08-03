@@ -27,6 +27,9 @@ interface QuickNoteDao {
     @Query("SELECT * FROM quick_notes ORDER BY updatedAt DESC")
     fun observeAll(): Flow<List<QuickNote>>
 
+    @Query("SELECT * FROM quick_notes")
+    suspend fun all(): List<QuickNote>
+
     @Query("SELECT * FROM quick_notes WHERE id = :id LIMIT 1")
     suspend fun byId(id: Long): QuickNote?
 
@@ -57,6 +60,12 @@ data class QuickNoteAttachment(
 interface QuickNoteAttachmentDao {
     @Query("SELECT * FROM quick_note_attachments WHERE noteId = :noteId")
     suspend fun forNote(noteId: Long): List<QuickNoteAttachment>
+
+    @Query("SELECT * FROM quick_note_attachments")
+    suspend fun all(): List<QuickNoteAttachment>
+
+    @Query("DELETE FROM quick_note_attachments")
+    suspend fun deleteAll()
 
     @Insert
     suspend fun insert(att: QuickNoteAttachment): Long

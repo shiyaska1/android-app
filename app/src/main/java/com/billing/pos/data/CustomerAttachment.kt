@@ -29,6 +29,8 @@ interface CustomerAttachmentDao {
 
     @Query("SELECT * FROM customer_attachments") suspend fun all(): List<CustomerAttachment>
 
+    @Query("DELETE FROM customer_attachments") suspend fun deleteAll()
+
     @Insert suspend fun insert(a: CustomerAttachment): Long
 
     @Query("DELETE FROM customer_attachments WHERE customerId = :customerId")
