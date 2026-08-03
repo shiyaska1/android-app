@@ -50,7 +50,8 @@ import androidx.room.TypeConverters
         SalesmanMap::class,
         ProductionProcedure::class, ProductionProcedureMaterial::class, ProductionRun::class,
         ItemBundle::class, ItemBundleComponent::class,
-        ChequeEntry::class, CostCenter::class, FixedAsset::class
+        ChequeEntry::class, CostCenter::class, FixedAsset::class,
+        BankReconciliation::class
     ],
     // v25 quotations; v26 sales returns; v27 purchase returns; v28 purchase quotations (LPO);
     // v29 dual units; v30 rental; v31 medical lab; v32 lab masters + heading rows;
@@ -80,7 +81,7 @@ import androidx.room.TypeConverters
     // register, cost centers (+ tag on journal lines), fixed asset register.
     // v75 updatedAt on bills/purchases/receipts/expenses/quotations/estimates/journal entries —
     // last-edited timestamp (distinct from dateMillis), driving the cloud-sync push-window filter.
-    version = 78,
+    version = 79,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -142,6 +143,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun chequeDao(): ChequeDao
     abstract fun costCenterDao(): CostCenterDao
     abstract fun fixedAssetDao(): FixedAssetDao
+    abstract fun bankReconciliationDao(): BankReconciliationDao
 
     companion object {
         @Volatile private var INSTANCE: AppDatabase? = null
@@ -713,6 +715,20 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** Bank Reconciliation (Accounting Batch 2): marks a ledger posting as matched against
+         * a bank statement, keyed by account + voucher + date + signed amount since postings
+         * are assembled on the fly and have no single source table of their own. */
+        private val MIGRATION_78_79 = object : androidx.room.migration.Migration(78, 79) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `bank_reconciliations` (" +
+                        "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`headId` INTEGER NOT NULL, `vch` TEXT NOT NULL, `dateMillis` INTEGER NOT NULL, " +
+                        "`amount` REAL NOT NULL, `reconciledAt` INTEGER NOT NULL)"
+                )
+            }
+        }
+
         fun get(context: Context): AppDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -720,7 +736,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "pos_billing.db"
                 )
-                    .addMigrations(MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45, MIGRATION_45_46, MIGRATION_46_47, MIGRATION_47_48, MIGRATION_48_49, MIGRATION_49_50, MIGRATION_50_51, MIGRATION_51_52, MIGRATION_52_53, MIGRATION_53_54, MIGRATION_54_55, MIGRATION_55_56, MIGRATION_56_57, MIGRATION_57_58, MIGRATION_58_59, MIGRATION_59_60, MIGRATION_60_61, MIGRATION_61_62, MIGRATION_62_63, MIGRATION_63_64, MIGRATION_64_65, MIGRATION_65_66, MIGRATION_66_67, MIGRATION_67_68, MIGRATION_68_69, MIGRATION_69_70, MIGRATION_70_71, MIGRATION_71_72, MIGRATION_72_73, MIGRATION_73_74, MIGRATION_74_75, MIGRATION_75_76, MIGRATION_76_77, MIGRATION_77_78)
+                    .addMigrations(MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45, MIGRATION_45_46, MIGRATION_46_47, MIGRATION_47_48, MIGRATION_48_49, MIGRATION_49_50, MIGRATION_50_51, MIGRATION_51_52, MIGRATION_52_53, MIGRATION_53_54, MIGRATION_54_55, MIGRATION_55_56, MIGRATION_56_57, MIGRATION_57_58, MIGRATION_58_59, MIGRATION_59_60, MIGRATION_60_61, MIGRATION_61_62, MIGRATION_62_63, MIGRATION_63_64, MIGRATION_64_65, MIGRATION_65_66, MIGRATION_66_67, MIGRATION_67_68, MIGRATION_68_69, MIGRATION_69_70, MIGRATION_70_71, MIGRATION_71_72, MIGRATION_72_73, MIGRATION_73_74, MIGRATION_74_75, MIGRATION_75_76, MIGRATION_76_77, MIGRATION_77_78, MIGRATION_78_79)
                     .fallbackToDestructiveMigration()
                     .build()
                     .also { INSTANCE = it }

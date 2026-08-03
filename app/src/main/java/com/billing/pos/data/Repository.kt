@@ -34,6 +34,7 @@ class Repository(private val context: Context) {
     private val journalDao = db.journalDao()
     private val chequeDao = db.chequeDao()
     private val costCenterDao = db.costCenterDao()
+    private val bankReconciliationDao = db.bankReconciliationDao()
     private val fixedAssetDao = db.fixedAssetDao()
     private val appPrefs = AppPrefs(context)
 
@@ -203,6 +204,13 @@ class Repository(private val context: Context) {
     suspend fun saveCheque(cheque: ChequeEntry): Long = chequeDao.insert(cheque)
     suspend fun updateCheque(cheque: ChequeEntry) = chequeDao.update(cheque)
     suspend fun deleteCheque(cheque: ChequeEntry) = chequeDao.delete(cheque)
+
+    // ---- bank reconciliation ----
+    fun reconciledFor(headId: Long): Flow<List<BankReconciliation>> = bankReconciliationDao.observeForHead(headId)
+    suspend fun markReconciled(headId: Long, vch: String, dateMillis: Long, amount: Double) =
+        bankReconciliationDao.insert(BankReconciliation(headId = headId, vch = vch, dateMillis = dateMillis, amount = amount))
+    suspend fun unmarkReconciled(headId: Long, vch: String, dateMillis: Long, amount: Double) =
+        bankReconciliationDao.unmark(headId, vch, dateMillis, amount)
 
     // ---- cost centers ----
     suspend fun addCostCenter(name: String): Long = costCenterDao.insert(CostCenter(name = name.trim()))

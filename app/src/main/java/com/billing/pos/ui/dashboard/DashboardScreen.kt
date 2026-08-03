@@ -112,7 +112,7 @@ private val SERVICE_TILES = setOf("Job Cards", "Service Masters", "Job Status Re
 private val BULK_SMS_TILES = setOf(
     "Send SMS", "Bulk SMS", "Attendance", "Contacts", "SMS Templates", "SMS Settings", "SMS Report",
     "Calculator", "Mobile number", "My Diary", "Poster maker",
-    "Receipts", "Payments", "Cash Book", "Outstanding", "Accounts", "Journal", "Contra Entry",
+    "Receipts", "Payments", "Cash Book", "Outstanding", "Accounts", "Journal", "Contra Entry", "Bank Reconciliation",
     "Ledger", "Trial Balance", "Profit & Loss", "Balance Sheet", "Day Book",
     "Settings", "Backup"
 ) + SERVICE_TILES
@@ -120,7 +120,7 @@ private val BULK_SMS_TILES = setOf(
 /** In Gym mode: the fitness tools + the accounts module (as requested), nothing shop-related. */
 private val GYM_TILES = setOf(
     "Members", "Fees Due", "Slots", "Calculator", "My Diary",
-    "Receipts", "Payments", "Cash Book", "Outstanding", "Accounts", "Journal", "Contra Entry",
+    "Receipts", "Payments", "Cash Book", "Outstanding", "Accounts", "Journal", "Contra Entry", "Bank Reconciliation",
     "Ledger", "Trial Balance", "Profit & Loss", "Balance Sheet", "Day Book",
     "Settings", "Backup"
 ) + SERVICE_TILES
@@ -128,7 +128,7 @@ private val GYM_TILES = setOf(
 /** In Coaching Center mode: students/enquiry/masters + the accounts module. */
 private val COACHING_TILES = setOf(
     "Students", "Coaching Masters", "Enquiries", "Attendance", "Attendance Report", "Fees Due", "Calculator", "My Diary",
-    "Receipts", "Payments", "Cash Book", "Outstanding", "Accounts", "Journal", "Contra Entry",
+    "Receipts", "Payments", "Cash Book", "Outstanding", "Accounts", "Journal", "Contra Entry", "Bank Reconciliation",
     "Ledger", "Trial Balance", "Profit & Loss", "Balance Sheet", "Day Book",
     "Settings", "Backup"
 ) + SERVICE_TILES
@@ -202,6 +202,7 @@ fun DashboardScreen(
     onProfitLoss: () -> Unit,
     onBalanceSheet: () -> Unit,
     onDayBook: () -> Unit,
+    onBankRecon: () -> Unit,
     onCheques: () -> Unit,
     onCostCenters: () -> Unit,
     onFixedAssets: () -> Unit,
@@ -329,6 +330,7 @@ fun DashboardScreen(
         if (Session.canManageUsers) add(Tile("Cheques", Icons.Filled.Payments, onCheques, "Accounts/Masters"))
         if (Session.canManageUsers) add(Tile("Journal", Icons.Filled.Book, onJournal, "Accounts/Transactions"))
         if (Session.canManageUsers) add(Tile("Contra Entry", Icons.Filled.SwapHoriz, onContra, "Accounts/Transactions"))
+        if (Session.canManageUsers) add(Tile("Bank Reconciliation", Icons.Filled.AccountBalanceWallet, onBankRecon, "Accounts/Transactions"))
         if (Session.canViewCashbook) add(Tile("Ledger", Icons.Filled.Summarize, onLedger, "Accounts/Reports"))
         if (Session.canViewCashbook) add(Tile("Receipt & Payment", Icons.Filled.Summarize, onRpReport, "Accounts/Reports"))
         // Accounting reports that were previously in Reports -> move under Accounts/Reports

@@ -100,7 +100,7 @@ fun balanceSheetOf(p: List<Posting>, to: Long): List<Any> {
     return listOf(assets, liab, netProfit, diff)
 }
 
-private fun monthAgo(): Long = Calendar.getInstance().apply { add(Calendar.MONTH, -1) }.timeInMillis
+fun monthAgo(): Long = Calendar.getInstance().apply { add(Calendar.MONTH, -1) }.timeInMillis
 fun today(): Long = Calendar.getInstance().timeInMillis
 
 @Composable
