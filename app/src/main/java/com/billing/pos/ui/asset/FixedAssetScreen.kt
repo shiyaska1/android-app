@@ -17,6 +17,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.TrendingDown
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Divider
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -90,6 +91,15 @@ class FixedAssetViewModel(app: Application) : AndroidViewModel(app) {
     fun delete(asset: FixedAsset) {
         viewModelScope.launch { repo.deleteFixedAsset(asset); message.value = "Asset deleted" }
     }
+
+    fun runDepreciation(asOf: Long) {
+        viewModelScope.launch {
+            val result = repo.runDepreciation(asOf)
+            message.value = if (result.assetsProcessed > 0)
+                "Depreciation posted for ${result.assetsProcessed} asset(s): ${Format.rupee(result.totalAmount)}"
+            else "No depreciation due — nothing to post"
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -104,6 +114,8 @@ fun FixedAssetScreen(onBack: () -> Unit, vm: FixedAssetViewModel = viewModel()) 
     var showDialog by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<FixedAsset?>(null) }
     var deleteFor by remember { mutableStateOf<FixedAsset?>(null) }
+    var showDepreciationDialog by remember { mutableStateOf(false) }
+    val context = androidx.compose.ui.platform.LocalContext.current
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
@@ -111,10 +123,16 @@ fun FixedAssetScreen(onBack: () -> Unit, vm: FixedAssetViewModel = viewModel()) 
             TopAppBar(
                 title = { Text("Fixed Assets") },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
+                actions = {
+                    IconButton(onClick = { showDepreciationDialog = true }) {
+                        Icon(Icons.Filled.TrendingDown, "Run depreciation")
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                     titleContentColor = MaterialTheme.colorScheme.onPrimary,
-                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary
+                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary,
+                    actionIconContentColor = MaterialTheme.colorScheme.onPrimary
                 )
             )
         },
@@ -164,6 +182,30 @@ fun FixedAssetScreen(onBack: () -> Unit, vm: FixedAssetViewModel = viewModel()) 
             title = { Text("Delete ${a.name}?") },
             confirmButton = { TextButton(onClick = { vm.delete(a); deleteFor = null }) { Text("Delete") } },
             dismissButton = { TextButton(onClick = { deleteFor = null }) { Text("Cancel") } }
+        )
+    }
+    if (showDepreciationDialog) {
+        var asOf by remember { mutableStateOf(System.currentTimeMillis()) }
+        AlertDialog(
+            onDismissRequest = { showDepreciationDialog = false },
+            title = { Text("Run depreciation") },
+            text = {
+                Column {
+                    Text(
+                        "Posts Depreciation Expense Dr / Accumulated Depreciation Cr for every asset with a " +
+                            "rate set, covering the period since it was last depreciated (or since purchase).",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline
+                    )
+                    OutlinedButton(
+                        onClick = { pickAssetDate(context, asOf) { asOf = it } },
+                        modifier = Modifier.fillMaxWidth().padding(top = 12.dp)
+                    ) { Text("As of: ${Format.date(asOf)}") }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { vm.runDepreciation(asOf); showDepreciationDialog = false }) { Text("Run") }
+            },
+            dismissButton = { TextButton(onClick = { showDepreciationDialog = false }) { Text("Cancel") } }
         )
     }
 }

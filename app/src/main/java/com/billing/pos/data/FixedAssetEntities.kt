@@ -19,6 +19,9 @@ data class FixedAsset(
     val depreciationMethod: String = DepreciationMethod.STRAIGHT_LINE,
     val ratePercent: Double = 0.0,
     val accumulatedDepreciation: Double = 0.0,
+    /** End of the last period depreciation was posted through; 0 = never depreciated yet
+     * (in which case [purchaseDate] is used as the starting point). */
+    val lastDepreciatedMillis: Long = 0,
     /** The Purchase this asset was bought against, if any. 0 = entered manually. */
     val linkedPurchaseId: Long = 0,
     val remarks: String = "",

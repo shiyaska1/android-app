@@ -16,6 +16,8 @@ data class ImportResult(
     val source: String
 )
 
+data class DepreciationResult(val assetsProcessed: Int, val totalAmount: Double)
+
 /** Single access point for all data operations. */
 class Repository(private val context: Context) {
 
@@ -273,6 +275,48 @@ class Repository(private val context: Context) {
     suspend fun saveFixedAsset(asset: FixedAsset): Long = fixedAssetDao.insert(asset)
     suspend fun updateFixedAsset(asset: FixedAsset) = fixedAssetDao.update(asset)
     suspend fun deleteFixedAsset(asset: FixedAsset) = fixedAssetDao.delete(asset)
+
+    /** Posts one Depreciation Expense Dr / Accumulated Depreciation Cr journal voucher covering
+     * every asset's elapsed period since it was last depreciated (or since purchase, if never).
+     * Straight Line depreciates a fixed % of the original cost per year; WDV depreciates a fixed
+     * % of the current book value per year. Both are pro-rated by days elapsed and capped so an
+     * asset's book value never goes below zero. Assets with no rate set are skipped. Safe to
+     * re-run any time — an asset already caught up through [asOf] simply contributes nothing. */
+    suspend fun runDepreciation(asOf: Long): DepreciationResult {
+        val expenseHeadId = ensureHeadIn("Depreciation", "Indirect Expenses")
+        val accumHeadId = ensureHeadIn("Accumulated Depreciation", "Fixed Assets")
+        if (expenseHeadId == 0L || accumHeadId == 0L) return DepreciationResult(0, 0.0)
+
+        val toUpdate = mutableListOf<FixedAsset>()
+        val names = mutableListOf<String>()
+        var total = 0.0
+        fixedAssetDao.all().forEach { a ->
+            if (a.ratePercent <= 0.0) return@forEach
+            val from = if (a.lastDepreciatedMillis > 0) a.lastDepreciatedMillis else a.purchaseDate
+            val days = (asOf - from) / 86_400_000.0
+            if (days <= 0.0) return@forEach
+            val base = if (a.depreciationMethod == DepreciationMethod.WDV) a.bookValue else a.purchaseCost
+            val amount = (base * a.ratePercent / 100.0 * (days / 365.0)).coerceAtMost(a.bookValue)
+            if (amount <= 0.0) return@forEach
+            total += amount
+            names += a.name
+            toUpdate += a.copy(accumulatedDepreciation = a.accumulatedDepreciation + amount, lastDepreciatedMillis = asOf)
+        }
+        if (toUpdate.isEmpty()) return DepreciationResult(0, 0.0)
+
+        val entry = JournalEntry(
+            voucherNo = "DEP-" + java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US).format(java.util.Date(System.currentTimeMillis())),
+            dateMillis = asOf,
+            narration = "Depreciation for ${toUpdate.size} asset(s): ${names.joinToString(", ")}".take(500)
+        )
+        val lines = listOf(
+            JournalLine(0, 0, expenseHeadId, "Depreciation", total, true),
+            JournalLine(0, 0, accumHeadId, "Accumulated Depreciation", total, false)
+        )
+        saveJournal(entry, lines)
+        toUpdate.forEach { fixedAssetDao.update(it) }
+        return DepreciationResult(toUpdate.size, total)
+    }
 
     // ---- journal ----
     suspend fun nextJournalNo(): String =
