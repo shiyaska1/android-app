@@ -17,9 +17,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Divider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -32,7 +37,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -60,10 +67,16 @@ fun ItemNoteDialog(
 ) {
     var text by remember { mutableStateOf(initialNote) }
     val context = LocalContext.current
+    val clipboard = LocalClipboardManager.current
 
     // Past notes typed on other items — most-used first, tap to fill (still editable after).
     var suggestions by remember { mutableStateOf<List<String>>(emptyList()) }
     var showSuggestions by remember { mutableStateOf(false) }
+    var suggestQuery by remember { mutableStateOf("") }
+    val filteredSuggestions = remember(suggestions, suggestQuery) {
+        if (suggestQuery.isBlank()) suggestions
+        else suggestions.filter { it.contains(suggestQuery, ignoreCase = true) }
+    }
     LaunchedEffect(Unit) { suggestions = loadSuggestions() }
 
     // Draw, or scan a photo and drag a box over the text to fill the note.
@@ -150,16 +163,46 @@ fun ItemNoteDialog(
             }
             if (showSuggestions && suggestions.isNotEmpty()) {
                 Card(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 4.dp)) {
-                    Column(Modifier.fillMaxWidth().heightIn(max = 180.dp).verticalScroll(rememberScrollState())) {
-                        suggestions.forEach { note ->
-                            Text(
-                                note,
-                                style = MaterialTheme.typography.bodyMedium,
-                                maxLines = 1,
-                                modifier = Modifier.fillMaxWidth()
-                                    .clickable { text = note; showSuggestions = false }
-                                    .padding(horizontal = 12.dp, vertical = 10.dp)
-                            )
+                    Column(Modifier.fillMaxWidth()) {
+                        OutlinedTextField(
+                            value = suggestQuery,
+                            onValueChange = { suggestQuery = it },
+                            placeholder = { Text("Search past notes…") },
+                            leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth().padding(8.dp)
+                        )
+                        Column(Modifier.fillMaxWidth().heightIn(max = 220.dp).verticalScroll(rememberScrollState())) {
+                            if (filteredSuggestions.isEmpty()) {
+                                Text(
+                                    "No matches",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.outline,
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)
+                                )
+                            }
+                            filteredSuggestions.forEach { note ->
+                                Row(
+                                    Modifier.fillMaxWidth()
+                                        .clickable { text = note; showSuggestions = false }
+                                        .padding(start = 12.dp, end = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        note,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        maxLines = 1,
+                                        modifier = Modifier.weight(1f).padding(vertical = 10.dp)
+                                    )
+                                    IconButton(onClick = { clipboard.setText(AnnotatedString(note)) }) {
+                                        Icon(
+                                            Icons.Filled.ContentCopy,
+                                            contentDescription = "Copy to clipboard",
+                                            tint = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }

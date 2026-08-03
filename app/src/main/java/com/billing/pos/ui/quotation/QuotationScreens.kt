@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Divider
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -111,6 +112,9 @@ class QuotationViewModel(private val app: Application) : AndroidViewModel(app) {
         repo.customers.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val items: StateFlow<List<Item>> =
         repo.items.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val itemPhotos: StateFlow<Map<String, String>> =
+        repo.itemPhotoByName.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+    var includeImages by mutableStateOf(false)
     val quotations: StateFlow<List<Quotation>> =
         repo.quotations.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -262,6 +266,7 @@ fun QuotationScreen(editId: Long?, onBack: () -> Unit, vm: QuotationViewModel = 
     val snackbar = remember { SnackbarHostState() }
     val items by vm.items.collectAsStateSafe()
     val customers by vm.customers.collectAsStateSafe()
+    val itemPhotos by vm.itemPhotos.collectAsStateSafe()
     val message by vm.message.collectAsStateSafe()
     LaunchedEffect(Unit) {
         val copyId = QuotationCopy.take()
@@ -299,7 +304,12 @@ fun QuotationScreen(editId: Long?, onBack: () -> Unit, vm: QuotationViewModel = 
                         else PdfDoc(
                             docTitle = "QUOTATION", docNo = vm.quotationNo, dateMillis = vm.dateMillis,
                             partyLabel = "Quote To", partyName = vm.selectedCustomer?.name ?: "",
-                            lines = vm.cart.map { PdfLine(it.name, it.qty, it.price, it.total, it.unit, it.note) },
+                            lines = vm.cart.map {
+                                PdfLine(
+                                    it.name, it.qty, it.price, it.total, it.unit, it.note,
+                                    imagePath = if (vm.includeImages) itemPhotos[it.name.lowercase()] else null
+                                )
+                            },
                             subTotal = vm.subTotal, taxTotal = vm.taxTotal, additionalCharge = vm.additionalCharge,
                             discount = vm.discount, grandTotal = vm.grandTotal, grandLabel = "TOTAL",
                             remarks = vm.remarks, terms = vm.terms, filePrefix = "quotation"
@@ -332,6 +342,10 @@ fun QuotationScreen(editId: Long?, onBack: () -> Unit, vm: QuotationViewModel = 
                         Icon(Icons.Filled.Add, null); Text("  Bundle")
                     }
                 }
+            }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(checked = vm.includeImages, onCheckedChange = { vm.includeImages = it })
+                Text("Include item images in PDF/Share", style = MaterialTheme.typography.bodySmall)
             }
 
             Card(Modifier.weight(1f).fillMaxWidth().padding(top = 8.dp)) {

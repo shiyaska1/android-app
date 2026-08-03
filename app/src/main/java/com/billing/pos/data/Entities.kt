@@ -24,6 +24,8 @@ data class Item(
     val price: Double,
     /** Cost/purchase price in the primary unit; 0 = not set (reports fall back to the last purchase rate). */
     val purchasePrice: Double = 0.0,
+    /** List/MRP price in the primary unit; 0 = not set. Printed on the A4 invoice as a reference price. */
+    val mrp: Double = 0.0,
     val taxPercent: Double = 0.0,
     val barcode: String = "",
     val hsn: String = "",
@@ -115,6 +117,8 @@ data class BillItem(
     val price: Double,
     val taxPercent: Double,
     val lineTotal: Double,
+    /** MRP snapshot at time of sale (0 = not set); printed on the A4 invoice. */
+    val mrp: Double = 0.0,
     /** Batch/lot this line was sold from (when batch tracking is on). */
     val batchNo: String = "",
     /** Unit this line was billed in (blank = the item's primary unit). */

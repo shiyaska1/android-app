@@ -23,7 +23,9 @@ data class PdfLine(
     val lineTotal: Double,
     val unit: String = "",
     /** Printed under the item name, wrapped over as many lines as it needs. */
-    val note: String = ""
+    val note: String = "",
+    /** Item photo path, printed directly under the item name (max 200pt wide) when set. */
+    val imagePath: String? = null
 )
 
 /** A generic printable business document (quotation, sales/purchase return, LPO, …). */
@@ -154,12 +156,17 @@ object DocumentPdf {
         // Notes print smaller and greyer than the item name, so the item still reads first.
         val notePaint = Paint(cell).apply { textSize = cell.textSize - 2f; color = 0xFF444444.toInt() }
         val itemColWidth = cQty - cItem - 8f
+        val imgMaxW = minOf(200f, itemColWidth)
         doc.lines.forEachIndexed { i, l ->
             // A description replaces the item name rather than sitting under it, so a line
             // that has been described prints only the description.
             val noteLines = layoutRich(l.note, itemColWidth, notePaint)
             val notesH = noteLines.sumOf { it.height.toDouble() }.toFloat()
-            val thisRowH = if (noteLines.isEmpty()) rowH else maxOf(rowH, notesH + 10f)
+            val textH = if (noteLines.isEmpty()) rowH else maxOf(rowH, notesH + 10f)
+            val bmp = l.imagePath?.takeIf { it.isNotBlank() }?.let { runCatching { BitmapFactory.decodeFile(it) }.getOrNull() }
+            val imgW = bmp?.let { minOf(imgMaxW, it.width.toFloat()) } ?: 0f
+            val imgH = bmp?.let { imgW / it.width * it.height } ?: 0f
+            val thisRowH = if (bmp != null) textH + imgH + 6f else textH
             if (y + thisRowH > PH - 120f) {
                 drawVerticalBorders(c, line, x0, xEnd, cItem, cQty, cRate, cAmt, secTop, y)
                 pdf.finishPage(page)
@@ -185,6 +192,11 @@ object DocumentPdf {
                         nx += run.paint.measureText(run.text)
                     }
                 }
+            }
+            if (bmp != null) {
+                val imgTop = y + textH + 4f
+                c.drawBitmap(bmp, null, android.graphics.RectF(cItem + 4f, imgTop, cItem + 4f + imgW, imgTop + imgH), null)
+                bmp.recycle()
             }
             y += thisRowH
             c.drawLine(x0, y, xEnd, y, line)

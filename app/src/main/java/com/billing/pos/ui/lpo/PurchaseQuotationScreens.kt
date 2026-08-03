@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Divider
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -94,6 +95,9 @@ class PurchaseQuotationViewModel(app: Application) : AndroidViewModel(app) {
     val suppliers: StateFlow<List<Supplier>> = repo.suppliers.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val items: StateFlow<List<Item>> = repo.items.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val lpos: StateFlow<List<PurchaseQuotation>> = repo.purchaseQuotations.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val itemPhotos: StateFlow<Map<String, String>> =
+        repo.itemPhotoByName.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+    var includeImages by mutableStateOf(false)
 
     var selectedSupplier by mutableStateOf<Supplier?>(null); private set
     val cart: SnapshotStateList<CartLine> = mutableStateListOf()
@@ -182,6 +186,7 @@ fun PurchaseQuotationScreen(editId: Long?, onBack: () -> Unit, vm: PurchaseQuota
     val snackbar = remember { SnackbarHostState() }
     val items by vm.items.collectAsStateSafe()
     val suppliers by vm.suppliers.collectAsStateSafe()
+    val itemPhotos by vm.itemPhotos.collectAsStateSafe()
     val message by vm.message.collectAsStateSafe()
     LaunchedEffect(Unit) { if (editId != null && editId > 0) vm.load(editId) }
     LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); vm.consumeMessage() } }
@@ -209,7 +214,12 @@ fun PurchaseQuotationScreen(editId: Long?, onBack: () -> Unit, vm: PurchaseQuota
                         else PdfDoc(
                             docTitle = "PURCHASE ORDER", docNo = vm.lpoNo, dateMillis = vm.dateMillis,
                             partyLabel = "Order To", partyName = vm.selectedSupplier?.name ?: "",
-                            lines = vm.cart.map { PdfLine(it.name, it.qty, it.price, it.total, it.unit) },
+                            lines = vm.cart.map {
+                                PdfLine(
+                                    it.name, it.qty, it.price, it.total, it.unit,
+                                    imagePath = if (vm.includeImages) itemPhotos[it.name.lowercase()] else null
+                                )
+                            },
                             subTotal = vm.subTotal, taxTotal = vm.taxTotal, additionalCharge = vm.additionalCharge,
                             discount = vm.discount, grandTotal = vm.grandTotal, grandLabel = "ORDER TOTAL",
                             remarks = vm.remarks, filePrefix = "lpo"
@@ -240,6 +250,10 @@ fun PurchaseQuotationScreen(editId: Long?, onBack: () -> Unit, vm: PurchaseQuota
                 }
             }
             Button(onClick = { showItemPicker = true }, modifier = Modifier.fillMaxWidth().padding(top = 6.dp)) { Icon(Icons.Filled.Add, null); Text("  Add item") }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(checked = vm.includeImages, onCheckedChange = { vm.includeImages = it })
+                Text("Include item images in PDF/Share", style = MaterialTheme.typography.bodySmall)
+            }
 
             Card(Modifier.weight(1f).fillMaxWidth().padding(top = 8.dp)) {
                 if (vm.cart.isEmpty()) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("No items", color = MaterialTheme.colorScheme.outline) }

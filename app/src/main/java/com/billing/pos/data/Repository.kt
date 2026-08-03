@@ -3,6 +3,7 @@ package com.billing.pos.data
 import android.content.Context
 import com.billing.pos.auth.PasswordHasher
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import org.json.JSONArray
 import org.json.JSONObject
@@ -45,6 +46,13 @@ class Repository(private val context: Context) {
     val customers: Flow<List<Customer>> = customerDao.observeAll()
     val items: Flow<List<Item>> = itemDao.observeAll()
     val itemAttachments: Flow<List<ItemAttachment>> = itemAttachmentDao.observeAll()
+    /** Item name (lowercased) -> its first PHOTO attachment path. Used to optionally print item
+     * images on Quotation/Purchase Order/Purchase Quotation PDFs (matched by name since those
+     * documents' saved lines don't carry an itemId). */
+    val itemPhotoByName: Flow<Map<String, String>> = combine(items, itemAttachments) { its, atts ->
+        val photosByItemId = atts.filter { it.kind == "PHOTO" }.groupBy { it.itemId }
+        its.mapNotNull { item -> photosByItemId[item.id]?.firstOrNull()?.path?.let { path -> item.name.lowercase() to path } }.toMap()
+    }
     val billAttachments: Flow<List<BillAttachment>> = billAttachmentDao.observeAll()
     val users: Flow<List<User>> = userDao.observeAll()
     val allBills: Flow<List<Bill>> = billDao.observeAll()
@@ -335,10 +343,10 @@ class Repository(private val context: Context) {
         name: String, price: Double, taxPercent: Double, barcode: String = "", hsn: String = "",
         category: String = "", openingStock: Double = 0.0, unit: String = "PCS", storeLocation: String = "",
         chemicalContent: String = "", secondaryUnit: String = "PCS", conversionFactor: Double = 1.0,
-        purchasePrice: Double = 0.0
+        purchasePrice: Double = 0.0, mrp: Double = 0.0
     ): Long =
         itemDao.insert(Item(
-            name = name.trim(), price = price, purchasePrice = purchasePrice, taxPercent = taxPercent,
+            name = name.trim(), price = price, purchasePrice = purchasePrice, mrp = mrp, taxPercent = taxPercent,
             barcode = barcode.trim(), hsn = hsn.trim(),
             category = category.trim(), openingStock = openingStock, unit = unit.trim().ifBlank { "PCS" },
             secondaryUnit = secondaryUnit.trim().ifBlank { "PCS" },
