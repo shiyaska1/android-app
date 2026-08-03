@@ -734,6 +734,17 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
                 enabled = newSalesmanDeviceId.isNotBlank() && newSalesmanName.isNotBlank(),
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
             ) { Text("Add / update salesman") }
+
+            Divider(Modifier.padding(vertical = 16.dp))
+            val appVersion = remember {
+                runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: "unknown"
+            }
+            Text(
+                "App version $appVersion",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.outline,
+                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+            )
         }
     }
 }

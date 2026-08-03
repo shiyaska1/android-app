@@ -263,18 +263,12 @@ fun SalesReturnScreen(editId: Long?, onBack: () -> Unit, vm: SalesReturnViewMode
         }
     ) { pad ->
         Column(Modifier.fillMaxSize().padding(pad).padding(12.dp)) {
-            var custMenu by remember { mutableStateOf(false) }
-            ExposedDropdownMenuBox(expanded = custMenu, onExpandedChange = { custMenu = !custMenu }) {
-                OutlinedTextField(
-                    readOnly = true, value = vm.selectedCustomer?.name ?: "", onValueChange = {},
-                    label = { Text("Customer") },
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(custMenu) },
-                    modifier = Modifier.menuAnchor().fillMaxWidth()
-                )
-                ExposedDropdownMenu(expanded = custMenu, onDismissRequest = { custMenu = false }) {
-                    customers.forEach { c -> DropdownMenuItem(text = { Text(c.name) }, onClick = { vm.selectCustomer(c); custMenu = false }) }
-                }
-            }
+            com.billing.pos.ui.common.CustomerPickField(
+                customers = customers,
+                selectedName = vm.selectedCustomer?.name ?: "",
+                onPick = { vm.selectCustomer(it) },
+                modifier = Modifier.fillMaxWidth()
+            )
             // Return type: Direct (type an optional invoice no) or Against bill (pick an invoice).
             var typeMenu by remember { mutableStateOf(false) }
             ExposedDropdownMenuBox(expanded = typeMenu, onExpandedChange = { typeMenu = !typeMenu }, modifier = Modifier.padding(top = 6.dp)) {

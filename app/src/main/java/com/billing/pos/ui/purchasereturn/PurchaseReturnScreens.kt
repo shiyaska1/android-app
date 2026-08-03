@@ -307,18 +307,12 @@ fun PurchaseReturnScreen(editId: Long?, onBack: () -> Unit, vm: PurchaseReturnVi
         }
     ) { pad ->
         Column(Modifier.fillMaxSize().padding(pad).padding(12.dp)) {
-            var supMenu by remember { mutableStateOf(false) }
-            ExposedDropdownMenuBox(expanded = supMenu, onExpandedChange = { supMenu = !supMenu }) {
-                OutlinedTextField(
-                    readOnly = true, value = vm.selectedSupplier?.name ?: "", onValueChange = {},
-                    label = { Text("Supplier") },
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(supMenu) },
-                    modifier = Modifier.menuAnchor().fillMaxWidth()
-                )
-                ExposedDropdownMenu(expanded = supMenu, onDismissRequest = { supMenu = false }) {
-                    suppliers.forEach { s -> DropdownMenuItem(text = { Text(s.name) }, onClick = { vm.selectSupplier(s); supMenu = false }) }
-                }
-            }
+            com.billing.pos.ui.common.SupplierPickField(
+                suppliers = suppliers,
+                selectedName = vm.selectedSupplier?.name ?: "",
+                onPick = { vm.selectSupplier(it) },
+                modifier = Modifier.fillMaxWidth()
+            )
             // Return type: Direct (type an optional purchase no) or Against bill (pick a purchase).
             var typeMenu by remember { mutableStateOf(false) }
             ExposedDropdownMenuBox(expanded = typeMenu, onExpandedChange = { typeMenu = !typeMenu }, modifier = Modifier.padding(top = 6.dp)) {

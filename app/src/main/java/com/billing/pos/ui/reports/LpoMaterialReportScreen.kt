@@ -144,28 +144,13 @@ fun LpoMaterialReportScreen(onBack: () -> Unit, onOpenLpo: (Long) -> Unit, vm: L
         }
     ) { pad ->
         Column(Modifier.fillMaxSize().padding(pad).padding(12.dp)) {
-            var supMenu by remember { mutableStateOf(false) }
-            var supQuery by remember { mutableStateOf(supplier?.name ?: "") }
-            LaunchedEffect(supplier?.id) { if (!supMenu) supQuery = supplier?.name ?: "" }
-            val supMatches = remember(supQuery, suppliers) {
-                if (supQuery.isBlank()) suppliers else suppliers.filter { it.name.contains(supQuery, ignoreCase = true) }
-            }
-            ExposedDropdownMenuBox(expanded = supMenu, onExpandedChange = { supMenu = !supMenu }) {
-                OutlinedTextField(
-                    value = supQuery, onValueChange = { supQuery = it; supMenu = true },
-                    label = { Text("Supplier *  (required)") },
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(supMenu) },
-                    modifier = Modifier.menuAnchor().fillMaxWidth()
-                        .onFocusChanged { fs ->
-                            if (fs.isFocused) { supQuery = ""; supMenu = true }
-                            else if (!supMenu) supQuery = supplier?.name ?: ""
-                        }
-                )
-                ExposedDropdownMenu(expanded = supMenu, onDismissRequest = { supMenu = false; supQuery = supplier?.name ?: "" }) {
-                    if (supMatches.isEmpty()) DropdownMenuItem(text = { Text("No match") }, onClick = { supMenu = false })
-                    supMatches.forEach { s -> DropdownMenuItem(text = { Text(s.name) }, onClick = { supplier = s; supQuery = s.name; lpoId = 0; lpoNo = ""; supMenu = false }) }
-                }
-            }
+            com.billing.pos.ui.common.SupplierPickField(
+                suppliers = suppliers,
+                selectedName = supplier?.name ?: "",
+                onPick = { supplier = it; lpoId = 0; lpoNo = "" },
+                label = "Supplier *  (required)",
+                modifier = Modifier.fillMaxWidth()
+            )
             LpoPickerField(
                 lpos = lpos, supplierId = supplier?.id ?: 0L, selectedNo = lpoNo,
                 label = "LPO (optional — all if blank)",

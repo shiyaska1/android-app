@@ -309,18 +309,12 @@ fun QuotationScreen(editId: Long?, onBack: () -> Unit, vm: QuotationViewModel = 
         }
     ) { pad ->
         Column(Modifier.fillMaxSize().padding(pad).padding(12.dp)) {
-            var custMenu by remember { mutableStateOf(false) }
-            ExposedDropdownMenuBox(expanded = custMenu, onExpandedChange = { custMenu = !custMenu }) {
-                OutlinedTextField(
-                    readOnly = true, value = vm.selectedCustomer?.name ?: "", onValueChange = {},
-                    label = { Text("Customer") },
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(custMenu) },
-                    modifier = Modifier.menuAnchor().fillMaxWidth()
-                )
-                ExposedDropdownMenu(expanded = custMenu, onDismissRequest = { custMenu = false }) {
-                    customers.forEach { c -> DropdownMenuItem(text = { Text(c.name) }, onClick = { vm.selectCustomer(c); custMenu = false }) }
-                }
-            }
+            com.billing.pos.ui.common.CustomerPickField(
+                customers = customers,
+                selectedName = vm.selectedCustomer?.name ?: "",
+                onPick = { vm.selectCustomer(it) },
+                modifier = Modifier.fillMaxWidth()
+            )
             Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Button(onClick = { showItemPicker = true }, modifier = Modifier.weight(1f)) {
                     Icon(Icons.Filled.Add, null); Text("  Add item")
@@ -557,8 +551,8 @@ fun QuotationListScreen(
                 if (fromMillis != null || toMillis != null) TextButton(onClick = { fromMillis = null; toMillis = null }) { Text("Clear") }
             }
             Divider()
-            if (filtered.isEmpty()) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("No quotations match", color = MaterialTheme.colorScheme.outline) }
-            else LazyColumn(Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
+            if (filtered.isEmpty()) Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) { Text("No quotations match", color = MaterialTheme.colorScheme.outline) }
+            else LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 12.dp)) {
             items(filtered, key = { it.id }) { q ->
                 val converted = q.convertedBillNo.isNotBlank()
                 Row(

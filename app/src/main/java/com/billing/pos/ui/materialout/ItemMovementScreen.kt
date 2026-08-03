@@ -8,18 +8,18 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Divider
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -97,23 +97,32 @@ fun ItemMovementScreen(onBack: () -> Unit, onOpenVoucher: (String, Long) -> Unit
         }
     ) { pad ->
         Column(Modifier.fillMaxSize().padding(pad)) {
-            var itemMenu by remember { mutableStateOf(false) }
+            var editingItem by remember { mutableStateOf(false) }
             var q by remember { mutableStateOf(selected?.name ?: "") }
+            androidx.compose.runtime.LaunchedEffect(selected?.id) { if (!editingItem) q = selected?.name ?: "" }
             val shown = if (q.isBlank()) items else items.filter { it.name.contains(q, true) }
-            ExposedDropdownMenuBox(expanded = itemMenu, onExpandedChange = { itemMenu = !itemMenu }, modifier = Modifier.padding(12.dp)) {
+            Column(Modifier.padding(12.dp)) {
                 OutlinedTextField(
-                    value = q, onValueChange = { q = it; selected = null; itemMenu = true },
+                    value = q, onValueChange = { q = it; selected = null; editingItem = true },
                     label = { Text("Pick / search item") },
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(itemMenu) },
-                    singleLine = true, modifier = Modifier.menuAnchor().fillMaxWidth()
+                    singleLine = true, modifier = Modifier.fillMaxWidth()
                         .onFocusChanged { fs ->
-                            if (fs.isFocused) { q = ""; itemMenu = true }
-                            else if (!itemMenu) q = selected?.name ?: q
+                            if (fs.isFocused) { q = ""; editingItem = true }
+                            else { editingItem = false; if (q.isBlank()) q = selected?.name ?: "" }
                         }
                 )
-                ExposedDropdownMenu(expanded = itemMenu, onDismissRequest = { itemMenu = false }) {
-                    shown.take(30).forEach { it2 ->
-                        DropdownMenuItem(text = { Text(it2.name) }, onClick = { selected = it2; q = it2.name; itemMenu = false })
+                if (editingItem) {
+                    Column(Modifier.fillMaxWidth().heightIn(max = 200.dp).verticalScroll(rememberScrollState())) {
+                        shown.take(30).forEach { it2 ->
+                            Text(
+                                it2.name,
+                                style = MaterialTheme.typography.bodyMedium,
+                                maxLines = 1,
+                                modifier = Modifier.fillMaxWidth()
+                                    .clickable { selected = it2; q = it2.name; editingItem = false }
+                                    .padding(vertical = 10.dp, horizontal = 4.dp)
+                            )
+                        }
                     }
                 }
             }

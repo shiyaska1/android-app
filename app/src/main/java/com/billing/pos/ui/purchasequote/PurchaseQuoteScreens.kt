@@ -241,18 +241,12 @@ fun PurchaseQuoteScreen(editId: Long?, onBack: () -> Unit, vm: PurchaseQuoteView
         }
     ) { pad ->
         Column(Modifier.fillMaxSize().padding(pad).padding(12.dp)) {
-            var supMenu by remember { mutableStateOf(false) }
-            ExposedDropdownMenuBox(expanded = supMenu, onExpandedChange = { supMenu = !supMenu }) {
-                OutlinedTextField(
-                    readOnly = true, value = vm.selectedSupplier?.name ?: "", onValueChange = {},
-                    label = { Text("Supplier") },
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(supMenu) },
-                    modifier = Modifier.menuAnchor().fillMaxWidth()
-                )
-                ExposedDropdownMenu(expanded = supMenu, onDismissRequest = { supMenu = false }) {
-                    suppliers.forEach { s -> DropdownMenuItem(text = { Text(s.name) }, onClick = { vm.selectSupplier(s); supMenu = false }) }
-                }
-            }
+            com.billing.pos.ui.common.SupplierPickField(
+                suppliers = suppliers,
+                selectedName = vm.selectedSupplier?.name ?: "",
+                onPick = { vm.selectSupplier(it) },
+                modifier = Modifier.fillMaxWidth()
+            )
             OutlinedTextField(
                 value = vm.remarks, onValueChange = { vm.remarks = it }, label = { Text("Note (optional)") },
                 singleLine = true, modifier = Modifier.fillMaxWidth().padding(top = 6.dp)

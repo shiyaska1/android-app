@@ -232,18 +232,12 @@ fun HireInvoiceScreen(editId: Long?, onBack: () -> Unit, vm: HireInvoiceViewMode
         }
     ) { pad ->
         Column(Modifier.fillMaxSize().padding(pad).padding(12.dp)) {
-            var custMenu by remember { mutableStateOf(false) }
-            ExposedDropdownMenuBox(expanded = custMenu, onExpandedChange = { custMenu = !custMenu }) {
-                OutlinedTextField(
-                    readOnly = true, value = vm.selectedCustomer?.name ?: "", onValueChange = {},
-                    label = { Text("Customer") },
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(custMenu) },
-                    modifier = Modifier.menuAnchor().fillMaxWidth()
-                )
-                ExposedDropdownMenu(expanded = custMenu, onDismissRequest = { custMenu = false }) {
-                    customers.forEach { c -> DropdownMenuItem(text = { Text(c.name) }, onClick = { vm.selectCustomer(c); custMenu = false }) }
-                }
-            }
+            com.billing.pos.ui.common.CustomerPickField(
+                customers = customers,
+                selectedName = vm.selectedCustomer?.name ?: "",
+                onPick = { vm.selectCustomer(it) },
+                modifier = Modifier.fillMaxWidth()
+            )
             Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = { pickDate(context, vm.startDateMillis) { vm.startDateMillis = it } }, modifier = Modifier.weight(1f)) {
                     Icon(Icons.Filled.CalendarMonth, null); Text(" From ${Format.date(vm.startDateMillis)}", maxLines = 1)

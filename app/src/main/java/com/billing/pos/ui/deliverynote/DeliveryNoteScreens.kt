@@ -296,19 +296,14 @@ fun DeliveryNoteScreen(editId: Long?, onBack: () -> Unit, vm: DeliveryNoteViewMo
                 Text(vm.deliveryNo, fontWeight = FontWeight.Bold)
                 OutlinedButton(onClick = { pickDeliveryDate(context, vm.dateMillis) { vm.dateMillis = it } }) { Text(Format.date(vm.dateMillis)) }
             }
-            var custMenu by remember { mutableStateOf(false) }
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 6.dp)) {
-                ExposedDropdownMenuBox(expanded = custMenu, onExpandedChange = { custMenu = !custMenu }, modifier = Modifier.weight(1f)) {
-                    OutlinedTextField(
-                        readOnly = true, value = vm.selectedCustomer?.name ?: "", onValueChange = {},
-                        label = { Text("Customer *") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(custMenu) },
-                        modifier = Modifier.menuAnchor().fillMaxWidth()
-                    )
-                    ExposedDropdownMenu(expanded = custMenu, onDismissRequest = { custMenu = false }) {
-                        customers.forEach { cu -> DropdownMenuItem(text = { Text(cu.name) }, onClick = { vm.selectCustomer(cu); custMenu = false }) }
-                    }
-                }
+                com.billing.pos.ui.common.CustomerPickField(
+                    customers = customers,
+                    selectedName = vm.selectedCustomer?.name ?: "",
+                    onPick = { vm.selectCustomer(it) },
+                    label = "Customer *",
+                    modifier = Modifier.weight(1f)
+                )
                 IconButton(onClick = { showNewCustomer = true }) { Icon(Icons.Filled.PersonAdd, "New customer") }
             }
 

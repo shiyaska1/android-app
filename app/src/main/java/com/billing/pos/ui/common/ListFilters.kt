@@ -2,15 +2,20 @@ package com.billing.pos.ui.common
 
 import android.app.DatePickerDialog
 import android.content.Context
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExposedDropdownMenuBox
-import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -98,9 +103,14 @@ fun DateSearchFilter(
 
 /**
  * Searchable party (customer/supplier) filter for a document list: type to narrow, or pick from
- * the dropdown; blank/"All" clears it. Mirrors the "New Bill" customer search field's feel.
+ * the list that appears below; blank/"All" clears it.
+ *
+ * Deliberately NOT built on `ExposedDropdownMenuBox` — that popup-based combobox turned out to
+ * fight with the keyboard on real devices (typing the first character snapped the field back to
+ * the old value and blocked further typing, even though the same value/focus logic worked fine
+ * in a plain non-popup field). This plain text field + inline list below it sidesteps that
+ * entirely and is the same shape already proven to work (see the Ledger report's account field).
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PartyFilterField(
     names: List<String>,
@@ -110,32 +120,45 @@ fun PartyFilterField(
     allLabel: String = "All",
     modifier: Modifier = Modifier
 ) {
-    var expanded by remember { mutableStateOf(false) }
-    // The field always shows this one value — no separate "committed vs draft" display switch,
-    // which was the bug: switching what's shown based on [expanded] raced with the keyboard on
-    // the very first character typed, so it looked like the old value "auto-filled" back in and
-    // typing further did nothing.
     var query by remember { mutableStateOf(selected.ifBlank { allLabel }) }
-    androidx.compose.runtime.LaunchedEffect(selected) { if (!expanded) query = selected.ifBlank { allLabel } }
+    var editing by remember { mutableStateOf(false) }
+    androidx.compose.runtime.LaunchedEffect(selected) { if (!editing) query = selected.ifBlank { allLabel } }
 
-    ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }, modifier = modifier) {
+    Column(modifier) {
         OutlinedTextField(
             value = query,
-            onValueChange = { query = it; expanded = true },
+            onValueChange = { query = it; editing = true },
             label = { Text(label) },
             singleLine = true,
-            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
-            modifier = Modifier.menuAnchor().fillMaxWidth()
+            trailingIcon = {
+                if (selected.isNotBlank()) {
+                    IconButton(onClick = { onSelect(""); query = allLabel; editing = false }) {
+                        Icon(Icons.Filled.Close, "Clear")
+                    }
+                }
+            },
+            modifier = Modifier.fillMaxWidth()
                 .onFocusChanged { fs ->
-                    if (fs.isFocused) { query = ""; expanded = true }
-                    else if (!expanded) query = selected.ifBlank { allLabel }
+                    if (fs.isFocused) { query = ""; editing = true }
+                    else { editing = false; if (query.isBlank()) query = selected.ifBlank { allLabel } }
                 }
         )
-        val matches = names.filter { query.isBlank() || it.contains(query, ignoreCase = true) }
-        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false; query = selected.ifBlank { allLabel } }) {
-            DropdownMenuItem(text = { Text(allLabel) }, onClick = { onSelect(""); query = allLabel; expanded = false })
-            matches.forEach { nm ->
-                DropdownMenuItem(text = { Text(nm) }, onClick = { onSelect(nm); query = nm; expanded = false })
+        if (editing) {
+            val matches = (listOf(allLabel) + names).filter { it == allLabel || query.isBlank() || it.contains(query, ignoreCase = true) }
+            Column(Modifier.fillMaxWidth().heightIn(max = 200.dp).verticalScroll(rememberScrollState())) {
+                matches.forEach { nm ->
+                    Text(
+                        nm,
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 1,
+                        modifier = Modifier.fillMaxWidth()
+                            .clickable {
+                                onSelect(if (nm == allLabel) "" else nm)
+                                query = nm; editing = false
+                            }
+                            .padding(vertical = 10.dp, horizontal = 4.dp)
+                    )
+                }
             }
         }
     }
