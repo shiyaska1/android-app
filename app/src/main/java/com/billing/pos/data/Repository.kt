@@ -35,6 +35,7 @@ class Repository(private val context: Context) {
     private val chequeDao = db.chequeDao()
     private val costCenterDao = db.costCenterDao()
     private val bankReconciliationDao = db.bankReconciliationDao()
+    private val recurringJournalDao = db.recurringJournalDao()
     private val fixedAssetDao = db.fixedAssetDao()
     private val appPrefs = AppPrefs(context)
 
@@ -211,6 +212,53 @@ class Repository(private val context: Context) {
         bankReconciliationDao.insert(BankReconciliation(headId = headId, vch = vch, dateMillis = dateMillis, amount = amount))
     suspend fun unmarkReconciled(headId: Long, vch: String, dateMillis: Long, amount: Double) =
         bankReconciliationDao.unmark(headId, vch, dateMillis, amount)
+
+    // ---- recurring journals ----
+    val recurringJournals: Flow<List<RecurringJournal>> = recurringJournalDao.observeAll()
+    suspend fun recurringJournalLinesFor(id: Long): List<RecurringJournalLine> = recurringJournalDao.linesFor(id)
+    suspend fun saveRecurringJournal(t: RecurringJournal, lines: List<RecurringJournalLine>): Long =
+        recurringJournalDao.saveTemplate(t, lines)
+    suspend fun updateRecurringJournal(t: RecurringJournal, lines: List<RecurringJournalLine>) =
+        recurringJournalDao.updateTemplateWithLines(t, lines)
+    suspend fun deleteRecurringJournal(t: RecurringJournal) = recurringJournalDao.deleteTemplateWithLines(t)
+
+    private fun advanceRecurring(millis: Long, frequency: String): Long = java.util.Calendar.getInstance().apply {
+        timeInMillis = millis
+        when (frequency) {
+            RecurringFrequency.DAILY -> add(java.util.Calendar.DAY_OF_MONTH, 1)
+            RecurringFrequency.WEEKLY -> add(java.util.Calendar.WEEK_OF_YEAR, 1)
+            RecurringFrequency.YEARLY -> add(java.util.Calendar.YEAR, 1)
+            else -> add(java.util.Calendar.MONTH, 1)
+        }
+    }.timeInMillis
+
+    /** Posts a real [JournalEntry] for every due recurring template, advancing past each occurrence
+     * (catches up on however many were missed since the app was last opened) until nextDueDate is
+     * in the future or the template's end date has passed. Returns how many vouchers were posted. */
+    suspend fun generateDueRecurringJournals(): Int {
+        var count = 0
+        val now = System.currentTimeMillis()
+        recurringJournalDao.due(now).forEach { t ->
+            var next = t.nextDueDate
+            var generated = t.occurrencesGenerated
+            val lines = recurringJournalDao.linesFor(t.id)
+            if (lines.isNotEmpty()) {
+                while (next <= now && (t.endDate == 0L || next <= t.endDate)) {
+                    val entry = JournalEntry(
+                        voucherNo = "RJ-${t.id}-${generated + 1}", dateMillis = next,
+                        narration = t.narration.ifBlank { t.name }
+                    )
+                    val jLines = lines.map { JournalLine(0, 0, it.headId, it.headName, it.amount, it.isDebit) }
+                    saveJournal(entry, jLines)
+                    generated++
+                    count++
+                    next = advanceRecurring(next, t.frequency)
+                }
+            }
+            recurringJournalDao.updateTemplate(t.copy(nextDueDate = next, lastGeneratedAt = now, occurrencesGenerated = generated))
+        }
+        return count
+    }
 
     // ---- cost centers ----
     suspend fun addCostCenter(name: String): Long = costCenterDao.insert(CostCenter(name = name.trim()))

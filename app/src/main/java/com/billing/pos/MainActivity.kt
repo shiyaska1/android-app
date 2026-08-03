@@ -504,6 +504,7 @@ private fun AppNav() {
                 onAccounts = { nav.navigate("accounts") },
                 onJournal = { nav.navigate("journal") },
                 onContra = { nav.navigate("contra") },
+                onRecurringJournal = { nav.navigate("recurring") },
                 onLedger = { nav.navigate("ledger") },
                 onTrialBalance = { nav.navigate("trialbalance") },
                 onProfitLoss = { nav.navigate("profitloss") },
@@ -1099,6 +1100,21 @@ private fun AppNav() {
         ) { entry ->
             com.billing.pos.ui.journal.ContraEntryScreen(
                 entryId = entry.arguments?.getLong("id") ?: 0L,
+                onBack = { nav.popBackStack() }
+            )
+        }
+        composable("recurring") {
+            com.billing.pos.ui.journal.RecurringJournalListScreen(
+                onBack = { nav.popBackStack() },
+                onOpen = { id -> nav.navigate("recurring/edit/$id") }
+            )
+        }
+        composable(
+            route = "recurring/edit/{id}",
+            arguments = listOf(navArgument("id") { type = NavType.LongType })
+        ) { entry ->
+            com.billing.pos.ui.journal.RecurringJournalEntryScreen(
+                templateId = entry.arguments?.getLong("id") ?: 0L,
                 onBack = { nav.popBackStack() }
             )
         }
