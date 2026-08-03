@@ -19,6 +19,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -28,6 +29,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -52,6 +54,9 @@ data class TBRow(val head: String, val group: String, val debit: Double, val cre
 
 class FinancialReportViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = Repository(app)
+
+    val accountGroups: StateFlow<List<AccountGroup>> =
+        repo.accountGroups.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     /** Unified account-transaction view — the ONE source for all statements. Collected by the UI. */
     val postings: StateFlow<List<Posting>> =
@@ -100,6 +105,41 @@ fun balanceSheetOf(p: List<Posting>, to: Long): List<Any> {
     return listOf(assets, liab, netProfit, diff)
 }
 
+data class GroupRow(val name: String, val debit: Double, val credit: Double, val level: Int)
+
+/** Group-wise Trial Balance: each group's row already includes every descendant group's net
+ * (via [AccountingEngine.rollUp]), rendered indented by nesting depth — so the TOTAL must sum
+ * only the top-level (level 0) rows, not every row, or descendants would be double-counted. */
+fun groupTrialBalanceOf(groups: List<AccountGroup>, postings: List<Posting>, to: Long): List<GroupRow> {
+    val net = AccountingEngine.rollUp(groups, postings.filter { it.date <= to })
+    val childrenOf = groups.groupBy { it.parentGroupId }
+    val rows = mutableListOf<GroupRow>()
+    fun walk(g: AccountGroup, level: Int) {
+        val n = net[g.id] ?: 0.0
+        if (n != 0.0) rows += GroupRow(g.name, if (n >= 0) n else 0.0, if (n < 0) -n else 0.0, level)
+        (childrenOf[g.id] ?: emptyList()).sortedBy { it.name }.forEach { walk(it, level + 1) }
+    }
+    groups.filter { it.parentGroupId == null }.sortedBy { it.name }.forEach { walk(it, 0) }
+    return rows
+}
+
+/** Group-wise Balance Sheet side (Assets or Liabilities): same rollup, restricted to top-level
+ * groups of the given nature and their descendants, in each group's natural Dr/Cr sign — assets
+ * show debit-credit, liabilities show credit-debit, matching [balanceSheetOf]'s per-head convention. */
+fun groupBalanceSheetOf(groups: List<AccountGroup>, postings: List<Posting>, to: Long, nature: AccountNature): List<GroupRow> {
+    val net = AccountingEngine.rollUp(groups, postings.filter { it.date <= to })
+    val childrenOf = groups.groupBy { it.parentGroupId }
+    val rows = mutableListOf<GroupRow>()
+    fun walk(g: AccountGroup, level: Int) {
+        val raw = net[g.id] ?: 0.0
+        val amount = if (nature == AccountNature.LIABILITY) -raw else raw
+        if (amount != 0.0) rows += GroupRow(g.name, amount, 0.0, level)
+        (childrenOf[g.id] ?: emptyList()).sortedBy { it.name }.forEach { walk(it, level + 1) }
+    }
+    groups.filter { it.parentGroupId == null && it.nature == nature }.sortedBy { it.name }.forEach { walk(it, 0) }
+    return rows
+}
+
 fun monthAgo(): Long = Calendar.getInstance().apply { add(Calendar.MONTH, -1) }.timeInMillis
 fun today(): Long = Calendar.getInstance().timeInMillis
 
@@ -143,42 +183,90 @@ private fun ReportScaffold(title: String, onBack: () -> Unit, content: @Composab
 @Composable
 fun TrialBalanceScreen(onBack: () -> Unit, vm: FinancialReportViewModel = viewModel()) {
     val postings by vm.postings.collectAsState()
+    val groups by vm.accountGroups.collectAsState()
     var to by remember { mutableStateOf(today()) }
+    var groupWise by remember { mutableStateOf(false) }
     var rows by remember { mutableStateOf<List<TBRow>?>(null) }
+    var groupRows by remember { mutableStateOf<List<GroupRow>?>(null) }
     ReportScaffold("Trial Balance", onBack) { m ->
         Column(m) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 DateBtn("As on", to, { to = it }, Modifier.weight(1f))
-                Button(onClick = { rows = trialBalanceOf(postings, com.billing.pos.ui.common.endOfDay(to)) }, modifier = Modifier.weight(1f)) { Text("View") }
+                Button(
+                    onClick = {
+                        val asOf = com.billing.pos.ui.common.endOfDay(to)
+                        if (groupWise) groupRows = groupTrialBalanceOf(groups, postings, asOf)
+                        else rows = trialBalanceOf(postings, asOf)
+                    },
+                    modifier = Modifier.weight(1f)
+                ) { Text("View") }
             }
-            rows?.let { list ->
-                val tDr = list.sumOf { it.debit }; val tCr = list.sumOf { it.credit }
-                HorizontalDivider(Modifier.padding(vertical = 8.dp))
-                Row(Modifier.fillMaxWidth()) {
-                    Text("Account", Modifier.weight(2f), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
-                    Text("Debit", Modifier.weight(1f), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
-                    Text("Credit", Modifier.weight(1f), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
-                }
-                HorizontalDivider()
-                LazyColumn(Modifier.weight(1f)) {
-                    items(list) { r ->
-                        Row(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
-                            Column(Modifier.weight(2f)) {
-                                Text(r.head, style = MaterialTheme.typography.bodySmall)
-                                Text(r.group, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
-                            }
-                            Text(if (r.debit != 0.0) Format.money(r.debit) else "", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
-                            Text(if (r.credit != 0.0) Format.money(r.credit) else "", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
-                        }
-                        HorizontalDivider()
+            Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("Group-wise", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                Switch(checked = groupWise, onCheckedChange = { groupWise = it })
+            }
+            if (groupWise) {
+                groupRows?.let { list ->
+                    val tDr = list.filter { it.level == 0 }.sumOf { it.debit }
+                    val tCr = list.filter { it.level == 0 }.sumOf { it.credit }
+                    HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                    Row(Modifier.fillMaxWidth()) {
+                        Text("Group", Modifier.weight(2f), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
+                        Text("Debit", Modifier.weight(1f), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
+                        Text("Credit", Modifier.weight(1f), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
                     }
+                    HorizontalDivider()
+                    LazyColumn(Modifier.weight(1f)) {
+                        items(list) { r ->
+                            Row(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+                                Text(
+                                    r.name, Modifier.weight(2f).padding(start = (r.level * 16).dp),
+                                    fontWeight = if (r.level == 0) FontWeight.Bold else FontWeight.Normal,
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                                Text(if (r.debit != 0.0) Format.money(r.debit) else "", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                                Text(if (r.credit != 0.0) Format.money(r.credit) else "", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                            }
+                            HorizontalDivider()
+                        }
+                    }
+                    Row(Modifier.fillMaxWidth().padding(top = 4.dp)) {
+                        Text("TOTAL", Modifier.weight(2f), fontWeight = FontWeight.Bold)
+                        Text(Format.money(tDr), Modifier.weight(1f), fontWeight = FontWeight.Bold)
+                        Text(Format.money(tCr), Modifier.weight(1f), fontWeight = FontWeight.Bold)
+                    }
+                    if (list.isEmpty()) Text("No transactions yet.", color = MaterialTheme.colorScheme.outline, modifier = Modifier.padding(top = 8.dp))
                 }
-                Row(Modifier.fillMaxWidth().padding(top = 4.dp)) {
-                    Text("TOTAL", Modifier.weight(2f), fontWeight = FontWeight.Bold)
-                    Text(Format.money(tDr), Modifier.weight(1f), fontWeight = FontWeight.Bold)
-                    Text(Format.money(tCr), Modifier.weight(1f), fontWeight = FontWeight.Bold)
+            } else {
+                rows?.let { list ->
+                    val tDr = list.sumOf { it.debit }; val tCr = list.sumOf { it.credit }
+                    HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                    Row(Modifier.fillMaxWidth()) {
+                        Text("Account", Modifier.weight(2f), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
+                        Text("Debit", Modifier.weight(1f), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
+                        Text("Credit", Modifier.weight(1f), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
+                    }
+                    HorizontalDivider()
+                    LazyColumn(Modifier.weight(1f)) {
+                        items(list) { r ->
+                            Row(Modifier.fillMaxWidth().padding(vertical = 3.dp)) {
+                                Column(Modifier.weight(2f)) {
+                                    Text(r.head, style = MaterialTheme.typography.bodySmall)
+                                    Text(r.group, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                                }
+                                Text(if (r.debit != 0.0) Format.money(r.debit) else "", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                                Text(if (r.credit != 0.0) Format.money(r.credit) else "", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                            }
+                            HorizontalDivider()
+                        }
+                    }
+                    Row(Modifier.fillMaxWidth().padding(top = 4.dp)) {
+                        Text("TOTAL", Modifier.weight(2f), fontWeight = FontWeight.Bold)
+                        Text(Format.money(tDr), Modifier.weight(1f), fontWeight = FontWeight.Bold)
+                        Text(Format.money(tCr), Modifier.weight(1f), fontWeight = FontWeight.Bold)
+                    }
+                    if (list.isEmpty()) Text("No transactions yet.", color = MaterialTheme.colorScheme.outline, modifier = Modifier.padding(top = 8.dp))
                 }
-                if (list.isEmpty()) Text("No transactions yet.", color = MaterialTheme.colorScheme.outline, modifier = Modifier.padding(top = 8.dp))
             }
         }
     }
@@ -217,34 +305,84 @@ fun ProfitLossScreen(onBack: () -> Unit, vm: FinancialReportViewModel = viewMode
 }
 
 @Composable
+private fun groupRowLine(r: GroupRow) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(
+            r.name, modifier = Modifier.padding(start = (r.level * 16).dp),
+            fontWeight = if (r.level == 0) FontWeight.Bold else FontWeight.Normal,
+            style = MaterialTheme.typography.bodyMedium
+        )
+        Text(Format.money(r.debit), style = MaterialTheme.typography.bodyMedium)
+    }
+}
+
+@Composable
 fun BalanceSheetScreen(onBack: () -> Unit, vm: FinancialReportViewModel = viewModel()) {
     val postings by vm.postings.collectAsState()
+    val groups by vm.accountGroups.collectAsState()
     var to by remember { mutableStateOf(today()) }
+    var groupWise by remember { mutableStateOf(false) }
     var res by remember { mutableStateOf<List<Any>?>(null) }
+    var groupAssets by remember { mutableStateOf<List<GroupRow>?>(null) }
+    var groupLiab by remember { mutableStateOf<List<GroupRow>?>(null) }
     ReportScaffold("Balance Sheet", onBack) { m ->
         Column(m) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 DateBtn("As on", to, { to = it }, Modifier.weight(1f))
-                Button(onClick = { res = balanceSheetOf(postings, com.billing.pos.ui.common.endOfDay(to)) }, modifier = Modifier.weight(1f)) { Text("View") }
+                Button(
+                    onClick = {
+                        val asOf = com.billing.pos.ui.common.endOfDay(to)
+                        res = balanceSheetOf(postings, asOf)
+                        if (groupWise) {
+                            groupAssets = groupBalanceSheetOf(groups, postings, asOf, AccountNature.ASSET)
+                            groupLiab = groupBalanceSheetOf(groups, postings, asOf, AccountNature.LIABILITY)
+                        }
+                    },
+                    modifier = Modifier.weight(1f)
+                ) { Text("View") }
+            }
+            Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("Group-wise", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                Switch(checked = groupWise, onCheckedChange = { groupWise = it })
             }
             res?.let { r ->
                 @Suppress("UNCHECKED_CAST") val assets = r[0] as List<Pair<String, Double>>
                 @Suppress("UNCHECKED_CAST") val liab = r[1] as List<Pair<String, Double>>
                 val netProfit = r[2] as Double
                 val diff = r[3] as Double
-                val totalAssets = assets.sumOf { it.second }
-                LazyColumn(Modifier.weight(1f).padding(top = 8.dp)) {
-                    item { Text("Liabilities", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary); HorizontalDivider() }
-                    items(liab) { rowLine(it.first, Format.money(it.second)) }
-                    item {
-                        rowLine(if (netProfit >= 0) "Net Profit" else "Net Loss", Format.money(kotlin.math.abs(netProfit)))
-                        if (kotlin.math.abs(diff) > 0.01) rowLine("Difference in opening", Format.money(diff))
-                        rowLine("Total Liabilities", Format.money(liab.sumOf { it.second } + netProfit + diff), bold = true)
-                        HorizontalDivider(Modifier.padding(vertical = 6.dp))
-                        Text("Assets", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary); HorizontalDivider()
+                if (groupWise) {
+                    val gAssets = groupAssets ?: emptyList()
+                    val gLiab = groupLiab ?: emptyList()
+                    val totalAssets = gAssets.filter { it.level == 0 }.sumOf { it.debit }
+                    val totalLiabGroups = gLiab.filter { it.level == 0 }.sumOf { it.debit }
+                    LazyColumn(Modifier.weight(1f).padding(top = 8.dp)) {
+                        item { Text("Liabilities", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary); HorizontalDivider() }
+                        items(gLiab) { groupRowLine(it) }
+                        item {
+                            rowLine(if (netProfit >= 0) "Net Profit" else "Net Loss", Format.money(kotlin.math.abs(netProfit)))
+                            if (kotlin.math.abs(diff) > 0.01) rowLine("Difference in opening", Format.money(diff))
+                            rowLine("Total Liabilities", Format.money(totalLiabGroups + netProfit + diff), bold = true)
+                            HorizontalDivider(Modifier.padding(vertical = 6.dp))
+                            Text("Assets", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary); HorizontalDivider()
+                        }
+                        items(gAssets) { groupRowLine(it) }
+                        item { rowLine("Total Assets", Format.money(totalAssets), bold = true) }
                     }
-                    items(assets) { rowLine(it.first, Format.money(it.second)) }
-                    item { rowLine("Total Assets", Format.money(totalAssets), bold = true) }
+                } else {
+                    val totalAssets = assets.sumOf { it.second }
+                    LazyColumn(Modifier.weight(1f).padding(top = 8.dp)) {
+                        item { Text("Liabilities", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary); HorizontalDivider() }
+                        items(liab) { rowLine(it.first, Format.money(it.second)) }
+                        item {
+                            rowLine(if (netProfit >= 0) "Net Profit" else "Net Loss", Format.money(kotlin.math.abs(netProfit)))
+                            if (kotlin.math.abs(diff) > 0.01) rowLine("Difference in opening", Format.money(diff))
+                            rowLine("Total Liabilities", Format.money(liab.sumOf { it.second } + netProfit + diff), bold = true)
+                            HorizontalDivider(Modifier.padding(vertical = 6.dp))
+                            Text("Assets", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary); HorizontalDivider()
+                        }
+                        items(assets) { rowLine(it.first, Format.money(it.second)) }
+                        item { rowLine("Total Assets", Format.money(totalAssets), bold = true) }
+                    }
                 }
             }
         }
