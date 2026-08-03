@@ -3,6 +3,13 @@ package com.billing.pos.data
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 
+/** Distinguishes a plain manual [JournalEntry] from a Contra (cash/bank transfer) one — both
+ * are stored and posted identically, this just drives which list/screen a voucher shows in. */
+object JournalVoucherType {
+    const val JOURNAL = "JOURNAL"
+    const val CONTRA = "CONTRA"
+}
+
 /** A journal voucher header. */
 @Entity(tableName = "journal_entries")
 data class JournalEntry(
@@ -18,7 +25,9 @@ data class JournalEntry(
     val cashAmount: Double = 0.0,
     val source: String = "",
     /** Last created/edited time — drives the cloud-sync "only push recent changes" window. */
-    val updatedAt: Long = 0
+    val updatedAt: Long = 0,
+    /** [JournalVoucherType.JOURNAL] or [JournalVoucherType.CONTRA]. */
+    val voucherType: String = JournalVoucherType.JOURNAL
 )
 
 /** One posting line of a journal voucher (a debit or a credit to an account head). */

@@ -176,9 +176,10 @@ object AccountingEngine {
             val h = headById[l.headId]
             val g = h?.let { groupById[it.groupId] }
             val ccName = l.costCenterId?.let { costCenterById[it]?.name } ?: ""
+            val defaultParticulars = if (e.voucherType == JournalVoucherType.CONTRA) "Contra" else "Journal"
             out.add(Posting(l.headName, g?.name ?: "", g?.nature ?: AccountNature.ASSET,
                 if (l.isDebit) l.amount else 0.0, if (!l.isDebit) l.amount else 0.0, e.dateMillis,
-                e.narration.ifBlank { "Journal" }, e.voucherNo, ccName))
+                e.narration.ifBlank { defaultParticulars }, e.voucherNo, ccName))
         }
 
         return out

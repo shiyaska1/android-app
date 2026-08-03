@@ -47,6 +47,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.billing.pos.data.AppPrefs
 import com.billing.pos.data.JournalEntry
+import com.billing.pos.data.JournalVoucherType
 import com.billing.pos.data.Repository
 import com.billing.pos.pdf.TablePdf
 import com.billing.pos.ui.billing.collectAsStateSafe
@@ -83,6 +84,8 @@ class JournalListViewModel(app: Application) : AndroidViewModel(app) {
 fun JournalListScreen(
     onBack: () -> Unit,
     onOpen: (Long) -> Unit,
+    voucherType: String = JournalVoucherType.JOURNAL,
+    title: String = "Journal",
     vm: JournalListViewModel = viewModel()
 ) {
     val context = LocalContext.current
@@ -98,7 +101,7 @@ fun JournalListScreen(
     var query by remember { mutableStateOf("") }
     var fromMillis by remember { mutableStateOf<Long?>(null) }
     var toMillis by remember { mutableStateOf<Long?>(null) }
-    val filtered = entries.filter {
+    val filtered = entries.filter { it.voucherType == voucherType }.filter {
         (fromMillis == null || it.dateMillis >= startOfDay(fromMillis!!)) &&
             (toMillis == null || it.dateMillis <= endOfDay(toMillis!!)) &&
             (query.isBlank() || it.voucherNo.contains(query, true) || it.narration.contains(query, true))
@@ -115,14 +118,14 @@ fun JournalListScreen(
         }
         val sub = "Count: ${filtered.size}" + (fromMillis?.let { "  From: ${Format.date(it)}" } ?: "") +
             (toMillis?.let { "  To: ${Format.date(it)}" } ?: "") + (if (query.isNotBlank()) "  Search: $query" else "")
-        return TablePdf.generate(context, AppPrefs(context).company, "Journal", sub, cols, data, listOf("TOTAL" to Format.money(total)))
+        return TablePdf.generate(context, AppPrefs(context).company, title, sub, cols, data, listOf("TOTAL" to Format.money(total)))
     }
 
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             TopAppBar(
-                title = { Text("Journal") },
+                title = { Text(title) },
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") } },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary,
@@ -138,7 +141,7 @@ fun JournalListScreen(
             )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = { onOpen(0) }) { Icon(Icons.Filled.Add, contentDescription = "New journal") }
+            FloatingActionButton(onClick = { onOpen(0) }) { Icon(Icons.Filled.Add, contentDescription = "New $title") }
         }
     ) { pad ->
         Column(Modifier.fillMaxSize().padding(pad)) {
@@ -151,7 +154,8 @@ fun JournalListScreen(
             Divider()
             if (filtered.isEmpty()) {
                 Column(Modifier.fillMaxWidth().weight(1f), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(if (entries.isEmpty()) "No journal entries" else "No entries match", color = MaterialTheme.colorScheme.outline)
+                    val hasAnyOfType = entries.any { it.voucherType == voucherType }
+                    Text(if (!hasAnyOfType) "No $title entries" else "No entries match", color = MaterialTheme.colorScheme.outline)
                 }
             } else {
                 LazyColumn(Modifier.fillMaxWidth().weight(1f).padding(horizontal = 12.dp)) {

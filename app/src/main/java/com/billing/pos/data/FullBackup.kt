@@ -1424,7 +1424,7 @@ object FullBackup {
     private fun jEntryJson(e: JournalEntry) = JSONObject().put("id", e.id).put("voucherNo", e.voucherNo)
         .put("dateMillis", e.dateMillis).put("narration", e.narration)
         .put("cashMode", e.cashMode).put("cashIsIn", e.cashIsIn).put("cashAmount", e.cashAmount)
-        .put("source", e.source)
+        .put("source", e.source).put("voucherType", e.voucherType)
 
     private fun jLineJson(l: JournalLine) = JSONObject().put("id", l.id).put("entryId", l.entryId)
         .put("headId", l.headId).put("headName", l.headName).put("amount", l.amount).put("isDebit", l.isDebit)
@@ -2000,7 +2000,8 @@ object FullBackup {
         narration = o.optString("narration"),
         cashMode = o.optString("cashMode"), cashIsIn = o.optBoolean("cashIsIn", true),
         cashAmount = o.optDouble("cashAmount", 0.0),
-        source = o.optString("source")
+        source = o.optString("source"),
+        voucherType = o.optString("voucherType", JournalVoucherType.JOURNAL)
     )
 
     private fun readItemAtt(context: Context, o: JSONObject) = ItemAttachment(

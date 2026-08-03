@@ -220,7 +220,7 @@ class Repository(private val context: Context) {
 
     // ---- journal ----
     suspend fun nextJournalNo(): String =
-        "JV-" + (journalDao.localCount() + 1).toString().padStart(4, '0')
+        "JV-" + (journalDao.localCountByType(JournalVoucherType.JOURNAL) + 1).toString().padStart(4, '0')
 
     suspend fun saveJournal(entry: JournalEntry, lines: List<JournalLine>): Long =
         journalDao.saveJournal(entry.copy(updatedAt = System.currentTimeMillis()), lines)
@@ -229,6 +229,11 @@ class Repository(private val context: Context) {
     suspend fun deleteJournal(entry: JournalEntry) = journalDao.deleteJournal(entry)
     suspend fun journalById(id: Long): JournalEntry? = journalDao.byId(id)
     suspend fun journalLinesFor(id: Long): List<JournalLine> = journalDao.linesFor(id)
+
+    // ---- contra entry (Cash/Bank transfer, stored as a JournalEntry tagged CONTRA) ----
+    val contraEntries: Flow<List<JournalEntry>> = journalDao.observeByType(JournalVoucherType.CONTRA)
+    suspend fun nextContraNo(): String =
+        "CN-" + (journalDao.localCountByType(JournalVoucherType.CONTRA) + 1).toString().padStart(4, '0')
 
     // ---- auth / users ----
     suspend fun login(username: String, password: String): User? {

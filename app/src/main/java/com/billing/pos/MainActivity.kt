@@ -503,6 +503,7 @@ private fun AppNav() {
                 onOutstanding = { nav.navigate("outstanding") },
                 onAccounts = { nav.navigate("accounts") },
                 onJournal = { nav.navigate("journal") },
+                onContra = { nav.navigate("contra") },
                 onLedger = { nav.navigate("ledger") },
                 onTrialBalance = { nav.navigate("trialbalance") },
                 onProfitLoss = { nav.navigate("profitloss") },
@@ -1072,6 +1073,23 @@ private fun AppNav() {
             arguments = listOf(navArgument("id") { type = NavType.LongType })
         ) { entry ->
             JournalEntryScreen(
+                entryId = entry.arguments?.getLong("id") ?: 0L,
+                onBack = { nav.popBackStack() }
+            )
+        }
+        composable("contra") {
+            JournalListScreen(
+                onBack = { nav.popBackStack() },
+                onOpen = { id -> nav.navigate("contra/edit/$id") },
+                voucherType = com.billing.pos.data.JournalVoucherType.CONTRA,
+                title = "Contra Entry"
+            )
+        }
+        composable(
+            route = "contra/edit/{id}",
+            arguments = listOf(navArgument("id") { type = NavType.LongType })
+        ) { entry ->
+            com.billing.pos.ui.journal.ContraEntryScreen(
                 entryId = entry.arguments?.getLong("id") ?: 0L,
                 onBack = { nav.popBackStack() }
             )

@@ -17,6 +17,12 @@ interface JournalDao {
     @Query("SELECT * FROM journal_entries ORDER BY dateMillis DESC")
     fun observeAll(): Flow<List<JournalEntry>>
 
+    @Query("SELECT * FROM journal_entries WHERE voucherType = :type ORDER BY dateMillis DESC")
+    fun observeByType(type: String): Flow<List<JournalEntry>>
+
+    @Query("SELECT COUNT(*) FROM journal_entries WHERE source = '' AND voucherType = :type")
+    suspend fun localCountByType(type: String): Int
+
     @Query("SELECT * FROM journal_entries")
     suspend fun allEntries(): List<JournalEntry>
 
