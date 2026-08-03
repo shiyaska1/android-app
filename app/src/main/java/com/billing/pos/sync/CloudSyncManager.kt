@@ -15,6 +15,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
@@ -81,7 +82,11 @@ object CloudSyncManager {
         prefs.lastCloudSyncMessage = status.value
     }
 
-    private suspend fun runCycle(app: Context, forceFullPush: Boolean): Boolean = gate.withLock {
+    // withContext(IO) makes this safe regardless of which dispatcher the caller is on — the
+    // manual "Sync now" button launches from rememberCoroutineScope() (Main), while startAuto's
+    // loop already runs on an IO-bound scope; without this, the manual path threw
+    // NetworkOnMainThreadException on the raw HttpURLConnection calls below.
+    private suspend fun runCycle(app: Context, forceFullPush: Boolean): Boolean = withContext(Dispatchers.IO) { gate.withLock {
         val prefs = AppPrefs(app)
         val pullUrl = prefs.backupPullUrl
         val pushUrl = prefs.backupPushUrl
@@ -170,5 +175,5 @@ object CloudSyncManager {
             isSyncing.value = false
             logResult(app, ok)
         }
-    }
+    } }
 }
