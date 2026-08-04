@@ -514,16 +514,20 @@ object FullBackup {
         val diaryIdByTitle = db.diaryDao().allEntries().associate { it.title to it.id }
         val noteIdByText = db.quickNoteDao().all().associate { it.text.take(60) to it.id }
 
-        val existingBillNames = db.billAttachmentDao().all().groupBy { it.billId }.mapValues { (_, l) -> l.map { it.name }.toSet() }
-        val existingPurchaseNames = db.purchaseAttachmentDao().all().groupBy { it.purchaseId }.mapValues { (_, l) -> l.map { it.name }.toSet() }
-        val existingCustomerNames = db.customerAttachmentDao().all().groupBy { it.customerId }.mapValues { (_, l) -> l.map { it.name }.toSet() }
-        val existingItemNames = db.itemAttachmentDao().all().groupBy { it.itemId }.mapValues { (_, l) -> l.map { it.name }.toSet() }
-        val existingExpenseNames = db.expenseAttachmentDao().all().groupBy { it.expenseId }.mapValues { (_, l) -> l.map { it.name }.toSet() }
-        val existingReceiptNames = db.receiptAttachmentDao().all().groupBy { it.receiptId }.mapValues { (_, l) -> l.map { it.name }.toSet() }
-        val existingOrderNames = db.custOrderDao().allAttachments().groupBy { it.orderId }.mapValues { (_, l) -> l.map { it.name }.toSet() }
-        val existingServiceNames = db.serviceDao().allAttachments().groupBy { it.cardId }.mapValues { (_, l) -> l.map { it.name }.toSet() }
-        val existingQuickNoteNames = db.quickNoteAttachmentDao().all().groupBy { it.noteId }.mapValues { (_, l) -> l.map { it.name }.toSet() }
-        val existingDiaryNames = db.diaryDao().allAttachments().groupBy { it.entryId }.mapValues { (_, l) -> l.map { it.name }.toSet() }
+        // Mutable (not .toSet()/read-only): each successful insert below adds its name into these
+        // too, so a duplicate entry within the *same* zip's manifest (e.g. an export that already
+        // had a duplicate baked in from before this dedup existed) is caught as well — a snapshot
+        // taken once before the loop only catches duplicates against what was already in the DB.
+        val existingBillNames = db.billAttachmentDao().all().groupBy { it.billId }.mapValues { (_, l) -> l.map { it.name }.toMutableSet() }.toMutableMap()
+        val existingPurchaseNames = db.purchaseAttachmentDao().all().groupBy { it.purchaseId }.mapValues { (_, l) -> l.map { it.name }.toMutableSet() }.toMutableMap()
+        val existingCustomerNames = db.customerAttachmentDao().all().groupBy { it.customerId }.mapValues { (_, l) -> l.map { it.name }.toMutableSet() }.toMutableMap()
+        val existingItemNames = db.itemAttachmentDao().all().groupBy { it.itemId }.mapValues { (_, l) -> l.map { it.name }.toMutableSet() }.toMutableMap()
+        val existingExpenseNames = db.expenseAttachmentDao().all().groupBy { it.expenseId }.mapValues { (_, l) -> l.map { it.name }.toMutableSet() }.toMutableMap()
+        val existingReceiptNames = db.receiptAttachmentDao().all().groupBy { it.receiptId }.mapValues { (_, l) -> l.map { it.name }.toMutableSet() }.toMutableMap()
+        val existingOrderNames = db.custOrderDao().allAttachments().groupBy { it.orderId }.mapValues { (_, l) -> l.map { it.name }.toMutableSet() }.toMutableMap()
+        val existingServiceNames = db.serviceDao().allAttachments().groupBy { it.cardId }.mapValues { (_, l) -> l.map { it.name }.toMutableSet() }.toMutableMap()
+        val existingQuickNoteNames = db.quickNoteAttachmentDao().all().groupBy { it.noteId }.mapValues { (_, l) -> l.map { it.name }.toMutableSet() }.toMutableMap()
+        val existingDiaryNames = db.diaryDao().allAttachments().groupBy { it.entryId }.mapValues { (_, l) -> l.map { it.name }.toMutableSet() }.toMutableMap()
 
         fun stagedFile(type: String, file: String): File? {
             if (file.isBlank()) return null
@@ -550,6 +554,7 @@ object FullBackup {
                     val dest = File(com.billing.pos.bills.BillAttachmentStore.dir(context), "restored_${System.nanoTime()}_$file")
                     staged.copyTo(dest, overwrite = true)
                     db.billAttachmentDao().insert(BillAttachment(billId = parentId, path = dest.absolutePath, name = name, mime = mime))
+                    existingBillNames.getOrPut(parentId) { mutableSetOf() }.add(name)
                     restored++
                 }
                 "purchase" -> {
@@ -560,6 +565,7 @@ object FullBackup {
                     val dest = File(com.billing.pos.purchase.PurchaseAttachmentStore.dir(context), "restored_${System.nanoTime()}_$file")
                     staged.copyTo(dest, overwrite = true)
                     db.purchaseAttachmentDao().insert(PurchaseAttachment(purchaseId = parentId, path = dest.absolutePath, name = name, mime = mime))
+                    existingPurchaseNames.getOrPut(parentId) { mutableSetOf() }.add(name)
                     restored++
                 }
                 "customer" -> {
@@ -570,6 +576,7 @@ object FullBackup {
                     val dest = File(CustomerAttachmentStore.dir(context), "restored_${System.nanoTime()}_$file")
                     staged.copyTo(dest, overwrite = true)
                     db.customerAttachmentDao().insert(CustomerAttachment(customerId = parentId, path = dest.absolutePath, name = name, mime = mime))
+                    existingCustomerNames.getOrPut(parentId) { mutableSetOf() }.add(name)
                     restored++
                 }
                 "item" -> {
@@ -580,6 +587,7 @@ object FullBackup {
                     val dest = File(com.billing.pos.items.ItemAttachmentStore.dir(context), "restored_${System.nanoTime()}_$file")
                     staged.copyTo(dest, overwrite = true)
                     db.itemAttachmentDao().insert(ItemAttachment(itemId = parentId, path = dest.absolutePath, name = name, mime = mime, kind = "PHOTO"))
+                    existingItemNames.getOrPut(parentId) { mutableSetOf() }.add(name)
                     restored++
                 }
                 "expense" -> {
@@ -590,6 +598,7 @@ object FullBackup {
                     val dest = File(com.billing.pos.expenses.ExpenseAttachmentStore.dir(context), "restored_${System.nanoTime()}_$file")
                     staged.copyTo(dest, overwrite = true)
                     db.expenseAttachmentDao().insert(ExpenseAttachment(expenseId = parentId, path = dest.absolutePath, name = name, mime = mime))
+                    existingExpenseNames.getOrPut(parentId) { mutableSetOf() }.add(name)
                     restored++
                 }
                 "receipt" -> {
@@ -600,6 +609,7 @@ object FullBackup {
                     val dest = File(ReceiptAttachmentStore.dir(context), "restored_${System.nanoTime()}_$file")
                     staged.copyTo(dest, overwrite = true)
                     db.receiptAttachmentDao().insertAll(listOf(ReceiptAttachment(receiptId = parentId, path = dest.absolutePath, name = name, mime = mime)))
+                    existingReceiptNames.getOrPut(parentId) { mutableSetOf() }.add(name)
                     restored++
                 }
                 "order" -> {
@@ -610,6 +620,7 @@ object FullBackup {
                     val dest = File(OrderAttachmentStore.dir(context), "restored_${System.nanoTime()}_$file")
                     staged.copyTo(dest, overwrite = true)
                     db.custOrderDao().insertAttachment(CustOrderAttachment(orderId = parentId, path = dest.absolutePath, name = name, mime = mime))
+                    existingOrderNames.getOrPut(parentId) { mutableSetOf() }.add(name)
                     restored++
                 }
                 "service" -> {
@@ -620,6 +631,7 @@ object FullBackup {
                     val dest = File(ServiceAttachmentStore.dir(context), "restored_${System.nanoTime()}_$file")
                     staged.copyTo(dest, overwrite = true)
                     db.serviceDao().insertAttachments(listOf(ServiceJobAttachment(cardId = parentId, path = dest.absolutePath, name = name, mime = mime)))
+                    existingServiceNames.getOrPut(parentId) { mutableSetOf() }.add(name)
                     restored++
                 }
                 "quicknote" -> {
@@ -630,6 +642,7 @@ object FullBackup {
                     val dest = File(com.billing.pos.quicknote.QuickNoteAttachmentStore.dir(context), "restored_${System.nanoTime()}_$file")
                     staged.copyTo(dest, overwrite = true)
                     db.quickNoteAttachmentDao().insert(QuickNoteAttachment(noteId = parentId, path = dest.absolutePath, name = name, mime = mime))
+                    existingQuickNoteNames.getOrPut(parentId) { mutableSetOf() }.add(name)
                     restored++
                 }
                 "diary" -> {
@@ -638,6 +651,7 @@ object FullBackup {
                     if (merge && existingDiaryNames[parentId]?.contains(name) == true) { skippedDuplicate++; continue }
                     if (loc.isNotBlank()) {
                         db.diaryDao().insertAttachment(DiaryAttachment(entryId = parentId, path = loc, name = name, mime = mime, type = AttachmentType.LOCATION))
+                        existingDiaryNames.getOrPut(parentId) { mutableSetOf() }.add(name)
                         restored++
                     } else {
                         val staged = stagedFile("diary", file) ?: continue
@@ -650,6 +664,7 @@ object FullBackup {
                             else -> AttachmentType.DOCUMENT
                         }
                         db.diaryDao().insertAttachment(DiaryAttachment(entryId = parentId, path = dest.absolutePath, name = name, mime = mime, type = kind))
+                        existingDiaryNames.getOrPut(parentId) { mutableSetOf() }.add(name)
                         restored++
                     }
                 }
@@ -998,7 +1013,7 @@ object FullBackup {
             for (i in 0 until it.length()) {
                 val b = readBill(it.getJSONObject(i))
                 val remapped = b.copy(customerId = custMap[b.customerId] ?: b.customerId)
-                val existing = if (b.deviceId.isNotBlank()) db.billDao().byDeviceAndNo(b.deviceId, b.billNo) else null
+                val existing = if (b.deviceId.isNotBlank()) db.billDao().byDeviceAndNo(b.deviceId, b.billNo) else db.billDao().byNo(b.billNo)
                 billMap[b.id] = if (existing != null) {
                     db.billDao().updateBillHeader(remapped.copy(id = existing.id))
                     db.billDao().deleteLines(existing.id)
@@ -1022,7 +1037,7 @@ object FullBackup {
             for (i in 0 until it.length()) {
                 val p = readPurchase(it.getJSONObject(i))
                 val remapped = p.copy(supplierId = suppMap[p.supplierId] ?: p.supplierId)
-                val existing = if (p.deviceId.isNotBlank()) db.purchaseDao().byDeviceAndNo(p.deviceId, p.purchaseNo) else null
+                val existing = if (p.deviceId.isNotBlank()) db.purchaseDao().byDeviceAndNo(p.deviceId, p.purchaseNo) else db.purchaseDao().byNo(p.purchaseNo)
                 purMap[p.id] = if (existing != null) {
                     db.purchaseDao().updateHeader(remapped.copy(id = existing.id))
                     db.purchaseDao().deleteLines(existing.id)
@@ -1046,7 +1061,7 @@ object FullBackup {
                 val r = readReceipt(it.getJSONObject(i))
                 val nb = if (r.billId > 0) (billMap[r.billId] ?: 0L) else 0L
                 val remapped = r.copy(billId = nb)
-                val existing = if (r.deviceId.isNotBlank()) db.receiptDao().byDeviceAndNo(r.deviceId, r.receiptNo) else null
+                val existing = if (r.deviceId.isNotBlank()) db.receiptDao().byDeviceAndNo(r.deviceId, r.receiptNo) else db.receiptDao().byNo(r.receiptNo)
                 if (existing != null) db.receiptDao().update(remapped.copy(id = existing.id))
                 else db.receiptDao().insert(remapped.copy(id = 0))
             }
@@ -1056,7 +1071,7 @@ object FullBackup {
                 val ex = readExpense(it.getJSONObject(i))
                 val np = if (ex.purchaseId > 0) (purMap[ex.purchaseId] ?: 0L) else 0L
                 val remapped = ex.copy(purchaseId = np)
-                val existing = if (ex.deviceId.isNotBlank()) db.expenseDao().byDeviceAndNo(ex.deviceId, ex.voucherNo) else null
+                val existing = if (ex.deviceId.isNotBlank()) db.expenseDao().byDeviceAndNo(ex.deviceId, ex.voucherNo) else db.expenseDao().byNo(ex.voucherNo)
                 expMap[ex.id] = if (existing != null) {
                     db.expenseDao().update(remapped.copy(id = existing.id)); existing.id
                 } else {
@@ -1135,7 +1150,7 @@ object FullBackup {
         root.optJSONArray("quotations")?.let {
             for (i in 0 until it.length()) {
                 val q = readQuotation(it.getJSONObject(i))
-                val existing = if (q.deviceId.isNotBlank()) db.quotationDao().byDeviceAndNo(q.deviceId, q.quotationNo) else null
+                val existing = if (q.deviceId.isNotBlank()) db.quotationDao().byDeviceAndNo(q.deviceId, q.quotationNo) else db.quotationDao().byNo(q.quotationNo)
                 quoteMap[q.id] = if (existing != null) {
                     db.quotationDao().updateHeader(q.copy(id = existing.id))
                     db.quotationDao().deleteLines(existing.id)
@@ -1153,7 +1168,7 @@ object FullBackup {
         root.optJSONArray("estimates")?.let {
             for (i in 0 until it.length()) {
                 val e = readEstimate(it.getJSONObject(i))
-                val existing = if (e.deviceId.isNotBlank()) db.estimateDao().byDeviceAndNo(e.deviceId, e.estimateNo) else null
+                val existing = if (e.deviceId.isNotBlank()) db.estimateDao().byDeviceAndNo(e.deviceId, e.estimateNo) else db.estimateDao().byNo(e.estimateNo)
                 estMap[e.id] = if (existing != null) {
                     db.estimateDao().updateHeader(e.copy(id = existing.id))
                     db.estimateDao().deleteLines(existing.id)
@@ -1357,7 +1372,7 @@ object FullBackup {
         root.optJSONArray("custOrders")?.let {
             for (i in 0 until it.length()) {
                 val o = readOrder(it.getJSONObject(i))
-                val existing = if (o.deviceId.isNotBlank()) db.custOrderDao().byDeviceAndNo(o.deviceId, o.orderNo) else null
+                val existing = if (o.deviceId.isNotBlank()) db.custOrderDao().byDeviceAndNo(o.deviceId, o.orderNo) else db.custOrderDao().byNo(o.orderNo)
                 orderMap[o.id] = if (existing != null) {
                     db.custOrderDao().updateHeader(o.copy(id = existing.id))
                     db.custOrderDao().deleteLines(existing.id)

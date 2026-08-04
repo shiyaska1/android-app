@@ -791,11 +791,12 @@ fun DashboardScreen(
             title = { Text("Repair duplicate data") },
             text = {
                 Text(
-                    "Repeated cloud sync can leave behind exact duplicates — the same diary note " +
-                        "inserted again each cycle, or the same photo attached twice. This finds " +
-                        "them and merges each group into one copy. Nothing else is touched, and " +
-                        "nothing you wrote is deleted — duplicates' content is kept on the copy " +
-                        "that survives."
+                    "Repeated cloud sync or attachment restore can leave behind exact duplicates — " +
+                        "the same diary note, invoice, purchase, receipt, payment, quotation, " +
+                        "estimate or order inserted again, or the same photo attached twice. This " +
+                        "finds them and merges each group into one copy. Nothing else is touched, " +
+                        "and nothing you wrote is deleted — duplicates' content is kept on the " +
+                        "copy that survives."
                 )
             },
             confirmButton = {

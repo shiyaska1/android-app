@@ -101,6 +101,11 @@ interface PurchaseDao {
     @Query("SELECT * FROM purchases WHERE deviceId = :deviceId AND purchaseNo = :purchaseNo LIMIT 1")
     suspend fun byDeviceAndNo(deviceId: String, purchaseNo: String): Purchase?
 
+    /** Fallback match by number alone, for records with no deviceId (older data, imports) —
+     *  without this, merge/sync re-inserts them as new duplicates every cycle. */
+    @Query("SELECT * FROM purchases WHERE purchaseNo = :purchaseNo LIMIT 1")
+    suspend fun byNo(purchaseNo: String): Purchase?
+
     @Query("SELECT * FROM purchases ORDER BY dateMillis DESC")
     fun observeAll(): Flow<List<Purchase>>
 

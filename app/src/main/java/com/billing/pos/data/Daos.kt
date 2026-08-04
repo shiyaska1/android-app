@@ -227,6 +227,11 @@ interface BillDao {
 
     @Query("SELECT * FROM bills WHERE deviceId = :deviceId AND billNo = :billNo LIMIT 1")
     suspend fun byDeviceAndNo(deviceId: String, billNo: String): Bill?
+
+    /** Fallback match by number alone, for records with no deviceId (older data, imports) —
+     *  without this, merge/sync re-inserts them as new duplicates every cycle. */
+    @Query("SELECT * FROM bills WHERE billNo = :billNo LIMIT 1")
+    suspend fun byNo(billNo: String): Bill?
 }
 
 @Dao
@@ -245,6 +250,11 @@ interface ReceiptDao {
 
     @Query("SELECT * FROM receipts WHERE deviceId = :deviceId AND receiptNo = :receiptNo LIMIT 1")
     suspend fun byDeviceAndNo(deviceId: String, receiptNo: String): Receipt?
+
+    /** Fallback match by number alone, for records with no deviceId (older data, imports) —
+     *  without this, merge/sync re-inserts them as new duplicates every cycle. */
+    @Query("SELECT * FROM receipts WHERE receiptNo = :receiptNo LIMIT 1")
+    suspend fun byNo(receiptNo: String): Receipt?
 
     @Query("SELECT DISTINCT payFrom FROM receipts WHERE payFrom != '' ORDER BY payFrom COLLATE NOCASE ASC")
     suspend fun payFromNames(): List<String>
@@ -275,6 +285,11 @@ interface ExpenseDao {
 
     @Query("SELECT * FROM expenses WHERE deviceId = :deviceId AND voucherNo = :voucherNo LIMIT 1")
     suspend fun byDeviceAndNo(deviceId: String, voucherNo: String): Expense?
+
+    /** Fallback match by number alone, for records with no deviceId (older data, imports) —
+     *  without this, merge/sync re-inserts them as new duplicates every cycle. */
+    @Query("SELECT * FROM expenses WHERE voucherNo = :voucherNo LIMIT 1")
+    suspend fun byNo(voucherNo: String): Expense?
 
     @Insert
     suspend fun insert(expense: Expense): Long
