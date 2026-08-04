@@ -232,6 +232,8 @@ fun DashboardScreen(
     val syncScope = rememberCoroutineScope()
     var syncingNow by remember { mutableStateOf(false) }
     var syncFailureMessage by remember { mutableStateOf<String?>(null) }
+    var confirmRepair by remember { mutableStateOf(false) }
+    var repairBusy by remember { mutableStateOf(false) }
     val businessType = remember { com.billing.pos.data.AppPrefs(context).businessType }
     val isRental = businessType == "Rental"
     val isPersonal = businessType == "Personal"
@@ -388,6 +390,13 @@ fun DashboardScreen(
                             } else {
                                 Icon(Icons.Filled.Sync, contentDescription = "Sync now")
                             }
+                        }
+                    }
+                    IconButton(onClick = { if (!repairBusy) confirmRepair = true }) {
+                        if (repairBusy) {
+                            CircularProgressIndicator(modifier = Modifier.size(20.dp), color = MaterialTheme.colorScheme.onPrimary, strokeWidth = 2.dp)
+                        } else {
+                            Icon(Icons.Filled.Build, contentDescription = "Repair duplicate data")
                         }
                     }
                     IconButton(onClick = onQuickNote) {
@@ -769,6 +778,38 @@ fun DashboardScreen(
             text = { Text(msg) },
             confirmButton = {
                 androidx.compose.material3.TextButton(onClick = { syncFailureMessage = null }) { Text("OK") }
+            }
+        )
+    }
+    if (confirmRepair) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { confirmRepair = false },
+            title = { Text("Repair duplicate data") },
+            text = {
+                Text(
+                    "Repeated cloud sync can leave behind exact duplicates — the same diary note " +
+                        "inserted again each cycle, or the same photo attached twice. This finds " +
+                        "them and merges each group into one copy. Nothing else is touched, and " +
+                        "nothing you wrote is deleted — duplicates' content is kept on the copy " +
+                        "that survives."
+                )
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    confirmRepair = false; repairBusy = true
+                    syncScope.launch {
+                        val result = com.billing.pos.data.DataRepair.repair(context)
+                        repairBusy = false
+                        android.widget.Toast.makeText(
+                            context,
+                            "Repaired ${result.recordsMerged} duplicate record(s) and ${result.attachmentsMerged} duplicate attachment(s)",
+                            android.widget.Toast.LENGTH_LONG
+                        ).show()
+                    }
+                }) { Text("Repair") }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { confirmRepair = false }) { Text("Cancel") }
             }
         )
     }

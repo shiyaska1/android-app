@@ -35,6 +35,9 @@ interface CustomerAttachmentDao {
 
     @Query("DELETE FROM customer_attachments WHERE customerId = :customerId")
     suspend fun deleteForCustomer(customerId: Long)
+
+    @Query("DELETE FROM customer_attachments WHERE id = :id")
+    suspend fun deleteById(id: Long)
 }
 
 /** Files attached to customers are copied in here, so they survive the original going away. */

@@ -31,6 +31,7 @@ interface ReceiptAttachmentDao {
     @Insert suspend fun insertAll(list: List<ReceiptAttachment>)
     @Query("DELETE FROM receipt_attachments WHERE receiptId = :id") suspend fun deleteForReceipt(id: Long)
     @Query("DELETE FROM receipt_attachments") suspend fun deleteAll()
+    @Query("DELETE FROM receipt_attachments WHERE id = :id") suspend fun deleteById(id: Long)
 }
 
 /** Copies picked/captured files attached to a receipt into app storage. */

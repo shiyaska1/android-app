@@ -36,4 +36,7 @@ interface ExpenseAttachmentDao {
 
     @Query("DELETE FROM expense_attachments WHERE expenseId = :expenseId")
     suspend fun deleteForExpense(expenseId: Long)
+
+    @Query("DELETE FROM expense_attachments WHERE id = :id")
+    suspend fun deleteById(id: Long)
 }
