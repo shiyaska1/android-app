@@ -50,6 +50,7 @@ data class SalesReturnWithItems(val ret: SalesReturn, val lines: List<SalesRetur
 @Dao
 interface SalesReturnDao {
     @Query("SELECT COUNT(*) FROM sales_returns") suspend fun count(): Int
+    @Query("SELECT * FROM sales_returns WHERE returnNo = :returnNo LIMIT 1") suspend fun byNo(returnNo: String): SalesReturn?
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertHeader(r: SalesReturn): Long
     @Insert suspend fun insertLines(lines: List<SalesReturnItem>)
     @Update suspend fun updateHeader(r: SalesReturn)

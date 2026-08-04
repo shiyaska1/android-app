@@ -118,7 +118,10 @@ object MergeCategories {
         "diaryEntries" to "Diary entries",
         "custOrders" to "Orders",
         "savedCalcs" to "Saved calculations",
-        "users" to "Users"
+        "users" to "Users",
+        "productionProcedures" to "Production procedures",
+        "productionRuns" to "Production runs",
+        "itemBundles" to "Item bundles"
     )
 
     /**
@@ -143,6 +146,7 @@ object MergeCategories {
         "items" -> "items/edit/{id}"
         "custOrders" -> "order/edit/{id}"
         "diaryEntries" -> "diary/edit/{id}"
+        "itemBundles" -> "bundle/edit/{id}"
         else -> null
     }
 }

@@ -91,6 +91,7 @@ interface ProductionDao {
     @Query("SELECT * FROM production_procedures ORDER BY name ASC") fun observeProcedures(): Flow<List<ProductionProcedure>>
     @Query("SELECT * FROM production_procedures") suspend fun allProcedures(): List<ProductionProcedure>
     @Query("SELECT * FROM production_procedures WHERE id = :id LIMIT 1") suspend fun procedureById(id: Long): ProductionProcedure?
+    @Query("SELECT * FROM production_procedures WHERE name = :name COLLATE NOCASE LIMIT 1") suspend fun procedureByName(name: String): ProductionProcedure?
     @Query("SELECT * FROM production_procedure_materials WHERE procedureId = :id") suspend fun materialsFor(id: Long): List<ProductionProcedureMaterial>
     @Query("SELECT * FROM production_procedure_materials") suspend fun allProcedureMaterials(): List<ProductionProcedureMaterial>
 
@@ -101,4 +102,5 @@ interface ProductionDao {
     @Query("SELECT * FROM production_runs ORDER BY dateMillis DESC") fun observeRuns(): Flow<List<ProductionRun>>
     @Query("SELECT * FROM production_runs") suspend fun allRuns(): List<ProductionRun>
     @Query("SELECT * FROM production_runs WHERE id = :id LIMIT 1") suspend fun runById(id: Long): ProductionRun?
+    @Query("SELECT * FROM production_runs WHERE runNo = :runNo LIMIT 1") suspend fun runByNo(runNo: String): ProductionRun?
 }

@@ -1095,29 +1095,54 @@ object FullBackup {
             }
             if (lines.isNotEmpty()) db.journalDao().insertLines(lines)
         }
-        // Diary + attachments
+        // Diary + attachments — an entry has no natural number, so it's deduped by content
+        // (title + remarks + createdAt + customer), matching DataRepair's cleanup key. Between
+        // two matches, the one with the newer updatedAt wins as the keeper, same as DataRepair.
         val diaryMap = HashMap<Long, Long>()
+        fun diaryKey(e: DiaryEntry) = listOf(e.title.trim().lowercase(), e.remarks.trim().lowercase(), e.createdAt, e.customerId)
+        val diaryByKey = HashMap<List<Any?>, DiaryEntry>()
+        db.diaryDao().allEntries().forEach { diaryByKey[diaryKey(it)] = it }
         root.optJSONArray("diaryEntries")?.let {
             for (i in 0 until it.length()) {
                 val e = readEntry(it.getJSONObject(i))
-                diaryMap[e.id] = db.diaryDao()
-                    .insert(e.copy(id = 0, typeId = diaryTypeMap[e.typeId] ?: 0L))
-                    .also { nid -> log.add("diaryEntries", nid) }
+                val remapped = e.copy(typeId = diaryTypeMap[e.typeId] ?: 0L)
+                val key = diaryKey(remapped)
+                val existing = diaryByKey[key]
+                diaryMap[e.id] = if (existing != null) {
+                    if (remapped.updatedAt > existing.updatedAt) {
+                        val kept = remapped.copy(id = existing.id)
+                        db.diaryDao().update(kept)
+                        diaryByKey[key] = kept
+                    }
+                    existing.id
+                } else {
+                    db.diaryDao().insert(remapped.copy(id = 0)).also { nid ->
+                        log.add("diaryEntries", nid)
+                        diaryByKey[key] = remapped.copy(id = nid)
+                    }
+                }
             }
         }
-        // NOTE: diary entries themselves aren't deduped above (every merge inserts them fresh),
-        // so a per-entry attachment dedup here would never trigger — the real fix is deduping
-        // diaryEntries first (e.g. by title), which is a separate, riskier change.
+        val existingDiaryBlockKeys = db.diaryDao().allBlocks().groupBy { it.entryId }
+            .mapValues { (_, l) -> l.map { b -> listOf(b.type, b.text, b.path, b.name) }.toMutableSet() }.toMutableMap()
+        val existingDiaryAttNames = db.diaryDao().allAttachments().groupBy { it.entryId }
+            .mapValues { (_, l) -> l.map { it.name }.toMutableSet() }.toMutableMap()
         root.optJSONArray("diaryAttachments")?.let {
             for (i in 0 until it.length()) {
                 val a = readAtt(context, it.getJSONObject(i)); val ne = diaryMap[a.entryId] ?: continue
+                val names = existingDiaryAttNames.getOrPut(ne) { mutableSetOf() }
+                if (!names.add(a.name)) continue
                 db.diaryDao().insertAttachment(a.copy(id = 0, entryId = ne))
             }
         }
         root.optJSONArray("diaryBlocks")?.let {
             for (i in 0 until it.length()) {
                 val b = readBlock(context, it.getJSONObject(i)); val ne = diaryMap[b.entryId] ?: continue
-                db.diaryDao().insertBlock(b.copy(id = 0, entryId = ne))
+                val remapped = b.copy(id = 0, entryId = ne)
+                val key = listOf(remapped.type, remapped.text, remapped.path, remapped.name)
+                val keys = existingDiaryBlockKeys.getOrPut(ne) { mutableSetOf() }
+                if (!keys.add(key)) continue
+                db.diaryDao().insertBlock(remapped)
             }
         }
         // Item attachments — deduped per item by name, same as the bill/expense/customer
@@ -1186,7 +1211,15 @@ object FullBackup {
         val srMap = HashMap<Long, Long>()
         root.optJSONArray("salesReturns")?.let {
             for (i in 0 until it.length()) {
-                val r = readSalesReturn(it.getJSONObject(i)); srMap[r.id] = db.salesReturnDao().insertHeader(r.copy(id = 0))
+                val r = readSalesReturn(it.getJSONObject(i))
+                val existing = db.salesReturnDao().byNo(r.returnNo)
+                srMap[r.id] = if (existing != null) {
+                    db.salesReturnDao().updateHeader(r.copy(id = existing.id))
+                    db.salesReturnDao().deleteLines(existing.id)
+                    existing.id
+                } else {
+                    db.salesReturnDao().insertHeader(r.copy(id = 0)).also { nid -> log.add("salesReturns", nid) }
+                }
             }
         }
         root.optJSONArray("salesReturnItems")?.let {
@@ -1199,7 +1232,15 @@ object FullBackup {
         val prMap = HashMap<Long, Long>()
         root.optJSONArray("purchaseReturns")?.let {
             for (i in 0 until it.length()) {
-                val r = readPurchaseReturn(it.getJSONObject(i)); prMap[r.id] = db.purchaseReturnDao().insertHeader(r.copy(id = 0))
+                val r = readPurchaseReturn(it.getJSONObject(i))
+                val existing = db.purchaseReturnDao().byNo(r.returnNo)
+                prMap[r.id] = if (existing != null) {
+                    db.purchaseReturnDao().updateHeader(r.copy(id = existing.id))
+                    db.purchaseReturnDao().deleteLines(existing.id)
+                    existing.id
+                } else {
+                    db.purchaseReturnDao().insertHeader(r.copy(id = 0)).also { nid -> log.add("purchaseReturns", nid) }
+                }
             }
         }
         root.optJSONArray("purchaseReturnItems")?.let {
@@ -1212,7 +1253,15 @@ object FullBackup {
         val lpoMap = HashMap<Long, Long>()
         root.optJSONArray("purchaseQuotations")?.let {
             for (i in 0 until it.length()) {
-                val r = readLpo(it.getJSONObject(i)); lpoMap[r.id] = db.purchaseQuotationDao().insertHeader(r.copy(id = 0))
+                val r = readLpo(it.getJSONObject(i))
+                val existing = db.purchaseQuotationDao().byNo(r.lpoNo)
+                lpoMap[r.id] = if (existing != null) {
+                    db.purchaseQuotationDao().updateHeader(r.copy(id = existing.id))
+                    db.purchaseQuotationDao().deleteLines(existing.id)
+                    existing.id
+                } else {
+                    db.purchaseQuotationDao().insertHeader(r.copy(id = 0)).also { nid -> log.add("purchaseQuotations", nid) }
+                }
             }
         }
         root.optJSONArray("purchaseQuotationItems")?.let {
@@ -1225,7 +1274,15 @@ object FullBackup {
         val hireMap = HashMap<Long, Long>()
         root.optJSONArray("hireInvoices")?.let {
             for (i in 0 until it.length()) {
-                val h = readHire(it.getJSONObject(i)); hireMap[h.id] = db.hireInvoiceDao().insertHeader(h.copy(id = 0))
+                val h = readHire(it.getJSONObject(i))
+                val existing = db.hireInvoiceDao().byNo(h.hireNo)
+                hireMap[h.id] = if (existing != null) {
+                    db.hireInvoiceDao().updateHeader(h.copy(id = existing.id))
+                    db.hireInvoiceDao().deleteLines(existing.id)
+                    existing.id
+                } else {
+                    db.hireInvoiceDao().insertHeader(h.copy(id = 0)).also { nid -> log.add("hireInvoices", nid) }
+                }
             }
         }
         root.optJSONArray("hireInvoiceItems")?.let {
@@ -1239,7 +1296,15 @@ object FullBackup {
         root.optJSONArray("hireReturns")?.let {
             for (i in 0 until it.length()) {
                 val r = readHireRet(it.getJSONObject(i))
-                hireRetMap[r.id] = db.hireReturnDao().insertHeader(r.copy(id = 0, hireId = hireMap[r.hireId] ?: r.hireId))
+                val remapped = r.copy(hireId = hireMap[r.hireId] ?: r.hireId)
+                val existing = db.hireReturnDao().byNo(r.returnNo)
+                hireRetMap[r.id] = if (existing != null) {
+                    db.hireReturnDao().updateHeader(remapped.copy(id = existing.id))
+                    db.hireReturnDao().deleteLines(existing.id)
+                    existing.id
+                } else {
+                    db.hireReturnDao().insertHeader(remapped.copy(id = 0)).also { nid -> log.add("hireReturns", nid) }
+                }
             }
         }
         root.optJSONArray("hireReturnItems")?.let {
@@ -1252,12 +1317,24 @@ object FullBackup {
         val labTestMap = HashMap<Long, Long>()
         root.optJSONArray("labTests")?.let {
             for (i in 0 until it.length()) {
-                val t = readLabTest(it.getJSONObject(i)); labTestMap[t.id] = db.labTestDao().insertTest(t.copy(id = 0))
+                val t = readLabTest(it.getJSONObject(i))
+                val existing = db.labTestDao().testByName(t.name)
+                labTestMap[t.id] = if (existing != null) {
+                    db.labTestDao().updateTest(t.copy(id = existing.id)); existing.id
+                } else {
+                    db.labTestDao().insertTest(t.copy(id = 0)).also { nid -> log.add("labTests", nid) }
+                }
             }
         }
+        val existingLabEvalKeys = db.labTestDao().allEvaluations()
+            .groupBy { it.testId }.mapValues { (_, l) -> l.map { e -> listOf(e.name, e.unit, e.normalValue, e.groupName) }.toMutableSet() }
+            .toMutableMap()
         root.optJSONArray("labEvaluations")?.let {
             for (i in 0 until it.length()) {
                 val e = readLabEval(it.getJSONObject(i)); val nt = labTestMap[e.testId] ?: continue
+                val key = listOf(e.name, e.unit, e.normalValue, e.groupName)
+                val keys = existingLabEvalKeys.getOrPut(nt) { mutableSetOf() }
+                if (!keys.add(key)) continue
                 db.labTestDao().insertEvaluations(listOf(e.copy(id = 0, testId = nt)))
             }
         }
@@ -1265,7 +1342,13 @@ object FullBackup {
         val patientMap = HashMap<Long, Long>()
         root.optJSONArray("patients")?.let {
             for (i in 0 until it.length()) {
-                val p = readPatient(it.getJSONObject(i)); patientMap[p.id] = db.patientDao().insert(p.copy(id = 0))
+                val p = readPatient(it.getJSONObject(i))
+                val existing = db.patientDao().byNameAndPhone(p.name, p.phone)
+                patientMap[p.id] = if (existing != null) {
+                    db.patientDao().update(p.copy(id = existing.id)); existing.id
+                } else {
+                    db.patientDao().insert(p.copy(id = 0)).also { nid -> log.add("patients", nid) }
+                }
             }
         }
         // Lab bills + tests + results
@@ -1273,7 +1356,16 @@ object FullBackup {
         root.optJSONArray("labBills")?.let {
             for (i in 0 until it.length()) {
                 val b = readLabBill(it.getJSONObject(i))
-                labBillMap[b.id] = db.labBillDao().insertBill(b.copy(id = 0, patientId = patientMap[b.patientId] ?: b.patientId))
+                val remapped = b.copy(patientId = patientMap[b.patientId] ?: b.patientId)
+                val existing = db.labBillDao().byNo(b.billNo)
+                labBillMap[b.id] = if (existing != null) {
+                    db.labBillDao().updateBill(remapped.copy(id = existing.id))
+                    db.labBillDao().deleteTests(existing.id)
+                    db.labBillDao().deleteResults(existing.id)
+                    existing.id
+                } else {
+                    db.labBillDao().insertBill(remapped.copy(id = 0)).also { nid -> log.add("labBills", nid) }
+                }
             }
         }
         root.optJSONArray("labBillTests")?.let {
@@ -1302,7 +1394,17 @@ object FullBackup {
         // Material out
         val matOutMap = HashMap<Long, Long>()
         root.optJSONArray("materialOuts")?.let {
-            for (i in 0 until it.length()) { val m = readMatOut(it.getJSONObject(i)); matOutMap[m.id] = db.materialOutDao().insertHeader(m.copy(id = 0)) }
+            for (i in 0 until it.length()) {
+                val m = readMatOut(it.getJSONObject(i))
+                val existing = db.materialOutDao().byNo(m.voucherNo)
+                matOutMap[m.id] = if (existing != null) {
+                    db.materialOutDao().updateHeader(m.copy(id = existing.id))
+                    db.materialOutDao().deleteLines(existing.id)
+                    existing.id
+                } else {
+                    db.materialOutDao().insertHeader(m.copy(id = 0)).also { nid -> log.add("materialOuts", nid) }
+                }
+            }
         }
         root.optJSONArray("materialOutItems")?.let {
             for (i in 0 until it.length()) { val l = readMatOutItem(it.getJSONObject(i)); val nm = matOutMap[l.outId] ?: continue; db.materialOutDao().insertLines(listOf(l.copy(id = 0, outId = nm))) }
@@ -1349,8 +1451,14 @@ object FullBackup {
         root.optJSONArray("purchaseQuotes")?.let {
             for (i in 0 until it.length()) {
                 val q = readPQuote(it.getJSONObject(i))
-                pQuoteMap[q.id] = db.purchaseQuoteDao().insertHeader(q.copy(id = 0))
-                    .also { nid -> log.add("purchaseQuotes", nid) }
+                val existing = db.purchaseQuoteDao().byNo(q.quoteNo)
+                pQuoteMap[q.id] = if (existing != null) {
+                    db.purchaseQuoteDao().updateHeader(q.copy(id = existing.id))
+                    db.purchaseQuoteDao().deleteLines(existing.id)
+                    existing.id
+                } else {
+                    db.purchaseQuoteDao().insertHeader(q.copy(id = 0)).also { nid -> log.add("purchaseQuotes", nid) }
+                }
             }
         }
         root.optJSONArray("purchaseQuoteItems")?.let {
@@ -1414,9 +1522,15 @@ object FullBackup {
         root.optJSONArray("materialReceipts")?.let {
             for (i in 0 until it.length()) {
                 val m = readMatRec(it.getJSONObject(i))
-                matRecMap[m.id] = db.materialReceiptDao()
-                    .insertHeader(m.copy(id = 0, supplierId = suppMap[m.supplierId] ?: m.supplierId))
-                    .also { nid -> log.add("materialReceipts", nid) }
+                val remapped = m.copy(supplierId = suppMap[m.supplierId] ?: m.supplierId)
+                val existing = db.materialReceiptDao().byNo(m.receiptNo)
+                matRecMap[m.id] = if (existing != null) {
+                    db.materialReceiptDao().updateHeader(remapped.copy(id = existing.id))
+                    db.materialReceiptDao().deleteLines(existing.id)
+                    existing.id
+                } else {
+                    db.materialReceiptDao().insertHeader(remapped.copy(id = 0)).also { nid -> log.add("materialReceipts", nid) }
+                }
             }
         }
         root.optJSONArray("materialReceiptItems")?.let {
@@ -1430,9 +1544,15 @@ object FullBackup {
         root.optJSONArray("productionProcedures")?.let {
             for (i in 0 until it.length()) {
                 val p = readProcedure(it.getJSONObject(i))
-                procedureMap[p.id] = db.productionDao()
-                    .insertProcedureHeader(p.copy(id = 0, producedItemId = itemMap[p.producedItemId] ?: p.producedItemId))
-                    .also { nid -> log.add("productionProcedures", nid) }
+                val remapped = p.copy(producedItemId = itemMap[p.producedItemId] ?: p.producedItemId)
+                val existing = db.productionDao().procedureByName(p.name)
+                procedureMap[p.id] = if (existing != null) {
+                    db.productionDao().updateProcedureHeader(remapped.copy(id = existing.id))
+                    db.productionDao().deleteProcedureMaterials(existing.id)
+                    existing.id
+                } else {
+                    db.productionDao().insertProcedureHeader(remapped.copy(id = 0)).also { nid -> log.add("productionProcedures", nid) }
+                }
             }
         }
         root.optJSONArray("productionProcedureMaterials")?.let {
@@ -1446,6 +1566,7 @@ object FullBackup {
         root.optJSONArray("productionRuns")?.let {
             for (i in 0 until it.length()) {
                 val r = readProductionRun(it.getJSONObject(i))
+                if (db.productionDao().runByNo(r.runNo) != null) continue
                 db.productionDao().insertRun(
                     r.copy(
                         id = 0,
@@ -1462,7 +1583,14 @@ object FullBackup {
         root.optJSONArray("itemBundles")?.let {
             for (i in 0 until it.length()) {
                 val b = readBundle(it.getJSONObject(i))
-                bundleMap[b.id] = db.itemBundleDao().insertHeader(b.copy(id = 0)).also { nid -> log.add("itemBundles", nid) }
+                val existing = db.itemBundleDao().byName(b.name)
+                bundleMap[b.id] = if (existing != null) {
+                    db.itemBundleDao().updateHeader(b.copy(id = existing.id))
+                    db.itemBundleDao().deleteComponents(existing.id)
+                    existing.id
+                } else {
+                    db.itemBundleDao().insertHeader(b.copy(id = 0)).also { nid -> log.add("itemBundles", nid) }
+                }
             }
         }
         root.optJSONArray("itemBundleComponents")?.let {

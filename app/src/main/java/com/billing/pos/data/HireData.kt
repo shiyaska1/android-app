@@ -55,6 +55,7 @@ data class HireIdQty(val id: Long, val qty: Double)
 @Dao
 interface HireInvoiceDao {
     @Query("SELECT COUNT(*) FROM hire_invoices") suspend fun count(): Int
+    @Query("SELECT * FROM hire_invoices WHERE hireNo = :hireNo LIMIT 1") suspend fun byNo(hireNo: String): HireInvoice?
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertHeader(h: HireInvoice): Long
     @Insert suspend fun insertLines(lines: List<HireInvoiceItem>)
     @Update suspend fun updateHeader(h: HireInvoice)
@@ -114,6 +115,7 @@ data class HireReturnWithItems(val ret: HireReturn, val lines: List<HireReturnIt
 @Dao
 interface HireReturnDao {
     @Query("SELECT COUNT(*) FROM hire_returns") suspend fun count(): Int
+    @Query("SELECT * FROM hire_returns WHERE returnNo = :returnNo LIMIT 1") suspend fun byNo(returnNo: String): HireReturn?
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertHeader(r: HireReturn): Long
     @Insert suspend fun insertLines(lines: List<HireReturnItem>)
     @Update suspend fun updateHeader(r: HireReturn)

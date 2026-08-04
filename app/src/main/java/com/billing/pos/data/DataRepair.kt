@@ -16,9 +16,27 @@ object DataRepair {
     data class RepairResult(val recordsMerged: Int, val attachmentsMerged: Int)
 
     suspend fun repair(context: Context): RepairResult {
-        val records = mergeDuplicateDiaryEntries(context) + mergeDuplicateDocuments(context) + mergeDuplicateSavedCalcs(context)
-        val attachments = mergeDuplicateAttachments(context)
+        val records = mergeDuplicateDiaryEntries(context) + mergeDuplicateDocuments(context) +
+            mergeDuplicateAuxDocuments(context) + mergeDuplicateSavedCalcs(context)
+        val attachments = mergeDuplicateAttachments(context) + mergeDuplicateDiaryBlocks(context)
         return RepairResult(records, attachments)
+    }
+
+    /** Removes duplicate blocks (same type/text/path/name) *within* a single diary entry —
+     *  content sitting inside one entry that's already duplicated, regardless of how it got
+     *  there (an earlier run of this same repair before it deduped on the way in is one way).
+     *  Separate from [mergeDuplicateDiaryEntries], which only dedupes across entries. */
+    private suspend fun mergeDuplicateDiaryBlocks(context: Context): Int {
+        val dao = AppDatabase.get(context).diaryDao()
+        var removed = 0
+        dao.allEntries().forEach { entry ->
+            val seen = HashSet<List<Any?>>()
+            dao.blocksFor(entry.id).forEach { b ->
+                val key = listOf(b.type, b.text, b.path, b.name)
+                if (!seen.add(key)) { dao.deleteBlock(b.id); removed++ }
+            }
+        }
+        return removed
     }
 
     /** Saved calculator tapes have no number field to match on, so a duplicate is identified by
@@ -73,6 +91,46 @@ object DataRepair {
         return removed
     }
 
+    /** Same "same document number appears more than once" cleanup as [mergeDuplicateDocuments],
+     *  for the rest of the vouchers that share the same bug: sales/purchase returns, purchase
+     *  orders (LPO), purchase quotations, material receipts/out, hire invoices/returns, lab bills
+     *  and production runs — plus the few masters (lab tests, patients, production procedures,
+     *  item bundles) that have no number field and are matched by name instead. */
+    private suspend fun mergeDuplicateAuxDocuments(context: Context): Int {
+        val db = AppDatabase.get(context)
+        val repo = Repository(context)
+        var removed = 0
+
+        fun <T, K> dupesToDropBy(all: List<T>, key: (T) -> K, id: (T) -> Long): List<T> {
+            val drop = ArrayList<T>()
+            all.groupBy(key).values.filter { it.size > 1 }.forEach { group ->
+                val keepId = group.minOf(id)
+                group.forEach { if (id(it) != keepId) drop.add(it) }
+            }
+            return drop
+        }
+        fun <T> dupesToDropByNo(all: List<T>, no: (T) -> String, id: (T) -> Long): List<T> =
+            dupesToDropBy(all.filter { no(it).isNotBlank() }, no, id)
+
+        dupesToDropByNo(db.salesReturnDao().all(), { it.returnNo }, { it.id }).forEach { repo.deleteSalesReturn(it); removed++ }
+        dupesToDropByNo(db.purchaseReturnDao().all(), { it.returnNo }, { it.id }).forEach { repo.deletePurchaseReturn(it); removed++ }
+        dupesToDropByNo(db.purchaseQuotationDao().all(), { it.lpoNo }, { it.id }).forEach { db.purchaseQuotationDao().delete(it); removed++ }
+        dupesToDropByNo(db.purchaseQuoteDao().all(), { it.quoteNo }, { it.id }).forEach { db.purchaseQuoteDao().delete(it); removed++ }
+        dupesToDropByNo(db.materialReceiptDao().all(), { it.receiptNo }, { it.id }).forEach { repo.deleteMaterialReceipt(it); removed++ }
+        dupesToDropByNo(db.materialOutDao().all(), { it.voucherNo }, { it.id }).forEach { repo.deleteMaterialOut(it); removed++ }
+        dupesToDropByNo(db.hireInvoiceDao().all(), { it.hireNo }, { it.id }).forEach { repo.deleteHireInvoice(it); removed++ }
+        dupesToDropByNo(db.hireReturnDao().all(), { it.returnNo }, { it.id }).forEach { repo.deleteHireReturn(it); removed++ }
+        dupesToDropByNo(db.labBillDao().allBills(), { it.billNo }, { it.id }).forEach { repo.deleteLabBill(it); removed++ }
+        dupesToDropByNo(db.productionDao().allRuns(), { it.runNo }, { it.id }).forEach { repo.deleteProductionRun(it); removed++ }
+
+        dupesToDropBy(db.labTestDao().allTests(), { it.name.trim().lowercase() }, { it.id }).forEach { db.labTestDao().delete(it); removed++ }
+        dupesToDropBy(db.patientDao().all(), { it.name.trim().lowercase() to it.phone.trim() }, { it.id }).forEach { db.patientDao().delete(it); removed++ }
+        dupesToDropBy(db.productionDao().allProcedures(), { it.name.trim().lowercase() }, { it.id }).forEach { db.productionDao().deleteProcedure(it); removed++ }
+        dupesToDropBy(db.itemBundleDao().all(), { it.name.trim().lowercase() }, { it.id }).forEach { db.itemBundleDao().delete(it); removed++ }
+
+        return removed
+    }
+
     /** Groups diary entries that are the same note re-inserted by repeated merges (same title,
      *  remarks, createdAt and customer), keeps the most recently updated one per group, moves
      *  every duplicate's blocks/attachments onto it first (so nothing typed or attached is lost
@@ -85,9 +143,20 @@ object DataRepair {
         var removed = 0
         groups.values.filter { it.size > 1 }.forEach { dupes ->
             val keeper = dupes.maxByOrNull { it.updatedAt } ?: return@forEach
+            // The keeper's own blocks/attachments — a duplicate's copies of the *same* content
+            // (the common case: the whole entry was re-inserted, blocks included) must be skipped
+            // here, not blindly appended, or merging N duplicate entries leaves N copies of every
+            // paragraph sitting inside the one surviving entry.
+            fun blockKey(b: DiaryBlock) = listOf(b.type, b.text, b.path, b.name)
+            val keptBlockKeys = dao.blocksFor(keeper.id).map(::blockKey).toMutableSet()
+            val keptAttNames = dao.attachmentsFor(keeper.id).map { it.name }.toMutableSet()
             dupes.filter { it.id != keeper.id }.forEach { dup ->
-                dao.blocksFor(dup.id).forEach { b -> dao.insertBlock(b.copy(id = 0, entryId = keeper.id)) }
-                dao.attachmentsFor(dup.id).forEach { a -> dao.insertAttachment(a.copy(id = 0, entryId = keeper.id)) }
+                dao.blocksFor(dup.id).forEach { b ->
+                    if (keptBlockKeys.add(blockKey(b))) dao.insertBlock(b.copy(id = 0, entryId = keeper.id))
+                }
+                dao.attachmentsFor(dup.id).forEach { a ->
+                    if (keptAttNames.add(a.name)) dao.insertAttachment(a.copy(id = 0, entryId = keeper.id))
+                }
                 dao.deleteBlocksFor(dup.id)
                 dao.deleteAttachmentsFor(dup.id)
                 dao.delete(dup)

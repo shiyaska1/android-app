@@ -46,6 +46,7 @@ data class PurchaseQuotationWithItems(val lpo: PurchaseQuotation, val lines: Lis
 @Dao
 interface PurchaseQuotationDao {
     @Query("SELECT COUNT(*) FROM purchase_quotations") suspend fun count(): Int
+    @Query("SELECT * FROM purchase_quotations WHERE lpoNo = :lpoNo LIMIT 1") suspend fun byNo(lpoNo: String): PurchaseQuotation?
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertHeader(r: PurchaseQuotation): Long
     @Insert suspend fun insertLines(lines: List<PurchaseQuotationItem>)
     @Update suspend fun updateHeader(r: PurchaseQuotation)
