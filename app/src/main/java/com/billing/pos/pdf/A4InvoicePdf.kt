@@ -30,9 +30,12 @@ object A4InvoicePdf {
         val split = com.billing.pos.data.GstTax.split(bill.taxTotal, company.gstin, bill.customerState)
         val actualDocTitle = docTitle ?: when {
             composition -> "BILL OF SUPPLY"
-            gst || bill.taxTotal > 0.0 -> "TAX INVOICE"
+            gst -> "TAX INVOICE"
             else -> "INVOICE"
         }
+        // With GST mode off, tax isn't itemised at all — Sub Total is the full inclusive amount
+        // so it still reconciles with Additional/Discount/GRAND TOTAL below with nothing unexplained.
+        val displaySubTotal = if (gst) bill.subTotal else bill.subTotal + bill.taxTotal + bill.cessTotal
         val doc = PdfDocument()
 
         val black = Paint().apply { color = 0xFF000000.toInt(); isAntiAlias = true }
@@ -156,16 +159,12 @@ object A4InvoicePdf {
             c.drawText(value, valueR, y, vp)
             y += 17f
         }
-        total("Sub Total", Format.money(bill.subTotal))
-        if (bill.taxTotal != 0.0 && !composition) {
-            if (gst) {
-                if (split.interstate) total("IGST", Format.money(split.igst))
-                else { total("CGST", Format.money(split.cgst)); total("SGST", Format.money(split.sgst)) }
-            } else {
-                total("Tax", Format.money(bill.taxTotal))
-            }
+        total("Sub Total", Format.money(displaySubTotal))
+        if (gst && !composition && bill.taxTotal != 0.0) {
+            if (split.interstate) total("IGST", Format.money(split.igst))
+            else { total("CGST", Format.money(split.cgst)); total("SGST", Format.money(split.sgst)) }
         }
-        if (bill.cessTotal != 0.0 && !composition) total("Cess", Format.money(bill.cessTotal))
+        if (gst && !composition && bill.cessTotal != 0.0) total("Cess", Format.money(bill.cessTotal))
         if (bill.additionalCharge != 0.0) total("Additional", Format.money(bill.additionalCharge))
         if (bill.discount != 0.0) total("Discount", "-" + Format.money(bill.discount))
         c.drawLine(cRate, y - 2f, xEnd, y - 2f, line)

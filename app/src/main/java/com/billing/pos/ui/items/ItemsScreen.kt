@@ -437,6 +437,7 @@ fun ItemsScreen(
     var askAddMode by remember { mutableStateOf(false) }
     var showMulti by remember { mutableStateOf(false) }
     var showPhotoMulti by remember { mutableStateOf(false) }
+    var showBulkComma by remember { mutableStateOf(false) }
     var deleteFor by remember { mutableStateOf<Item?>(null) }
     // Deep link (from the item-wise sales report): open this item in edit mode once loaded.
     var editLinkDone by remember { mutableStateOf(false) }
@@ -714,6 +715,9 @@ fun ItemsScreen(
                         askAddMode = false; showMulti = true
                     }, modifier = Modifier.fillMaxWidth()) { Text("Multiple items — a table of rows") }
                     androidx.compose.material3.TextButton(onClick = {
+                        askAddMode = false; showBulkComma = true
+                    }, modifier = Modifier.fillMaxWidth()) { Text("Multiple, comma-separated — same price & category") }
+                    androidx.compose.material3.TextButton(onClick = {
                         askAddMode = false; showPhotoMulti = true
                     }, modifier = Modifier.fillMaxWidth()) { Text("Multiple by image — photograph each item") }
                 }
@@ -744,6 +748,17 @@ fun ItemsScreen(
             categories = cats,
             onSave = { entered -> vm.saveMany(context, entered) { showMulti = false } },
             onDismiss = { showMulti = false }
+        )
+    }
+
+    if (showBulkComma) {
+        val cats = remember(rows) {
+            rows.map { it.item.category }.filter { it.isNotBlank() }.distinct().sortedBy { it.lowercase() }
+        }
+        BulkCommaItemDialog(
+            categories = cats,
+            onSave = { entered -> vm.saveMany(context, entered) { showBulkComma = false } },
+            onDismiss = { showBulkComma = false }
         )
     }
 

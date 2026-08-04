@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
@@ -17,7 +18,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
@@ -583,6 +586,175 @@ fun PhotoItemsDialog(
                                         }
                                     }
                                 }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Adds several items from one big comma-separated (or one-per-line) list of names, all sharing
+ * the same selling price and category — the fast path for "these ten things are all ₹50 each,
+ * same category". Draw/camera/gallery read more names straight into the box, comma-joined onto
+ * whatever's already typed.
+ */
+@Composable
+fun BulkCommaItemDialog(
+    categories: List<String>,
+    onSave: (List<MultiItemRow>) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var namesText by remember { mutableStateOf("") }
+    var price by remember { mutableStateOf("") }
+    var category by remember { mutableStateOf("") }
+    var showDraw by remember { mutableStateOf(false) }
+    var ocrUri by remember { mutableStateOf<android.net.Uri?>(null) }
+    var catMenu by remember { mutableStateOf(false) }
+    var newCat by remember { mutableStateOf(false) }
+
+    val addedCategories = remember { mutableStateListOf<String>() }
+    val allCategories = (categories + addedCategories).distinct().filter { it.isNotBlank() }
+
+    val camera = com.billing.pos.ocr.rememberImageCamera { uri -> ocrUri = uri }
+    val gallery = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        if (uri != null) ocrUri = uri
+    }
+
+    // Appends recognised text onto whatever's already typed, comma-separated.
+    fun appendNames(text: String) {
+        if (text.isBlank()) return
+        namesText = if (namesText.isBlank()) text.trim() else namesText.trimEnd().trimEnd(',') + ", " + text.trim()
+    }
+
+    if (showDraw) {
+        com.billing.pos.ui.common.HandwriteTextDialog(
+            onResult = { t -> appendNames(t); showDraw = false },
+            onDismiss = { showDraw = false }
+        )
+    }
+    ocrUri?.let { u ->
+        com.billing.pos.ui.common.RegionLinesOcrDialog(
+            uri = u,
+            onResult = { lines -> appendNames(lines.joinToString(", ")); ocrUri = null },
+            onDismiss = { ocrUri = null }
+        )
+    }
+    if (newCat) {
+        var typed by remember { mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { newCat = false },
+            title = { Text("New category") },
+            text = {
+                OutlinedTextField(
+                    value = typed, onValueChange = { typed = it },
+                    label = { Text("Category name") }, singleLine = true
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val n = typed.trim()
+                    if (n.isNotBlank()) { addedCategories.add(n); category = n }
+                    newCat = false
+                }) { Text("Add") }
+            },
+            dismissButton = { TextButton(onClick = { newCat = false }) { Text("Cancel") } }
+        )
+    }
+
+    // Both a comma and pressing Enter (a newline) separate one item from the next.
+    val parsedNames = remember(namesText) {
+        namesText.split(',', '\n').map { it.trim() }.filter { it.isNotBlank() }
+    }
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+    ) {
+        Column(
+            Modifier.fillMaxSize()
+                .background(MaterialTheme.colorScheme.surface)
+                .safeDrawingPadding()
+                .imePadding()
+        ) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = { showDraw = true }) { Icon(Icons.Filled.Draw, "Draw item names") }
+                IconButton(onClick = { camera() }) { Icon(Icons.Filled.PhotoCamera, "Read item names from a photo") }
+                IconButton(onClick = {
+                    gallery.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                }) { Icon(Icons.Filled.PhotoLibrary, "Read item names from a gallery photo") }
+                IconButton(onClick = onDismiss) { Icon(Icons.Filled.Close, "Cancel") }
+                Button(
+                    onClick = {
+                        onSave(parsedNames.map { n -> MultiItemRow().also { it.name = n; it.price = price; it.category = category } })
+                    },
+                    enabled = parsedNames.isNotEmpty(),
+                    modifier = Modifier.weight(1f)
+                ) { Text("Save ${parsedNames.size} item(s)") }
+            }
+            Divider()
+
+            Column(
+                Modifier.fillMaxSize()
+                    .padding(10.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                Text(
+                    "Type or paste item names separated by commas — pressing Enter for a new line works too.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline
+                )
+                OutlinedTextField(
+                    value = namesText,
+                    onValueChange = { namesText = it },
+                    label = { Text("Item names (comma or line separated)") },
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp).heightIn(min = 220.dp)
+                )
+                if (parsedNames.isNotEmpty()) {
+                    Text(
+                        "${parsedNames.size} item(s): ${parsedNames.joinToString(", ")}",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
+                Row(Modifier.fillMaxWidth().padding(top = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = price,
+                        onValueChange = { price = it.filter { c -> c.isDigit() || c == '.' } },
+                        label = { Text("Selling price (all items)") }, singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        modifier = Modifier.weight(1f)
+                    )
+                    Box(Modifier.weight(1f)) {
+                        OutlinedTextField(
+                            value = category,
+                            onValueChange = { category = it; catMenu = true },
+                            label = { Text("Category (all items)") }, singleLine = true,
+                            trailingIcon = {
+                                Row {
+                                    IconButton(onClick = { newCat = true }) {
+                                        Icon(Icons.Filled.Add, "New category", Modifier.size(18.dp))
+                                    }
+                                    IconButton(onClick = { catMenu = true }) {
+                                        Icon(Icons.Filled.ArrowDropDown, "Pick category")
+                                    }
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth().onFocusChanged { fs -> if (fs.isFocused) catMenu = true }
+                        )
+                        val catMatches = allCategories.filter { category.isBlank() || it.contains(category, true) }
+                        DropdownMenu(expanded = catMenu, onDismissRequest = { catMenu = false }) {
+                            if (catMatches.isEmpty()) DropdownMenuItem(
+                                text = { Text(if (allCategories.isEmpty()) "No categories yet — use +" else "No match") },
+                                onClick = { catMenu = false }
+                            )
+                            catMatches.forEach { c ->
+                                DropdownMenuItem(text = { Text(c) }, onClick = { category = c; catMenu = false })
                             }
                         }
                     }

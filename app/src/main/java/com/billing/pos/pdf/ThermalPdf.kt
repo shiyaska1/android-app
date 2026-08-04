@@ -42,9 +42,11 @@ object ThermalPdf {
         val split = com.billing.pos.data.GstTax.split(bill.taxTotal, company.gstin, bill.customerState)
         val actualTitle = title ?: when {
             composition -> "BILL OF SUPPLY"
-            gst || bill.taxTotal > 0.0 -> "TAX INVOICE"
+            gst -> "TAX INVOICE"
             else -> "INVOICE"
         }
+        // With GST mode off, tax isn't itemised at all — Sub Total is the full inclusive amount.
+        val displaySubTotal = if (gst) bill.subTotal else bill.subTotal + bill.taxTotal + bill.cessTotal
         val out = ArrayList<Line>()
         fun add(text: String, bold: Boolean = false) { out.add(Line(text, bold)) }
         addHeader(out, company, gst)
@@ -67,16 +69,12 @@ object ThermalPdf {
             add(row("  @${Format.money(l.price)}" + (if (l.unit.isNotBlank()) "/${l.unit}" else ""), Format.qty(l.qty), Format.money(l.lineTotal)))
         }
         add(rule())
-        add(kv("Sub Total", Format.money(bill.subTotal)))
-        if (bill.taxTotal != 0.0 && !composition) {
-            if (gst) {
-                if (split.interstate) add(kv("IGST", Format.money(split.igst)))
-                else { add(kv("CGST", Format.money(split.cgst))); add(kv("SGST", Format.money(split.sgst))) }
-            } else {
-                add(kv("Tax", Format.money(bill.taxTotal)))
-            }
+        add(kv("Sub Total", Format.money(displaySubTotal)))
+        if (gst && !composition && bill.taxTotal != 0.0) {
+            if (split.interstate) add(kv("IGST", Format.money(split.igst)))
+            else { add(kv("CGST", Format.money(split.cgst))); add(kv("SGST", Format.money(split.sgst))) }
         }
-        if (bill.cessTotal != 0.0 && !composition) add(kv("Cess", Format.money(bill.cessTotal)))
+        if (gst && !composition && bill.cessTotal != 0.0) add(kv("Cess", Format.money(bill.cessTotal)))
         if (bill.additionalCharge != 0.0) add(kv("Additional", Format.money(bill.additionalCharge)))
         if (bill.discount != 0.0) add(kv("Discount", "-" + Format.money(bill.discount)))
         add(rule())

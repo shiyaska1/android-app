@@ -336,9 +336,11 @@ object ThermalPrinter {
         val split = com.billing.pos.data.GstTax.split(bill.taxTotal, company.gstin, bill.customerState)
         val actualTitle = title ?: when {
             composition -> "BILL OF SUPPLY"
-            gst || bill.taxTotal > 0.0 -> "TAX INVOICE"
+            gst -> "TAX INVOICE"
             else -> "INVOICE"
         }
+        // With GST mode off, tax isn't itemised at all — Sub Total is the full inclusive amount.
+        val displaySubTotal = if (gst) bill.subTotal else bill.subTotal + bill.taxTotal + bill.cessTotal
         val sb = StringBuilder()
         sb.append(center(company.name)).append('\n')
         if (company.address.isNotBlank()) sb.append(center(company.address)).append('\n')
@@ -364,20 +366,16 @@ object ThermalPrinter {
                 .append('\n')
         }
         sb.append(line()).append('\n')
-        sb.append(kv("Sub Total", Format.money(bill.subTotal))).append('\n')
-        if (bill.taxTotal != 0.0 && !composition) {
-            if (gst) {
-                if (split.interstate) {
-                    sb.append(kv("IGST", Format.money(split.igst))).append('\n')
-                } else {
-                    sb.append(kv("CGST", Format.money(split.cgst))).append('\n')
-                    sb.append(kv("SGST", Format.money(split.sgst))).append('\n')
-                }
+        sb.append(kv("Sub Total", Format.money(displaySubTotal))).append('\n')
+        if (gst && !composition && bill.taxTotal != 0.0) {
+            if (split.interstate) {
+                sb.append(kv("IGST", Format.money(split.igst))).append('\n')
             } else {
-                sb.append(kv("Tax", Format.money(bill.taxTotal))).append('\n')
+                sb.append(kv("CGST", Format.money(split.cgst))).append('\n')
+                sb.append(kv("SGST", Format.money(split.sgst))).append('\n')
             }
         }
-        if (bill.cessTotal != 0.0 && !composition) sb.append(kv("Cess", Format.money(bill.cessTotal))).append('\n')
+        if (gst && !composition && bill.cessTotal != 0.0) sb.append(kv("Cess", Format.money(bill.cessTotal))).append('\n')
         if (bill.additionalCharge != 0.0)
             sb.append(kv("Additional", Format.money(bill.additionalCharge))).append('\n')
         if (bill.discount != 0.0)
