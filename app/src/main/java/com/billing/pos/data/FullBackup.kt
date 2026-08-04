@@ -27,6 +27,76 @@ object FullBackup {
     private val ioGate = Mutex()
 
     /**
+     * Business-level settings carried by every backup/restore/cloud-sync round-trip, so a second
+     * device for the same business ends up configured the same way. Deliberately excludes
+     * anything device-local: login session, this device's printer/Bluetooth/logo file paths,
+     * licensing, and the sync connection settings themselves (syncing those could point a device
+     * at a different server or start a sync loop).
+     */
+    private fun settingsJson(prefs: AppPrefs) = JSONObject()
+        .put("companyName", prefs.companyName)
+        .put("companyAddress", prefs.companyAddress)
+        .put("companyPhone", prefs.companyPhone)
+        .put("companyGstin", prefs.companyGstin)
+        .put("gstEnabled", prefs.gstEnabled)
+        .put("compositionScheme", prefs.compositionScheme)
+        .put("priceIncludesTax", prefs.priceIncludesTax)
+        .put("cessEnabled", prefs.cessEnabled)
+        .put("noTaxInvoiceEnabled", prefs.noTaxInvoiceEnabled)
+        .put("noTaxInvoicePrefix", prefs.noTaxInvoicePrefix)
+        .put("upiId", prefs.upiId)
+        .put("upiName", prefs.upiName)
+        .put("showUpiQrOnPrint", prefs.showUpiQrOnPrint)
+        .put("requireItemBatch", prefs.requireItemBatch)
+        .put("fifoAutoPickBatch", prefs.fifoAutoPickBatch)
+        .put("businessType", prefs.businessType)
+        .put("expiryAlert", prefs.expiryAlert)
+        .put("expiryAlertDays", prefs.expiryAlertDays)
+        .put("smsGatewayUrl", prefs.smsGatewayUrl)
+        .put("smsGatewayMethod", prefs.smsGatewayMethod)
+        .put("smsApiKey", prefs.smsApiKey)
+        .put("smsSenderId", prefs.smsSenderId)
+        .put("smsBalanceUrl", prefs.smsBalanceUrl)
+        .put("smsChannel", prefs.smsChannel)
+        .put("smsJsonBody", prefs.smsJsonBody)
+        .put("smsBearer", prefs.smsBearer)
+        .put("gymSlots", prefs.gymSlots.joinToString("|"))
+        .put("customerTypes", prefs.customerTypes.joinToString("|"))
+
+    /** Applies a [settingsJson] object to [prefs]. Missing keys (older backups) keep the current
+     *  local value — only keys actually present overwrite. */
+    private fun applySettingsJson(prefs: AppPrefs, s: JSONObject) {
+        prefs.companyName = s.optString("companyName", prefs.companyName)
+        prefs.companyAddress = s.optString("companyAddress", prefs.companyAddress)
+        prefs.companyPhone = s.optString("companyPhone", prefs.companyPhone)
+        prefs.companyGstin = s.optString("companyGstin", prefs.companyGstin)
+        prefs.gstEnabled = s.optBoolean("gstEnabled", prefs.gstEnabled)
+        prefs.compositionScheme = s.optBoolean("compositionScheme", prefs.compositionScheme)
+        prefs.priceIncludesTax = s.optBoolean("priceIncludesTax", prefs.priceIncludesTax)
+        prefs.cessEnabled = s.optBoolean("cessEnabled", prefs.cessEnabled)
+        prefs.noTaxInvoiceEnabled = s.optBoolean("noTaxInvoiceEnabled", prefs.noTaxInvoiceEnabled)
+        prefs.noTaxInvoicePrefix = s.optString("noTaxInvoicePrefix", prefs.noTaxInvoicePrefix)
+        prefs.upiId = s.optString("upiId", prefs.upiId)
+        prefs.upiName = s.optString("upiName", prefs.upiName)
+        prefs.showUpiQrOnPrint = s.optBoolean("showUpiQrOnPrint", prefs.showUpiQrOnPrint)
+        prefs.requireItemBatch = s.optBoolean("requireItemBatch", prefs.requireItemBatch)
+        prefs.fifoAutoPickBatch = s.optBoolean("fifoAutoPickBatch", prefs.fifoAutoPickBatch)
+        prefs.businessType = s.optString("businessType", prefs.businessType)
+        prefs.expiryAlert = s.optBoolean("expiryAlert", prefs.expiryAlert)
+        prefs.expiryAlertDays = s.optInt("expiryAlertDays", prefs.expiryAlertDays)
+        prefs.smsGatewayUrl = s.optString("smsGatewayUrl", prefs.smsGatewayUrl)
+        prefs.smsGatewayMethod = s.optString("smsGatewayMethod", prefs.smsGatewayMethod)
+        prefs.smsApiKey = s.optString("smsApiKey", prefs.smsApiKey)
+        prefs.smsSenderId = s.optString("smsSenderId", prefs.smsSenderId)
+        prefs.smsBalanceUrl = s.optString("smsBalanceUrl", prefs.smsBalanceUrl)
+        prefs.smsChannel = s.optString("smsChannel", prefs.smsChannel)
+        prefs.smsJsonBody = s.optString("smsJsonBody", prefs.smsJsonBody)
+        prefs.smsBearer = s.optBoolean("smsBearer", prefs.smsBearer)
+        if (s.has("gymSlots")) prefs.gymSlots = s.optString("gymSlots", "").split("|").map { it.trim() }.filter { it.isNotBlank() }
+        if (s.has("customerTypes")) prefs.customerTypes = s.optString("customerTypes", "").split("|").map { it.trim() }.filter { it.isNotBlank() }
+    }
+
+    /**
      * @param pushWindowDays When > 0, only bills/purchases/receipts/expenses/quotations/estimates/
      * journal entries created or edited in the last N days are included (and their line items,
      * to actually shrink the payload) — everything else (masters, returns, LPOs, ...) is always
@@ -41,13 +111,7 @@ object FullBackup {
         root.put("app", "pos-billing-full")
         root.put("version", 1)
         root.put("createdAt", System.currentTimeMillis())
-        root.put(
-            "settings",
-            JSONObject()
-                .put("companyName", prefs.companyName)
-                .put("companyAddress", prefs.companyAddress)
-                .put("companyPhone", prefs.companyPhone)
-        )
+        root.put("settings", settingsJson(prefs))
 
         root.put("customers", JSONArray().apply { db.customerDao().all().forEach { put(custJson(it)) } })
         root.put("items", JSONArray().apply { db.itemDao().all().forEach { put(itemJson(it)) } })
@@ -622,12 +686,7 @@ object FullBackup {
 
         withContext(Dispatchers.IO) { db.clearAllTables() }
 
-        root.optJSONObject("settings")?.let { s ->
-            val prefs = AppPrefs(context)
-            prefs.companyName = s.optString("companyName", "My Shop")
-            prefs.companyAddress = s.optString("companyAddress", "")
-            prefs.companyPhone = s.optString("companyPhone", "")
-        }
+        root.optJSONObject("settings")?.let { s -> applySettingsJson(AppPrefs(context), s) }
 
         root.optJSONArray("customers")?.let { for (i in 0 until it.length()) db.customerDao().insert(readCust(it.getJSONObject(i))) }
         root.optJSONArray("items")?.let { for (i in 0 until it.length()) db.itemDao().insert(readItem(it.getJSONObject(i))) }
@@ -813,16 +872,11 @@ object FullBackup {
      */
     private suspend fun mergeInto(context: Context, db: AppDatabase, root: JSONObject): MergeReport {
         val log = MergeReportBuilder()
-        // Company settings — a merge is meant to converge every device onto the same business
-        // profile too, not just add records, so this is applied unconditionally like a replace
-        // restore does (previously this only happened on a full Replace-all, never on Merge —
-        // including every Push/Pull cloud-sync cycle, which always merges).
-        root.optJSONObject("settings")?.let { s ->
-            val prefs = AppPrefs(context)
-            prefs.companyName = s.optString("companyName", prefs.companyName)
-            prefs.companyAddress = s.optString("companyAddress", prefs.companyAddress)
-            prefs.companyPhone = s.optString("companyPhone", prefs.companyPhone)
-        }
+        // Settings — a merge is meant to converge every device onto the same business profile
+        // too, not just add records, so this is applied unconditionally like a replace restore
+        // does (previously this only happened on a full Replace-all, never on Merge — including
+        // every Push/Pull cloud-sync cycle, which always merges).
+        root.optJSONObject("settings")?.let { s -> applySettingsJson(AppPrefs(context), s) }
         // Customers
         val custByName = HashMap<String, Long>()
         db.customerDao().all().forEach { custByName[it.name.lowercase()] = it.id }

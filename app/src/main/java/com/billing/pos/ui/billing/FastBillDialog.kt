@@ -102,8 +102,9 @@ fun FastBillDialog(
     var narration by remember { mutableStateOf("") }
     // Which customer the saved list is filtered to; blank means all of them.
     var listFilter by remember { mutableStateOf("") }
-    // Date range, off by default. When switched on it starts at one month back.
-    var dateRangeOn by remember { mutableStateOf(false) }
+    // Date range, on by default, showing today only — the common case is "what did I
+    // calculate today"; switch it off to see the full history.
+    var dateRangeOn by remember { mutableStateOf(true) }
     var editReceipt by remember { mutableStateOf<com.billing.pos.data.Receipt?>(null) }
     var qrAmount by remember { mutableStateOf<Double?>(null) }
     var fromMillis by remember { mutableStateOf(defaultFromMillis()) }
@@ -580,7 +581,7 @@ fun FastBillDialog(
                         }
                     }
                 }
-                // Date range, off by default so the list shows everything until asked.
+                // Date range, on by default (today) — switch off to see the full history.
                 Row(
                     Modifier.fillMaxWidth().padding(horizontal = 12.dp),
                     verticalAlignment = Alignment.CenterVertically
@@ -1004,10 +1005,8 @@ private fun shareCalcList(
     }
 }
 
-/** The date the range starts on when it is first switched on: one month back. */
-private fun defaultFromMillis(): Long = java.util.Calendar.getInstance().apply {
-    add(java.util.Calendar.MONTH, -1)
-}.timeInMillis
+/** The date the range starts on by default: today. */
+private fun defaultFromMillis(): Long = System.currentTimeMillis()
 
 private fun startOfDayMillis(m: Long): Long = java.util.Calendar.getInstance().apply {
     timeInMillis = m
