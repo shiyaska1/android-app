@@ -332,7 +332,7 @@ fun DashboardScreen(
         if (Session.canViewPayment) add(Tile("Payments", Icons.Filled.MoneyOff, onExpenses, "Accounts/Transactions"))
         if (Session.canViewCashbook) add(Tile("Cash Book", Icons.Filled.AccountBalanceWallet, onCashbook, "Accounts/Transactions"))
         if (Session.canViewInvoice) add(Tile("Outstanding", Icons.Filled.AccountBalance, onOutstanding, "Accounts/Transactions"))
-        if (Session.canManageUsers) add(Tile("Accounts", Icons.Filled.AccountTree, onAccounts, "Accounts/Masters"))
+        if (Session.canManageUsers) add(Tile("Chart of Accounts", Icons.Filled.AccountTree, onAccounts, "Accounts/Masters"))
         if (Session.canManageUsers) add(Tile("Cost Centers", Icons.Filled.AccountTree, onCostCenters, "Accounts/Masters"))
         if (Session.canManageUsers) add(Tile("Fixed Assets", Icons.Filled.AccountBalance, onFixedAssets, "Accounts/Masters"))
         if (Session.canManageUsers) add(Tile("Cheques", Icons.Filled.Payments, onCheques, "Accounts/Masters"))
