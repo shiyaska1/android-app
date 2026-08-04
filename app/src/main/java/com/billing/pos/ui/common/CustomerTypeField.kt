@@ -16,6 +16,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -24,10 +25,16 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import com.billing.pos.data.AppPrefs
+import com.billing.pos.data.Repository
 
 /**
  * Customer type dropdown with a "+" to add a new type, for every new-customer popup.
  * Defaults to General; new types are saved to the shared master (AppPrefs.customerTypes).
+ *
+ * Offers the same types the main Customers screen does: [AppPrefs.customerTypes] plus whatever
+ * type is already in use on an existing customer — not just types added through this exact
+ * field, so a type created any other way (the main Customer form, an import, ...) still shows
+ * up here instead of every quick-add popup defaulting to "General only".
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -35,6 +42,10 @@ fun CustomerTypeField(value: String, onValue: (String) -> Unit, modifier: Modifi
     val context = LocalContext.current
     val prefs = remember { AppPrefs(context) }
     var types by remember { mutableStateOf((listOf("General") + prefs.customerTypes).distinct()) }
+    LaunchedEffect(Unit) {
+        val inUse = Repository(context).customersAll().map { it.customerType }
+        types = (listOf("General") + prefs.customerTypes + inUse).distinct()
+    }
     var menu by remember { mutableStateOf(false) }
     var addNew by remember { mutableStateOf(false) }
 
@@ -68,7 +79,7 @@ fun CustomerTypeField(value: String, onValue: (String) -> Unit, modifier: Modifi
                     val t = name.trim()
                     if (t.isNotBlank()) {
                         prefs.addCustomerType(t)
-                        types = (listOf("General") + prefs.customerTypes).distinct()
+                        types = (types + t).distinct()
                         onValue(t)
                     }
                     addNew = false
