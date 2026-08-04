@@ -463,12 +463,18 @@ class VatReportViewModel(app: Application) : AndroidViewModel(app) {
             sb.append("<VOUCHERTYPENAME>Purchase</VOUCHERTYPENAME>\n")
             sb.append("<VOUCHERNUMBER>${xmlEscape(p.purchaseNo)}</VOUCHERNUMBER>\n")
             sb.append("<PARTYLEDGERNAME>${xmlEscape(p.supplierName)}</PARTYLEDGERNAME>\n")
-            ledger("Purchase Account", debit = true, amount = p.subTotal)
-            if (gst) {
-                ledger("CGST Input", debit = true, amount = p.taxTotal / 2.0)
-                ledger("SGST Input", debit = true, amount = p.taxTotal / 2.0)
+            if (composition) {
+                // A composition dealer can't claim input tax credit — the tax is just part of the cost.
+                ledger("Purchase Account", debit = true, amount = p.subTotal + p.taxTotal)
             } else {
-                ledger("Tax", debit = true, amount = p.taxTotal)
+                ledger("Purchase Account", debit = true, amount = p.subTotal)
+                if (gst) {
+                    val split = com.billing.pos.data.GstTax.split(p.taxTotal, companyGstin, p.supplierState)
+                    if (split.interstate) ledger("IGST Input", debit = true, amount = split.igst)
+                    else { ledger("CGST Input", debit = true, amount = split.cgst); ledger("SGST Input", debit = true, amount = split.sgst) }
+                } else {
+                    ledger("Tax", debit = true, amount = p.taxTotal)
+                }
             }
             ledger("Additional Charges", debit = true, amount = p.additionalCharge)
             ledger("Discount Received", debit = false, amount = p.discount)

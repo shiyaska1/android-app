@@ -350,6 +350,7 @@ class PurchaseViewModel(private val app: Application) : AndroidViewModel(app) {
             grandTotal = grandTotal,
             paidAmount = paid,
             supplierGstin = supplier.gstin,
+            supplierState = supplier.state,
             source = editingSource,
             stockReceived = addsStock,
             lpoNo = if (againstLpo) lpoNo else "",

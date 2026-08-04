@@ -1314,8 +1314,8 @@ class Repository(private val context: Context) {
     }
 
     // ---- suppliers ----
-    suspend fun addSupplier(name: String, phone: String, address: String, gstin: String = ""): Supplier {
-        val s = Supplier(name = name.trim(), phone = phone.trim(), address = address.trim(), gstin = gstin.trim())
+    suspend fun addSupplier(name: String, phone: String, address: String, gstin: String = "", state: String = ""): Supplier {
+        val s = Supplier(name = name.trim(), phone = phone.trim(), address = address.trim(), gstin = gstin.trim(), state = state.trim())
         val id = supplierDao.insert(s)
         ensureSupplierHead(name)   // create the supplier's ledger head immediately
         return s.copy(id = id)
@@ -1375,6 +1375,7 @@ class Repository(private val context: Context) {
             grandTotal = amount,
             paidAmount = 0.0,
             supplierGstin = supplier.gstin,
+            supplierState = supplier.state,
             remarks = note.trim(),
             isLegacy = true,
             updatedAt = System.currentTimeMillis()

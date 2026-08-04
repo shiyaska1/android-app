@@ -1402,12 +1402,14 @@ object FullBackup {
 
     private fun supplierJson(s: Supplier) = JSONObject().put("id", s.id).put("name", s.name)
         .put("phone", s.phone).put("address", s.address).put("gstin", s.gstin).put("isDefault", s.isDefault)
+        .put("state", s.state)
 
     private fun purchaseJson(p: Purchase) = JSONObject().put("id", p.id).put("purchaseNo", p.purchaseNo)
         .put("dateMillis", p.dateMillis).put("supplierId", p.supplierId).put("supplierName", p.supplierName)
         .put("paymentMethod", p.paymentMethod).put("subTotal", p.subTotal).put("taxTotal", p.taxTotal)
         .put("additionalCharge", p.additionalCharge).put("discount", p.discount).put("grandTotal", p.grandTotal)
-        .put("paidAmount", p.paidAmount).put("supplierGstin", p.supplierGstin).put("source", p.source)
+        .put("paidAmount", p.paidAmount).put("supplierGstin", p.supplierGstin).put("supplierState", p.supplierState)
+        .put("source", p.source)
         .put("deviceId", p.deviceId)
 
     private fun pLineJson(l: PurchaseItem) = JSONObject().put("id", l.id).put("purchaseId", l.purchaseId)
@@ -1970,7 +1972,8 @@ object FullBackup {
 
     private fun readSupplier(o: JSONObject) = Supplier(
         id = o.optLong("id"), name = o.optString("name"), phone = o.optString("phone"),
-        address = o.optString("address"), gstin = o.optString("gstin"), isDefault = o.optBoolean("isDefault", false)
+        address = o.optString("address"), gstin = o.optString("gstin"), isDefault = o.optBoolean("isDefault", false),
+        state = o.optString("state")
     )
 
     private fun readPurchase(o: JSONObject) = Purchase(
@@ -1980,6 +1983,7 @@ object FullBackup {
         taxTotal = o.optDouble("taxTotal", 0.0), additionalCharge = o.optDouble("additionalCharge", 0.0),
         discount = o.optDouble("discount", 0.0), grandTotal = o.optDouble("grandTotal", 0.0),
         paidAmount = o.optDouble("paidAmount", 0.0), supplierGstin = o.optString("supplierGstin"),
+        supplierState = o.optString("supplierState"),
         source = o.optString("source"), deviceId = o.optString("deviceId")
     )
 
