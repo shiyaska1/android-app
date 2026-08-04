@@ -158,6 +158,51 @@ class VatReportViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * GSTR-1 JSON in the section layout the GST portal's offline tool / API expects
+     * (b2b, b2cs, hsn). Built entirely from sales in the selected period — GSTR-1 reports
+     * only outward supplies, purchases play no part in it. Since the app doesn't collect a
+     * customer's state, every invoice is treated as an intra-state (CGST+SGST) sale to the
+     * company's own state, matching GST mode's existing assumption — review before uploading
+     * if any of these sales actually crossed state lines.
+     */
+    fun exportGstr1Json(context: Context, onSaved: (String) -> Unit) {
+        val s = summary ?: return
+        busy = true
+        viewModelScope.launch {
+            val company = AppPrefs(context).company
+            val json = withContext(Dispatchers.IO) { buildGstr1Json(company, s) }
+            val dir = File(context.cacheDir, "shared").apply { mkdirs() }
+            val file = File(dir, "gstr1.json")
+            withContext(Dispatchers.IO) { file.writeText(json) }
+            val ok = withContext(Dispatchers.IO) { DownloadSaver.save(context, file, "gstr1.json", "application/json") }
+            busy = false
+            onSaved(if (ok) "GSTR-1 JSON saved to Downloads: gstr1.json" else "Could not save GSTR-1 JSON")
+        }
+    }
+
+    /**
+     * Tally-importable XML (Gateway of Tally > Import Data) with one Sales voucher per bill
+     * and one Purchase voucher per purchase in the selected period. Ledger names are generic
+     * ("Sales Account", "CGST", "Discount Allowed", the customer/supplier's own name as the
+     * party ledger, ...) — create matching ledgers in Tally first, or use its "Alter Master"
+     * prompt on import to map them.
+     */
+    fun exportTallyXml(context: Context, onSaved: (String) -> Unit) {
+        val s = summary ?: return
+        busy = true
+        viewModelScope.launch {
+            val gst = AppPrefs(context).gstEnabled
+            val xml = withContext(Dispatchers.IO) { buildTallyXml(gst, s) }
+            val dir = File(context.cacheDir, "shared").apply { mkdirs() }
+            val file = File(dir, "tally-vouchers.xml")
+            withContext(Dispatchers.IO) { file.writeText(xml) }
+            val ok = withContext(Dispatchers.IO) { DownloadSaver.save(context, file, "tally-vouchers.xml", "text/xml") }
+            busy = false
+            onSaved(if (ok) "Tally XML saved to Downloads: tally-vouchers.xml" else "Could not save Tally XML")
+        }
+    }
+
     private fun buildExcelRows(companyName: String, gstin: String, s: VatSummary): List<List<XlsxWriter.Cell>> {
         val t = XlsxWriter::text; val n = XlsxWriter::num
         val rows = ArrayList<List<XlsxWriter.Cell>>()
@@ -221,6 +266,168 @@ class VatReportViewModel(app: Application) : AndroidViewModel(app) {
             .put("salesByRate", rateArr(s.salesRates)).put("purchaseByRate", rateArr(s.purchaseRates)))
         return root.toString(2)
     }
+
+    private class HsnAgg(val hsn: String, val rate: Double, var desc: String, var uqc: String) {
+        var qty = 0.0; var txval = 0.0; var camt = 0.0; var samt = 0.0
+    }
+
+    private suspend fun buildGstr1Json(company: com.billing.pos.data.CompanyInfo, s: VatSummary): String {
+        val itemsByName = repo.itemsAll().associateBy { it.name.trim().lowercase() }
+        val stateCode = company.gstin.take(2).let { if (it.length == 2 && it.all(Char::isDigit)) it else "" }
+        val hsnAgg = LinkedHashMap<String, HsnAgg>()   // key = "hsn|rate"
+
+        fun trackHsn(name: String, unit: String, rate: Double, qty: Double, txval: Double, cgst: Double, sgst: Double) {
+            val hsn = itemsByName[name.trim().lowercase()]?.hsn.orEmpty()
+            val agg = hsnAgg.getOrPut("$hsn|$rate") { HsnAgg(hsn, rate, name, uqcFor(unit)) }
+            agg.qty += qty; agg.txval += txval; agg.camt += cgst; agg.samt += sgst
+        }
+
+        val b2b = JSONArray()
+        s.bills.filter { it.customerGstin.isNotBlank() }.groupBy { it.customerGstin }.forEach { (ctin, bills) ->
+            val invArr = JSONArray()
+            bills.forEach { bill ->
+                val lines = repo.linesFor(bill.id)
+                val itmsArr = JSONArray()
+                var num = 1
+                lines.groupBy { it.taxPercent }.forEach { (rate, ls) ->
+                    val txval = round2(ls.sumOf { it.lineTotal })
+                    val camt = round2(txval * rate / 200.0)
+                    itmsArr.put(
+                        JSONObject().put("num", num++).put(
+                            "itm_det",
+                            JSONObject().put("txval", txval).put("rt", rate).put("camt", camt).put("samt", camt).put("csamt", 0.0)
+                        )
+                    )
+                    ls.forEach { trackHsn(it.name, it.unit, rate, it.qty, it.lineTotal, round2(it.lineTotal * rate / 200.0), round2(it.lineTotal * rate / 200.0)) }
+                }
+                invArr.put(
+                    JSONObject().put("inum", bill.billNo).put("idt", Format.date(bill.dateMillis))
+                        .put("val", round2(bill.grandTotal)).put("pos", stateCode).put("rchrg", "N").put("inv_typ", "R")
+                        .put("itms", itmsArr)
+                )
+            }
+            b2b.put(JSONObject().put("ctin", ctin).put("inv", invArr))
+        }
+
+        data class RateAgg(var txval: Double = 0.0, var camt: Double = 0.0)
+        val b2csAgg = LinkedHashMap<Double, RateAgg>()
+        s.bills.filter { it.customerGstin.isBlank() }.forEach { bill ->
+            repo.linesFor(bill.id).groupBy { it.taxPercent }.forEach { (rate, ls) ->
+                val txval = round2(ls.sumOf { it.lineTotal })
+                val camt = round2(txval * rate / 200.0)
+                val agg = b2csAgg.getOrPut(rate) { RateAgg() }
+                agg.txval += txval; agg.camt += camt
+                ls.forEach { trackHsn(it.name, it.unit, rate, it.qty, it.lineTotal, round2(it.lineTotal * rate / 200.0), round2(it.lineTotal * rate / 200.0)) }
+            }
+        }
+        val b2cs = JSONArray().apply {
+            b2csAgg.forEach { (rate, agg) ->
+                put(
+                    JSONObject().put("sply_ty", "INTRA").put("pos", stateCode).put("typ", "OE")
+                        .put("txval", round2(agg.txval)).put("rt", rate).put("camt", round2(agg.camt)).put("samt", round2(agg.camt)).put("csamt", 0.0)
+                )
+            }
+        }
+
+        val hsnArr = JSONArray()
+        var hnum = 1
+        hsnAgg.values.forEach { a ->
+            hsnArr.put(
+                JSONObject().put("num", hnum++).put("hsn_sc", a.hsn).put("desc", a.desc).put("uqc", a.uqc)
+                    .put("qty", round2(a.qty)).put("val", round2(a.txval + a.camt + a.samt)).put("txval", round2(a.txval))
+                    .put("iamt", 0.0).put("camt", round2(a.camt)).put("samt", round2(a.samt)).put("csamt", 0.0)
+            )
+        }
+
+        val fp = java.text.SimpleDateFormat("MMyyyy", java.util.Locale.US).format(java.util.Date(s.from))
+        return JSONObject()
+            .put("gstin", company.gstin)
+            .put("fp", fp)
+            .put("version", "GST3.0.4")
+            .put("b2b", b2b)
+            .put("b2cs", b2cs)
+            .put("hsn", JSONObject().put("data", hsnArr))
+            .toString(2)
+    }
+
+    private fun uqcFor(unit: String): String = when (unit.trim().uppercase()) {
+        "PCS", "PC", "PIECE", "PIECES" -> "PCS"
+        "BOX" -> "BOX"
+        "KG", "KGS" -> "KGS"
+        "GM", "GMS", "G" -> "GMS"
+        "LTR", "LITRE", "LITRES", "L" -> "LTR"
+        "MTR", "METER", "METRE", "M" -> "MTR"
+        "DOZ", "DOZEN" -> "DOZ"
+        "SET" -> "SET"
+        "PAIR", "PRS" -> "PRS"
+        "BTL", "BOTTLE" -> "BTL"
+        "BAG" -> "BAG"
+        "CTN", "CARTON" -> "CTN"
+        "ROL", "ROLL" -> "ROL"
+        "NOS", "NO", "NUMBER", "NUMBERS", "UNIT", "UNITS" -> "NOS"
+        else -> "OTH"
+    }
+
+    private fun round2(v: Double): Double = kotlin.math.round(v * 100.0) / 100.0
+
+    private fun xmlEscape(s: String): String = s
+        .replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        .replace("\"", "&quot;").replace("'", "&apos;")
+
+    private fun buildTallyXml(gst: Boolean, s: VatSummary): String {
+        val tallyDate = java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.US)
+        val sb = StringBuilder()
+        sb.append("<ENVELOPE>\n<HEADER><TALLYREQUEST>Import Data</TALLYREQUEST></HEADER>\n")
+        sb.append("<BODY><IMPORTDATA><REQUESTDESC><REPORTNAME>Vouchers</REPORTNAME></REQUESTDESC><REQUESTDATA>\n")
+
+        fun ledger(name: String, debit: Boolean, amount: Double) {
+            if (amount == 0.0) return
+            sb.append("<ALLLEDGERENTRIES.LIST>\n")
+            sb.append("<LEDGERNAME>${xmlEscape(name)}</LEDGERNAME>\n")
+            sb.append("<ISDEEMEDPOSITIVE>${if (debit) "Yes" else "No"}</ISDEEMEDPOSITIVE>\n")
+            sb.append("<AMOUNT>${String.format(java.util.Locale.US, "%.2f", if (debit) amount else -amount)}</AMOUNT>\n")
+            sb.append("</ALLLEDGERENTRIES.LIST>\n")
+        }
+
+        s.bills.forEach { b ->
+            sb.append("<TALLYMESSAGE xmlns:UDF=\"TallyUDF\">\n<VOUCHER VCHTYPE=\"Sales\" ACTION=\"Create\">\n")
+            sb.append("<DATE>${tallyDate.format(java.util.Date(b.dateMillis))}</DATE>\n")
+            sb.append("<VOUCHERTYPENAME>Sales</VOUCHERTYPENAME>\n")
+            sb.append("<VOUCHERNUMBER>${xmlEscape(b.billNo)}</VOUCHERNUMBER>\n")
+            sb.append("<PARTYLEDGERNAME>${xmlEscape(b.customerName)}</PARTYLEDGERNAME>\n")
+            ledger(b.customerName, debit = true, amount = b.grandTotal)
+            ledger("Discount Allowed", debit = true, amount = b.discount)
+            ledger("Sales Account", debit = false, amount = b.subTotal)
+            if (gst) {
+                ledger("CGST", debit = false, amount = b.taxTotal / 2.0)
+                ledger("SGST", debit = false, amount = b.taxTotal / 2.0)
+            } else {
+                ledger("Tax", debit = false, amount = b.taxTotal)
+            }
+            ledger("Additional Charges", debit = false, amount = b.additionalCharge)
+            sb.append("</VOUCHER>\n</TALLYMESSAGE>\n")
+        }
+        s.purchases.forEach { p ->
+            sb.append("<TALLYMESSAGE xmlns:UDF=\"TallyUDF\">\n<VOUCHER VCHTYPE=\"Purchase\" ACTION=\"Create\">\n")
+            sb.append("<DATE>${tallyDate.format(java.util.Date(p.dateMillis))}</DATE>\n")
+            sb.append("<VOUCHERTYPENAME>Purchase</VOUCHERTYPENAME>\n")
+            sb.append("<VOUCHERNUMBER>${xmlEscape(p.purchaseNo)}</VOUCHERNUMBER>\n")
+            sb.append("<PARTYLEDGERNAME>${xmlEscape(p.supplierName)}</PARTYLEDGERNAME>\n")
+            ledger("Purchase Account", debit = true, amount = p.subTotal)
+            if (gst) {
+                ledger("CGST Input", debit = true, amount = p.taxTotal / 2.0)
+                ledger("SGST Input", debit = true, amount = p.taxTotal / 2.0)
+            } else {
+                ledger("Tax", debit = true, amount = p.taxTotal)
+            }
+            ledger("Additional Charges", debit = true, amount = p.additionalCharge)
+            ledger("Discount Received", debit = false, amount = p.discount)
+            ledger(p.supplierName, debit = false, amount = p.grandTotal)
+            sb.append("</VOUCHER>\n</TALLYMESSAGE>\n")
+        }
+        sb.append("</REQUESTDATA></IMPORTDATA></BODY>\n</ENVELOPE>\n")
+        return sb.toString()
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -234,10 +441,14 @@ fun VatReportScreen(
     val message by vm.message.collectAsStateSafe()
     LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); vm.consumeMessage() } }
 
-    var pendingExport by remember { mutableStateOf<String?>(null) }   // "xlsx" or "json"
+    var pendingExport by remember { mutableStateOf<String?>(null) }   // "xlsx" | "json" | "gstr1" | "tally"
     fun runExport(kind: String) {
-        if (kind == "xlsx") vm.exportExcel(context) { vm.message.value = it }
-        else vm.exportJson(context) { vm.message.value = it }
+        when (kind) {
+            "xlsx" -> vm.exportExcel(context) { vm.message.value = it }
+            "gstr1" -> vm.exportGstr1Json(context) { vm.message.value = it }
+            "tally" -> vm.exportTallyXml(context) { vm.message.value = it }
+            else -> vm.exportJson(context) { vm.message.value = it }
+        }
     }
     val storagePermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         val k = pendingExport; pendingExport = null
@@ -318,6 +529,24 @@ fun VatReportScreen(
             }
             OutlinedButton(onClick = { export("json") }, enabled = !vm.busy && s != null, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
                 Text("Download JSON")
+            }
+
+            Divider(Modifier.padding(vertical = 16.dp))
+            Text("GST portal & Tally", fontWeight = FontWeight.SemiBold)
+            Text(
+                "GSTR-1 JSON has the b2b / b2cs / HSN sections the GST portal's offline tool expects, " +
+                    "built from sales in this period only (purchases aren't part of GSTR-1). It assumes every " +
+                    "sale is within your own state (CGST+SGST) — review it if any of these sales crossed state " +
+                    "lines before uploading. Tally XML has one Sales/Purchase voucher per bill/purchase — " +
+                    "import it from Gateway of Tally > Import Data, creating matching ledgers first if needed.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline,
+                modifier = Modifier.padding(top = 4.dp)
+            )
+            OutlinedButton(onClick = { export("gstr1") }, enabled = !vm.busy && s != null, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                Text("Download GSTR-1 JSON (GST portal)")
+            }
+            OutlinedButton(onClick = { export("tally") }, enabled = !vm.busy && s != null, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                Text("Download Tally XML")
             }
         }
     }

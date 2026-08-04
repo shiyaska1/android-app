@@ -1303,6 +1303,7 @@ class Repository(private val context: Context) {
     suspend fun purchasesAll(): List<Purchase> = purchaseDao.all()
     suspend fun saleTaxLines(): List<TaxLineInfo> = billDao.taxLines()
     suspend fun purchaseTaxLines(): List<TaxLineInfo> = purchaseDao.taxLines()
+    suspend fun itemsAll(): List<Item> = itemDao.all()
 
     suspend fun updateSupplier(supplier: Supplier) = supplierDao.update(supplier)
 
