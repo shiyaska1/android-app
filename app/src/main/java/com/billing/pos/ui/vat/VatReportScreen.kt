@@ -279,6 +279,17 @@ class VatReportViewModel(app: Application) : AndroidViewModel(app) {
         var qty = 0.0; var txval = 0.0; var camt = 0.0; var samt = 0.0; var iamt = 0.0
     }
 
+    /**
+     * Item prices are tax-inclusive (see [com.billing.pos.ui.billing.CartLine.tax]) — the taxable
+     * value is extracted out of a rate-group's inclusive line totals, not added on top of them,
+     * or every downstream figure here would overstate tax and disagree with the bill's own
+     * subTotal/taxTotal. Returns (taxable, tax) for the group.
+     */
+    private fun extractTax(inclusiveTotal: Double, rate: Double): Pair<Double, Double> {
+        val txval = round2(inclusiveTotal / (1.0 + rate / 100.0))
+        return txval to round2(inclusiveTotal - txval)
+    }
+
     private suspend fun buildGstr1Json(company: com.billing.pos.data.CompanyInfo, s: VatSummary): String {
         val itemsByName = repo.itemsAll().associateBy { it.name.trim().lowercase() }
         val customersById = repo.customersAll().associateBy { it.id }
@@ -288,11 +299,11 @@ class VatReportViewModel(app: Application) : AndroidViewModel(app) {
         fun posFor(customerState: String) =
             com.billing.pos.data.IndianStates.codeForState(customerState).ifBlank { ownStateCode }
 
-        fun trackHsn(name: String, unit: String, rate: Double, qty: Double, txval: Double, interstate: Boolean) {
+        fun trackHsn(name: String, unit: String, rate: Double, qty: Double, txval: Double, taxAmt: Double, interstate: Boolean) {
             val hsn = itemsByName[name.trim().lowercase()]?.hsn.orEmpty()
             val agg = hsnAgg.getOrPut("$hsn|$rate") { HsnAgg(hsn, rate, name, uqcFor(unit)) }
             agg.qty += qty; agg.txval += txval
-            if (interstate) agg.iamt += txval * rate / 100.0 else { agg.camt += txval * rate / 200.0; agg.samt += txval * rate / 200.0 }
+            if (interstate) agg.iamt += taxAmt else { agg.camt += taxAmt / 2.0; agg.samt += taxAmt / 2.0 }
         }
 
         val b2b = JSONArray()
@@ -304,13 +315,16 @@ class VatReportViewModel(app: Application) : AndroidViewModel(app) {
                 val itmsArr = JSONArray()
                 var num = 1
                 lines.groupBy { it.taxPercent }.forEach { (rate, ls) ->
-                    val txval = round2(ls.sumOf { it.lineTotal })
+                    val (txval, taxAmt) = extractTax(ls.sumOf { it.lineTotal }, rate)
                     val itmDet = JSONObject().put("txval", txval).put("rt", rate)
-                    if (interstate) itmDet.put("iamt", round2(txval * rate / 100.0)).put("camt", 0.0).put("samt", 0.0)
-                    else { val c = round2(txval * rate / 200.0); itmDet.put("iamt", 0.0).put("camt", c).put("samt", c) }
+                    if (interstate) itmDet.put("iamt", taxAmt).put("camt", 0.0).put("samt", 0.0)
+                    else { val c = round2(taxAmt / 2.0); itmDet.put("iamt", 0.0).put("camt", c).put("samt", c) }
                     itmDet.put("csamt", 0.0)
                     itmsArr.put(JSONObject().put("num", num++).put("itm_det", itmDet))
-                    ls.forEach { trackHsn(it.name, it.unit, rate, it.qty, it.lineTotal, interstate) }
+                    ls.forEach {
+                        val (lTxval, lTax) = extractTax(it.lineTotal, rate)
+                        trackHsn(it.name, it.unit, rate, it.qty, lTxval, lTax, interstate)
+                    }
                 }
                 invArr.put(
                     JSONObject().put("inum", bill.billNo).put("idt", Format.date(bill.dateMillis))
@@ -327,11 +341,14 @@ class VatReportViewModel(app: Application) : AndroidViewModel(app) {
             val interstate = com.billing.pos.data.GstTax.isInterstate(company.gstin, bill.customerState)
             val pos = posFor(bill.customerState)
             repo.linesFor(bill.id).groupBy { it.taxPercent }.forEach { (rate, ls) ->
-                val txval = round2(ls.sumOf { it.lineTotal })
+                val (txval, taxAmt) = extractTax(ls.sumOf { it.lineTotal }, rate)
                 val agg = b2csAgg.getOrPut("$rate|$pos|$interstate") { RateAgg() }
                 agg.txval += txval
-                if (interstate) agg.iamt += txval * rate / 100.0 else { val c = txval * rate / 200.0; agg.camt += c; agg.samt += c }
-                ls.forEach { trackHsn(it.name, it.unit, rate, it.qty, it.lineTotal, interstate) }
+                if (interstate) agg.iamt += taxAmt else { agg.camt += taxAmt / 2.0; agg.samt += taxAmt / 2.0 }
+                ls.forEach {
+                    val (lTxval, lTax) = extractTax(it.lineTotal, rate)
+                    trackHsn(it.name, it.unit, rate, it.qty, lTxval, lTax, interstate)
+                }
             }
         }
         val b2cs = JSONArray().apply {
@@ -356,10 +373,10 @@ class VatReportViewModel(app: Application) : AndroidViewModel(app) {
                     val itmsArr = JSONArray()
                     var num = 1
                     lines.groupBy { it.taxPercent }.forEach { (rate, ls) ->
-                        val txval = round2(ls.sumOf { it.lineTotal })
+                        val (txval, taxAmt) = extractTax(ls.sumOf { it.lineTotal }, rate)
                         val itmDet = JSONObject().put("txval", txval).put("rt", rate)
-                        if (interstate) itmDet.put("iamt", round2(txval * rate / 100.0)).put("camt", 0.0).put("samt", 0.0)
-                        else { val c = round2(txval * rate / 200.0); itmDet.put("iamt", 0.0).put("camt", c).put("samt", c) }
+                        if (interstate) itmDet.put("iamt", taxAmt).put("camt", 0.0).put("samt", 0.0)
+                        else { val c = round2(taxAmt / 2.0); itmDet.put("iamt", 0.0).put("camt", c).put("samt", c) }
                         itmDet.put("csamt", 0.0)
                         itmsArr.put(JSONObject().put("num", num++).put("itm_det", itmDet))
                     }

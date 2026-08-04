@@ -343,6 +343,7 @@ object ThermalPrinter {
         sb.append(center(company.name)).append('\n')
         if (company.address.isNotBlank()) sb.append(center(company.address)).append('\n')
         if (company.phone.isNotBlank()) sb.append(center("Ph: ${company.phone}")).append('\n')
+        if (gst && company.gstin.isNotBlank()) sb.append(center("GSTIN: ${company.gstin}")).append('\n')
         sb.append(center(actualTitle)).append('\n')
         sb.append(line()).append('\n')
         sb.append("Bill: ${bill.billNo}\n")

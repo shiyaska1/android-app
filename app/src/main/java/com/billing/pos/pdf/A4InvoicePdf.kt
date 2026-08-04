@@ -79,7 +79,7 @@ object A4InvoicePdf {
             var hy = M + 40f
             if (company.address.isNotBlank()) { c.drawText(company.address, textX, hy, sub); hy += 15f }
             if (company.phone.isNotBlank()) { c.drawText("Phone: ${company.phone}", textX, hy, sub); hy += 15f }
-            if (company.gstin.isNotBlank()) { c.drawText("GSTIN: ${company.gstin}", textX, hy, sub); hy += 15f }
+            if (gst && company.gstin.isNotBlank()) { c.drawText("GSTIN: ${company.gstin}", textX, hy, sub); hy += 15f }
             y = maxOf(hy, M + 78f) + 8f
         }
 

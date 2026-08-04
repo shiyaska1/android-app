@@ -204,8 +204,12 @@ interface BillDao {
     )
     fun observeSaleMovements(): Flow<List<MoveRow>>
 
+    // bi.price is tax-INCLUSIVE (matches CartLine.tax's extraction) — taxable = the exclusive
+    // base extracted out of qty*price, not qty*price itself, or this would double-count vs.
+    // the Bill.subTotal/taxTotal actually shown on the invoice.
     @Query(
-        "SELECT (bi.qty*bi.price) AS taxable, (bi.qty*bi.price*bi.taxPercent/100.0) AS tax, " +
+        "SELECT (bi.qty*bi.price) / (1.0 + bi.taxPercent/100.0) AS taxable, " +
+            "(bi.qty*bi.price) - (bi.qty*bi.price) / (1.0 + bi.taxPercent/100.0) AS tax, " +
             "bi.taxPercent AS rate, b.dateMillis AS dateMillis " +
             "FROM bill_items bi JOIN bills b ON bi.billId = b.id"
     )

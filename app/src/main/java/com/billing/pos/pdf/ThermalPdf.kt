@@ -47,7 +47,7 @@ object ThermalPdf {
         }
         val out = ArrayList<Line>()
         fun add(text: String, bold: Boolean = false) { out.add(Line(text, bold)) }
-        addHeader(out, company)
+        addHeader(out, company, gst)
         add(center(actualTitle), true)
         add(rule())
         add("Bill: ${bill.billNo}")
@@ -115,10 +115,11 @@ object ThermalPdf {
         return write(context, "receipt_${r.receiptNo}", out)
     }
 
-    private fun addHeader(out: ArrayList<Line>, company: CompanyInfo) {
+    private fun addHeader(out: ArrayList<Line>, company: CompanyInfo, gst: Boolean = false) {
         out.add(Line(center(clip(company.name)), bold = true))
         if (company.address.isNotBlank()) out.add(Line(center(clip(company.address))))
         if (company.phone.isNotBlank()) out.add(Line(center(clip("Ph: ${company.phone}"))))
+        if (gst && company.gstin.isNotBlank()) out.add(Line(center(clip("GSTIN: ${company.gstin}"))))
     }
 
     private fun write(context: Context, name: String, lines: List<Line>, imagePaths: List<String> = emptyList(), qr: android.graphics.Bitmap? = null): Uri {

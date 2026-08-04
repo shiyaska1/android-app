@@ -107,8 +107,11 @@ interface PurchaseDao {
     @Query("SELECT * FROM purchases")
     suspend fun all(): List<Purchase>
 
+    // pi.price is tax-INCLUSIVE (matches CartLine.tax's extraction), same as bill_items — see
+    // BillDao.taxLines() for why this can't be a plain qty*price*rate/100 addition.
     @Query(
-        "SELECT (pi.qty*pi.price) AS taxable, (pi.qty*pi.price*pi.taxPercent/100.0) AS tax, " +
+        "SELECT (pi.qty*pi.price) / (1.0 + pi.taxPercent/100.0) AS taxable, " +
+            "(pi.qty*pi.price) - (pi.qty*pi.price) / (1.0 + pi.taxPercent/100.0) AS tax, " +
             "pi.taxPercent AS rate, p.dateMillis AS dateMillis " +
             "FROM purchase_items pi JOIN purchases p ON pi.purchaseId = p.id"
     )
