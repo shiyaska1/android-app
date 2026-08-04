@@ -60,6 +60,8 @@ import com.billing.pos.util.Format
 import kotlinx.coroutines.launch
 
 /** Copies a picked file (image or PDF) into app storage, keeping a sensible extension. */
+private fun mmText(v: Double): String = if (v == v.toLong().toDouble()) v.toLong().toString() else v.toString()
+
 private fun copyToAppFiles(context: android.content.Context, uri: android.net.Uri, baseName: String): String? {
     val type = context.contentResolver.getType(uri) ?: ""
     val ext = when { type.contains("pdf") -> "pdf"; type.contains("png") -> "png"; else -> "jpg" }
@@ -106,6 +108,11 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
     var weighScaleItemLen by remember { mutableStateOf(prefs.weighScaleItemCodeLen.toString()) }
     var weighScaleValueLen by remember { mutableStateOf(prefs.weighScaleValueLen.toString()) }
     var weighScaleValueIsPrice by remember { mutableStateOf(prefs.weighScaleValueIsPrice) }
+    var barcodeLabelW by remember { mutableStateOf(mmText(prefs.barcodeLabelWidthMm)) }
+    var barcodeLabelH by remember { mutableStateOf(mmText(prefs.barcodeLabelHeightMm)) }
+    var barcodeShowPrice by remember { mutableStateOf(prefs.barcodeShowPrice) }
+    var barcodeShowCompanyName by remember { mutableStateOf(prefs.barcodeShowCompanyName) }
+    var barcodeShowSize by remember { mutableStateOf(prefs.barcodeShowSize) }
     var businessType by remember { mutableStateOf(prefs.businessType) }
     var receiptWidth by remember { mutableStateOf(prefs.receiptWidth) }
     var ocrLanguage by remember { mutableStateOf(prefs.ocrLanguage) }
@@ -545,6 +552,52 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
             OutlinedButton(onClick = onOpenPrinter, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
                 Icon(Icons.Filled.Print, contentDescription = null)
                 Text("  Thermal printer setup & test")
+            }
+
+            Divider(Modifier.padding(vertical = 16.dp))
+            Text("Barcode label printing", style = MaterialTheme.typography.titleSmall)
+            Text(
+                "Set this to match your barcode-label printer's label size. Items → Print barcode " +
+                    "then generates one PDF page per label at this exact size.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
+                OutlinedTextField(
+                    value = barcodeLabelW,
+                    onValueChange = { v ->
+                        barcodeLabelW = v.filter { it.isDigit() || it == '.' }
+                        barcodeLabelW.toDoubleOrNull()?.let { if (it > 0) prefs.barcodeLabelWidthMm = it }
+                    },
+                    label = { Text("Width (mm)") }, singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    modifier = Modifier.weight(1f)
+                )
+                OutlinedTextField(
+                    value = barcodeLabelH,
+                    onValueChange = { v ->
+                        barcodeLabelH = v.filter { it.isDigit() || it == '.' }
+                        barcodeLabelH.toDoubleOrNull()?.let { if (it > 0) prefs.barcodeLabelHeightMm = it }
+                    },
+                    label = { Text("Height (mm)") }, singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    modifier = Modifier.weight(1f)
+                )
+            }
+            Text(
+                "Fields on the label", style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(top = 12.dp)
+            )
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
+                Checkbox(checked = barcodeShowPrice, onCheckedChange = { barcodeShowPrice = it; prefs.barcodeShowPrice = it })
+                Text("Selling price (default)")
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(checked = barcodeShowCompanyName, onCheckedChange = { barcodeShowCompanyName = it; prefs.barcodeShowCompanyName = it })
+                Text("Company name")
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(checked = barcodeShowSize, onCheckedChange = { barcodeShowSize = it; prefs.barcodeShowSize = it })
+                Text("Size / unit")
             }
 
             Divider(Modifier.padding(vertical = 16.dp))

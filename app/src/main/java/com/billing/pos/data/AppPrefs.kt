@@ -118,6 +118,25 @@ class AppPrefs(context: Context) {
         get() = p.getBoolean("weigh_scale_value_is_price", false)
         set(v) { p.edit().putBoolean("weigh_scale_value_is_price", v).apply() }
 
+    /** Physical label size for a dedicated barcode-label printer, in millimetres. Each printed
+     *  label becomes its own PDF page at this size (rather than a multi-up A4 sheet) so it lines
+     *  up with the printer's roll/gap settings. */
+    var barcodeLabelWidthMm: Double
+        get() = p.getFloat("barcode_label_w_mm", 40f).toDouble()
+        set(v) { p.edit().putFloat("barcode_label_w_mm", v.toFloat()).apply() }
+    var barcodeLabelHeightMm: Double
+        get() = p.getFloat("barcode_label_h_mm", 25f).toDouble()
+        set(v) { p.edit().putFloat("barcode_label_h_mm", v.toFloat()).apply() }
+    var barcodeShowPrice: Boolean
+        get() = p.getBoolean("barcode_show_price", true)
+        set(v) { p.edit().putBoolean("barcode_show_price", v).apply() }
+    var barcodeShowCompanyName: Boolean
+        get() = p.getBoolean("barcode_show_company", false)
+        set(v) { p.edit().putBoolean("barcode_show_company", v).apply() }
+    var barcodeShowSize: Boolean
+        get() = p.getBoolean("barcode_show_size", false)
+        set(v) { p.edit().putBoolean("barcode_show_size", v).apply() }
+
     /** UPI ID (VPA) money is collected to, e.g. name@okaxis, and the payee name shown. */
     var upiId: String
         get() = p.getString("upi_id", "") ?: ""

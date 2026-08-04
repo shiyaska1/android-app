@@ -67,6 +67,11 @@ object FullBackup {
         .put("weighScaleItemCodeLen", prefs.weighScaleItemCodeLen)
         .put("weighScaleValueLen", prefs.weighScaleValueLen)
         .put("weighScaleValueIsPrice", prefs.weighScaleValueIsPrice)
+        .put("barcodeLabelWidthMm", prefs.barcodeLabelWidthMm)
+        .put("barcodeLabelHeightMm", prefs.barcodeLabelHeightMm)
+        .put("barcodeShowPrice", prefs.barcodeShowPrice)
+        .put("barcodeShowCompanyName", prefs.barcodeShowCompanyName)
+        .put("barcodeShowSize", prefs.barcodeShowSize)
 
     /** Applies a [settingsJson] object to [prefs]. Missing keys (older backups) keep the current
      *  local value — only keys actually present overwrite. */
@@ -104,6 +109,11 @@ object FullBackup {
         prefs.weighScaleItemCodeLen = s.optInt("weighScaleItemCodeLen", prefs.weighScaleItemCodeLen)
         prefs.weighScaleValueLen = s.optInt("weighScaleValueLen", prefs.weighScaleValueLen)
         prefs.weighScaleValueIsPrice = s.optBoolean("weighScaleValueIsPrice", prefs.weighScaleValueIsPrice)
+        prefs.barcodeLabelWidthMm = s.optDouble("barcodeLabelWidthMm", prefs.barcodeLabelWidthMm)
+        prefs.barcodeLabelHeightMm = s.optDouble("barcodeLabelHeightMm", prefs.barcodeLabelHeightMm)
+        prefs.barcodeShowPrice = s.optBoolean("barcodeShowPrice", prefs.barcodeShowPrice)
+        prefs.barcodeShowCompanyName = s.optBoolean("barcodeShowCompanyName", prefs.barcodeShowCompanyName)
+        prefs.barcodeShowSize = s.optBoolean("barcodeShowSize", prefs.barcodeShowSize)
     }
 
     /**
