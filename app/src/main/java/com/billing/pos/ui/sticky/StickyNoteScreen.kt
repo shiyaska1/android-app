@@ -988,24 +988,35 @@ private fun shareNoteFiles(context: android.content.Context, caption: String, pa
     if (paths.isEmpty()) return
     val failed = runCatching {
         val uris = ArrayList<android.net.Uri>()
+        var allImages = true
         paths.forEach { p ->
             val f = File(p)
-            if (f.exists()) uris.add(
-                FileProvider.getUriForFile(context, "${context.packageName}.provider", f)
-            )
+            if (f.exists()) {
+                uris.add(FileProvider.getUriForFile(context, "${context.packageName}.provider", f))
+                val n = f.name.lowercase()
+                if (!(n.endsWith(".jpg") || n.endsWith(".jpeg") || n.endsWith(".png"))) allImages = false
+            }
         }
         if (uris.isEmpty()) return@runCatching
+        // A wildcard "*/*" type sent directly to WhatsApp's package silently drops the attached
+        // media (caption still goes through) — WhatsApp needs a concrete image/* type to pick the
+        // files up. Only known-all-image sets (the common case: a rendered note page) get the
+        // direct-package attempt; anything mixed with video/audio goes straight to the system
+        // chooser, which resolves "*/*" + multiple streams correctly.
+        val mime = if (allImages) "image/*" else "*/*"
         val base = Intent(Intent.ACTION_SEND_MULTIPLE).apply {
-            type = "*/*"
+            type = mime
             putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
             putExtra(Intent.EXTRA_TEXT, caption)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
         }
-        for (pkg in listOf("com.whatsapp", "com.whatsapp.w4b")) {
-            val direct = Intent(base).setPackage(pkg)
-            if (direct.resolveActivity(context.packageManager) != null) {
-                val sent = runCatching { context.startActivity(direct) }.isSuccess
-                if (sent) return@runCatching
+        if (allImages) {
+            for (pkg in listOf("com.whatsapp", "com.whatsapp.w4b")) {
+                val direct = Intent(base).setPackage(pkg)
+                if (direct.resolveActivity(context.packageManager) != null) {
+                    val sent = runCatching { context.startActivity(direct) }.isSuccess
+                    if (sent) return@runCatching
+                }
             }
         }
         context.startActivity(Intent.createChooser(base, "Share note").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
