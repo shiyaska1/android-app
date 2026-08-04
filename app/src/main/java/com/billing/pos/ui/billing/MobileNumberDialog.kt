@@ -123,6 +123,7 @@ fun MobileNumberDialog(
         var picked by remember(num) { mutableStateOf<com.billing.pos.data.Customer?>(null) }
         var draw by remember(num) { mutableStateOf(false) }
         var ctype by remember(num) { mutableStateOf("General") }
+        var narration by remember(num) { mutableStateOf("") }
         var allCustomers by remember(num) { mutableStateOf<List<com.billing.pos.data.Customer>>(emptyList()) }
         var showSuggestions by remember(num) { mutableStateOf(false) }
         LaunchedEffect(num) {
@@ -141,6 +142,19 @@ fun MobileNumberDialog(
                 onDismiss = { draw = false }
             )
         }
+        // Customer name + mobile number + narration, in that order — used both for the shared
+        // text and (minus the name, which needs no repeating) for what's appended to the
+        // customer's address field.
+        fun shareText(savedName: String): String =
+            savedName + "\n" + num + (narration.trim().takeIf { it.isNotBlank() }?.let { "\n$it" } ?: "")
+        fun appendNarration(currentAddress: String): String {
+            val n = narration.trim()
+            return when {
+                n.isBlank() -> currentAddress
+                currentAddress.isBlank() -> n
+                else -> "$currentAddress\n$n"
+            }
+        }
         fun doSave(thenShare: Boolean) {
             val typed = name.trim()
             scope.launch {
@@ -148,18 +162,18 @@ fun MobileNumberDialog(
                 val savedName: String
                 when {
                     picked != null -> {
-                        repo.updateCustomer(picked!!.copy(phone = num))
+                        repo.updateCustomer(picked!!.copy(phone = num, address = appendNarration(picked!!.address)))
                         savedName = picked!!.name
                         android.widget.Toast.makeText(context, "$num attached to ${picked!!.name}", android.widget.Toast.LENGTH_SHORT).show()
                     }
                     typed.isNotBlank() -> {
-                        repo.addCustomer(typed, num, "", customerType = ctype)
+                        repo.addCustomer(typed, num, narration.trim(), customerType = ctype)
                         savedName = typed
                         android.widget.Toast.makeText(context, "$typed saved to customers", android.widget.Toast.LENGTH_SHORT).show()
                     }
                     else -> return@launch
                 }
-                if (thenShare) com.billing.pos.util.ShareText.share(context, "$savedName\n$num")
+                if (thenShare) com.billing.pos.util.ShareText.share(context, shareText(savedName))
                 saveCustomerFor = null
             }
         }
@@ -206,6 +220,11 @@ fun MobileNumberDialog(
                             modifier = Modifier.padding(top = 8.dp)
                         )
                     }
+                    OutlinedTextField(
+                        value = narration, onValueChange = { narration = it },
+                        label = { Text("Narration (optional)") },
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                    )
                 }
             },
             confirmButton = {
@@ -214,7 +233,13 @@ fun MobileNumberDialog(
                     androidx.compose.material3.TextButton(onClick = { doSave(thenShare = true) }) { Text("Save & Share") }
                 } else {
                     androidx.compose.material3.TextButton(onClick = {
-                        com.billing.pos.util.ShareText.share(context, "${existing!!.name}\n$num")
+                        scope.launch {
+                            if (narration.isNotBlank()) {
+                                com.billing.pos.data.Repository(context)
+                                    .updateCustomer(existing!!.copy(address = appendNarration(existing!!.address)))
+                            }
+                            com.billing.pos.util.ShareText.share(context, shareText(existing!!.name))
+                        }
                     }) { Text("Share") }
                 }
             },
