@@ -30,10 +30,12 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DocumentScanner
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.DriveFileMove
 import androidx.compose.material.icons.filled.EventBusy
 import androidx.compose.material.icons.filled.GridOn
 import androidx.compose.material.icons.filled.Mic
@@ -45,6 +47,7 @@ import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Divider
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -298,6 +301,17 @@ class ItemsViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { repo.deleteItem(item); message.value = "Item deleted" }
     }
 
+    /** Bulk re-categorizes the selected items — the multi-select "move to category" action. */
+    fun moveToCategory(ids: Set<Long>, newCategory: String) {
+        if (ids.isEmpty()) return
+        val cat = newCategory.trim()
+        viewModelScope.launch {
+            val targets = rows.value.filter { it.item.id in ids }.map { it.item }
+            targets.forEach { repo.updateItem(it.copy(category = cat)) }
+            message.value = "${targets.size} item(s) moved to " + cat.ifBlank { "no category" }
+        }
+    }
+
     fun clearAllItems() {
         viewModelScope.launch { repo.clearAllItems(); message.value = "All items cleared" }
     }
@@ -433,6 +447,10 @@ fun ItemsScreen(
 
     var showDialog by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<Item?>(null) }
+    // Multi-select: tick items, then move them all into a different category at once.
+    var selectMode by remember { mutableStateOf(false) }
+    val selectedIds = remember { mutableStateListOf<Long>() }
+    var showMoveCategory by remember { mutableStateOf(false) }
     // "+" asks whether one item or several, then opens the matching form.
     var askAddMode by remember { mutableStateOf(false) }
     var showMulti by remember { mutableStateOf(false) }
@@ -564,51 +582,68 @@ fun ItemsScreen(
                     actionIconContentColor = MaterialTheme.colorScheme.onPrimary
                 ),
                 actions = {
-                    if (requireBatch) {
-                        IconButton(onClick = { showExpiry = true }) {
-                            Icon(Icons.Filled.EventBusy, contentDescription = "Batch expiry report")
+                    if (selectMode) {
+                        Text(
+                            "${selectedIds.size} selected",
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier.padding(end = 4.dp)
+                        )
+                        IconButton(onClick = { if (selectedIds.isNotEmpty()) showMoveCategory = true }, enabled = selectedIds.isNotEmpty()) {
+                            Icon(Icons.Filled.DriveFileMove, contentDescription = "Move to category")
                         }
-                    }
-                    Box {
-                        IconButton(onClick = { importMenu = true }) {
-                            Icon(Icons.Filled.DocumentScanner, contentDescription = "Import items")
+                        IconButton(onClick = { selectMode = false; selectedIds.clear() }) {
+                            Icon(Icons.Filled.Close, contentDescription = "Cancel selection")
                         }
-                        DropdownMenu(expanded = importMenu, onDismissRequest = { importMenu = false }) {
-                            DropdownMenuItem(
-                                text = { Text("Import Excel / CSV") },
-                                onClick = {
-                                    importMenu = false
-                                    filePicker.launch(arrayOf(
-                                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                        "application/vnd.ms-excel", "text/csv", "text/comma-separated-values",
-                                        "application/octet-stream", "*/*"
-                                    ))
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Download blank template") },
-                                onClick = { importMenu = false; requestTemplate() }
-                            )
-                            Divider()
-                            DropdownMenuItem(
-                                text = { Text("Clear all items", color = MaterialTheme.colorScheme.error) },
-                                onClick = { importMenu = false; confirmClear = true }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Scan with camera") },
-                                onClick = { importMenu = false; scanList() }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Pick photo (gallery)") },
-                                onClick = { importMenu = false; askGalleryLang = true }
-                            )
+                    } else {
+                        if (requireBatch) {
+                            IconButton(onClick = { showExpiry = true }) {
+                                Icon(Icons.Filled.EventBusy, contentDescription = "Batch expiry report")
+                            }
                         }
-                    }
-                    IconButton(onClick = { downloadPdf { buildItemsPdf() } }) {
-                        Icon(Icons.Filled.Download, contentDescription = "Download list PDF")
-                    }
-                    IconButton(onClick = { downloadXlsx { buildItemsXlsx() } }) {
-                        Icon(Icons.Filled.GridOn, contentDescription = "Download Excel")
+                        IconButton(onClick = { selectMode = true }) {
+                            Icon(Icons.Filled.Checklist, contentDescription = "Select items")
+                        }
+                        Box {
+                            IconButton(onClick = { importMenu = true }) {
+                                Icon(Icons.Filled.DocumentScanner, contentDescription = "Import items")
+                            }
+                            DropdownMenu(expanded = importMenu, onDismissRequest = { importMenu = false }) {
+                                DropdownMenuItem(
+                                    text = { Text("Import Excel / CSV") },
+                                    onClick = {
+                                        importMenu = false
+                                        filePicker.launch(arrayOf(
+                                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                            "application/vnd.ms-excel", "text/csv", "text/comma-separated-values",
+                                            "application/octet-stream", "*/*"
+                                        ))
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Download blank template") },
+                                    onClick = { importMenu = false; requestTemplate() }
+                                )
+                                Divider()
+                                DropdownMenuItem(
+                                    text = { Text("Clear all items", color = MaterialTheme.colorScheme.error) },
+                                    onClick = { importMenu = false; confirmClear = true }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Scan with camera") },
+                                    onClick = { importMenu = false; scanList() }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Pick photo (gallery)") },
+                                    onClick = { importMenu = false; askGalleryLang = true }
+                                )
+                            }
+                        }
+                        IconButton(onClick = { downloadPdf { buildItemsPdf() } }) {
+                            Icon(Icons.Filled.Download, contentDescription = "Download list PDF")
+                        }
+                        IconButton(onClick = { downloadXlsx { buildItemsXlsx() } }) {
+                            Icon(Icons.Filled.GridOn, contentDescription = "Download Excel")
+                        }
                     }
                 }
             )
@@ -669,9 +704,21 @@ fun ItemsScreen(
                 items(filteredRows, key = { it.item.id }) { row ->
                 val item = row.item
                 Row(
-                    Modifier.fillMaxWidth().clickable { editing = item; vm.beginEdit(item); showDialog = true }.padding(vertical = 8.dp),
+                    Modifier.fillMaxWidth()
+                        .clickable {
+                            if (selectMode) {
+                                if (item.id in selectedIds) selectedIds.remove(item.id) else selectedIds.add(item.id)
+                            } else { editing = item; vm.beginEdit(item); showDialog = true }
+                        }
+                        .padding(vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    if (selectMode) {
+                        Checkbox(
+                            checked = item.id in selectedIds,
+                            onCheckedChange = { checked -> if (checked) selectedIds.add(item.id) else selectedIds.remove(item.id) }
+                        )
+                    }
                     Column(Modifier.weight(1f)) {
                         Text(
                             item.name + (if (item.category.isNotBlank()) "  ·  ${item.category}" else ""),
@@ -705,6 +752,47 @@ fun ItemsScreen(
                 }
             }
         }
+    }
+
+    if (showMoveCategory) {
+        var moveCat by remember { mutableStateOf("") }
+        var moveCatMenu by remember { mutableStateOf(false) }
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showMoveCategory = false },
+            title = { Text("Move ${selectedIds.size} item(s) to category") },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = moveCat,
+                        onValueChange = { moveCat = it; moveCatMenu = true },
+                        label = { Text("Category") },
+                        placeholder = { Text("Type new, or pick existing") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                            .onFocusChanged { fs -> moveCatMenu = fs.isFocused }
+                    )
+                    if (moveCatMenu) {
+                        val matches = categories.filter { moveCat.isBlank() || it.contains(moveCat, true) }
+                        com.billing.pos.ui.common.SearchPickList(
+                            items = matches,
+                            itemLabel = { it },
+                            onPick = { c -> moveCat = c; moveCatMenu = false },
+                            emptyText = "No match — type a new category name"
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = moveCat.isNotBlank(),
+                    onClick = {
+                        vm.moveToCategory(selectedIds.toSet(), moveCat)
+                        showMoveCategory = false; selectMode = false; selectedIds.clear()
+                    }
+                ) { Text("Move") }
+            },
+            dismissButton = { TextButton(onClick = { showMoveCategory = false }) { Text("Cancel") } }
+        )
     }
 
     if (askAddMode) {

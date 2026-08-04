@@ -33,8 +33,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Divider
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -271,7 +269,7 @@ fun MultiItemDialog(
                                 )
                                 // Category is picked from the ones already in use; "+" adds a new
                                 // one, which then shows up for every other row straight away.
-                                Box(Modifier.weight(1f)) {
+                                Column(Modifier.weight(1f)) {
                                     var catMenu by remember { mutableStateOf(false) }
                                     OutlinedTextField(
                                         value = row.category,
@@ -289,20 +287,19 @@ fun MultiItemDialog(
                                             }
                                         },
                                         modifier = Modifier.fillMaxWidth()
-                                            .onFocusChanged { fs -> if (fs.isFocused) catMenu = true }
+                                            .onFocusChanged { fs -> catMenu = fs.isFocused }
                                     )
-                                    val catMatches = allCategories.filter { row.category.isBlank() || it.contains(row.category, true) }
-                                    DropdownMenu(expanded = catMenu, onDismissRequest = { catMenu = false }) {
-                                        if (catMatches.isEmpty()) DropdownMenuItem(
-                                            text = { Text(if (allCategories.isEmpty()) "No categories yet — use +" else "No match") },
-                                            onClick = { catMenu = false }
+                                    // Plain field + inline list, not DropdownMenu — that popup-based
+                                    // combobox fights with the keyboard on real devices (typing the
+                                    // first character snaps the field back and blocks further typing).
+                                    if (catMenu) {
+                                        val catMatches = allCategories.filter { row.category.isBlank() || it.contains(row.category, true) }
+                                        com.billing.pos.ui.common.SearchPickList(
+                                            items = catMatches,
+                                            itemLabel = { it },
+                                            onPick = { c -> row.category = c; catMenu = false },
+                                            emptyText = if (allCategories.isEmpty()) "No categories yet — use +" else "No match"
                                         )
-                                        catMatches.forEach { c ->
-                                            DropdownMenuItem(
-                                                text = { Text(c) },
-                                                onClick = { row.category = c; catMenu = false }
-                                            )
-                                        }
                                     }
                                 }
                             }
@@ -552,7 +549,7 @@ fun PhotoItemsDialog(
                                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                                     modifier = Modifier.weight(1f)
                                 )
-                                Box(Modifier.weight(1f)) {
+                                Column(Modifier.weight(1f)) {
                                     var catMenu by remember { mutableStateOf(false) }
                                     OutlinedTextField(
                                         value = row.category,
@@ -570,20 +567,19 @@ fun PhotoItemsDialog(
                                             }
                                         },
                                         modifier = Modifier.fillMaxWidth()
-                                            .onFocusChanged { fs -> if (fs.isFocused) catMenu = true }
+                                            .onFocusChanged { fs -> catMenu = fs.isFocused }
                                     )
-                                    val catMatches = allCategories.filter { row.category.isBlank() || it.contains(row.category, true) }
-                                    DropdownMenu(expanded = catMenu, onDismissRequest = { catMenu = false }) {
-                                        if (catMatches.isEmpty()) DropdownMenuItem(
-                                            text = { Text(if (allCategories.isEmpty()) "No categories yet — use +" else "No match") },
-                                            onClick = { catMenu = false }
+                                    // Plain field + inline list, not DropdownMenu — that popup-based
+                                    // combobox fights with the keyboard on real devices (typing the
+                                    // first character snaps the field back and blocks further typing).
+                                    if (catMenu) {
+                                        val catMatches = allCategories.filter { row.category.isBlank() || it.contains(row.category, true) }
+                                        com.billing.pos.ui.common.SearchPickList(
+                                            items = catMatches,
+                                            itemLabel = { it },
+                                            onPick = { c -> row.category = c; catMenu = false },
+                                            emptyText = if (allCategories.isEmpty()) "No categories yet — use +" else "No match"
                                         )
-                                        catMatches.forEach { c ->
-                                            DropdownMenuItem(
-                                                text = { Text(c) },
-                                                onClick = { row.category = c; catMenu = false }
-                                            )
-                                        }
                                     }
                                 }
                             }
@@ -730,7 +726,7 @@ fun BulkCommaItemDialog(
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         modifier = Modifier.weight(1f)
                     )
-                    Box(Modifier.weight(1f)) {
+                    Column(Modifier.weight(1f)) {
                         OutlinedTextField(
                             value = category,
                             onValueChange = { category = it; catMenu = true },
@@ -745,17 +741,19 @@ fun BulkCommaItemDialog(
                                     }
                                 }
                             },
-                            modifier = Modifier.fillMaxWidth().onFocusChanged { fs -> if (fs.isFocused) catMenu = true }
+                            modifier = Modifier.fillMaxWidth().onFocusChanged { fs -> catMenu = fs.isFocused }
                         )
-                        val catMatches = allCategories.filter { category.isBlank() || it.contains(category, true) }
-                        DropdownMenu(expanded = catMenu, onDismissRequest = { catMenu = false }) {
-                            if (catMatches.isEmpty()) DropdownMenuItem(
-                                text = { Text(if (allCategories.isEmpty()) "No categories yet — use +" else "No match") },
-                                onClick = { catMenu = false }
+                        // Plain field + inline list, not DropdownMenu — that popup-based combobox
+                        // fights with the keyboard on real devices (typing the first character
+                        // snaps the field back and blocks further typing).
+                        if (catMenu) {
+                            val catMatches = allCategories.filter { category.isBlank() || it.contains(category, true) }
+                            com.billing.pos.ui.common.SearchPickList(
+                                items = catMatches,
+                                itemLabel = { it },
+                                onPick = { c -> category = c; catMenu = false },
+                                emptyText = if (allCategories.isEmpty()) "No categories yet — use +" else "No match"
                             )
-                            catMatches.forEach { c ->
-                                DropdownMenuItem(text = { Text(c) }, onClick = { category = c; catMenu = false })
-                            }
                         }
                     }
                 }
