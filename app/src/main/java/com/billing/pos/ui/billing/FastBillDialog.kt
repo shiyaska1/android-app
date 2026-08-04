@@ -12,10 +12,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
@@ -26,6 +29,7 @@ import androidx.compose.material.icons.filled.Backspace
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.PointOfSale
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.ListAlt
@@ -102,6 +106,10 @@ fun FastBillDialog(
     var narration by remember { mutableStateOf("") }
     // Which customer the saved list is filtered to; blank means all of them.
     var listFilter by remember { mutableStateOf("") }
+    // Which customer type the saved list is filtered to; blank means all of them.
+    var typeFilter by remember { mutableStateOf("") }
+    // Customer whose type is being changed via the pen icon next to their name in the saved list.
+    var editTypeFor by remember { mutableStateOf<com.billing.pos.data.Customer?>(null) }
     // Date range, on by default, showing today only — the common case is "what did I
     // calculate today"; switch it off to see the full history.
     var dateRangeOn by remember { mutableStateOf(true) }
@@ -518,12 +526,17 @@ fun FastBillDialog(
 
     // Saved tapes: newest first, tap one to carry on adding to it.
     if (showSaved) {
-        val shown = savedCalcs.filter {
-            (listFilter.isBlank() || it.customerName.contains(listFilter.trim(), ignoreCase = true)) &&
-                (!dateRangeOn || (it.dateMillis >= startOfDayMillis(fromMillis) && it.dateMillis <= endOfDayMillis(toMillis)))
-        }
         val receipts by repo.allReceipts.collectAsState(initial = emptyList<com.billing.pos.data.Receipt>())
         val savedCustomers by repo.customers.collectAsState(initial = emptyList<com.billing.pos.data.Customer>())
+        val typeById = remember(savedCustomers) { savedCustomers.associate { it.id to it.customerType } }
+        val availableTypes = remember(savedCustomers) {
+            savedCustomers.map { it.customerType }.filter { it.isNotBlank() }.distinct().sortedBy { it.lowercase() }
+        }
+        val shown = savedCalcs.filter {
+            (listFilter.isBlank() || it.customerName.contains(listFilter.trim(), ignoreCase = true)) &&
+                (typeFilter.isBlank() || typeById[it.customerId].orEmpty().equals(typeFilter, ignoreCase = true)) &&
+                (!dateRangeOn || (it.dateMillis >= startOfDayMillis(fromMillis) && it.dateMillis <= endOfDayMillis(toMillis)))
+        }
         val shownTotal = shown.sumOf { it.total }
 
         // Money already received from a customer since a tape was saved, up to the next
@@ -610,6 +623,27 @@ fun FastBillDialog(
                         }
                     }
                 }
+                // Filter by customer type; "All" is the default.
+                if (availableTypes.isNotEmpty()) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        androidx.compose.material3.FilterChip(
+                            selected = typeFilter.isBlank(),
+                            onClick = { typeFilter = "" },
+                            label = { Text("All types", style = MaterialTheme.typography.labelSmall) }
+                        )
+                        availableTypes.forEach { t ->
+                            androidx.compose.material3.FilterChip(
+                                selected = typeFilter.equals(t, ignoreCase = true),
+                                onClick = { typeFilter = if (typeFilter.equals(t, ignoreCase = true)) "" else t },
+                                label = { Text(t, style = MaterialTheme.typography.labelSmall) }
+                            )
+                        }
+                    }
+                }
                 // Date range, on by default (today) — switch off to see the full history.
                 Row(
                     Modifier.fillMaxWidth().padding(horizontal = 12.dp),
@@ -663,7 +697,17 @@ fun FastBillDialog(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Column(Modifier.weight(1f)) {
-                                    Text(calc.customerName, fontWeight = FontWeight.Bold)
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(calc.customerName, fontWeight = FontWeight.Bold)
+                                        if (calc.customerId > 0) {
+                                            IconButton(
+                                                onClick = { editTypeFor = savedCustomers.firstOrNull { it.id == calc.customerId } },
+                                                modifier = Modifier.size(28.dp)
+                                            ) {
+                                                Icon(Icons.Filled.Edit, "Change customer type", modifier = Modifier.size(16.dp))
+                                            }
+                                        }
+                                    }
                                     Text(
                                         Format.dateTime(calc.dateMillis) + "  •  " + calc.amountList.size + " amount(s)",
                                         style = MaterialTheme.typography.bodySmall,
@@ -774,6 +818,44 @@ fun FastBillDialog(
                 }) { Text("Delete") }
             },
             dismissButton = { TextButton(onClick = { confirmDeleteCalc = null }) { Text("Cancel") } }
+        )
+    }
+
+    // Change a customer's type right from the saved-calc list, via the pen icon by their name.
+    editTypeFor?.let { cust ->
+        val prefs = remember { com.billing.pos.data.AppPrefs(context) }
+        val allCustomers by repo.customers.collectAsState(initial = emptyList<com.billing.pos.data.Customer>())
+        val typeOptions = remember(cust, allCustomers) {
+            val inUse = allCustomers.map { it.customerType }.filter { it.isNotBlank() }
+            (listOf("General") + prefs.customerTypes + inUse).distinct().sortedBy { it.lowercase() }
+        }
+        AlertDialog(
+            onDismissRequest = { editTypeFor = null },
+            title = { Text("Customer type — ${cust.name}") },
+            text = {
+                Column {
+                    Text(
+                        "Current: ${cust.customerType.ifBlank { "General" }}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                    Column(Modifier.heightIn(max = 240.dp).verticalScroll(rememberScrollState())) {
+                        typeOptions.forEach { t ->
+                            Text(
+                                t,
+                                fontWeight = if (t.equals(cust.customerType.ifBlank { "General" }, true)) FontWeight.Bold else FontWeight.Normal,
+                                modifier = Modifier.fillMaxWidth()
+                                    .clickable {
+                                        scope.launch { repo.updateCustomer(cust.copy(customerType = t)) }
+                                        editTypeFor = null
+                                    }
+                                    .padding(vertical = 10.dp)
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { editTypeFor = null }) { Text("Close") } }
         )
     }
 
