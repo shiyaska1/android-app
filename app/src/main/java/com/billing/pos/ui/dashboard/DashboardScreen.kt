@@ -793,10 +793,10 @@ fun DashboardScreen(
                 Text(
                     "Repeated cloud sync or attachment restore can leave behind exact duplicates — " +
                         "the same diary note, invoice, purchase, receipt, payment, quotation, " +
-                        "estimate or order inserted again, or the same photo attached twice. This " +
-                        "finds them and merges each group into one copy. Nothing else is touched, " +
-                        "and nothing you wrote is deleted — duplicates' content is kept on the " +
-                        "copy that survives."
+                        "estimate, order or saved calculation inserted again, or the same photo " +
+                        "attached twice. This finds them and merges each group into one copy. " +
+                        "Nothing else is touched, and nothing you wrote is deleted — duplicates' " +
+                        "content is kept on the copy that survives."
                 )
             },
             confirmButton = {

@@ -1360,11 +1360,17 @@ object FullBackup {
                 db.purchaseQuoteDao().insertLines(listOf(l.copy(id = 0, quoteId = nq)))
             }
         }
-        // Saved calculator tapes — standalone, so they merge by simply being added.
+        // Saved calculator tapes — no number field to match on (unlike bills/purchases/etc.), so
+        // dedup by content instead: same date+time, amounts, total, title, customer and narration
+        // is the same tape re-inserted by a repeated merge cycle, not a coincidence.
+        fun calcKey(c: SavedCalc) = listOf(c.dateMillis, c.amounts, c.total, c.title, c.customerId, c.customerName, c.narration)
+        val existingCalcKeys = db.savedCalcDao().all().map { calcKey(it) }.toMutableSet()
         root.optJSONArray("savedCalcs")?.let {
             for (i in 0 until it.length()) {
-                db.savedCalcDao().insert(readSavedCalc(it.getJSONObject(i)).copy(id = 0))
-                    .also { nid -> log.add("savedCalcs", nid) }
+                val c = readSavedCalc(it.getJSONObject(i))
+                if (existingCalcKeys.add(calcKey(c))) {
+                    db.savedCalcDao().insert(c.copy(id = 0)).also { nid -> log.add("savedCalcs", nid) }
+                }
             }
         }
         // Customer orders, lines and attachments following the header's new id.

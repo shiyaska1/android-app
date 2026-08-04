@@ -16,9 +16,21 @@ object DataRepair {
     data class RepairResult(val recordsMerged: Int, val attachmentsMerged: Int)
 
     suspend fun repair(context: Context): RepairResult {
-        val records = mergeDuplicateDiaryEntries(context) + mergeDuplicateDocuments(context)
+        val records = mergeDuplicateDiaryEntries(context) + mergeDuplicateDocuments(context) + mergeDuplicateSavedCalcs(context)
         val attachments = mergeDuplicateAttachments(context)
         return RepairResult(records, attachments)
+    }
+
+    /** Saved calculator tapes have no number field to match on, so a duplicate is identified by
+     *  content instead: same date+time, amounts, total, title, customer and narration. */
+    private suspend fun mergeDuplicateSavedCalcs(context: Context): Int {
+        val dao = AppDatabase.get(context).savedCalcDao()
+        fun key(c: SavedCalc) = listOf(c.dateMillis, c.amounts, c.total, c.title, c.customerId, c.customerName, c.narration)
+        var removed = 0
+        dao.all().groupBy(::key).values.filter { it.size > 1 }.forEach { group ->
+            group.drop(1).forEach { dao.delete(it.id); removed++ }
+        }
+        return removed
     }
 
     /** Removes duplicate bills/purchases/receipts/expenses/quotations/estimates/orders — same
