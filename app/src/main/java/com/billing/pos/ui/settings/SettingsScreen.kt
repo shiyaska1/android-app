@@ -91,6 +91,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
     var phone by remember { mutableStateOf(prefs.companyPhone) }
     var gstin by remember { mutableStateOf(prefs.companyGstin) }
     var gstEnabled by remember { mutableStateOf(prefs.gstEnabled) }
+    var compositionScheme by remember { mutableStateOf(prefs.compositionScheme) }
     var upiId by remember { mutableStateOf(prefs.upiId) }
     var upiName by remember { mutableStateOf(prefs.upiName) }
     var upiQrOnPrint by remember { mutableStateOf(prefs.showUpiQrOnPrint) }
@@ -236,6 +237,20 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
                     )
                 }
                 Switch(checked = gstEnabled, onCheckedChange = { gstEnabled = it; prefs.gstEnabled = it })
+            }
+            if (gstEnabled) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Composition scheme dealer", style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            "A composition dealer can't show tax as a separate line by law. Invoices " +
+                                "title as \"BILL OF SUPPLY\" and hide the CGST/SGST/IGST breakup — only the " +
+                                "total prints.",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline
+                        )
+                    }
+                    Switch(checked = compositionScheme, onCheckedChange = { compositionScheme = it; prefs.compositionScheme = it })
+                }
             }
             OutlinedTextField(
                 value = upiId, onValueChange = { upiId = it },

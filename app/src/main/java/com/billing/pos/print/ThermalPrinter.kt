@@ -330,8 +330,15 @@ object ThermalPrinter {
     )
 
     private fun buildReceipt(context: Context, company: CompanyInfo, bill: Bill, lines: List<BillItem>, imagePaths: List<String> = emptyList(), title: String? = null, qrPath: String? = null): ByteArray {
-        val gst = com.billing.pos.data.AppPrefs(context).gstEnabled
-        val actualTitle = title ?: if (gst || bill.taxTotal > 0.0) "TAX INVOICE" else "INVOICE"
+        val prefs = com.billing.pos.data.AppPrefs(context)
+        val gst = prefs.gstEnabled
+        val composition = gst && prefs.compositionScheme
+        val split = com.billing.pos.data.GstTax.split(bill.taxTotal, company.gstin, bill.customerState)
+        val actualTitle = title ?: when {
+            composition -> "BILL OF SUPPLY"
+            gst || bill.taxTotal > 0.0 -> "TAX INVOICE"
+            else -> "INVOICE"
+        }
         val sb = StringBuilder()
         sb.append(center(company.name)).append('\n')
         if (company.address.isNotBlank()) sb.append(center(company.address)).append('\n')
@@ -357,10 +364,14 @@ object ThermalPrinter {
         }
         sb.append(line()).append('\n')
         sb.append(kv("Sub Total", Format.money(bill.subTotal))).append('\n')
-        if (bill.taxTotal != 0.0) {
+        if (bill.taxTotal != 0.0 && !composition) {
             if (gst) {
-                sb.append(kv("CGST", Format.money(bill.taxTotal / 2.0))).append('\n')
-                sb.append(kv("SGST", Format.money(bill.taxTotal / 2.0))).append('\n')
+                if (split.interstate) {
+                    sb.append(kv("IGST", Format.money(split.igst))).append('\n')
+                } else {
+                    sb.append(kv("CGST", Format.money(split.cgst))).append('\n')
+                    sb.append(kv("SGST", Format.money(split.sgst))).append('\n')
+                }
             } else {
                 sb.append(kv("Tax", Format.money(bill.taxTotal))).append('\n')
             }

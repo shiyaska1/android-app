@@ -376,8 +376,8 @@ class Repository(private val context: Context) {
     suspend fun deleteUser(user: User) = userDao.delete(user)
 
     // ---- customers / items ----
-    suspend fun addCustomer(name: String, phone: String, address: String, gstin: String = "", customerType: String = "General"): Long {
-        val id = customerDao.insert(Customer(name = name.trim(), phone = phone.trim(), address = address.trim(), gstin = gstin.trim(), customerType = customerType.trim().ifBlank { "General" }))
+    suspend fun addCustomer(name: String, phone: String, address: String, gstin: String = "", customerType: String = "General", state: String = ""): Long {
+        val id = customerDao.insert(Customer(name = name.trim(), phone = phone.trim(), address = address.trim(), gstin = gstin.trim(), customerType = customerType.trim().ifBlank { "General" }, state = state.trim()))
         ensureCustomerHead(name)   // create the customer's ledger head immediately
         return id
     }
@@ -433,6 +433,7 @@ class Repository(private val context: Context) {
             grandTotal = amount,
             paidAmount = 0.0,
             customerGstin = customer.gstin,
+            customerState = customer.state,
             remarks = note.trim(),
             isLegacy = true,
             updatedAt = System.currentTimeMillis()
@@ -1005,10 +1006,38 @@ class Repository(private val context: Context) {
         com.billing.pos.bills.BillAttachmentStore.delete(attachment)
     }
 
-    /** Bill number for the next locally-created bill, e.g. A-INV-0001 (the A- prefix is this device's tag). */
+    /**
+     * Bill number for the next locally-created bill, e.g. A-INV-0001 (the A- prefix is this
+     * device's tag). In GST mode the series resets each Indian financial year (1 Apr – 31 Mar),
+     * e.g. A-INV-25-26-0001, matching how GST invoice series are conventionally numbered.
+     */
     suspend fun nextBillNo(): String {
+        if (AppPrefs(context).gstEnabled) {
+            val fyStart = financialYearStartMillis(System.currentTimeMillis())
+            val n = billDao.localCountSince(fyStart) + 1
+            return tagPrefix() + "INV-" + financialYearLabel(fyStart) + "-" + n.toString().padStart(4, '0')
+        }
         val n = billDao.localCount() + 1
         return tagPrefix() + "INV-" + n.toString().padStart(4, '0')
+    }
+
+    /** Start of the Indian financial year (1 April, 00:00) containing [millis]. */
+    private fun financialYearStartMillis(millis: Long): Long {
+        val c = java.util.Calendar.getInstance().apply {
+            timeInMillis = millis
+            if (get(java.util.Calendar.MONTH) < java.util.Calendar.APRIL) add(java.util.Calendar.YEAR, -1)
+            set(java.util.Calendar.MONTH, java.util.Calendar.APRIL)
+            set(java.util.Calendar.DAY_OF_MONTH, 1)
+            set(java.util.Calendar.HOUR_OF_DAY, 0); set(java.util.Calendar.MINUTE, 0)
+            set(java.util.Calendar.SECOND, 0); set(java.util.Calendar.MILLISECOND, 0)
+        }
+        return c.timeInMillis
+    }
+
+    /** "25-26" for the FY starting at [fyStartMillis]. */
+    private fun financialYearLabel(fyStartMillis: Long): String {
+        val startYear = java.util.Calendar.getInstance().apply { timeInMillis = fyStartMillis }.get(java.util.Calendar.YEAR)
+        return (startYear % 100).toString().padStart(2, '0') + "-" + ((startYear + 1) % 100).toString().padStart(2, '0')
     }
 
     // ---- bills ----
@@ -1304,6 +1333,8 @@ class Repository(private val context: Context) {
     suspend fun saleTaxLines(): List<TaxLineInfo> = billDao.taxLines()
     suspend fun purchaseTaxLines(): List<TaxLineInfo> = purchaseDao.taxLines()
     suspend fun itemsAll(): List<Item> = itemDao.all()
+    suspend fun salesReturnsAll(): List<SalesReturn> = salesReturnDao.all()
+    suspend fun customersAll(): List<Customer> = customerDao.all()
 
     suspend fun updateSupplier(supplier: Supplier) = supplierDao.update(supplier)
 

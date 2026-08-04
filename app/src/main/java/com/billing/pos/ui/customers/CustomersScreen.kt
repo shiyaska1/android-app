@@ -117,7 +117,7 @@ class CustomersViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun save(
-        existing: Customer?, name: String, phone: String, address: String, gstin: String,
+        existing: Customer?, name: String, phone: String, address: String, gstin: String, state: String,
         customerType: String, attachments: List<CustomerAttachment>,
         openingAmount: Double, openingIsDebit: Boolean, onDone: () -> Unit
     ) {
@@ -125,9 +125,9 @@ class CustomersViewModel(app: Application) : AndroidViewModel(app) {
         val type = customerType.trim().ifBlank { "General" }
         viewModelScope.launch {
             // A new customer has no id until it is saved, so the files are filed afterwards.
-            val id = if (existing == null) repo.addCustomer(name, phone, address, gstin, type)
+            val id = if (existing == null) repo.addCustomer(name, phone, address, gstin, type, state)
             else {
-                repo.updateCustomer(existing.copy(name = name.trim(), phone = phone.trim(), address = address.trim(), gstin = gstin.trim(), customerType = type))
+                repo.updateCustomer(existing.copy(name = name.trim(), phone = phone.trim(), address = address.trim(), gstin = gstin.trim(), customerType = type, state = state.trim()))
                 existing.id
             }
             repo.replaceCustomerAttachments(id, attachments)
@@ -516,8 +516,8 @@ fun CustomersScreen(
             onDeleteQuickInvoice = { bill -> vm.deleteQuickInvoice(bill) },
             onMessage = { vm.message.value = it },
             onDismiss = { showDialog = false },
-            onSave = { name, phone, addr, gstin, custType, atts, openingAmt, openingIsDebit ->
-                vm.save(editing, name, phone, addr, gstin, custType, atts, openingAmt, openingIsDebit) { showDialog = false }
+            onSave = { name, phone, addr, gstin, state, custType, atts, openingAmt, openingIsDebit ->
+                vm.save(editing, name, phone, addr, gstin, state, custType, atts, openingAmt, openingIsDebit) { showDialog = false }
             }
         )
     }
@@ -570,12 +570,16 @@ private fun CustomerDialog(
     onDeleteQuickInvoice: (com.billing.pos.data.Bill) -> Unit,
     onMessage: (String) -> Unit,
     onDismiss: () -> Unit,
-    onSave: (String, String, String, String, String, List<CustomerAttachment>, Double, Boolean) -> Unit
+    onSave: (String, String, String, String, String, String, List<CustomerAttachment>, Double, Boolean) -> Unit
 ) {
+    val dialogContext = androidx.compose.ui.platform.LocalContext.current
+    val gstEnabled = remember { com.billing.pos.data.AppPrefs(dialogContext).gstEnabled }
     var name by remember { mutableStateOf(existing?.name ?: "") }
     var phone by remember { mutableStateOf(existing?.phone ?: "") }
     var address by remember { mutableStateOf(existing?.address ?: "") }
     var gstin by remember { mutableStateOf(existing?.gstin ?: "") }
+    var state by remember { mutableStateOf(existing?.state ?: "") }
+    var stateMenu by remember { mutableStateOf(false) }
     var custType by remember { mutableStateOf(existing?.customerType ?: "General") }
     var typeMenu by remember { mutableStateOf(false) }
     var newType by remember { mutableStateOf(false) }
@@ -674,6 +678,21 @@ private fun CustomerDialog(
                     label = { Text("GSTIN / TIN") }, singleLine = true,
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
                 )
+                if (gstEnabled) {
+                    Box(Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                        OutlinedTextField(
+                            readOnly = true, value = state.ifBlank { "Select state (for IGST vs CGST+SGST)" },
+                            onValueChange = {}, label = { Text("State") }, singleLine = true,
+                            trailingIcon = { IconButton(onClick = { stateMenu = true }) { Icon(Icons.Filled.ArrowDropDown, "Pick state") } },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        androidx.compose.material3.DropdownMenu(expanded = stateMenu, onDismissRequest = { stateMenu = false }) {
+                            com.billing.pos.data.IndianStates.NAMES.forEach { s ->
+                                androidx.compose.material3.DropdownMenuItem(text = { Text(s) }, onClick = { state = s; stateMenu = false })
+                            }
+                        }
+                    }
+                }
                 OutlinedTextField(
                     value = address, onValueChange = { address = it },
                     label = { Text("Address") },
@@ -729,7 +748,7 @@ private fun CustomerDialog(
         },
         confirmButton = {
             TextButton(onClick = {
-                onSave(name, phone, address, gstin, custType, attachments.toList(), openingAmount.toDoubleOrNull() ?: 0.0, openingIsDebit)
+                onSave(name, phone, address, gstin, state, custType, attachments.toList(), openingAmount.toDoubleOrNull() ?: 0.0, openingIsDebit)
             }) { Text("Save") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }

@@ -1347,6 +1347,7 @@ object FullBackup {
     // ---- serialisers ----
     private fun custJson(c: Customer) = JSONObject().put("id", c.id).put("name", c.name)
         .put("phone", c.phone).put("address", c.address).put("gstin", c.gstin).put("isDefault", c.isDefault).put("customerType", c.customerType)
+        .put("state", c.state)
 
     private fun itemJson(i: Item) = JSONObject().put("id", i.id).put("name", i.name)
         .put("price", i.price).put("taxPercent", i.taxPercent).put("barcode", i.barcode).put("hsn", i.hsn)
@@ -1359,7 +1360,7 @@ object FullBackup {
         .put("paymentMethod", b.paymentMethod).put("subTotal", b.subTotal).put("taxTotal", b.taxTotal)
         .put("additionalCharge", b.additionalCharge).put("discount", b.discount)
         .put("grandTotal", b.grandTotal).put("paidAmount", b.paidAmount)
-        .put("customerGstin", b.customerGstin).put("source", b.source).put("remarks", b.remarks)
+        .put("customerGstin", b.customerGstin).put("customerState", b.customerState).put("source", b.source).put("remarks", b.remarks)
         .put("deviceId", b.deviceId)
 
     private fun lineJson(l: BillItem) = JSONObject().put("id", l.id).put("billId", l.billId)
@@ -1885,7 +1886,7 @@ object FullBackup {
     private fun readCust(o: JSONObject) = Customer(
         id = o.optLong("id"), name = o.optString("name"), phone = o.optString("phone"),
         address = o.optString("address"), gstin = o.optString("gstin"), isDefault = o.optBoolean("isDefault", false),
-        customerType = o.optString("customerType", "General")
+        customerType = o.optString("customerType", "General"), state = o.optString("state")
     )
 
     private fun readItem(o: JSONObject) = Item(
@@ -1907,6 +1908,7 @@ object FullBackup {
         taxTotal = o.optDouble("taxTotal", 0.0), additionalCharge = o.optDouble("additionalCharge", 0.0),
         discount = o.optDouble("discount", 0.0), grandTotal = o.optDouble("grandTotal", 0.0),
         paidAmount = o.optDouble("paidAmount", 0.0), customerGstin = o.optString("customerGstin"),
+        customerState = o.optString("customerState"),
         source = o.optString("source"), remarks = o.optString("remarks"), deviceId = o.optString("deviceId")
     )
 

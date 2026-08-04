@@ -1230,8 +1230,14 @@ private fun ItemDialog(
                 }
                 OutlinedTextField(
                     value = hsn, onValueChange = { hsn = it },
-                    label = { Text("HSN / SAC (optional)") }, singleLine = true, modifier = Modifier.fillMaxWidth()
+                    label = { Text(if (gstEnabled) "HSN / SAC" else "HSN / SAC (optional)") }, singleLine = true, modifier = Modifier.fillMaxWidth()
                 )
+                if (gstEnabled && hsn.isNotBlank() && hsn.length !in intArrayOf(4, 6, 8)) {
+                    Text(
+                        "GST HSN/SAC codes are usually 4, 6 or 8 digits long.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error
+                    )
+                }
 
                 Divider(Modifier.padding(top = 4.dp))
 

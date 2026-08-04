@@ -26,7 +26,13 @@ object A4InvoicePdf {
     fun invoice(context: Context, company: CompanyInfo, bill: Bill, lines: List<BillItem>, imagePaths: List<String> = emptyList(), docTitle: String? = null): Uri {
         val prefs = AppPrefs(context)
         val gst = prefs.gstEnabled
-        val actualDocTitle = docTitle ?: if (gst || bill.taxTotal > 0.0) "TAX INVOICE" else "INVOICE"
+        val composition = gst && prefs.compositionScheme
+        val split = com.billing.pos.data.GstTax.split(bill.taxTotal, company.gstin, bill.customerState)
+        val actualDocTitle = docTitle ?: when {
+            composition -> "BILL OF SUPPLY"
+            gst || bill.taxTotal > 0.0 -> "TAX INVOICE"
+            else -> "INVOICE"
+        }
         val doc = PdfDocument()
 
         val black = Paint().apply { color = 0xFF000000.toInt(); isAntiAlias = true }
@@ -151,10 +157,10 @@ object A4InvoicePdf {
             y += 17f
         }
         total("Sub Total", Format.money(bill.subTotal))
-        if (bill.taxTotal != 0.0) {
+        if (bill.taxTotal != 0.0 && !composition) {
             if (gst) {
-                total("CGST", Format.money(bill.taxTotal / 2.0))
-                total("SGST", Format.money(bill.taxTotal / 2.0))
+                if (split.interstate) total("IGST", Format.money(split.igst))
+                else { total("CGST", Format.money(split.cgst)); total("SGST", Format.money(split.sgst)) }
             } else {
                 total("Tax", Format.money(bill.taxTotal))
             }

@@ -72,7 +72,8 @@ data class VatSummary(
     val salesRates: List<VatRateRow>,
     val purchaseRates: List<VatRateRow>,
     val bills: List<Bill>,
-    val purchases: List<Purchase>
+    val purchases: List<Purchase>,
+    val salesReturns: List<com.billing.pos.data.SalesReturn> = emptyList()
 ) {
     val netPayable: Double get() = salesTax - purchaseTax
 }
@@ -115,6 +116,7 @@ class VatReportViewModel(app: Application) : AndroidViewModel(app) {
             val purchases = withContext(Dispatchers.IO) { repo.purchasesAll() }.filter { it.dateMillis in lo..hi }.sortedBy { it.dateMillis }
             val saleLines = withContext(Dispatchers.IO) { repo.saleTaxLines() }.filter { it.dateMillis in lo..hi }
             val purLines = withContext(Dispatchers.IO) { repo.purchaseTaxLines() }.filter { it.dateMillis in lo..hi }
+            val salesReturns = withContext(Dispatchers.IO) { repo.salesReturnsAll() }.filter { it.dateMillis in lo..hi }.sortedBy { it.dateMillis }
 
             fun rates(list: List<com.billing.pos.data.TaxLineInfo>) =
                 list.groupBy { it.rate }.map { (r, ls) -> VatRateRow(r, ls.sumOf { it.taxable }, ls.sumOf { it.tax }) }.sortedBy { it.rate }
@@ -123,7 +125,7 @@ class VatReportViewModel(app: Application) : AndroidViewModel(app) {
                 from, to,
                 saleLines.sumOf { it.taxable }, saleLines.sumOf { it.tax },
                 purLines.sumOf { it.taxable }, purLines.sumOf { it.tax },
-                rates(saleLines), rates(purLines), bills, purchases
+                rates(saleLines), rates(purLines), bills, purchases, salesReturns
             )
         }
     }
@@ -160,17 +162,22 @@ class VatReportViewModel(app: Application) : AndroidViewModel(app) {
 
     /**
      * GSTR-1 JSON in the section layout the GST portal's offline tool / API expects
-     * (b2b, b2cs, hsn). Built entirely from sales in the selected period — GSTR-1 reports
-     * only outward supplies, purchases play no part in it. Since the app doesn't collect a
-     * customer's state, every invoice is treated as an intra-state (CGST+SGST) sale to the
-     * company's own state, matching GST mode's existing assumption — review before uploading
-     * if any of these sales actually crossed state lines.
+     * (b2b, b2cs, cdnr, hsn). Built entirely from sales/sales-returns in the selected period —
+     * GSTR-1 reports only outward supplies, purchases play no part in it. Each invoice/return
+     * is classified IGST (interstate) or CGST+SGST (intra-state) from the customer's saved
+     * state vs. the company's own GSTIN — an invoice with no customer state on file defaults
+     * to intra-state.
      */
     fun exportGstr1Json(context: Context, onSaved: (String) -> Unit) {
         val s = summary ?: return
+        val prefs = AppPrefs(context)
+        if (prefs.compositionScheme) {
+            onSaved("Composition dealers don't file GSTR-1 — file CMP-08 instead. Turn off Composition scheme in Settings if this isn't right.")
+            return
+        }
         busy = true
         viewModelScope.launch {
-            val company = AppPrefs(context).company
+            val company = prefs.company
             val json = withContext(Dispatchers.IO) { buildGstr1Json(company, s) }
             val dir = File(context.cacheDir, "shared").apply { mkdirs() }
             val file = File(dir, "gstr1.json")
@@ -192,8 +199,9 @@ class VatReportViewModel(app: Application) : AndroidViewModel(app) {
         val s = summary ?: return
         busy = true
         viewModelScope.launch {
-            val gst = AppPrefs(context).gstEnabled
-            val xml = withContext(Dispatchers.IO) { buildTallyXml(gst, s) }
+            val prefs = AppPrefs(context)
+            val company = prefs.company
+            val xml = withContext(Dispatchers.IO) { buildTallyXml(prefs.gstEnabled, prefs.compositionScheme, company.gstin, s) }
             val dir = File(context.cacheDir, "shared").apply { mkdirs() }
             val file = File(dir, "tally-vouchers.xml")
             withContext(Dispatchers.IO) { file.writeText(xml) }
@@ -268,74 +276,109 @@ class VatReportViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private class HsnAgg(val hsn: String, val rate: Double, var desc: String, var uqc: String) {
-        var qty = 0.0; var txval = 0.0; var camt = 0.0; var samt = 0.0
+        var qty = 0.0; var txval = 0.0; var camt = 0.0; var samt = 0.0; var iamt = 0.0
     }
 
     private suspend fun buildGstr1Json(company: com.billing.pos.data.CompanyInfo, s: VatSummary): String {
         val itemsByName = repo.itemsAll().associateBy { it.name.trim().lowercase() }
-        val stateCode = company.gstin.take(2).let { if (it.length == 2 && it.all(Char::isDigit)) it else "" }
+        val customersById = repo.customersAll().associateBy { it.id }
+        val ownStateCode = com.billing.pos.data.IndianStates.codeFromGstin(company.gstin)
         val hsnAgg = LinkedHashMap<String, HsnAgg>()   // key = "hsn|rate"
 
-        fun trackHsn(name: String, unit: String, rate: Double, qty: Double, txval: Double, cgst: Double, sgst: Double) {
+        fun posFor(customerState: String) =
+            com.billing.pos.data.IndianStates.codeForState(customerState).ifBlank { ownStateCode }
+
+        fun trackHsn(name: String, unit: String, rate: Double, qty: Double, txval: Double, interstate: Boolean) {
             val hsn = itemsByName[name.trim().lowercase()]?.hsn.orEmpty()
             val agg = hsnAgg.getOrPut("$hsn|$rate") { HsnAgg(hsn, rate, name, uqcFor(unit)) }
-            agg.qty += qty; agg.txval += txval; agg.camt += cgst; agg.samt += sgst
+            agg.qty += qty; agg.txval += txval
+            if (interstate) agg.iamt += txval * rate / 100.0 else { agg.camt += txval * rate / 200.0; agg.samt += txval * rate / 200.0 }
         }
 
         val b2b = JSONArray()
         s.bills.filter { it.customerGstin.isNotBlank() }.groupBy { it.customerGstin }.forEach { (ctin, bills) ->
             val invArr = JSONArray()
             bills.forEach { bill ->
+                val interstate = com.billing.pos.data.GstTax.isInterstate(company.gstin, bill.customerState)
                 val lines = repo.linesFor(bill.id)
                 val itmsArr = JSONArray()
                 var num = 1
                 lines.groupBy { it.taxPercent }.forEach { (rate, ls) ->
                     val txval = round2(ls.sumOf { it.lineTotal })
-                    val camt = round2(txval * rate / 200.0)
-                    itmsArr.put(
-                        JSONObject().put("num", num++).put(
-                            "itm_det",
-                            JSONObject().put("txval", txval).put("rt", rate).put("camt", camt).put("samt", camt).put("csamt", 0.0)
-                        )
-                    )
-                    ls.forEach { trackHsn(it.name, it.unit, rate, it.qty, it.lineTotal, round2(it.lineTotal * rate / 200.0), round2(it.lineTotal * rate / 200.0)) }
+                    val itmDet = JSONObject().put("txval", txval).put("rt", rate)
+                    if (interstate) itmDet.put("iamt", round2(txval * rate / 100.0)).put("camt", 0.0).put("samt", 0.0)
+                    else { val c = round2(txval * rate / 200.0); itmDet.put("iamt", 0.0).put("camt", c).put("samt", c) }
+                    itmDet.put("csamt", 0.0)
+                    itmsArr.put(JSONObject().put("num", num++).put("itm_det", itmDet))
+                    ls.forEach { trackHsn(it.name, it.unit, rate, it.qty, it.lineTotal, interstate) }
                 }
                 invArr.put(
                     JSONObject().put("inum", bill.billNo).put("idt", Format.date(bill.dateMillis))
-                        .put("val", round2(bill.grandTotal)).put("pos", stateCode).put("rchrg", "N").put("inv_typ", "R")
+                        .put("val", round2(bill.grandTotal)).put("pos", posFor(bill.customerState)).put("rchrg", "N").put("inv_typ", "R")
                         .put("itms", itmsArr)
                 )
             }
             b2b.put(JSONObject().put("ctin", ctin).put("inv", invArr))
         }
 
-        data class RateAgg(var txval: Double = 0.0, var camt: Double = 0.0)
-        val b2csAgg = LinkedHashMap<Double, RateAgg>()
+        data class RateAgg(var txval: Double = 0.0, var camt: Double = 0.0, var samt: Double = 0.0, var iamt: Double = 0.0)
+        val b2csAgg = LinkedHashMap<String, RateAgg>()   // key = "rate|pos|interstate"
         s.bills.filter { it.customerGstin.isBlank() }.forEach { bill ->
+            val interstate = com.billing.pos.data.GstTax.isInterstate(company.gstin, bill.customerState)
+            val pos = posFor(bill.customerState)
             repo.linesFor(bill.id).groupBy { it.taxPercent }.forEach { (rate, ls) ->
                 val txval = round2(ls.sumOf { it.lineTotal })
-                val camt = round2(txval * rate / 200.0)
-                val agg = b2csAgg.getOrPut(rate) { RateAgg() }
-                agg.txval += txval; agg.camt += camt
-                ls.forEach { trackHsn(it.name, it.unit, rate, it.qty, it.lineTotal, round2(it.lineTotal * rate / 200.0), round2(it.lineTotal * rate / 200.0)) }
+                val agg = b2csAgg.getOrPut("$rate|$pos|$interstate") { RateAgg() }
+                agg.txval += txval
+                if (interstate) agg.iamt += txval * rate / 100.0 else { val c = txval * rate / 200.0; agg.camt += c; agg.samt += c }
+                ls.forEach { trackHsn(it.name, it.unit, rate, it.qty, it.lineTotal, interstate) }
             }
         }
         val b2cs = JSONArray().apply {
-            b2csAgg.forEach { (rate, agg) ->
+            b2csAgg.forEach { (key, agg) ->
+                val (rateStr, pos, interstateStr) = key.split("|")
                 put(
-                    JSONObject().put("sply_ty", "INTRA").put("pos", stateCode).put("typ", "OE")
-                        .put("txval", round2(agg.txval)).put("rt", rate).put("camt", round2(agg.camt)).put("samt", round2(agg.camt)).put("csamt", 0.0)
+                    JSONObject().put("sply_ty", if (interstateStr.toBoolean()) "INTER" else "INTRA").put("pos", pos).put("typ", "OE")
+                        .put("txval", round2(agg.txval)).put("rt", rateStr.toDouble())
+                        .put("iamt", round2(agg.iamt)).put("camt", round2(agg.camt)).put("samt", round2(agg.samt)).put("csamt", 0.0)
                 )
             }
         }
+
+        // CDNR: credit notes against B2B invoices (sales returns for a customer with a GSTIN on file).
+        val cdnr = JSONArray()
+        s.salesReturns.mapNotNull { r -> customersById[r.customerId]?.takeIf { it.gstin.isNotBlank() }?.let { r to it } }
+            .groupBy { (_, c) -> c.gstin }.forEach { (ctin, pairs) ->
+                val notesArr = JSONArray()
+                pairs.forEach { (r, cust) ->
+                    val interstate = com.billing.pos.data.GstTax.isInterstate(company.gstin, cust.state)
+                    val lines = repo.salesReturnLines(r.id)
+                    val itmsArr = JSONArray()
+                    var num = 1
+                    lines.groupBy { it.taxPercent }.forEach { (rate, ls) ->
+                        val txval = round2(ls.sumOf { it.lineTotal })
+                        val itmDet = JSONObject().put("txval", txval).put("rt", rate)
+                        if (interstate) itmDet.put("iamt", round2(txval * rate / 100.0)).put("camt", 0.0).put("samt", 0.0)
+                        else { val c = round2(txval * rate / 200.0); itmDet.put("iamt", 0.0).put("camt", c).put("samt", c) }
+                        itmDet.put("csamt", 0.0)
+                        itmsArr.put(JSONObject().put("num", num++).put("itm_det", itmDet))
+                    }
+                    notesArr.put(
+                        JSONObject().put("nt_num", r.returnNo).put("nt_dt", Format.date(r.dateMillis))
+                            .put("ntty", "C").put("val", round2(r.grandTotal)).put("pos", posFor(cust.state))
+                            .put("rchrg", "N").put("itms", itmsArr)
+                    )
+                }
+                cdnr.put(JSONObject().put("ctin", ctin).put("nt", notesArr))
+            }
 
         val hsnArr = JSONArray()
         var hnum = 1
         hsnAgg.values.forEach { a ->
             hsnArr.put(
                 JSONObject().put("num", hnum++).put("hsn_sc", a.hsn).put("desc", a.desc).put("uqc", a.uqc)
-                    .put("qty", round2(a.qty)).put("val", round2(a.txval + a.camt + a.samt)).put("txval", round2(a.txval))
-                    .put("iamt", 0.0).put("camt", round2(a.camt)).put("samt", round2(a.samt)).put("csamt", 0.0)
+                    .put("qty", round2(a.qty)).put("val", round2(a.txval + a.camt + a.samt + a.iamt)).put("txval", round2(a.txval))
+                    .put("iamt", round2(a.iamt)).put("camt", round2(a.camt)).put("samt", round2(a.samt)).put("csamt", 0.0)
             )
         }
 
@@ -346,6 +389,7 @@ class VatReportViewModel(app: Application) : AndroidViewModel(app) {
             .put("version", "GST3.0.4")
             .put("b2b", b2b)
             .put("b2cs", b2cs)
+            .put("cdnr", cdnr)
             .put("hsn", JSONObject().put("data", hsnArr))
             .toString(2)
     }
@@ -374,7 +418,7 @@ class VatReportViewModel(app: Application) : AndroidViewModel(app) {
         .replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
         .replace("\"", "&quot;").replace("'", "&apos;")
 
-    private fun buildTallyXml(gst: Boolean, s: VatSummary): String {
+    private fun buildTallyXml(gst: Boolean, composition: Boolean, companyGstin: String, s: VatSummary): String {
         val tallyDate = java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.US)
         val sb = StringBuilder()
         sb.append("<ENVELOPE>\n<HEADER><TALLYREQUEST>Import Data</TALLYREQUEST></HEADER>\n")
@@ -397,12 +441,18 @@ class VatReportViewModel(app: Application) : AndroidViewModel(app) {
             sb.append("<PARTYLEDGERNAME>${xmlEscape(b.customerName)}</PARTYLEDGERNAME>\n")
             ledger(b.customerName, debit = true, amount = b.grandTotal)
             ledger("Discount Allowed", debit = true, amount = b.discount)
-            ledger("Sales Account", debit = false, amount = b.subTotal)
-            if (gst) {
-                ledger("CGST", debit = false, amount = b.taxTotal / 2.0)
-                ledger("SGST", debit = false, amount = b.taxTotal / 2.0)
+            if (composition) {
+                // A composition dealer can't show tax as a separate ledger — folded into Sales.
+                ledger("Sales Account", debit = false, amount = b.subTotal + b.taxTotal)
             } else {
-                ledger("Tax", debit = false, amount = b.taxTotal)
+                ledger("Sales Account", debit = false, amount = b.subTotal)
+                if (gst) {
+                    val split = com.billing.pos.data.GstTax.split(b.taxTotal, companyGstin, b.customerState)
+                    if (split.interstate) ledger("IGST", debit = false, amount = split.igst)
+                    else { ledger("CGST", debit = false, amount = split.cgst); ledger("SGST", debit = false, amount = split.sgst) }
+                } else {
+                    ledger("Tax", debit = false, amount = b.taxTotal)
+                }
             }
             ledger("Additional Charges", debit = false, amount = b.additionalCharge)
             sb.append("</VOUCHER>\n</TALLYMESSAGE>\n")
@@ -534,11 +584,13 @@ fun VatReportScreen(
             Divider(Modifier.padding(vertical = 16.dp))
             Text("GST portal & Tally", fontWeight = FontWeight.SemiBold)
             Text(
-                "GSTR-1 JSON has the b2b / b2cs / HSN sections the GST portal's offline tool expects, " +
-                    "built from sales in this period only (purchases aren't part of GSTR-1). It assumes every " +
-                    "sale is within your own state (CGST+SGST) — review it if any of these sales crossed state " +
-                    "lines before uploading. Tally XML has one Sales/Purchase voucher per bill/purchase — " +
-                    "import it from Gateway of Tally > Import Data, creating matching ledgers first if needed.",
+                "GSTR-1 JSON has the b2b / b2cs / cdnr / HSN sections the GST portal's offline tool " +
+                    "expects, built from sales and sales returns in this period only (purchases aren't part " +
+                    "of GSTR-1). Each invoice is IGST or CGST+SGST based on the customer's state saved on " +
+                    "their customer record — set that for interstate customers or they'll default to your own " +
+                    "state. Composition scheme accounts don't get this export (file CMP-08 instead). Tally XML " +
+                    "has one Sales/Purchase voucher per bill/purchase — import it from Gateway of Tally > " +
+                    "Import Data, creating matching ledgers first if needed.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline,
                 modifier = Modifier.padding(top = 4.dp)
             )

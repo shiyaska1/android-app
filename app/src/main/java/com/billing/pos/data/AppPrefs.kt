@@ -40,6 +40,15 @@ class AppPrefs(context: Context) {
         get() = p.getBoolean("gst_enabled", false)
         set(v) { p.edit().putBoolean("gst_enabled", v).apply() }
 
+    /**
+     * Composition scheme dealer. A composition dealer legally cannot show CGST/SGST/IGST as a
+     * separate line on the invoice — only visible when [gstEnabled] is also on. Invoices title
+     * as "BILL OF SUPPLY" and the tax breakup is hidden entirely (only the grand total shows).
+     */
+    var compositionScheme: Boolean
+        get() = p.getBoolean("gst_composition", false)
+        set(v) { p.edit().putBoolean("gst_composition", v).apply() }
+
     /** UPI ID (VPA) money is collected to, e.g. name@okaxis, and the payee name shown. */
     var upiId: String
         get() = p.getString("upi_id", "") ?: ""

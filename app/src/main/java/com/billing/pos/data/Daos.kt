@@ -122,6 +122,10 @@ interface BillDao {
     @Query("SELECT COUNT(*) FROM bills WHERE source = ''")
     suspend fun localCount(): Int
 
+    /** Local bills created since [from] — drives the GST-mode financial-year invoice series reset. */
+    @Query("SELECT COUNT(*) FROM bills WHERE source = '' AND dateMillis >= :from")
+    suspend fun localCountSince(from: Long): Int
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertBill(bill: Bill): Long
 

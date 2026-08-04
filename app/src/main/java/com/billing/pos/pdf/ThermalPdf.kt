@@ -36,8 +36,15 @@ object ThermalPdf {
 
     fun invoice(context: Context, company: CompanyInfo, bill: Bill, lines: List<BillItem>, imagePaths: List<String> = emptyList(), title: String? = null): Uri {
         applyWidth(context)
-        val gst = com.billing.pos.data.AppPrefs(context).gstEnabled
-        val actualTitle = title ?: if (gst || bill.taxTotal > 0.0) "TAX INVOICE" else "INVOICE"
+        val prefs = com.billing.pos.data.AppPrefs(context)
+        val gst = prefs.gstEnabled
+        val composition = gst && prefs.compositionScheme
+        val split = com.billing.pos.data.GstTax.split(bill.taxTotal, company.gstin, bill.customerState)
+        val actualTitle = title ?: when {
+            composition -> "BILL OF SUPPLY"
+            gst || bill.taxTotal > 0.0 -> "TAX INVOICE"
+            else -> "INVOICE"
+        }
         val out = ArrayList<Line>()
         fun add(text: String, bold: Boolean = false) { out.add(Line(text, bold)) }
         addHeader(out, company)
@@ -61,10 +68,10 @@ object ThermalPdf {
         }
         add(rule())
         add(kv("Sub Total", Format.money(bill.subTotal)))
-        if (bill.taxTotal != 0.0) {
+        if (bill.taxTotal != 0.0 && !composition) {
             if (gst) {
-                add(kv("CGST", Format.money(bill.taxTotal / 2.0)))
-                add(kv("SGST", Format.money(bill.taxTotal / 2.0)))
+                if (split.interstate) add(kv("IGST", Format.money(split.igst)))
+                else { add(kv("CGST", Format.money(split.cgst))); add(kv("SGST", Format.money(split.sgst))) }
             } else {
                 add(kv("Tax", Format.money(bill.taxTotal)))
             }
@@ -81,7 +88,6 @@ object ThermalPdf {
         }
         add(center("Thank you! Visit again."))
         // Optional UPI QR for the total, centred under the receipt.
-        val prefs = AppPrefs(context)
         val qr = if (prefs.showUpiQrOnPrint && prefs.upiId.isNotBlank())
             com.billing.pos.util.UpiQr.bitmap(
                 com.billing.pos.util.UpiQr.link(prefs.upiId, prefs.upiName.ifBlank { company.name }, bill.grandTotal, bill.billNo), 360

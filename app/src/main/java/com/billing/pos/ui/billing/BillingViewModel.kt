@@ -477,6 +477,7 @@ class BillingViewModel(private val app: Application) : AndroidViewModel(app) {
             grandTotal = grandTotal,
             paidAmount = paid,
             customerGstin = customer.gstin,
+            customerState = customer.state,
             source = editingSource,
             remarks = remarks.trim(),
             deviceId = editingDeviceId.ifBlank { com.billing.pos.data.License.deviceId(app) }
@@ -677,7 +678,7 @@ class BillingViewModel(private val app: Application) : AndroidViewModel(app) {
             customerId = customer.id, customerName = customer.name,
             paymentMethod = payment.label, subTotal = subTotal, taxTotal = taxTotal,
             additionalCharge = additionalCharge, discount = discount, grandTotal = grandTotal,
-            paidAmount = 0.0, customerGstin = customer.gstin, remarks = remarks.trim()
+            paidAmount = 0.0, customerGstin = customer.gstin, customerState = customer.state, remarks = remarks.trim()
         )
         val asLines = cart.map {
             BillItem(

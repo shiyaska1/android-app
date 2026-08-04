@@ -13,7 +13,11 @@ data class Customer(
     val address: String = "",
     val gstin: String = "",
     val isDefault: Boolean = false,
-    val customerType: String = "General"
+    val customerType: String = "General",
+    /** State/UT name (see [IndianStates]) — used to tell an interstate sale (IGST) from an
+     *  intra-state one (CGST+SGST) against the company's own GSTIN. Blank = unknown, treated
+     *  as intra-state. */
+    val state: String = ""
 )
 
 /** A saleable item. taxPercent = 0.0 means "without tax". */
@@ -75,6 +79,8 @@ data class Bill(
     /** Amount already received. Credit invoices start at 0; others = grandTotal. */
     val paidAmount: Double = 0.0,
     val customerGstin: String = "",
+    /** Snapshot of [Customer.state] at sale time — decides IGST vs CGST+SGST on this bill. */
+    val customerState: String = "",
     val source: String = "",
     /** Free-text note; printed on the bill only when non-blank. */
     val remarks: String = "",
