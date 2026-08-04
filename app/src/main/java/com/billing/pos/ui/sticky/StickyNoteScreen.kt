@@ -986,7 +986,7 @@ fun StickyNoteScreen(onClose: () -> Unit, onOcrToSales: () -> Unit = {}, vm: Sti
  */
 private fun shareNoteFiles(context: android.content.Context, caption: String, paths: List<String>) {
     if (paths.isEmpty()) return
-    runCatching {
+    val failed = runCatching {
         val uris = ArrayList<android.net.Uri>()
         paths.forEach { p ->
             val f = File(p)
@@ -994,7 +994,7 @@ private fun shareNoteFiles(context: android.content.Context, caption: String, pa
                 FileProvider.getUriForFile(context, "${context.packageName}.provider", f)
             )
         }
-        if (uris.isEmpty()) return
+        if (uris.isEmpty()) return@runCatching
         val base = Intent(Intent.ACTION_SEND_MULTIPLE).apply {
             type = "*/*"
             putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
@@ -1004,10 +1004,14 @@ private fun shareNoteFiles(context: android.content.Context, caption: String, pa
         for (pkg in listOf("com.whatsapp", "com.whatsapp.w4b")) {
             val direct = Intent(base).setPackage(pkg)
             if (direct.resolveActivity(context.packageManager) != null) {
-                runCatching { context.startActivity(direct) }.onSuccess { return }
+                val sent = runCatching { context.startActivity(direct) }.isSuccess
+                if (sent) return@runCatching
             }
         }
         context.startActivity(Intent.createChooser(base, "Share note").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }.isFailure
+    if (failed) {
+        android.widget.Toast.makeText(context, "Could not open share screen", android.widget.Toast.LENGTH_SHORT).show()
     }
 }
 

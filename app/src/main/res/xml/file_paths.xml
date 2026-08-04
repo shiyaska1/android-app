@@ -5,4 +5,5 @@
     <files-path name="diary" path="diary/" />
     <files-path name="items" path="items/" />
     <files-path name="bills" path="bills/" />
+    <files-path name="customer_attachments" path="customer_attachments/" />
 </paths>
