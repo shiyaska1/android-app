@@ -645,6 +645,10 @@ fun VatReportScreen(
             OutlinedButton(onClick = { export("tally") }, enabled = !vm.busy && s != null, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
                 Text("Download Tally XML")
             }
+
+            val gstEnabled = remember { AppPrefs(context).gstEnabled }
+            val cessEnabled = remember { AppPrefs(context).cessEnabled }
+            TaxDetailReportsSection(vm, gstEnabled, cessEnabled)
         }
     }
 }
