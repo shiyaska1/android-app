@@ -160,27 +160,50 @@ fun FastBillDialog(
     }
     val savedCalcs: List<com.billing.pos.data.SavedCalc> by
         repo.savedCalcs.collectAsState(initial = emptyList())
+    val customers by repo.customers.collectAsState(initial = emptyList<com.billing.pos.data.Customer>())
 
-    /** Stores the tape, updating the one being edited rather than piling up copies. */
-    fun storeTape(onDone: (String) -> Unit) {
+    /**
+     * Stores the tape (updating the one being edited rather than piling up copies) and, when a
+     * real customer is named (not the walk-in placeholder), also attaches the total to them as a
+     * credit due dated today — same mechanism as a customer's "Add invoice" quick due. [onShare],
+     * if given, shares the tape afterward (Save & Share).
+     */
+    fun storeTape(onDone: (String) -> Unit, onShare: ((String) -> Unit)? = null) {
         val pending = input.toDoubleOrNull()
         val all = if (pending != null && pending > 0.0) entries + pending else entries.toList()
         if (all.isEmpty()) { onDone("Nothing to save"); return }
+        val total = all.sum()
+        val typedName = custName.trim()
         scope.launch {
+            val customer: com.billing.pos.data.Customer? = when {
+                typedName.isBlank() || typedName == com.billing.pos.data.SavedCalc.DEFAULT_CUSTOMER -> null
+                custId > 0 -> customers.firstOrNull { it.id == custId }
+                else -> customers.firstOrNull { it.name.equals(typedName, ignoreCase = true) }
+                    ?: repo.addCustomerReturning(typedName, custPhone, "General")
+            }
             val id = repo.saveCalc(
                 com.billing.pos.data.SavedCalc(
                     id = savedId,
                     dateMillis = System.currentTimeMillis(),
                     amounts = com.billing.pos.data.SavedCalc.pack(all),
-                    total = all.sum(),
-                    customerId = custId,
-                    customerName = custName.ifBlank { com.billing.pos.data.SavedCalc.DEFAULT_CUSTOMER },
+                    total = total,
+                    customerId = customer?.id ?: 0L,
+                    customerName = customer?.name ?: com.billing.pos.data.SavedCalc.DEFAULT_CUSTOMER,
                     narration = narration.trim()
                 )
             )
             val fresh = savedId == 0L
             savedId = id
-            onDone(if (fresh) "Calculation saved" else "Calculation updated")
+            var msg = if (fresh) "Calculation saved" else "Calculation updated"
+            if (customer != null && total > 0.0) {
+                repo.addQuickInvoice(customer, total, narration.trim(), System.currentTimeMillis())
+                msg += " • ${Format.rupee(total)} added as credit for ${customer.name}"
+            }
+            onDone(msg)
+            if (onShare != null) {
+                val header = if (customer != null) customer.name + (if (customer.phone.isNotBlank()) " - ${customer.phone}" else "") + "\n\n" else ""
+                onShare(header + tapeText())
+            }
         }
     }
 
@@ -387,7 +410,6 @@ fun FastBillDialog(
 
     // ---- Save popup: who it is for, and why ----
     if (askSave) {
-        val customers by repo.customers.collectAsState(initial = emptyList<com.billing.pos.data.Customer>())
         var custMenu by remember { mutableStateOf(false) }
         var newCust by remember { mutableStateOf(false) }
         var newCustName by remember { mutableStateOf("") }
@@ -476,12 +498,19 @@ fun FastBillDialog(
                 }
             },
             confirmButton = {
-                TextButton(onClick = {
-                    askSave = false
-                    storeTape { msg ->
-                        android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
-                    }
-                }) { Text("OK") }
+                Row {
+                    TextButton(onClick = {
+                        askSave = false
+                        storeTape { msg -> android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show() }
+                    }) { Text("Save") }
+                    TextButton(onClick = {
+                        askSave = false
+                        storeTape(
+                            onDone = { msg -> android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show() },
+                            onShare = { text -> shareTapeToWhatsApp(context, text) }
+                        )
+                    }) { Text("Save & Share") }
+                }
             },
             dismissButton = { TextButton(onClick = { askSave = false }) { Text("Cancel") } }
         )
