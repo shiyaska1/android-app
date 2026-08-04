@@ -1330,10 +1330,12 @@ class Repository(private val context: Context) {
         return s.copy(id = id)
     }
 
-    /** One-time: make sure every existing customer/supplier has a ledger head. */
+    /** One-time: make sure every existing customer/supplier has a ledger head — including the
+     *  default Cash Customer/Cash Supplier, which need one just as much as a named party (sales
+     *  and purchases against them still post to Sundry Debtors/Creditors). */
     suspend fun syncPartyHeads() {
-        customerDao.all().filter { !it.isDefault }.forEach { ensureCustomerHead(it.name) }
-        supplierDao.all().filter { !it.isDefault }.forEach { ensureSupplierHead(it.name) }
+        customerDao.all().forEach { ensureCustomerHead(it.name) }
+        supplierDao.all().forEach { ensureSupplierHead(it.name) }
     }
 
     // ---- VAT / tax report data ----
