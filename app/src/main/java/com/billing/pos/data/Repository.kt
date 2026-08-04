@@ -595,6 +595,8 @@ class Repository(private val context: Context) {
     /** Saved calculator tapes, newest first. */
     val savedCalcs: kotlinx.coroutines.flow.Flow<List<SavedCalc>> = savedCalcDao.observeAll()
 
+    suspend fun savedCalcsAll(): List<SavedCalc> = savedCalcDao.all()
+
     suspend fun saveCalc(c: SavedCalc): Long =
         if (c.id == 0L) savedCalcDao.insert(c) else { savedCalcDao.update(c); c.id }
 

@@ -326,6 +326,18 @@ class AppPrefs(context: Context) {
         if (itemCategories.none { it.equals(n, true) }) itemCategories = itemCategories + n
     }
 
+    /** Calculator "label mode" suggestions — labels typed against an entry once, offered as
+     *  autocomplete the next time (Fast bill's label popup), managed from their own master. */
+    var calcLabels: List<String>
+        get() = (p.getString("calc_labels", "") ?: "").split("|").map { it.trim() }.filter { it.isNotBlank() }
+        set(v) { p.edit().putString("calc_labels", v.joinToString("|")).apply() }
+
+    fun addCalcLabel(name: String) {
+        val n = name.trim()
+        if (n.isBlank()) return
+        if (calcLabels.none { it.equals(n, true) }) calcLabels = calcLabels + n
+    }
+
     // ---- licensing / trial ----
     var mobileNumber: String
         get() = p.getString("mobile", "") ?: ""

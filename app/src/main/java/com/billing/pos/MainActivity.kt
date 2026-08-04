@@ -465,6 +465,7 @@ private fun AppNav() {
                 onSmsSettings = { nav.navigate("smssettings") },
                 onItems = { nav.navigate("items") },
                 onItemCategories = { nav.navigate("itemcategories") },
+                onCalcLabels = { nav.navigate("calclabels") },
                 onBundles = { nav.navigate("bundles") },
                 onNewPurchase = { nav.navigate("purchase") },
                 onPurchases = { nav.navigate("purchases") },
@@ -946,6 +947,9 @@ private fun AppNav() {
         }
         composable("itemcategories") {
             com.billing.pos.ui.masters.ItemCategoryMasterScreen(onBack = { nav.popBackStack() })
+        }
+        composable("calclabels") {
+            com.billing.pos.ui.masters.CalcLabelMasterScreen(onBack = { nav.popBackStack() })
         }
         composable(
             route = "items/edit/{id}",

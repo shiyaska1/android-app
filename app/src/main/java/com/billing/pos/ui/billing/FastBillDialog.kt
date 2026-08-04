@@ -87,14 +87,23 @@ object FastBillLink {
     fun take(): List<Double> { val v = amounts; amounts = emptyList(); return v }
 }
 
+/** One tape entry: a signed amount, plus an optional name typed in "label mode". */
+private data class CalcEntry(val amount: Double, val label: String = "")
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun FastBillDialog(
     onSave: (List<Double>) -> Unit,
     onDismiss: () -> Unit
 ) {
-    val entries = remember { mutableStateListOf<Double>() }
+    val entries = remember { mutableStateListOf<CalcEntry>() }
     var input by remember { mutableStateOf("") }
+    // Label mode: when on, every + / − asks for a name (with autocomplete) before adding.
+    var labelMode by remember { mutableStateOf(false) }
+    var pendingSign by remember { mutableStateOf(0) }
+    var pendingAmount by remember { mutableStateOf(0.0) }
+    var labelInput by remember { mutableStateOf("") }
+    var showShareChoice by remember { mutableStateOf(false) }
     // Id of the saved tape being edited, or 0 while this is a fresh calculation.
     var savedId by remember { mutableStateOf(0L) }
     var showSaved by remember { mutableStateOf(false) }
@@ -120,9 +129,11 @@ fun FastBillDialog(
     var editIndex by remember { mutableStateOf(-1) }
     val focus = remember { FocusRequester() }
     val mulDivFocus = remember { FocusRequester() }
+    val labelFocus = remember { FocusRequester() }
     val scroll = rememberScrollState()
-    val total = entries.sum()
+    val total = entries.sumOf { it.amount }
     val context = androidx.compose.ui.platform.LocalContext.current
+    val prefs = remember { com.billing.pos.data.AppPrefs(context) }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     // Leaves a little breathing room below the +/-/x/div row, clear of the phone's gesture bar.
     val bottomPad = androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp.dp * 0.05f
@@ -136,27 +147,38 @@ fun FastBillDialog(
     var showDivByZeroAlert by remember { mutableStateOf(false) }
     var confirmDeleteCalc by remember { mutableStateOf<com.billing.pos.data.SavedCalc?>(null) }
 
-    /** [sign] is +1 for the "+" key and -1 for "−"; a minus entry is stored negative. */
+    /** [sign] is +1 for the "+" key and -1 for "−"; a minus entry is stored negative. In label
+     *  mode, the amount is held pending and a popup asks for its name before it's added. */
     fun addNow(sign: Int = 1) {
         val v = input.toDoubleOrNull()
-        if (v != null && v > 0.0) entries.add(v * sign)
-        input = ""
-        focus.requestFocus()
+        if (v == null || v <= 0.0) return
+        if (labelMode) {
+            pendingAmount = v
+            pendingSign = sign
+            labelInput = ""
+            input = ""
+        } else {
+            entries.add(CalcEntry(v * sign))
+            input = ""
+            focus.requestFocus()
+        }
     }
 
     /** The tape as plain text, for sharing and for the diary copy. */
     fun tapeText(): String = buildString {
-        entries.forEachIndexed { i, v ->
-            val sign = if (v < 0) "-" else if (i == 0) " " else "+"
-            append(sign).append(' ').append(Format.money(kotlin.math.abs(v))).append('\n')
+        entries.forEachIndexed { i, e ->
+            val sign = if (e.amount < 0) "-" else if (i == 0) " " else "+"
+            append(sign).append(' ')
+            if (e.label.isNotBlank()) append(e.label).append(": ")
+            append(Format.money(kotlin.math.abs(e.amount))).append('\n')
         }
-        append("= ").append(Format.money(entries.sum()))
+        append("= ").append(Format.money(entries.sumOf { it.amount }))
     }
 
     fun saveToDiary() {
         if (entries.isEmpty()) return
         val body = tapeText()
-        val sum = Format.money(entries.sum())
+        val sum = Format.money(entries.sumOf { it.amount })
         scope.launch {
             com.billing.pos.diary.QuickDiaryNote.save(context, "Fast bill $sum", body)
         }
@@ -178,9 +200,9 @@ fun FastBillDialog(
      */
     fun storeTape(onDone: (String) -> Unit, onShare: ((String) -> Unit)? = null) {
         val pending = input.toDoubleOrNull()
-        val all = if (pending != null && pending > 0.0) entries + pending else entries.toList()
+        val all = if (pending != null && pending > 0.0) entries + CalcEntry(pending) else entries.toList()
         if (all.isEmpty()) { onDone("Nothing to save"); return }
-        val total = all.sum()
+        val total = all.sumOf { it.amount }
         val typedName = custName.trim()
         scope.launch {
             val customer: com.billing.pos.data.Customer? = when {
@@ -193,7 +215,8 @@ fun FastBillDialog(
                 com.billing.pos.data.SavedCalc(
                     id = savedId,
                     dateMillis = System.currentTimeMillis(),
-                    amounts = com.billing.pos.data.SavedCalc.pack(all),
+                    amounts = com.billing.pos.data.SavedCalc.pack(all.map { it.amount }),
+                    labels = com.billing.pos.data.SavedCalc.packLabels(all.map { it.label }),
                     total = total,
                     customerId = customer?.id ?: 0L,
                     customerName = customer?.name ?: com.billing.pos.data.SavedCalc.DEFAULT_CUSTOMER,
@@ -206,6 +229,12 @@ fun FastBillDialog(
             if (customer != null && total > 0.0) {
                 repo.addQuickInvoice(customer, total, narration.trim(), System.currentTimeMillis())
                 msg += " • ${Format.rupee(total)} added as credit for ${customer.name}"
+                // Same PDF as the Share button's PDF option, filed against the customer so it
+                // shows up in their own attachments when the customer is later opened for edit.
+                runCatching {
+                    val pdf = buildTapePdf(context, customer.name, customer.phone, narration.trim(), all)
+                    com.billing.pos.data.CustomerAttachmentStore.importFrom(context, pdf.absolutePath, "application/pdf")
+                }.getOrNull()?.let { att -> repo.appendCustomerAttachments(customer.id, listOf(att)) }
             }
             onDone(msg)
             if (onShare != null) {
@@ -230,13 +259,19 @@ fun FastBillDialog(
         ) {
             // ---- TOP BAR: icon-only, evenly spread so it never crowds ----
             Row(
-                Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 6.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 6.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(2.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(onClick = onDismiss) {
                     Icon(Icons.Filled.Close, contentDescription = "Close")
                 }
+                // Label mode: on, every + / − asks for a name before the amount is added.
+                androidx.compose.material3.Checkbox(
+                    checked = labelMode,
+                    onCheckedChange = { labelMode = it }
+                )
+                Text("Label", style = MaterialTheme.typography.labelSmall)
                 IconButton(onClick = { showSaved = true }) {
                     Icon(Icons.Filled.ListAlt, contentDescription = "Saved calculations")
                 }
@@ -245,22 +280,14 @@ fun FastBillDialog(
                     enabled = entries.isNotEmpty() || (input.toDoubleOrNull() ?: 0.0) > 0.0
                 ) { Icon(Icons.Filled.Save, contentDescription = "Save calculation") }
                 IconButton(
-                    onClick = {
-                        if (entries.isNotEmpty()) {
-                            saveToDiary()
-                            // The customer (with mobile number) goes out with the tape.
-                            val header = if (custName.isNotBlank() && custName != com.billing.pos.data.SavedCalc.DEFAULT_CUSTOMER)
-                                custName + (if (custPhone.isNotBlank()) " - $custPhone" else "") + "\n\n" else ""
-                            shareTapeToWhatsApp(context, header + tapeText())
-                        }
-                    },
+                    onClick = { if (entries.isNotEmpty()) showShareChoice = true },
                     enabled = entries.isNotEmpty()
-                ) { Icon(Icons.Filled.Share, contentDescription = "Share on WhatsApp") }
+                ) { Icon(Icons.Filled.Share, contentDescription = "Share") }
                 IconButton(
                     // A UPI payment QR for the current total; the customer scans to pay.
                     onClick = {
                         val pending = input.toDoubleOrNull() ?: 0.0
-                        val amt = entries.sum() + if (pending > 0.0) pending else 0.0
+                        val amt = entries.sumOf { it.amount } + if (pending > 0.0) pending else 0.0
                         if (amt > 0.0) qrAmount = amt
                     },
                     enabled = entries.isNotEmpty() || (input.toDoubleOrNull() ?: 0.0) > 0.0
@@ -269,7 +296,7 @@ fun FastBillDialog(
                 IconButton(
                     onClick = {
                         val pending = input.toDoubleOrNull()
-                        val all = if (pending != null && pending > 0.0) entries + pending else entries.toList()
+                        val all = if (pending != null && pending > 0.0) entries.map { it.amount } + pending else entries.map { it.amount }
                         saveToDiary()
                         if (all.isNotEmpty()) onSave(all)
                         onDismiss()
@@ -295,7 +322,7 @@ fun FastBillDialog(
                             textAlign = TextAlign.Center
                         )
                     }
-                    entries.forEachIndexed { i, v ->
+                    entries.forEachIndexed { i, e ->
                         // Long-press an amount to edit or delete it; the total recalculates.
                         Row(
                             Modifier.fillMaxWidth()
@@ -304,18 +331,36 @@ fun FastBillDialog(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                if (v < 0) "-" else if (i == 0) " " else "+",
+                                if (e.amount < 0) "-" else if (i == 0) " " else "+",
                                 fontSize = 30.sp, fontFamily = FontFamily.Monospace,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.65f)
                             )
-                            Text(
-                                Format.money(kotlin.math.abs(v)),
-                                modifier = Modifier.weight(1f),
-                                fontSize = 34.sp, fontFamily = FontFamily.Monospace,
-                                fontWeight = FontWeight.Bold, textAlign = TextAlign.End,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer
-                            )
+                            // With a label: two columns — the name on the left, the amount on
+                            // the right. Without one: the amount alone, as before.
+                            if (e.label.isNotBlank()) {
+                                Text(
+                                    e.label,
+                                    modifier = Modifier.weight(1f).padding(end = 8.dp),
+                                    fontSize = 18.sp, fontWeight = FontWeight.Medium,
+                                    maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                                Text(
+                                    Format.money(kotlin.math.abs(e.amount)),
+                                    fontSize = 28.sp, fontFamily = FontFamily.Monospace,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            } else {
+                                Text(
+                                    Format.money(kotlin.math.abs(e.amount)),
+                                    modifier = Modifier.weight(1f),
+                                    fontSize = 34.sp, fontFamily = FontFamily.Monospace,
+                                    fontWeight = FontWeight.Bold, textAlign = TextAlign.End,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            }
                         }
                     }
                     if (entries.isNotEmpty()) {
@@ -684,7 +729,9 @@ fun FastBillDialog(
                                         // Open in edit mode: the tape, its customer and its
                                         // narration all come back, and saving updates this entry.
                                         entries.clear()
-                                        entries.addAll(calc.amountList)
+                                        val amts = calc.amountList
+                                        val lbls = calc.labelList
+                                        entries.addAll(amts.mapIndexed { i, a -> CalcEntry(a, lbls.getOrElse(i) { "" }) })
                                         savedId = calc.id
                                         custId = calc.customerId
                                         custName = calc.customerName
@@ -910,13 +957,14 @@ fun FastBillDialog(
         )
     }
 
-    // Long-press edit: change or delete one amount, total recalculates.
+    // Long-press edit: change or delete one amount (and its label), total recalculates.
     if (editIndex in entries.indices) {
         val idx = editIndex
-        var text by remember(idx) { mutableStateOf(Format.money(kotlin.math.abs(entries[idx]))) }
+        var text by remember(idx) { mutableStateOf(Format.money(kotlin.math.abs(entries[idx].amount))) }
         // Sign is edited here too, so a line entered as + can be switched to − and the
         // total recalculates without deleting and re-typing it.
-        var plus by remember(idx) { mutableStateOf(entries[idx] >= 0) }
+        var plus by remember(idx) { mutableStateOf(entries[idx].amount >= 0) }
+        var labelText by remember(idx) { mutableStateOf(entries[idx].label) }
         AlertDialog(
             onDismissRequest = { editIndex = -1 },
             title = { Text("Edit amount ${idx + 1}") },
@@ -945,12 +993,19 @@ fun FastBillDialog(
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
                     )
+                    OutlinedTextField(
+                        value = labelText,
+                        onValueChange = { labelText = it },
+                        label = { Text("Label") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                    )
                 }
             },
             confirmButton = {
                 TextButton(onClick = {
                     val v = text.toDoubleOrNull()
-                    if (v != null && v > 0.0) entries[idx] = if (plus) v else -v
+                    if (v != null && v > 0.0) entries[idx] = CalcEntry(if (plus) v else -v, labelText.trim())
                     editIndex = -1
                 }) { Text("Save") }
             },
@@ -1038,6 +1093,96 @@ fun FastBillDialog(
         )
     }
 
+    // Label mode's popup: name this amount before it lands on the tape. Previously typed
+    // labels (the calc-label master) are offered as suggestions, filtered as it's typed.
+    if (pendingSign != 0) {
+        val suggestions = remember(labelInput) {
+            val q = labelInput.trim()
+            prefs.calcLabels.filter { q.isBlank() || it.contains(q, ignoreCase = true) }
+                .sortedBy { it.lowercase() }.take(6)
+        }
+        LaunchedEffect(Unit) { runCatching { labelFocus.requestFocus() } }
+        AlertDialog(
+            onDismissRequest = { pendingSign = 0 },
+            title = {
+                Text(
+                    (if (pendingSign < 0) "− " else "+ ") + Format.money(pendingAmount),
+                    fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = labelInput,
+                        onValueChange = { labelInput = it },
+                        label = { Text("Label") },
+                        singleLine = true,
+                        textStyle = LocalTextStyle.current.copy(fontSize = 24.sp, fontWeight = FontWeight.Bold),
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                        modifier = Modifier.fillMaxWidth().focusRequester(labelFocus)
+                    )
+                    if (suggestions.isNotEmpty()) {
+                        Column(Modifier.padding(top = 8.dp)) {
+                            suggestions.forEach { s ->
+                                Text(
+                                    s,
+                                    fontSize = 18.sp,
+                                    modifier = Modifier.fillMaxWidth()
+                                        .clickable { labelInput = s }
+                                        .padding(vertical = 10.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val lbl = labelInput.trim()
+                    entries.add(CalcEntry(pendingAmount * pendingSign, lbl))
+                    if (lbl.isNotBlank()) prefs.addCalcLabel(lbl)
+                    pendingSign = 0
+                    focus.requestFocus()
+                }) { Text("OK") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    entries.add(CalcEntry(pendingAmount * pendingSign))
+                    pendingSign = 0
+                    focus.requestFocus()
+                }) { Text("Skip") }
+            }
+        )
+    }
+
+    // Share button: text (as before) or a PDF with a label/amount column each.
+    if (showShareChoice) {
+        AlertDialog(
+            onDismissRequest = { showShareChoice = false },
+            title = { Text("Share as") },
+            text = { Text("Choose how to share this calculation.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showShareChoice = false
+                    saveToDiary()
+                    val header = if (custName.isNotBlank() && custName != com.billing.pos.data.SavedCalc.DEFAULT_CUSTOMER)
+                        custName + (if (custPhone.isNotBlank()) " - $custPhone" else "") + "\n\n" else ""
+                    shareTapeToWhatsApp(context, header + tapeText())
+                }) { Text("Text") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showShareChoice = false
+                    saveToDiary()
+                    val pending = input.toDoubleOrNull()
+                    val all = if (pending != null && pending > 0.0) entries + CalcEntry(pending) else entries.toList()
+                    runCatching { buildTapePdf(context, custName, custPhone, narration, all) }
+                        .onSuccess { shareTapePdf(context, it) }
+                }) { Text("PDF") }
+            }
+        )
+    }
+
     // ---- end of dialog file helpers ----
 }
 
@@ -1056,6 +1201,62 @@ private fun shareTapeToWhatsApp(context: android.content.Context, text: String) 
     runCatching {
         context.startActivity(
             android.content.Intent.createChooser(send, "Share total")
+                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
+    }
+}
+
+/** The current tape as a PDF: one row per entry, its label (if any) alongside its amount. */
+private fun buildTapePdf(
+    context: android.content.Context,
+    customerName: String,
+    customerPhone: String,
+    narration: String,
+    entries: List<CalcEntry>
+): java.io.File {
+    val cols = listOf(
+        com.billing.pos.pdf.TablePdf.Col("#", 0.5f),
+        com.billing.pos.pdf.TablePdf.Col("Label", 2.4f),
+        com.billing.pos.pdf.TablePdf.Col("Amount", 1.2f, right = true)
+    )
+    val data = entries.mapIndexed { i, e ->
+        listOf(
+            (i + 1).toString(),
+            e.label.ifBlank { "-" },
+            (if (e.amount < 0) "- " else "+ ") + Format.money(kotlin.math.abs(e.amount))
+        )
+    }
+    val subtitle = buildString {
+        if (customerName.isNotBlank() && customerName != com.billing.pos.data.SavedCalc.DEFAULT_CUSTOMER) {
+            append(customerName)
+            if (customerPhone.isNotBlank()) append(" - ").append(customerPhone)
+        }
+        if (narration.isNotBlank()) { if (isNotEmpty()) append("\n"); append(narration) }
+    }
+    return com.billing.pos.pdf.TablePdf.generate(
+        context,
+        com.billing.pos.data.AppPrefs(context).company,
+        "Calculation",
+        subtitle,
+        cols, data,
+        listOf("Total" to Format.money(entries.sumOf { it.amount }))
+    )
+}
+
+/** Shares the current tape's PDF. */
+private fun shareTapePdf(context: android.content.Context, file: java.io.File) {
+    runCatching {
+        val uri = androidx.core.content.FileProvider.getUriForFile(context, context.packageName + ".provider", file)
+        val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+            type = "application/pdf"
+            putExtra(android.content.Intent.EXTRA_STREAM, uri)
+            addFlags(
+                android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                    android.content.Intent.FLAG_ACTIVITY_NEW_TASK
+            )
+        }
+        context.startActivity(
+            android.content.Intent.createChooser(send, "Share calculation")
                 .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
         )
     }

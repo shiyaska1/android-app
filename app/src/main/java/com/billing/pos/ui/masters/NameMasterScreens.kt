@@ -46,6 +46,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.billing.pos.data.AppPrefs
 import com.billing.pos.data.Repository
+import com.billing.pos.data.SavedCalc
 import com.billing.pos.ui.billing.collectAsStateSafe
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -135,6 +136,54 @@ class CustomerTypeMasterViewModel(app: Application) : AndroidViewModel(app) {
     }
 }
 
+class CalcLabelMasterViewModel(app: Application) : AndroidViewModel(app) {
+    private val repo = Repository(app)
+    private val prefs = AppPrefs(app)
+    val message = MutableStateFlow<String?>(null)
+    fun consumeMessage() { message.value = null }
+
+    /** Name -> how many saved calculations currently carry an entry with that label. */
+    val entries: StateFlow<List<Pair<String, Int>>> = repo.savedCalcs.map { calcs ->
+        val counts = HashMap<String, Int>()
+        calcs.forEach { c -> c.labelList.filter { it.isNotBlank() }.forEach { l -> counts[l] = (counts[l] ?: 0) + 1 } }
+        val names = (prefs.calcLabels + counts.keys).distinct().sortedBy { it.lowercase() }
+        names.map { it to (counts[it] ?: 0) }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun add(name: String) {
+        val n = name.trim()
+        if (n.isBlank()) { message.value = "Enter a name"; return }
+        prefs.addCalcLabel(n)
+        message.value = "Added"
+    }
+
+    fun rename(old: String, newName: String) {
+        val n = newName.trim()
+        if (n.isBlank() || n.equals(old, true)) return
+        viewModelScope.launch {
+            prefs.calcLabels = prefs.calcLabels.map { if (it.equals(old, true)) n else it }.distinct()
+            val toUpdate = repo.savedCalcsAll().filter { c -> c.labelList.any { it.equals(old, true) } }
+            toUpdate.forEach { c ->
+                val newLabels = c.labelList.map { l -> if (l.equals(old, true)) n else l }
+                repo.saveCalc(c.copy(labels = SavedCalc.packLabels(newLabels)))
+            }
+            message.value = "Renamed to $n" + (if (toUpdate.isNotEmpty()) " (${toUpdate.size} calculation(s) updated)" else "")
+        }
+    }
+
+    fun delete(name: String) {
+        viewModelScope.launch {
+            prefs.calcLabels = prefs.calcLabels.filterNot { it.equals(name, true) }
+            val toUpdate = repo.savedCalcsAll().filter { c -> c.labelList.any { it.equals(name, true) } }
+            toUpdate.forEach { c ->
+                val newLabels = c.labelList.map { l -> if (l.equals(name, true)) "" else l }
+                repo.saveCalc(c.copy(labels = SavedCalc.packLabels(newLabels)))
+            }
+            message.value = "Deleted" + (if (toUpdate.isNotEmpty()) " (cleared from ${toUpdate.size} calculation(s))" else "")
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ItemCategoryMasterScreen(onBack: () -> Unit, vm: ItemCategoryMasterViewModel = viewModel()) {
@@ -159,6 +208,23 @@ fun CustomerTypeMasterScreen(onBack: () -> Unit, vm: CustomerTypeMasterViewModel
     NameMasterScreen(
         title = "Customer Types",
         countLabel = { n -> if (n == 1) "1 customer" else "$n customers" },
+        entries = entries,
+        message = vm.message,
+        onConsumeMessage = vm::consumeMessage,
+        onAdd = vm::add,
+        onRename = vm::rename,
+        onDelete = vm::delete,
+        onBack = onBack
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun CalcLabelMasterScreen(onBack: () -> Unit, vm: CalcLabelMasterViewModel = viewModel()) {
+    val entries by vm.entries.collectAsStateSafe()
+    NameMasterScreen(
+        title = "Calculator Labels",
+        countLabel = { n -> if (n == 1) "1 calculation" else "$n calculations" },
         entries = entries,
         message = vm.message,
         onConsumeMessage = vm::consumeMessage,

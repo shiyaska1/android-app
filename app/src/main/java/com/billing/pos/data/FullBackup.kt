@@ -1742,7 +1742,7 @@ object FullBackup {
         .put("dateMillis", c.dateMillis).put("amounts", c.amounts)
         .put("total", c.total).put("title", c.title)
         .put("customerId", c.customerId).put("customerName", c.customerName)
-        .put("narration", c.narration)
+        .put("narration", c.narration).put("labels", c.labels)
 
     private fun readSavedCalc(o: JSONObject) = SavedCalc(
         id = o.optLong("id"), dateMillis = o.optLong("dateMillis"),
@@ -1750,7 +1750,8 @@ object FullBackup {
         title = o.optString("title"),
         customerId = o.optLong("customerId"),
         customerName = o.optString("customerName", SavedCalc.DEFAULT_CUSTOMER),
-        narration = o.optString("narration")
+        narration = o.optString("narration"),
+        labels = o.optString("labels")
     )
 
     private fun orderJson(o: CustOrder) = JSONObject().put("id", o.id).put("orderNo", o.orderNo)
