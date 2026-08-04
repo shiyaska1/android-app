@@ -37,10 +37,13 @@ object ThermalPdf {
     fun invoice(context: Context, company: CompanyInfo, bill: Bill, lines: List<BillItem>, imagePaths: List<String> = emptyList(), title: String? = null): Uri {
         applyWidth(context)
         val prefs = com.billing.pos.data.AppPrefs(context)
-        val gst = prefs.gstEnabled
+        // A No Tax Invoice never shows GST info, regardless of Settings — same as GST mode off.
+        val noTax = bill.isNoTax
+        val gst = !noTax && prefs.gstEnabled
         val composition = gst && prefs.compositionScheme
         val split = com.billing.pos.data.GstTax.split(bill.taxTotal, company.gstin, bill.customerState)
         val actualTitle = title ?: when {
+            noTax -> ""
             composition -> "BILL OF SUPPLY"
             gst -> "TAX INVOICE"
             else -> "INVOICE"
@@ -49,17 +52,22 @@ object ThermalPdf {
         val displaySubTotal = if (gst) bill.subTotal else bill.subTotal + bill.taxTotal + bill.cessTotal
         val out = ArrayList<Line>()
         fun add(text: String, bold: Boolean = false) { out.add(Line(text, bold)) }
-        addHeader(out, company, gst)
-        add(center(actualTitle), true)
-        add(rule())
-        add("Bill: ${bill.billNo}")
-        add("Date: ${Format.dateTime(bill.dateMillis)}")
-        add("Cust: " + clip(bill.customerName, 26))
-        add("Pay : ${bill.paymentMethod}")
-        if (gst) {
-            val supplyType = if (bill.customerGstin.isNotBlank()) "B2B" else "B2C"
-            if (bill.customerGstin.isNotBlank()) add(clip("GSTIN: ${bill.customerGstin}", COLS))
-            add("Supply: $supplyType")
+        if (noTax) {
+            add("Date: ${Format.dateTime(bill.dateMillis)}")
+            add("Ref No: ${bill.billNo}")
+        } else {
+            addHeader(out, company, gst)
+            add(center(actualTitle), true)
+            add(rule())
+            add("Bill: ${bill.billNo}")
+            add("Date: ${Format.dateTime(bill.dateMillis)}")
+            add("Cust: " + clip(bill.customerName, 26))
+            add("Pay : ${bill.paymentMethod}")
+            if (gst) {
+                val supplyType = if (bill.customerGstin.isNotBlank()) "B2B" else "B2C"
+                if (bill.customerGstin.isNotBlank()) add(clip("GSTIN: ${bill.customerGstin}", COLS))
+                add("Supply: $supplyType")
+            }
         }
         add(rule())
         add(row("Item", "Qty", "Amount"))

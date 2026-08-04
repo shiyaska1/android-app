@@ -331,10 +331,13 @@ object ThermalPrinter {
 
     private fun buildReceipt(context: Context, company: CompanyInfo, bill: Bill, lines: List<BillItem>, imagePaths: List<String> = emptyList(), title: String? = null, qrPath: String? = null): ByteArray {
         val prefs = com.billing.pos.data.AppPrefs(context)
-        val gst = prefs.gstEnabled
+        // A No Tax Invoice never shows GST info, regardless of Settings — same as GST mode off.
+        val noTax = bill.isNoTax
+        val gst = !noTax && prefs.gstEnabled
         val composition = gst && prefs.compositionScheme
         val split = com.billing.pos.data.GstTax.split(bill.taxTotal, company.gstin, bill.customerState)
         val actualTitle = title ?: when {
+            noTax -> ""
             composition -> "BILL OF SUPPLY"
             gst -> "TAX INVOICE"
             else -> "INVOICE"
@@ -342,20 +345,25 @@ object ThermalPrinter {
         // With GST mode off, tax isn't itemised at all — Sub Total is the full inclusive amount.
         val displaySubTotal = if (gst) bill.subTotal else bill.subTotal + bill.taxTotal + bill.cessTotal
         val sb = StringBuilder()
-        sb.append(center(company.name)).append('\n')
-        if (company.address.isNotBlank()) sb.append(center(company.address)).append('\n')
-        if (company.phone.isNotBlank()) sb.append(center("Ph: ${company.phone}")).append('\n')
-        if (gst && company.gstin.isNotBlank()) sb.append(center("GSTIN: ${company.gstin}")).append('\n')
-        sb.append(center(actualTitle)).append('\n')
-        sb.append(line()).append('\n')
-        sb.append("Bill: ${bill.billNo}\n")
-        sb.append("Date: ${Format.dateTime(bill.dateMillis)}\n")
-        sb.append("Cust: ${bill.customerName}\n")
-        sb.append("Pay : ${bill.paymentMethod}\n")
-        if (gst) {
-            val supplyType = if (bill.customerGstin.isNotBlank()) "B2B" else "B2C"
-            if (bill.customerGstin.isNotBlank()) sb.append(clip("GSTIN: ${bill.customerGstin}", COLS)).append('\n')
-            sb.append("Supply: $supplyType\n")
+        if (noTax) {
+            sb.append("Date: ${Format.dateTime(bill.dateMillis)}\n")
+            sb.append("Ref No: ${bill.billNo}\n")
+        } else {
+            sb.append(center(company.name)).append('\n')
+            if (company.address.isNotBlank()) sb.append(center(company.address)).append('\n')
+            if (company.phone.isNotBlank()) sb.append(center("Ph: ${company.phone}")).append('\n')
+            if (gst && company.gstin.isNotBlank()) sb.append(center("GSTIN: ${company.gstin}")).append('\n')
+            sb.append(center(actualTitle)).append('\n')
+            sb.append(line()).append('\n')
+            sb.append("Bill: ${bill.billNo}\n")
+            sb.append("Date: ${Format.dateTime(bill.dateMillis)}\n")
+            sb.append("Cust: ${bill.customerName}\n")
+            sb.append("Pay : ${bill.paymentMethod}\n")
+            if (gst) {
+                val supplyType = if (bill.customerGstin.isNotBlank()) "B2B" else "B2C"
+                if (bill.customerGstin.isNotBlank()) sb.append(clip("GSTIN: ${bill.customerGstin}", COLS)).append('\n')
+                sb.append("Supply: $supplyType\n")
+            }
         }
         sb.append(line()).append('\n')
         sb.append(row("Item", "Qty", "Amount")).append('\n')

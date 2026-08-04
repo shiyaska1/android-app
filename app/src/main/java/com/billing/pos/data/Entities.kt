@@ -95,7 +95,10 @@ data class Bill(
     val isLegacy: Boolean = false,
     /** Last created/edited time — distinct from [dateMillis] (the invoice date the user picks).
      * Drives the cloud-sync "only push recent changes" window. */
-    val updatedAt: Long = 0
+    val updatedAt: Long = 0,
+    /** A plain no-tax invoice: no company header, no title, no tax shown on print, its own
+     *  numbering series, and excluded from every GST/VAT report and the main Invoice list. */
+    val isNoTax: Boolean = false
 ) {
     val balance: Double get() = (grandTotal - paidAmount).coerceAtLeast(0.0)
     val paymentStatus: String

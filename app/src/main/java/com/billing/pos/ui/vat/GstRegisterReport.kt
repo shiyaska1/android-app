@@ -184,7 +184,7 @@ fun GstRegisterSection(vm: VatReportViewModel, gstEnabled: Boolean) {
         allRows = withContext(Dispatchers.IO) {
             when (kind) {
                 RegisterKind.SALES ->
-                    salesRegister(repo, company, repo.billsAll().filter { it.dateMillis in lo..hi })
+                    salesRegister(repo, company, repo.billsAll().filter { it.dateMillis in lo..hi && !it.isNoTax })
                 RegisterKind.PURCHASE ->
                     purchaseRegister(repo, company, repo.purchasesAll().filter { it.dateMillis in lo..hi })
                 RegisterKind.SALES_RETURN ->

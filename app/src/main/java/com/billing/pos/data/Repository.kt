@@ -1022,6 +1022,14 @@ class Repository(private val context: Context) {
         return tagPrefix() + "INV-" + n.toString().padStart(4, '0')
     }
 
+    /** Bill number for the next No Tax Invoice — its own series, separate from [nextBillNo],
+     *  using the prefix set in Settings (e.g. NT-0001, NT-0002, ...). */
+    suspend fun nextNoTaxBillNo(): String {
+        val prefix = AppPrefs(context).noTaxInvoicePrefix.ifBlank { "NT-" }
+        val n = billDao.localCountNoTax() + 1
+        return tagPrefix() + prefix + n.toString().padStart(4, '0')
+    }
+
     /** Start of the Indian financial year (1 April, 00:00) containing [millis]. */
     private fun financialYearStartMillis(millis: Long): Long {
         val c = java.util.Calendar.getInstance().apply {

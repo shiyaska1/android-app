@@ -67,6 +67,22 @@ class AppPrefs(context: Context) {
         get() = p.getBoolean("gst_cess_enabled", false)
         set(v) { p.edit().putBoolean("gst_cess_enabled", v).apply() }
 
+    /**
+     * No Tax Invoice — off by default. Turning it on adds a per-sale "No Tax Invoice" switch to
+     * the Billing screen: that invoice prints with no company header, no title, and no tax
+     * shown (only date + bill no, then the same item table/totals as usual), uses its own
+     * numbering series ([noTaxInvoicePrefix]), and is excluded from every GST/VAT report and
+     * the main Invoice list — it only shows in the separate No Tax Invoices list.
+     */
+    var noTaxInvoiceEnabled: Boolean
+        get() = p.getBoolean("no_tax_invoice_enabled", false)
+        set(v) { p.edit().putBoolean("no_tax_invoice_enabled", v).apply() }
+
+    /** Number-series prefix for No Tax Invoices, e.g. "NT-" giving NT-0001, NT-0002, ... */
+    var noTaxInvoicePrefix: String
+        get() = p.getString("no_tax_invoice_prefix", "NT-") ?: "NT-"
+        set(v) { p.edit().putString("no_tax_invoice_prefix", v.trim()).apply() }
+
     /** UPI ID (VPA) money is collected to, e.g. name@okaxis, and the payee name shown. */
     var upiId: String
         get() = p.getString("upi_id", "") ?: ""

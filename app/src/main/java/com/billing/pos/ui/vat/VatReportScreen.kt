@@ -112,7 +112,7 @@ class VatReportViewModel(app: Application) : AndroidViewModel(app) {
     fun load() {
         viewModelScope.launch {
             val lo = startOfDay(from); val hi = endOfDay(to)
-            val bills = withContext(Dispatchers.IO) { repo.billsAll() }.filter { it.dateMillis in lo..hi }.sortedBy { it.dateMillis }
+            val bills = withContext(Dispatchers.IO) { repo.billsAll() }.filter { it.dateMillis in lo..hi && !it.isNoTax }.sortedBy { it.dateMillis }
             val purchases = withContext(Dispatchers.IO) { repo.purchasesAll() }.filter { it.dateMillis in lo..hi }.sortedBy { it.dateMillis }
             val saleLines = withContext(Dispatchers.IO) { repo.saleTaxLines() }.filter { it.dateMillis in lo..hi }
             val purLines = withContext(Dispatchers.IO) { repo.purchaseTaxLines() }.filter { it.dateMillis in lo..hi }

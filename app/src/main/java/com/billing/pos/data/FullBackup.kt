@@ -1361,7 +1361,7 @@ object FullBackup {
         .put("additionalCharge", b.additionalCharge).put("discount", b.discount)
         .put("grandTotal", b.grandTotal).put("paidAmount", b.paidAmount).put("cessTotal", b.cessTotal)
         .put("customerGstin", b.customerGstin).put("customerState", b.customerState).put("source", b.source).put("remarks", b.remarks)
-        .put("deviceId", b.deviceId)
+        .put("deviceId", b.deviceId).put("isNoTax", b.isNoTax)
 
     private fun lineJson(l: BillItem) = JSONObject().put("id", l.id).put("billId", l.billId)
         .put("name", l.name).put("qty", l.qty).put("price", l.price)
@@ -1913,7 +1913,8 @@ object FullBackup {
         paidAmount = o.optDouble("paidAmount", 0.0), cessTotal = o.optDouble("cessTotal", 0.0),
         customerGstin = o.optString("customerGstin"),
         customerState = o.optString("customerState"),
-        source = o.optString("source"), remarks = o.optString("remarks"), deviceId = o.optString("deviceId")
+        source = o.optString("source"), remarks = o.optString("remarks"), deviceId = o.optString("deviceId"),
+        isNoTax = o.optBoolean("isNoTax", false)
     )
 
     private fun readLine(o: JSONObject) = BillItem(

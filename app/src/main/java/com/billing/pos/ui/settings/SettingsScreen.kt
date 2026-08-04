@@ -93,6 +93,8 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
     var gstEnabled by remember { mutableStateOf(prefs.gstEnabled) }
     var compositionScheme by remember { mutableStateOf(prefs.compositionScheme) }
     var cessEnabled by remember { mutableStateOf(prefs.cessEnabled) }
+    var noTaxInvoiceEnabled by remember { mutableStateOf(prefs.noTaxInvoiceEnabled) }
+    var noTaxInvoicePrefix by remember { mutableStateOf(prefs.noTaxInvoicePrefix) }
     var priceIncludesTax by remember { mutableStateOf(prefs.priceIncludesTax) }
     var upiId by remember { mutableStateOf(prefs.upiId) }
     var upiName by remember { mutableStateOf(prefs.upiName) }
@@ -279,6 +281,28 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
                 }
                 Switch(checked = priceIncludesTax, onCheckedChange = { priceIncludesTax = it; prefs.priceIncludesTax = it })
             }
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
+                Column(Modifier.weight(1f)) {
+                    Text("No Tax Invoice", style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        "Off by default. Turns on a per-sale \"No Tax Invoice\" switch on the Billing " +
+                            "screen: that invoice prints with no company header, no title, and no tax shown " +
+                            "(only date + bill no, then the same items and totals). It gets its own numbering " +
+                            "series below, and is excluded from every GST/VAT report and the main Invoice " +
+                            "list — it only shows in the separate No Tax Invoices list.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline
+                    )
+                }
+                Switch(checked = noTaxInvoiceEnabled, onCheckedChange = { noTaxInvoiceEnabled = it; prefs.noTaxInvoiceEnabled = it })
+            }
+            if (noTaxInvoiceEnabled) {
+                OutlinedTextField(
+                    value = noTaxInvoicePrefix,
+                    onValueChange = { noTaxInvoicePrefix = it },
+                    label = { Text("No Tax Invoice number prefix") }, singleLine = true,
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                )
+            }
             OutlinedTextField(
                 value = upiId, onValueChange = { upiId = it },
                 label = { Text("UPI ID for payment QR (e.g. name@okaxis)") }, singleLine = true,
@@ -299,6 +323,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
                     prefs.companyAddress = address.trim()
                     prefs.companyPhone = phone.trim()
                     prefs.companyGstin = gstin.trim()
+                    prefs.noTaxInvoicePrefix = noTaxInvoicePrefix.trim().ifBlank { "NT-" }
                     prefs.upiId = upiId.trim()
                     prefs.upiName = upiName.trim()
                     prefs.showUpiQrOnPrint = upiQrOnPrint

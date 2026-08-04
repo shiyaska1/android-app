@@ -589,7 +589,17 @@ private fun AppNav() {
         composable("invoices") {
             InvoiceListScreen(
                 onBack = { nav.popBackStack() },
-                onEdit = { id -> nav.navigate("billing/edit/$id") }
+                onEdit = { id -> nav.navigate("billing/edit/$id") },
+                onOpenNoTax = if (com.billing.pos.data.AppPrefs(LocalContext.current).noTaxInvoiceEnabled) {
+                    { nav.navigate("invoices/notax") }
+                } else null
+            )
+        }
+        composable("invoices/notax") {
+            InvoiceListScreen(
+                onBack = { nav.popBackStack() },
+                onEdit = { id -> nav.navigate("billing/edit/$id") },
+                noTaxOnly = true
             )
         }
         composable("reports") {

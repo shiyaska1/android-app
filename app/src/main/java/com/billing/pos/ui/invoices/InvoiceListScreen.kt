@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.GridOn
 import androidx.compose.material.icons.filled.PictureAsPdf
+import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Divider
@@ -138,12 +139,19 @@ class InvoiceListViewModel(app: Application) : AndroidViewModel(app) {
 fun InvoiceListScreen(
     onBack: () -> Unit,
     onEdit: (Long) -> Unit,
+    /** True: shows only No Tax Invoices, in their own list. False (default): the regular
+     *  Invoice list, which excludes No Tax Invoices — they never mix. */
+    noTaxOnly: Boolean = false,
+    /** Link to the No Tax Invoices list, shown on the regular list only when Settings has that
+     *  feature turned on. Null hides the link (also used on the No Tax list itself). */
+    onOpenNoTax: (() -> Unit)? = null,
     vm: InvoiceListViewModel = viewModel()
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
-    val bills by vm.bills.collectAsStateSafe()
+    val allBills by vm.bills.collectAsStateSafe()
+    val bills = remember(allBills, noTaxOnly) { allBills.filter { it.isNoTax == noTaxOnly } }
     val phoneByCustomer by vm.phoneByCustomer.collectAsStateSafe()
     val itemNamesByBill by vm.itemNamesByBill.collectAsStateSafe()
     val message by vm.message.collectAsStateSafe()
@@ -173,7 +181,8 @@ fun InvoiceListScreen(
             listOf(it.billNo, Format.date(it.dateMillis), it.customerName, it.paymentMethod, it.paymentStatus, Format.money(it.grandTotal))
         }
         val footer = listOf("TOTAL" to Format.money(filtered.sumOf { it.grandTotal }))
-        return TablePdf.generate(context, AppPrefs(context).company, "Invoices", "Count: ${filtered.size}", cols, data, footer)
+        val title = if (noTaxOnly) "No Tax Invoices" else "Invoices"
+        return TablePdf.generate(context, AppPrefs(context).company, title, "Count: ${filtered.size}", cols, data, footer)
     }
     val downloadXlsx = rememberXlsxDownloader { msg -> scope.launch { snackbar.showSnackbar(msg) } }
     fun buildInvoicesXlsx(): java.io.File {
@@ -214,7 +223,7 @@ fun InvoiceListScreen(
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             TopAppBar(
-                title = { Text("Invoices") },
+                title = { Text(if (noTaxOnly) "No Tax Invoices" else "Invoices") },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -227,6 +236,11 @@ fun InvoiceListScreen(
                     actionIconContentColor = MaterialTheme.colorScheme.onPrimary
                 ),
                 actions = {
+                    if (!noTaxOnly && onOpenNoTax != null) {
+                        IconButton(onClick = onOpenNoTax) {
+                            Icon(Icons.Filled.ReceiptLong, contentDescription = "No Tax Invoices")
+                        }
+                    }
                     IconButton(onClick = { downloadPdf { buildInvoicesPdf() } }) {
                         Icon(Icons.Filled.PictureAsPdf, contentDescription = "Download list PDF")
                     }

@@ -141,6 +141,15 @@ class BillingViewModel(private val app: Application) : AndroidViewModel(app) {
      */
     var estimateMode by mutableStateOf(false); private set
 
+    /** No Tax Invoice for this sale — see [Bill.isNoTax]. Only offered when Settings has
+     *  "No Tax Invoice" turned on; always starts off for a fresh bill. */
+    var noTaxInvoice by mutableStateOf(false); private set
+    fun setNoTaxInvoice(v: Boolean) {
+        if (noTaxInvoice == v) return
+        noTaxInvoice = v
+        if (editingBillId == null && !estimateMode) viewModelScope.launch { billNo = nextVoucherNo() }
+    }
+
     /** Non-null when editing an existing bill. */
     var editingBillId by mutableStateOf<Long?>(null); private set
     private var editingSource: String = ""
@@ -500,7 +509,8 @@ class BillingViewModel(private val app: Application) : AndroidViewModel(app) {
             customerState = customer.state,
             source = editingSource,
             remarks = remarks.trim(),
-            deviceId = editingDeviceId.ifBlank { com.billing.pos.data.License.deviceId(app) }
+            deviceId = editingDeviceId.ifBlank { com.billing.pos.data.License.deviceId(app) },
+            isNoTax = noTaxInvoice
         )
         val lines = cart.map {
             BillItem(
@@ -591,6 +601,7 @@ class BillingViewModel(private val app: Application) : AndroidViewModel(app) {
             editingDeviceId = bill.deviceId
             editingPaidAmount = bill.paidAmount
             editingWasCredit = bill.paymentMethod == PaymentMethod.CREDIT.label
+            noTaxInvoice = bill.isNoTax
             billNo = bill.billNo
             dateMillis = bill.dateMillis
             payment = PaymentMethod.values().firstOrNull { it.label == bill.paymentMethod } ?: PaymentMethod.CASH
@@ -630,8 +641,11 @@ class BillingViewModel(private val app: Application) : AndroidViewModel(app) {
         if (editingBillId == null) viewModelScope.launch { billNo = nextVoucherNo() }
     }
 
-    private suspend fun nextVoucherNo(): String =
-        if (estimateMode) repo.nextEstimateNo() else repo.nextBillNo()
+    private suspend fun nextVoucherNo(): String = when {
+        estimateMode -> repo.nextEstimateNo()
+        noTaxInvoice -> repo.nextNoTaxBillNo()
+        else -> repo.nextBillNo()
+    }
 
     fun newBill() {
         cart.clear()
@@ -644,6 +658,7 @@ class BillingViewModel(private val app: Application) : AndroidViewModel(app) {
         manualTotalText = ""
         payment = PaymentMethod.CASH
         dateMillis = System.currentTimeMillis()
+        noTaxInvoice = false
         selectedCustomer = customers.value.firstOrNull { it.isDefault } ?: customers.value.firstOrNull()
         editingBillId = null
         editingSource = ""

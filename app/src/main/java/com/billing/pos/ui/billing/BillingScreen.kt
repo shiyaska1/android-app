@@ -73,6 +73,7 @@ import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -422,6 +423,19 @@ fun BillingScreen(
                             DropdownMenuItem(text = { Text(m.label) }, onClick = { vm.selectPayment(m); payExpanded = false })
                         }
                     }
+                }
+            }
+
+            // No Tax Invoice: a per-sale switch, only offered when Settings has it turned on.
+            val noTaxInvoiceEnabled = remember { com.billing.pos.data.AppPrefs(context).noTaxInvoiceEnabled }
+            if (noTaxInvoiceEnabled && !vm.estimateMode) {
+                Row(
+                    Modifier.fillMaxWidth().padding(top = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text("No Tax Invoice", style = MaterialTheme.typography.bodyMedium)
+                    Switch(checked = vm.noTaxInvoice, onCheckedChange = { vm.setNoTaxInvoice(it) })
                 }
             }
 
