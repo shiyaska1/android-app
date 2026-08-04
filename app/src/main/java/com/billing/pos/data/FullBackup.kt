@@ -1077,7 +1077,7 @@ object FullBackup {
         // attachment blocks above (items themselves are already deduped by name, so unlike
         // diary entries this dedup is effective across repeated merge cycles).
         val existingItemAttNames = db.itemAttachmentDao().all().groupBy { it.itemId }
-            .mapValues { (_, l) -> l.map { it.name }.toMutableSet() }
+            .mapValues { (_, l) -> l.map { it.name }.toMutableSet() }.toMutableMap()
         root.optJSONArray("itemAttachments")?.let {
             for (i in 0 until it.length()) {
                 val a = readItemAtt(context, it.getJSONObject(i)); val ni = itemMap[a.itemId] ?: continue
@@ -1264,7 +1264,7 @@ object FullBackup {
         // (which re-send the same attachment records every time, since push never sends the
         // files themselves) don't keep re-inserting the same attachment forever.
         val existingBillAttNames = db.billAttachmentDao().all().groupBy { it.billId }
-            .mapValues { (_, l) -> l.map { it.name }.toMutableSet() }
+            .mapValues { (_, l) -> l.map { it.name }.toMutableSet() }.toMutableMap()
         root.optJSONArray("billAttachments")?.let {
             for (i in 0 until it.length()) {
                 val a = readBillAtt(context, it.getJSONObject(i)); val nb = billMap[a.billId] ?: continue
@@ -1275,7 +1275,7 @@ object FullBackup {
         }
         // Payment attachments (voice / photo / file) — same per-parent dedup as bill attachments.
         val existingExpenseAttNames = db.expenseAttachmentDao().all().groupBy { it.expenseId }
-            .mapValues { (_, l) -> l.map { it.name }.toMutableSet() }
+            .mapValues { (_, l) -> l.map { it.name }.toMutableSet() }.toMutableMap()
         root.optJSONArray("expenseAttachments")?.let {
             for (i in 0 until it.length()) {
                 val a = readExpenseAtt(context, it.getJSONObject(i)); val ne = expMap[a.expenseId] ?: continue
@@ -1287,7 +1287,7 @@ object FullBackup {
         // Customer documents follow whichever customer row they ended up attached to — same
         // per-parent dedup as bill attachments.
         val existingCustAttNames = db.customerAttachmentDao().all().groupBy { it.customerId }
-            .mapValues { (_, l) -> l.map { it.name }.toMutableSet() }
+            .mapValues { (_, l) -> l.map { it.name }.toMutableSet() }.toMutableMap()
         root.optJSONArray("customerAttachments")?.let {
             for (i in 0 until it.length()) {
                 val a2 = readCustAtt(context, it.getJSONObject(i))
