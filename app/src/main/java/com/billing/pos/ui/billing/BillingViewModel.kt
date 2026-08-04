@@ -147,6 +147,7 @@ class BillingViewModel(private val app: Application) : AndroidViewModel(app) {
     fun updateNoTaxInvoice(v: Boolean) {
         if (noTaxInvoice == v) return
         noTaxInvoice = v
+        dirty = true
         if (editingBillId == null && !estimateMode) viewModelScope.launch { billNo = nextVoucherNo() }
     }
 

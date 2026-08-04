@@ -4,6 +4,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -26,6 +27,8 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
 import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Divider
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -46,6 +49,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -53,14 +57,39 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import com.billing.pos.data.AppPrefs
 import com.billing.pos.util.Format
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /** Copies a picked file (image or PDF) into app storage, keeping a sensible extension. */
 private fun mmText(v: Double): String = if (v == v.toLong().toDouble()) v.toLong().toString() else v.toString()
+
+private val SEARCH_HIGHLIGHT = Color(0xFFFFEB3B)
+
+/** A settings label that records its own on-screen position (for the search box to scroll to)
+ *  and paints itself yellow while it's the current search match. */
+@Composable
+private fun HighlightText(
+    text: String,
+    style: TextStyle,
+    anchors: MutableMap<String, Float>,
+    highlightedKey: String?,
+    modifier: Modifier = Modifier
+) {
+    Text(
+        text, style = style,
+        modifier = modifier
+            .onGloballyPositioned { anchors[text] = it.positionInRoot().y }
+            .then(if (highlightedKey == text) Modifier.background(SEARCH_HIGHLIGHT) else Modifier)
+    )
+}
 
 private fun copyToAppFiles(context: android.content.Context, uri: android.net.Uri, baseName: String): String? {
     val type = context.contentResolver.getType(uri) ?: ""
@@ -87,6 +116,25 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
     val prefs = remember { AppPrefs(context) }
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
+
+    // Search box: jumps to and highlights a matching setting's label. Each labelled section
+    // records its own screen position via HighlightText below as the page composes/scrolls.
+    val scrollState = rememberScrollState()
+    val settingAnchors = remember { mutableMapOf<String, Float>() }
+    var settingsTop by remember { mutableStateOf(0f) }
+    var settingsQuery by remember { mutableStateOf("") }
+    var highlightedSetting by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(settingsQuery) {
+        val q = settingsQuery.trim()
+        if (q.length < 2) { highlightedSetting = null; return@LaunchedEffect }
+        delay(300)
+        val match = settingAnchors.entries.firstOrNull { it.key.contains(q, ignoreCase = true) }
+        highlightedSetting = match?.key
+        if (match != null) {
+            val target = (scrollState.value + match.value - settingsTop - 24f).toInt().coerceAtLeast(0)
+            scrollState.animateScrollTo(target)
+        }
+    }
 
     var name by remember { mutableStateOf(prefs.companyName) }
     var address by remember { mutableStateOf(prefs.companyAddress) }
@@ -198,8 +246,24 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
                 .fillMaxSize()
                 .padding(pad)
                 .padding(16.dp)
-                .verticalScroll(rememberScrollState())
+                .onGloballyPositioned { settingsTop = it.positionInRoot().y }
+                .verticalScroll(scrollState)
         ) {
+            OutlinedTextField(
+                value = settingsQuery, onValueChange = { settingsQuery = it },
+                placeholder = { Text("Search settings — GST, UPI, printer, barcode…") },
+                leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                trailingIcon = {
+                    if (settingsQuery.isNotBlank()) {
+                        IconButton(onClick = { settingsQuery = ""; highlightedSetting = null }) {
+                            Icon(Icons.Filled.Close, contentDescription = "Clear search")
+                        }
+                    }
+                },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
+            )
+
             // Device ID (used for licensing / activation).
             Text(
                 "Device ID",
@@ -244,7 +308,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
             )
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
                 Column(Modifier.weight(1f)) {
-                    Text("GST mode (India)", style = MaterialTheme.typography.bodyMedium)
+                    HighlightText("GST mode (India)", MaterialTheme.typography.bodyMedium, settingAnchors, highlightedSetting)
                     Text(
                         "Item entry shows \"GST %\" instead of \"Tax %\". Invoices always print as " +
                             "\"TAX INVOICE\", split the tax into CGST + SGST (assumes sales within your " +
@@ -257,7 +321,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
             if (gstEnabled) {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
                     Column(Modifier.weight(1f)) {
-                        Text("Composition scheme dealer", style = MaterialTheme.typography.bodyMedium)
+                        HighlightText("Composition scheme dealer", MaterialTheme.typography.bodyMedium, settingAnchors, highlightedSetting)
                         Text(
                             "A composition dealer can't show tax as a separate line by law. Invoices " +
                                 "title as \"BILL OF SUPPLY\" and hide the CGST/SGST/IGST breakup — only the " +
@@ -269,7 +333,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
                     Column(Modifier.weight(1f)) {
-                        Text("GST Compensation Cess", style = MaterialTheme.typography.bodyMedium)
+                        HighlightText("GST Compensation Cess", MaterialTheme.typography.bodyMedium, settingAnchors, highlightedSetting)
                         Text(
                             "Only a short list of goods carry Cess on top of GST (tobacco, aerated drinks, " +
                                 "coal, luxury vehicles, ...). Off by default — turn on to show a Cess % field " +
@@ -282,7 +346,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
             }
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
                 Column(Modifier.weight(1f)) {
-                    Text("Price includes tax", style = MaterialTheme.typography.bodyMedium)
+                    HighlightText("Price includes tax", MaterialTheme.typography.bodyMedium, settingAnchors, highlightedSetting)
                     Text(
                         "On (default): item prices already include tax — the tax amount is worked out " +
                             "of the price, not added on top, so Sub Total + Tax always equals the price " +
@@ -295,7 +359,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
             }
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
                 Column(Modifier.weight(1f)) {
-                    Text("No Tax Invoice", style = MaterialTheme.typography.bodyMedium)
+                    HighlightText("No Tax Invoice", MaterialTheme.typography.bodyMedium, settingAnchors, highlightedSetting)
                     Text(
                         "Off by default. Turns on a per-sale \"No Tax Invoice\" switch on the Billing " +
                             "screen: that invoice prints with no company header, no title, and no tax shown " +
@@ -315,6 +379,10 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
                 )
             }
+            HighlightText(
+                "UPI payment QR", MaterialTheme.typography.bodyMedium, settingAnchors, highlightedSetting,
+                modifier = Modifier.padding(top = 8.dp)
+            )
             OutlinedTextField(
                 value = upiId, onValueChange = { upiId = it },
                 label = { Text("UPI ID for payment QR (e.g. name@okaxis)") }, singleLine = true,
@@ -345,7 +413,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
             ) { Text("Save") }
 
             Divider(Modifier.padding(vertical = 16.dp))
-            Text("Company logo (A4 invoice)", style = MaterialTheme.typography.titleSmall)
+            HighlightText("Company logo (A4 invoice)", MaterialTheme.typography.titleSmall, settingAnchors, highlightedSetting)
             if (logoPath.isNotBlank()) {
                 val bmp = com.billing.pos.ui.common.rememberThumbnail(logoPath, 400)
                 if (bmp != null) {
@@ -365,7 +433,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
             }
             Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("Logo is the full header", style = MaterialTheme.typography.bodyMedium)
+                    HighlightText("Logo is the full header", MaterialTheme.typography.bodyMedium, settingAnchors, highlightedSetting)
                     Text("Turn on if your logo image already includes name, address & phone.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
                 }
                 Checkbox(checked = logoFull, onCheckedChange = { logoFull = it; prefs.logoFullWidth = it })
@@ -374,7 +442,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
             Divider(Modifier.padding(vertical = 16.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("Sticky note on launch", style = MaterialTheme.typography.titleSmall)
+                    HighlightText("Sticky note on launch", MaterialTheme.typography.titleSmall, settingAnchors, highlightedSetting)
                     Text("Open a full-screen handwriting canvas each time the app starts; Save stores each page as a picture in My Diary.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
                 }
                 Checkbox(checked = stickyNote, onCheckedChange = { stickyNote = it; prefs.stickyNoteOnLaunch = it })
@@ -384,7 +452,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
                 Divider(Modifier.padding(vertical = 16.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text("Auto voice diary (hourly)", style = MaterialTheme.typography.titleSmall)
+                        HighlightText("Auto voice diary (hourly)", MaterialTheme.typography.titleSmall, settingAnchors, highlightedSetting)
                         Text(
                             "Records voice in the background and, once an hour, saves a diary entry (titled with the date-time, type \"voice\") with the recording attached. Only the parts where a voice is heard are kept. A notification stays on while it records.",
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline
@@ -410,7 +478,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
             Divider(Modifier.padding(vertical = 16.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("App lock", style = MaterialTheme.typography.titleSmall)
+                    HighlightText("App lock", MaterialTheme.typography.titleSmall, settingAnchors, highlightedSetting)
                     Text(
                         "Ask for this phone's own fingerprint / PIN / pattern each time the app is opened. No separate password is stored.",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline
@@ -426,7 +494,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
             }
 
             Divider(Modifier.padding(vertical = 16.dp))
-            Text("Share over WiFi (two counters)", style = MaterialTheme.typography.titleSmall)
+            HighlightText("Share over WiFi (two counters)", MaterialTheme.typography.titleSmall, settingAnchors, highlightedSetting)
             Text(
                 "Sync items, customers, sales, receipts and expenses between two phones on the same WiFi — fully offline. " +
                     "One phone is the host (keep its app open); the other connects to it. Give each phone a short letter so " +
@@ -442,7 +510,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
             )
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
                 Column(Modifier.weight(1f)) {
-                    Text("Act as host (server)", style = MaterialTheme.typography.bodyMedium)
+                    HighlightText("Act as host (server)", MaterialTheme.typography.bodyMedium, settingAnchors, highlightedSetting)
                     Text(
                         if (hostMode) "Others connect to ${myWifiIp ?: "this phone"}:${prefs.syncPort}"
                         else "Turn on for the main phone. Keep this app open while the other syncs.",
@@ -470,7 +538,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
                 }, enabled = hostIp.isNotBlank()) { Text("Sync now") }
                 Spacer(Modifier.width(12.dp))
                 Column {
-                    Text("Auto-sync", style = MaterialTheme.typography.bodyMedium)
+                    HighlightText("Auto-sync", MaterialTheme.typography.bodyMedium, settingAnchors, highlightedSetting)
                     Text("every 20s while open", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
                 }
                 Spacer(Modifier.weight(1f))
@@ -484,7 +552,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
 
             Divider(Modifier.padding(vertical = 16.dp))
             // Which script the camera/gallery OCR reads. Applies to every scan in the app.
-            Text("Text language (camera & handwriting)", style = MaterialTheme.typography.titleSmall)
+            HighlightText("Text language (camera & handwriting)", MaterialTheme.typography.titleSmall, settingAnchors, highlightedSetting)
             Text(
                 "Used when reading a photo and when reading what you draw. English is fast and " +
                     "accurate. Malayalam and Arabic photo reading work offline but are slower and " +
@@ -530,7 +598,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
             }
 
             Divider(Modifier.padding(vertical = 16.dp))
-            Text("Printer", style = MaterialTheme.typography.titleSmall)
+            HighlightText("Printer", MaterialTheme.typography.titleSmall, settingAnchors, highlightedSetting)
             Text(
                 "Receipt widths (58mm / 80mm) print on thermal receipt printers; A4 makes a full-page PDF for a normal printer.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline
@@ -555,7 +623,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
             }
 
             Divider(Modifier.padding(vertical = 16.dp))
-            Text("Barcode label printing", style = MaterialTheme.typography.titleSmall)
+            HighlightText("Barcode label printing", MaterialTheme.typography.titleSmall, settingAnchors, highlightedSetting)
             Text(
                 "Set this to match your barcode-label printer's label size. Items → Print barcode " +
                     "then generates one PDF page per label at this exact size.",
@@ -602,7 +670,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
 
             Divider(Modifier.padding(vertical = 16.dp))
             // Business type: drives medical (chemical content) and restaurant (sizes).
-            Text("Business type", style = MaterialTheme.typography.titleSmall)
+            HighlightText("Business type", MaterialTheme.typography.titleSmall, settingAnchors, highlightedSetting)
             var typeMenu by remember { mutableStateOf(false) }
             ExposedDropdownMenuBox(expanded = typeMenu, onExpandedChange = { typeMenu = !typeMenu }) {
                 OutlinedTextField(
@@ -649,7 +717,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
                 Divider(Modifier.padding(vertical = 16.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text("Expiry alert", style = MaterialTheme.typography.titleSmall)
+                        HighlightText("Expiry alert", MaterialTheme.typography.titleSmall, settingAnchors, highlightedSetting)
                         Text(
                             "Notify once a day about medicines nearing expiry, and show the list when the app opens. Repeats daily until the batch is sold, removed or purchase-returned.",
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline
@@ -683,7 +751,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
 
             if (businessType == "Medical lab") {
                 Divider(Modifier.padding(vertical = 16.dp))
-                Text("Lab result print", style = MaterialTheme.typography.titleSmall)
+                HighlightText("Lab result print", MaterialTheme.typography.titleSmall, settingAnchors, highlightedSetting)
                 Text(
                     "Seal + signature print above the technician line. A letterhead (JPG/PNG/PDF) prints as the page background and hides the app header — set how many blank lines to skip below the printed header and above the printed footer.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline
@@ -726,7 +794,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
             Divider(Modifier.padding(vertical = 16.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("Item batch tracking", style = MaterialTheme.typography.titleSmall)
+                    HighlightText("Item batch tracking", MaterialTheme.typography.titleSmall, settingAnchors, highlightedSetting)
                     Text(
                         "Track batch numbers + expiry dates per item; enable the expiry report.",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline
@@ -737,7 +805,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
             if (requireBatch) {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
                     Column(Modifier.weight(1f)) {
-                        Text("Auto-pick batch (FIFO)", style = MaterialTheme.typography.titleSmall)
+                        HighlightText("Auto-pick batch (FIFO)", MaterialTheme.typography.titleSmall, settingAnchors, highlightedSetting)
                         Text(
                             "Sales use the oldest-expiry batch with stock automatically, without asking.",
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline
@@ -750,7 +818,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
             Divider(Modifier.padding(vertical = 16.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("Weighing-scale barcodes", style = MaterialTheme.typography.titleSmall)
+                    HighlightText("Weighing-scale barcodes", MaterialTheme.typography.titleSmall, settingAnchors, highlightedSetting)
                     Text(
                         "Off by default. Turns on reading \"in-store\" scale labels during a sale: " +
                             "scanning one looks the item up by the PLU code printed on it and fills the " +
@@ -814,7 +882,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
             }
 
             Divider(Modifier.padding(vertical = 16.dp))
-            Text("Cloud backup sync", style = MaterialTheme.typography.titleSmall)
+            HighlightText("Cloud backup sync", MaterialTheme.typography.titleSmall, settingAnchors, highlightedSetting)
             Text(
                 "Push uploads the backup zip to your server; Pull downloads and restores it — " +
                     "used from the Backup & Restore screen. Each push overwrites the same file, keyed " +
@@ -863,7 +931,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
             }
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 12.dp)) {
                 Column(Modifier.weight(1f)) {
-                    Text("Auto pull + merge + push", style = MaterialTheme.typography.bodyMedium)
+                    HighlightText("Auto pull + merge + push", MaterialTheme.typography.bodyMedium, settingAnchors, highlightedSetting)
                     Text(
                         "Keeps syncing with the server on its own while the app is open — data and " +
                             "settings only, never photos/attachments. Sales, purchases, receipts, payments, " +
@@ -942,7 +1010,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
             }
 
             Divider(Modifier.padding(vertical = 16.dp))
-            Text("Salesman mapping", style = MaterialTheme.typography.titleSmall)
+            HighlightText("Salesman mapping", MaterialTheme.typography.titleSmall, settingAnchors, highlightedSetting)
             Text(
                 "Order reports show a Salesman column, resolved from the phone that took the " +
                     "order. Map each phone's device id to a name here — add one row per phone.",
