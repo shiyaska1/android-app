@@ -144,7 +144,7 @@ class BillingViewModel(private val app: Application) : AndroidViewModel(app) {
     /** No Tax Invoice for this sale — see [Bill.isNoTax]. Only offered when Settings has
      *  "No Tax Invoice" turned on; always starts off for a fresh bill. */
     var noTaxInvoice by mutableStateOf(false); private set
-    fun setNoTaxInvoice(v: Boolean) {
+    fun updateNoTaxInvoice(v: Boolean) {
         if (noTaxInvoice == v) return
         noTaxInvoice = v
         if (editingBillId == null && !estimateMode) viewModelScope.launch { billNo = nextVoucherNo() }

@@ -424,8 +424,19 @@ fun DashboardScreen(
                 .sortedByDescending { usage.getInt(it.label, 0) }
                 .take(5)
         }
-        // Sections start closed; opening one is remembered only for this visit.
-        val openSections = remember { androidx.compose.runtime.mutableStateMapOf<String, Boolean>() }
+        // Which report/account sections are expanded, persisted so it survives navigating away
+        // and back, and even closing and reopening the app.
+        val sectionPrefs = remember { context.getSharedPreferences("dashboard_ui", android.content.Context.MODE_PRIVATE) }
+        val openSections = remember {
+            androidx.compose.runtime.mutableStateMapOf<String, Boolean>().apply {
+                sectionPrefs.getStringSet("open_sections", null)?.forEach { put(it, true) }
+            }
+        }
+        fun toggleSection(key: String) {
+            val next = !(openSections[key] == true)
+            openSections[key] = next
+            sectionPrefs.edit().putStringSet("open_sections", openSections.filterValues { it }.keys.toMutableSet()).apply()
+        }
 
         Column(Modifier.fillMaxSize().padding(pad)) {
             // Screens set aside with the minimise handle, waiting to be picked up again.
@@ -536,7 +547,7 @@ fun DashboardScreen(
                                 item(span = { GridItemSpan(maxLineSpan) }) {
                                     Row(
                                         Modifier.fillMaxWidth()
-                                            .clickable { openSections[section] = !open }
+                                            .clickable { toggleSection(section) }
                                             .padding(top = 10.dp, bottom = 2.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
@@ -570,7 +581,7 @@ fun DashboardScreen(
                                             item(span = { GridItemSpan(maxLineSpan) }) {
                                                 Row(
                                                     Modifier.fillMaxWidth()
-                                                        .clickable { openSections[key] = !subOpen }
+                                                        .clickable { toggleSection(key) }
                                                         .padding(top = 6.dp, bottom = 2.dp),
                                                     verticalAlignment = Alignment.CenterVertically
                                                 ) {
@@ -609,7 +620,7 @@ fun DashboardScreen(
                                 item(span = { GridItemSpan(maxLineSpan) }) {
                                     Row(
                                         Modifier.fillMaxWidth()
-                                            .clickable { openSections[section] = !open }
+                                            .clickable { toggleSection(section) }
                                             .padding(top = 10.dp, bottom = 2.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
@@ -645,7 +656,7 @@ fun DashboardScreen(
                                             item(span = { GridItemSpan(maxLineSpan) }) {
                                                 Row(
                                                     Modifier.fillMaxWidth()
-                                                        .clickable { openSections[key] = !subOpen }
+                                                        .clickable { toggleSection(key) }
                                                         .padding(top = 6.dp, bottom = 2.dp),
                                                     verticalAlignment = Alignment.CenterVertically
                                                 ) {
@@ -682,7 +693,7 @@ fun DashboardScreen(
                                 item(span = { GridItemSpan(maxLineSpan) }) {
                                     Row(
                                         Modifier.fillMaxWidth()
-                                            .clickable { openSections[section] = !open }
+                                            .clickable { toggleSection(section) }
                                             .padding(top = 10.dp, bottom = 2.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {

@@ -435,7 +435,7 @@ fun BillingScreen(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text("No Tax Invoice", style = MaterialTheme.typography.bodyMedium)
-                    Switch(checked = vm.noTaxInvoice, onCheckedChange = { vm.setNoTaxInvoice(it) })
+                    Switch(checked = vm.noTaxInvoice, onCheckedChange = { vm.updateNoTaxInvoice(it) })
                 }
             }
 
