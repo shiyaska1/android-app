@@ -687,6 +687,7 @@ fun StickyNoteScreen(onClose: () -> Unit, onOcrToSales: () -> Unit = {}, vm: Sti
         var newName by remember { mutableStateOf("") }
         var newPhone by remember { mutableStateOf("") }
         var newCType by remember { mutableStateOf("General") }
+        var narration by remember { mutableStateOf("") }
         val scope = androidx.compose.runtime.rememberCoroutineScope()
 
         fun pagesSnapshot() = pages.map { PageData(it.strokes.toList(), it.bg, null, it.texts.map { t -> t.snapshot() }) }
@@ -695,12 +696,21 @@ fun StickyNoteScreen(onClose: () -> Unit, onOcrToSales: () -> Unit = {}, vm: Sti
             val cust = picked ?: customers.firstOrNull { it.name.equals(typed.trim(), true) }
             if (cust == null) { vm.message.value = "Pick a customer, or use + to add one"; return }
             vm.attachedCustomer = cust
+            val note = narration.trim()
+            if (note.isNotBlank()) {
+                scope.launch {
+                    val addr = if (cust.address.isBlank()) note else cust.address + "\n" + note
+                    com.billing.pos.data.Repository(context).updateCustomer(cust.copy(address = addr))
+                }
+            }
             vm.attachToCustomer(
                 cust.id, pagesSnapshot(), canvasSize.width, canvasSize.height,
                 images.toList(), audios.toList(), videos.toList()
             ) { paths ->
                 if (share) {
-                    val caption = if (cust.phone.isNotBlank()) cust.name + "\n" + cust.phone else cust.name
+                    val caption = cust.name +
+                        (if (cust.phone.isNotBlank()) "\n" + cust.phone else "") +
+                        (if (note.isNotBlank()) "\n" + note else "")
                     shareNoteFiles(context, caption, paths)
                 }
             }
@@ -799,8 +809,14 @@ fun StickyNoteScreen(onClose: () -> Unit, onOcrToSales: () -> Unit = {}, vm: Sti
                             Icon(Icons.Filled.PersonAdd, "New customer", tint = MaterialTheme.colorScheme.primary)
                         }
                     }
+                    OutlinedTextField(
+                        value = narration, onValueChange = { narration = it },
+                        label = { Text("Narration (optional)") },
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                    )
                     Text(
-                        "Saves every page, photo, voice and video as attachments on the customer.",
+                        "Saves every page, photo, voice and video as attachments on the customer. " +
+                            "The narration is added to their address and to what's shared.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.outline,
                         modifier = Modifier.padding(top = 8.dp)
