@@ -101,6 +101,11 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
     var upiQrOnPrint by remember { mutableStateOf(prefs.showUpiQrOnPrint) }
     var requireBatch by remember { mutableStateOf(prefs.requireItemBatch) }
     var fifoAutoPick by remember { mutableStateOf(prefs.fifoAutoPickBatch) }
+    var weighScaleEnabled by remember { mutableStateOf(prefs.weighScaleEnabled) }
+    var weighScalePrefix by remember { mutableStateOf(prefs.weighScalePrefix) }
+    var weighScaleItemLen by remember { mutableStateOf(prefs.weighScaleItemCodeLen.toString()) }
+    var weighScaleValueLen by remember { mutableStateOf(prefs.weighScaleValueLen.toString()) }
+    var weighScaleValueIsPrice by remember { mutableStateOf(prefs.weighScaleValueIsPrice) }
     var businessType by remember { mutableStateOf(prefs.businessType) }
     var receiptWidth by remember { mutableStateOf(prefs.receiptWidth) }
     var ocrLanguage by remember { mutableStateOf(prefs.ocrLanguage) }
@@ -687,6 +692,72 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
                     }
                     Switch(checked = fifoAutoPick, onCheckedChange = { fifoAutoPick = it; prefs.fifoAutoPickBatch = it })
                 }
+            }
+
+            Divider(Modifier.padding(vertical = 16.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Weighing-scale barcodes", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        "Off by default. Turns on reading \"in-store\" scale labels during a sale: " +
+                            "scanning one looks the item up by the PLU code printed on it and fills the " +
+                            "cart line's quantity straight from the label — no typing needed. Match the " +
+                            "item's Barcode field (in Items) to the scale's PLU code for this to work.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline
+                    )
+                }
+                Switch(checked = weighScaleEnabled, onCheckedChange = { weighScaleEnabled = it; prefs.weighScaleEnabled = it })
+            }
+            if (weighScaleEnabled) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
+                    OutlinedTextField(
+                        value = weighScalePrefix,
+                        onValueChange = { weighScalePrefix = it.filter { c -> c.isDigit() }.take(2); prefs.weighScalePrefix = weighScalePrefix },
+                        label = { Text("Prefix digit") }, singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.weight(1f)
+                    )
+                    OutlinedTextField(
+                        value = weighScaleItemLen,
+                        onValueChange = { v ->
+                            weighScaleItemLen = v.filter { it.isDigit() }.take(1)
+                            weighScaleItemLen.toIntOrNull()?.let { prefs.weighScaleItemCodeLen = it }
+                        },
+                        label = { Text("Item code digits") }, singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.weight(1f)
+                    )
+                    OutlinedTextField(
+                        value = weighScaleValueLen,
+                        onValueChange = { v ->
+                            weighScaleValueLen = v.filter { it.isDigit() }.take(1)
+                            weighScaleValueLen.toIntOrNull()?.let { prefs.weighScaleValueLen = it }
+                        },
+                        label = { Text("Value digits") }, singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            if (weighScaleValueIsPrice) "Value is the price (paise)" else "Value is the weight (grams)",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Text(
+                            "Weight (default): the app prices it at the item's own rate. Price: the scale " +
+                                "already computed the total; the app uses it as-is.",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline
+                        )
+                    }
+                    Switch(checked = weighScaleValueIsPrice, onCheckedChange = { weighScaleValueIsPrice = it; prefs.weighScaleValueIsPrice = it })
+                }
+                Text(
+                    "Defaults (prefix 2, 5-digit item code, 6-digit value) match the common Indian " +
+                        "\"in-store\" barcode convention — adjust only if a scan from your scale doesn't match an item.",
+                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
             }
 
             Divider(Modifier.padding(vertical = 16.dp))

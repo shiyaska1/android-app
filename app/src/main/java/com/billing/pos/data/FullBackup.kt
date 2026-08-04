@@ -62,6 +62,11 @@ object FullBackup {
         .put("smsBearer", prefs.smsBearer)
         .put("gymSlots", prefs.gymSlots.joinToString("|"))
         .put("customerTypes", prefs.customerTypes.joinToString("|"))
+        .put("weighScaleEnabled", prefs.weighScaleEnabled)
+        .put("weighScalePrefix", prefs.weighScalePrefix)
+        .put("weighScaleItemCodeLen", prefs.weighScaleItemCodeLen)
+        .put("weighScaleValueLen", prefs.weighScaleValueLen)
+        .put("weighScaleValueIsPrice", prefs.weighScaleValueIsPrice)
 
     /** Applies a [settingsJson] object to [prefs]. Missing keys (older backups) keep the current
      *  local value — only keys actually present overwrite. */
@@ -94,6 +99,11 @@ object FullBackup {
         prefs.smsBearer = s.optBoolean("smsBearer", prefs.smsBearer)
         if (s.has("gymSlots")) prefs.gymSlots = s.optString("gymSlots", "").split("|").map { it.trim() }.filter { it.isNotBlank() }
         if (s.has("customerTypes")) prefs.customerTypes = s.optString("customerTypes", "").split("|").map { it.trim() }.filter { it.isNotBlank() }
+        prefs.weighScaleEnabled = s.optBoolean("weighScaleEnabled", prefs.weighScaleEnabled)
+        prefs.weighScalePrefix = s.optString("weighScalePrefix", prefs.weighScalePrefix)
+        prefs.weighScaleItemCodeLen = s.optInt("weighScaleItemCodeLen", prefs.weighScaleItemCodeLen)
+        prefs.weighScaleValueLen = s.optInt("weighScaleValueLen", prefs.weighScaleValueLen)
+        prefs.weighScaleValueIsPrice = s.optBoolean("weighScaleValueIsPrice", prefs.weighScaleValueIsPrice)
     }
 
     /**

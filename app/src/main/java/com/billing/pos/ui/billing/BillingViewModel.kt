@@ -234,6 +234,20 @@ class BillingViewModel(private val app: Application) : AndroidViewModel(app) {
         dirty = true
     }
 
+    /** Adds an item at an explicit quantity, priced at the item's own rate — used for weighing-
+     *  scale barcodes, where the scanned label already carries exactly how much was weighed.
+     *  Always a new line (each scan is its own weighing event, unlike the +1-and-merge above). */
+    fun addItemWithWeight(item: Item, qty: Double) {
+        if (qty <= 0.0) return
+        cart.add(
+            CartLine(
+                item.id, item.name, item.price, item.taxPercent, qty,
+                unit = item.unit, cessPercent = item.cessPercent, priceIncludesTax = priceIncludesTax
+            )
+        )
+        dirty = true
+    }
+
     /** Adds an item at the chosen size's price; the size is shown/printed in the line name. */
     fun addItemWithSize(item: Item, size: com.billing.pos.data.ItemSize) {
         val name = "${item.name} (${size.name})"
@@ -451,9 +465,26 @@ class BillingViewModel(private val app: Application) : AndroidViewModel(app) {
         dirty = true
     }
 
-    /** Adds an item to the cart by its scanned barcode. */
+    /** Adds an item to the cart by its scanned barcode — a weighing-scale label (item PLU +
+     *  weight/price + check digit) when that's turned on in Settings and the code matches,
+     *  otherwise a plain item barcode lookup. */
     fun onBarcodeScanned(barcode: String) {
         viewModelScope.launch {
+            val prefs = com.billing.pos.data.AppPrefs(app)
+            if (prefs.weighScaleEnabled) {
+                val parsed = com.billing.pos.data.WeighScaleBarcode.parse(barcode, prefs)
+                if (parsed != null) {
+                    val item = repo.itemByBarcode(parsed.itemCode)
+                    if (item == null) { _message.value = "No item for scale code ${parsed.itemCode}"; return@launch }
+                    val qty = if (prefs.weighScaleValueIsPrice) {
+                        if (item.price > 0.0) parsed.value / item.price else 1.0
+                    } else parsed.value
+                    if (qty <= 0.0) { _message.value = "Scale barcode has no usable quantity"; return@launch }
+                    addItemWithWeight(item, qty)
+                    _message.value = "Added ${item.name} (${com.billing.pos.util.Format.qty(qty)} ${item.unit})"
+                    return@launch
+                }
+            }
             val item = repo.itemByBarcode(barcode)
             if (item != null) { addItemToCart(item); _message.value = "Added ${item.name}" }
             else _message.value = "No item for barcode $barcode"

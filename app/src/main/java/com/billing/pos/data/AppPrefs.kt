@@ -83,6 +83,41 @@ class AppPrefs(context: Context) {
         get() = p.getString("no_tax_invoice_prefix", "NT-") ?: "NT-"
         set(v) { p.edit().putString("no_tax_invoice_prefix", v.trim()).apply() }
 
+    /**
+     * Weighing-scale barcodes — off by default. Turns on parsing "in-store" barcodes (a fixed
+     * prefix digit + item PLU code + weight-or-price value + a standard EAN-13 check digit) so
+     * scanning a scale-printed label during a sale looks the item up by its PLU and fills the
+     * cart line's quantity (or price) straight from the label, no typing needed.
+     */
+    var weighScaleEnabled: Boolean
+        get() = p.getBoolean("weigh_scale_enabled", false)
+        set(v) { p.edit().putBoolean("weigh_scale_enabled", v).apply() }
+
+    /** Leading digit that marks a barcode as scale-printed (GS1 reserves "2" for this — no real
+     *  product barcode starts with it, so this is a safe, low-collision signal). */
+    var weighScalePrefix: String
+        get() = p.getString("weigh_scale_prefix", "2") ?: "2"
+        set(v) { p.edit().putString("weigh_scale_prefix", v.trim().ifBlank { "2" }).apply() }
+
+    /** Digits after the prefix that carry the item's PLU code — matched against that item's own
+     *  Barcode field, so no separate PLU field is needed. */
+    var weighScaleItemCodeLen: Int
+        get() = p.getInt("weigh_scale_item_len", 5)
+        set(v) { p.edit().putInt("weigh_scale_item_len", v.coerceIn(1, 9)).apply() }
+
+    /** Digits after the item code that carry the weight or price value. */
+    var weighScaleValueLen: Int
+        get() = p.getInt("weigh_scale_value_len", 6)
+        set(v) { p.edit().putInt("weigh_scale_value_len", v.coerceIn(1, 9)).apply() }
+
+    /** False (default): the value is the weighed quantity in grams — the cart line's quantity is
+     *  set from it and priced at the item's own rate. True: the value is the price (in paise) the
+     *  scale already computed — the cart line's quantity is back-computed from the item's rate so
+     *  price × qty still equals the scanned total. */
+    var weighScaleValueIsPrice: Boolean
+        get() = p.getBoolean("weigh_scale_value_is_price", false)
+        set(v) { p.edit().putBoolean("weigh_scale_value_is_price", v).apply() }
+
     /** UPI ID (VPA) money is collected to, e.g. name@okaxis, and the payee name shown. */
     var upiId: String
         get() = p.getString("upi_id", "") ?: ""
