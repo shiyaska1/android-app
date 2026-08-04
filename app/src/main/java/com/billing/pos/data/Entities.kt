@@ -31,6 +31,8 @@ data class Item(
     /** List/MRP price in the primary unit; 0 = not set. Printed on the A4 invoice as a reference price. */
     val mrp: Double = 0.0,
     val taxPercent: Double = 0.0,
+    /** GST Compensation Cess % (tobacco, aerated drinks, coal, luxury vehicles, ...). 0 = none. */
+    val cessPercent: Double = 0.0,
     val barcode: String = "",
     val hsn: String = "",
     val category: String = "",
@@ -78,6 +80,8 @@ data class Bill(
     val grandTotal: Double,
     /** Amount already received. Credit invoices start at 0; others = grandTotal. */
     val paidAmount: Double = 0.0,
+    /** GST Compensation Cess total, separate from [taxTotal] (CGST/SGST/IGST). */
+    val cessTotal: Double = 0.0,
     val customerGstin: String = "",
     /** Snapshot of [Customer.state] at sale time — decides IGST vs CGST+SGST on this bill. */
     val customerState: String = "",
@@ -123,6 +127,8 @@ data class BillItem(
     val price: Double,
     val taxPercent: Double,
     val lineTotal: Double,
+    /** GST Compensation Cess % on this line, on top of [taxPercent]. */
+    val cessPercent: Double = 0.0,
     /** MRP snapshot at time of sale (0 = not set); printed on the A4 invoice. */
     val mrp: Double = 0.0,
     /** Batch/lot this line was sold from (when batch tracking is on). */

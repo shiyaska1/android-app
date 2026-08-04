@@ -92,6 +92,8 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
     var gstin by remember { mutableStateOf(prefs.companyGstin) }
     var gstEnabled by remember { mutableStateOf(prefs.gstEnabled) }
     var compositionScheme by remember { mutableStateOf(prefs.compositionScheme) }
+    var cessEnabled by remember { mutableStateOf(prefs.cessEnabled) }
+    var priceIncludesTax by remember { mutableStateOf(prefs.priceIncludesTax) }
     var upiId by remember { mutableStateOf(prefs.upiId) }
     var upiName by remember { mutableStateOf(prefs.upiName) }
     var upiQrOnPrint by remember { mutableStateOf(prefs.showUpiQrOnPrint) }
@@ -251,6 +253,31 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
                     }
                     Switch(checked = compositionScheme, onCheckedChange = { compositionScheme = it; prefs.compositionScheme = it })
                 }
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
+                    Column(Modifier.weight(1f)) {
+                        Text("GST Compensation Cess", style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            "Only a short list of goods carry Cess on top of GST (tobacco, aerated drinks, " +
+                                "coal, luxury vehicles, ...). Off by default — turn on to show a Cess % field " +
+                                "on item entry and a Cess line on invoices.",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline
+                        )
+                    }
+                    Switch(checked = cessEnabled, onCheckedChange = { cessEnabled = it; prefs.cessEnabled = it })
+                }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
+                Column(Modifier.weight(1f)) {
+                    Text("Price includes tax", style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        "On (default): item prices already include tax — the tax amount is worked out " +
+                            "of the price, not added on top, so Sub Total + Tax always equals the price " +
+                            "you entered. Off: prices exclude tax — tax is added on top of the price, " +
+                            "raising the total the customer pays. Applies to Billing and Purchase only.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline
+                    )
+                }
+                Switch(checked = priceIncludesTax, onCheckedChange = { priceIncludesTax = it; prefs.priceIncludesTax = it })
             }
             OutlinedTextField(
                 value = upiId, onValueChange = { upiId = it },

@@ -377,6 +377,7 @@ object ThermalPrinter {
                 sb.append(kv("Tax", Format.money(bill.taxTotal))).append('\n')
             }
         }
+        if (bill.cessTotal != 0.0 && !composition) sb.append(kv("Cess", Format.money(bill.cessTotal))).append('\n')
         if (bill.additionalCharge != 0.0)
             sb.append(kv("Additional", Format.money(bill.additionalCharge))).append('\n')
         if (bill.discount != 0.0)

@@ -276,18 +276,21 @@ class VatReportViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private class HsnAgg(val hsn: String, val rate: Double, var desc: String, var uqc: String) {
-        var qty = 0.0; var txval = 0.0; var camt = 0.0; var samt = 0.0; var iamt = 0.0
+        var qty = 0.0; var txval = 0.0; var camt = 0.0; var samt = 0.0; var iamt = 0.0; var csamt = 0.0
     }
 
     /**
      * Item prices are tax-inclusive (see [com.billing.pos.ui.billing.CartLine.tax]) — the taxable
-     * value is extracted out of a rate-group's inclusive line totals, not added on top of them,
-     * or every downstream figure here would overstate tax and disagree with the bill's own
-     * subTotal/taxTotal. Returns (taxable, tax) for the group.
+     * value is extracted out of a line's inclusive total, not added on top of it, or every
+     * downstream figure here would overstate tax and disagree with the bill's own
+     * subTotal/taxTotal. Extraction uses [taxPercent]+[cessPercent] combined (both are levied on
+     * the same taxable value), then splits the tax portion out of the total. Returns
+     * (taxable, tax, cess) for one line.
      */
-    private fun extractTax(inclusiveTotal: Double, rate: Double): Pair<Double, Double> {
-        val txval = round2(inclusiveTotal / (1.0 + rate / 100.0))
-        return txval to round2(inclusiveTotal - txval)
+    private fun extractTaxCess(inclusiveTotal: Double, taxPercent: Double, cessPercent: Double): Triple<Double, Double, Double> {
+        val combinedRate = taxPercent + cessPercent
+        val txval = if (combinedRate > 0.0) inclusiveTotal / (1.0 + combinedRate / 100.0) else inclusiveTotal
+        return Triple(round2(txval), round2(txval * taxPercent / 100.0), round2(txval * cessPercent / 100.0))
     }
 
     private suspend fun buildGstr1Json(company: com.billing.pos.data.CompanyInfo, s: VatSummary): String {
@@ -299,11 +302,22 @@ class VatReportViewModel(app: Application) : AndroidViewModel(app) {
         fun posFor(customerState: String) =
             com.billing.pos.data.IndianStates.codeForState(customerState).ifBlank { ownStateCode }
 
-        fun trackHsn(name: String, unit: String, rate: Double, qty: Double, txval: Double, taxAmt: Double, interstate: Boolean) {
+        fun trackHsn(name: String, unit: String, rate: Double, qty: Double, txval: Double, taxAmt: Double, cessAmt: Double, interstate: Boolean) {
             val hsn = itemsByName[name.trim().lowercase()]?.hsn.orEmpty()
             val agg = hsnAgg.getOrPut("$hsn|$rate") { HsnAgg(hsn, rate, name, uqcFor(unit)) }
-            agg.qty += qty; agg.txval += txval
+            agg.qty += qty; agg.txval += txval; agg.csamt += cessAmt
             if (interstate) agg.iamt += taxAmt else { agg.camt += taxAmt / 2.0; agg.samt += taxAmt / 2.0 }
+        }
+
+        /** Sums per-line extraction across a same-rate group — lines can carry different cess
+         *  rates even at the same GST rate, so extraction has to happen per line, not per group. */
+        fun sumLines(ls: List<com.billing.pos.data.BillItem>, rate: Double): Triple<Double, Double, Double> {
+            var txval = 0.0; var tax = 0.0; var cess = 0.0
+            ls.forEach {
+                val (lTxval, lTax, lCess) = extractTaxCess(it.lineTotal, rate, it.cessPercent)
+                txval += lTxval; tax += lTax; cess += lCess
+            }
+            return Triple(round2(txval), round2(tax), round2(cess))
         }
 
         val b2b = JSONArray()
@@ -315,15 +329,15 @@ class VatReportViewModel(app: Application) : AndroidViewModel(app) {
                 val itmsArr = JSONArray()
                 var num = 1
                 lines.groupBy { it.taxPercent }.forEach { (rate, ls) ->
-                    val (txval, taxAmt) = extractTax(ls.sumOf { it.lineTotal }, rate)
+                    val (txval, taxAmt, cessAmt) = sumLines(ls, rate)
                     val itmDet = JSONObject().put("txval", txval).put("rt", rate)
                     if (interstate) itmDet.put("iamt", taxAmt).put("camt", 0.0).put("samt", 0.0)
                     else { val c = round2(taxAmt / 2.0); itmDet.put("iamt", 0.0).put("camt", c).put("samt", c) }
-                    itmDet.put("csamt", 0.0)
+                    itmDet.put("csamt", cessAmt)
                     itmsArr.put(JSONObject().put("num", num++).put("itm_det", itmDet))
                     ls.forEach {
-                        val (lTxval, lTax) = extractTax(it.lineTotal, rate)
-                        trackHsn(it.name, it.unit, rate, it.qty, lTxval, lTax, interstate)
+                        val (lTxval, lTax, lCess) = extractTaxCess(it.lineTotal, rate, it.cessPercent)
+                        trackHsn(it.name, it.unit, rate, it.qty, lTxval, lTax, lCess, interstate)
                     }
                 }
                 invArr.put(
@@ -335,19 +349,19 @@ class VatReportViewModel(app: Application) : AndroidViewModel(app) {
             b2b.put(JSONObject().put("ctin", ctin).put("inv", invArr))
         }
 
-        data class RateAgg(var txval: Double = 0.0, var camt: Double = 0.0, var samt: Double = 0.0, var iamt: Double = 0.0)
+        data class RateAgg(var txval: Double = 0.0, var camt: Double = 0.0, var samt: Double = 0.0, var iamt: Double = 0.0, var csamt: Double = 0.0)
         val b2csAgg = LinkedHashMap<String, RateAgg>()   // key = "rate|pos|interstate"
         s.bills.filter { it.customerGstin.isBlank() }.forEach { bill ->
             val interstate = com.billing.pos.data.GstTax.isInterstate(company.gstin, bill.customerState)
             val pos = posFor(bill.customerState)
             repo.linesFor(bill.id).groupBy { it.taxPercent }.forEach { (rate, ls) ->
-                val (txval, taxAmt) = extractTax(ls.sumOf { it.lineTotal }, rate)
+                val (txval, taxAmt, cessAmt) = sumLines(ls, rate)
                 val agg = b2csAgg.getOrPut("$rate|$pos|$interstate") { RateAgg() }
-                agg.txval += txval
+                agg.txval += txval; agg.csamt += cessAmt
                 if (interstate) agg.iamt += taxAmt else { agg.camt += taxAmt / 2.0; agg.samt += taxAmt / 2.0 }
                 ls.forEach {
-                    val (lTxval, lTax) = extractTax(it.lineTotal, rate)
-                    trackHsn(it.name, it.unit, rate, it.qty, lTxval, lTax, interstate)
+                    val (lTxval, lTax, lCess) = extractTaxCess(it.lineTotal, rate, it.cessPercent)
+                    trackHsn(it.name, it.unit, rate, it.qty, lTxval, lTax, lCess, interstate)
                 }
             }
         }
@@ -357,7 +371,7 @@ class VatReportViewModel(app: Application) : AndroidViewModel(app) {
                 put(
                     JSONObject().put("sply_ty", if (interstateStr.toBoolean()) "INTER" else "INTRA").put("pos", pos).put("typ", "OE")
                         .put("txval", round2(agg.txval)).put("rt", rateStr.toDouble())
-                        .put("iamt", round2(agg.iamt)).put("camt", round2(agg.camt)).put("samt", round2(agg.samt)).put("csamt", 0.0)
+                        .put("iamt", round2(agg.iamt)).put("camt", round2(agg.camt)).put("samt", round2(agg.samt)).put("csamt", round2(agg.csamt))
                 )
             }
         }
@@ -372,8 +386,14 @@ class VatReportViewModel(app: Application) : AndroidViewModel(app) {
                     val lines = repo.salesReturnLines(r.id)
                     val itmsArr = JSONArray()
                     var num = 1
+                    // Sales returns don't track a per-line cess rate, so csamt stays 0 here.
                     lines.groupBy { it.taxPercent }.forEach { (rate, ls) ->
-                        val (txval, taxAmt) = extractTax(ls.sumOf { it.lineTotal }, rate)
+                        var txval = 0.0; var taxAmt = 0.0
+                        ls.forEach {
+                            val (lTxval, lTax, _) = extractTaxCess(it.lineTotal, rate, 0.0)
+                            txval += lTxval; taxAmt += lTax
+                        }
+                        txval = round2(txval); taxAmt = round2(taxAmt)
                         val itmDet = JSONObject().put("txval", txval).put("rt", rate)
                         if (interstate) itmDet.put("iamt", taxAmt).put("camt", 0.0).put("samt", 0.0)
                         else { val c = round2(taxAmt / 2.0); itmDet.put("iamt", 0.0).put("camt", c).put("samt", c) }
@@ -394,8 +414,8 @@ class VatReportViewModel(app: Application) : AndroidViewModel(app) {
         hsnAgg.values.forEach { a ->
             hsnArr.put(
                 JSONObject().put("num", hnum++).put("hsn_sc", a.hsn).put("desc", a.desc).put("uqc", a.uqc)
-                    .put("qty", round2(a.qty)).put("val", round2(a.txval + a.camt + a.samt + a.iamt)).put("txval", round2(a.txval))
-                    .put("iamt", round2(a.iamt)).put("camt", round2(a.camt)).put("samt", round2(a.samt)).put("csamt", 0.0)
+                    .put("qty", round2(a.qty)).put("val", round2(a.txval + a.camt + a.samt + a.iamt + a.csamt)).put("txval", round2(a.txval))
+                    .put("iamt", round2(a.iamt)).put("camt", round2(a.camt)).put("samt", round2(a.samt)).put("csamt", round2(a.csamt))
             )
         }
 
@@ -459,8 +479,8 @@ class VatReportViewModel(app: Application) : AndroidViewModel(app) {
             ledger(b.customerName, debit = true, amount = b.grandTotal)
             ledger("Discount Allowed", debit = true, amount = b.discount)
             if (composition) {
-                // A composition dealer can't show tax as a separate ledger — folded into Sales.
-                ledger("Sales Account", debit = false, amount = b.subTotal + b.taxTotal)
+                // A composition dealer can't show tax/cess as a separate ledger — folded into Sales.
+                ledger("Sales Account", debit = false, amount = b.subTotal + b.taxTotal + b.cessTotal)
             } else {
                 ledger("Sales Account", debit = false, amount = b.subTotal)
                 if (gst) {
@@ -470,6 +490,7 @@ class VatReportViewModel(app: Application) : AndroidViewModel(app) {
                 } else {
                     ledger("Tax", debit = false, amount = b.taxTotal)
                 }
+                ledger("Cess", debit = false, amount = b.cessTotal)
             }
             ledger("Additional Charges", debit = false, amount = b.additionalCharge)
             sb.append("</VOUCHER>\n</TALLYMESSAGE>\n")
@@ -481,8 +502,8 @@ class VatReportViewModel(app: Application) : AndroidViewModel(app) {
             sb.append("<VOUCHERNUMBER>${xmlEscape(p.purchaseNo)}</VOUCHERNUMBER>\n")
             sb.append("<PARTYLEDGERNAME>${xmlEscape(p.supplierName)}</PARTYLEDGERNAME>\n")
             if (composition) {
-                // A composition dealer can't claim input tax credit — the tax is just part of the cost.
-                ledger("Purchase Account", debit = true, amount = p.subTotal + p.taxTotal)
+                // A composition dealer can't claim input tax credit — tax/cess is just part of the cost.
+                ledger("Purchase Account", debit = true, amount = p.subTotal + p.taxTotal + p.cessTotal)
             } else {
                 ledger("Purchase Account", debit = true, amount = p.subTotal)
                 if (gst) {
@@ -492,6 +513,7 @@ class VatReportViewModel(app: Application) : AndroidViewModel(app) {
                 } else {
                     ledger("Tax", debit = true, amount = p.taxTotal)
                 }
+                ledger("Cess", debit = true, amount = p.cessTotal)
             }
             ledger("Additional Charges", debit = true, amount = p.additionalCharge)
             ledger("Discount Received", debit = false, amount = p.discount)

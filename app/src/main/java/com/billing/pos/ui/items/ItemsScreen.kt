@@ -262,7 +262,7 @@ class ItemsViewModel(app: Application) : AndroidViewModel(app) {
         existing: Item?, name: String, price: Double, tax: Double, barcode: String, hsn: String,
         category: String, openingStock: Double, unit: String, storeLocation: String, chemicalContent: String,
         secondaryUnit: String = "PCS", conversionFactor: Double = 1.0, purchasePrice: Double = 0.0,
-        mrp: Double = 0.0,
+        mrp: Double = 0.0, cess: Double = 0.0,
         onDone: () -> Unit
     ) {
         if (name.isBlank()) { message.value = "Enter a name"; return }
@@ -270,11 +270,12 @@ class ItemsViewModel(app: Application) : AndroidViewModel(app) {
             val id: Long = if (existing == null) {
                 repo.addItem(
                     name, price, tax, barcode, hsn, category, openingStock, unit, storeLocation, chemicalContent,
-                    secondaryUnit, conversionFactor, purchasePrice, mrp
+                    secondaryUnit, conversionFactor, purchasePrice, mrp, cessPercent = cess
                 )
             } else {
                 repo.updateItem(existing.copy(
-                    name = name.trim(), price = price, purchasePrice = purchasePrice, mrp = mrp, taxPercent = tax, barcode = barcode.trim(),
+                    name = name.trim(), price = price, purchasePrice = purchasePrice, mrp = mrp, taxPercent = tax,
+                    cessPercent = cess, barcode = barcode.trim(),
                     hsn = hsn.trim(), category = category.trim(), openingStock = openingStock,
                     unit = unit.trim().ifBlank { "PCS" }, storeLocation = storeLocation.trim(),
                     chemicalContent = chemicalContent.trim(),
@@ -767,8 +768,8 @@ fun ItemsScreen(
             onAddCatalogue = { runCatching { cataloguePicker.launch(arrayOf("application/pdf")) } },
             onRemoveAttachment = { vm.removeAttachment(it) },
             onDismiss = { vm.cancelEdit(); showDialog = false },
-            onSave = { n, p, t, b, h, cat, os, u, loc, chem, sec, f, pp, mv ->
-                vm.save(editing, n, p, t, b, h, cat, os, u, loc, chem, sec, f, pp, mv) { showDialog = false }
+            onSave = { n, p, t, b, h, cat, os, u, loc, chem, sec, f, pp, mv, cess ->
+                vm.save(editing, n, p, t, b, h, cat, os, u, loc, chem, sec, f, pp, mv, cess) { showDialog = false }
             }
         )
     }
@@ -829,10 +830,11 @@ private fun ItemDialog(
     onAddCatalogue: () -> Unit,
     onRemoveAttachment: (ItemAttachment) -> Unit,
     onDismiss: () -> Unit,
-    onSave: (String, Double, Double, String, String, String, Double, String, String, String, String, Double, Double, Double) -> Unit
+    onSave: (String, Double, Double, String, String, String, Double, String, String, String, String, Double, Double, Double, Double) -> Unit
 ) {
     val context = LocalContext.current
     val gstEnabled = remember { com.billing.pos.data.AppPrefs(context).gstEnabled }
+    val cessEnabled = remember { com.billing.pos.data.AppPrefs(context).cessEnabled }
     var showBatchInput by remember { mutableStateOf(false) }
     var editBatchIndex by remember { mutableStateOf(-1) }
     var showSizeInput by remember { mutableStateOf(false) }
@@ -853,6 +855,7 @@ private fun ItemDialog(
     var priceForQty by remember { mutableStateOf("1") }
     var taxable by remember { mutableStateOf((existing?.taxPercent ?: 0.0) > 0.0) }
     var taxPercent by remember { mutableStateOf(if ((existing?.taxPercent ?: 0.0) > 0.0) Format.money(existing!!.taxPercent) else "18") }
+    var cessPercent by remember { mutableStateOf(if ((existing?.cessPercent ?: 0.0) > 0.0) Format.money(existing!!.cessPercent) else "") }
     var barcode by remember { mutableStateOf(existing?.barcode ?: "") }
     var hsn by remember { mutableStateOf(existing?.hsn ?: "") }
     var category by remember { mutableStateOf(existing?.category ?: "") }
@@ -1203,6 +1206,19 @@ private fun ItemDialog(
                             "= ${Format.money(half)}% CGST + ${Format.money(half)}% SGST on the invoice",
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline
                         )
+                        if (cessEnabled) {
+                            OutlinedTextField(
+                                value = cessPercent, onValueChange = { cessPercent = it.filter { c -> c.isDigit() || c == '.' } },
+                                label = { Text("Cess % (optional)") }, singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                            )
+                            Text(
+                                "GST Compensation Cess — only applies to a short list of goods (tobacco, " +
+                                    "aerated drinks, coal, luxury vehicles, ...). Leave blank for everything else.",
+                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline
+                            )
+                        }
                     }
                 }
                 OutlinedTextField(
@@ -1313,7 +1329,8 @@ private fun ItemDialog(
                     val f = if (unitsDiffer) (factorText.toDoubleOrNull() ?: 1.0) else 1.0
                     val pp = purchasePrice.toDoubleOrNull() ?: 0.0
                     val mv = mrp.toDoubleOrNull() ?: 0.0
-                    onSave(name, p, t, barcode, hsn, category, os, unit, storeLocation, chemical, sec, f, pp, mv)
+                    val cess = if (taxable && gstEnabled && cessEnabled) (cessPercent.toDoubleOrNull() ?: 0.0) else 0.0
+                    onSave(name, p, t, barcode, hsn, category, os, unit, storeLocation, chemical, sec, f, pp, mv, cess)
                 }
             ) {
                 Text(if (factorInvalid) "Set conv. factor" else "Save")

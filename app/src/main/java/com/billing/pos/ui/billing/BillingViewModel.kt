@@ -44,14 +44,27 @@ data class CartLine(
     val primaryPerUnit: Double = 1.0,
     /** Free-text description printed under the item name. Quotations only, for now. */
     val note: String = "",
+    /** GST Compensation Cess % on top of [taxPercent] (tobacco, aerated drinks, coal, ...). */
+    val cessPercent: Double = 0.0,
+    /**
+     * True (the default, and the only behaviour before this field existed): [price] already
+     * includes tax+cess, so [base] is extracted out of [total]. False: [price] excludes
+     * tax+cess, so [base] equals [total] and tax/cess are added on top. Billing and Purchase
+     * set this from Settings > "Price includes tax"; every other document type (quotations,
+     * delivery notes, LPOs, ...) leaves it at the default and is unaffected by that setting.
+     */
+    val priceIncludesTax: Boolean = true,
     val uid: Long = nextUid()
 ) {
-    /** What the customer pays for this line — the selling price is tax-inclusive. */
+    /** What the customer pays for this line when [priceIncludesTax] — price*qty either way. */
     val total: Double get() = price * qty
-    /** Tax portion extracted out of the inclusive [total]. */
-    val tax: Double get() = if (taxPercent > 0.0) total - total / (1.0 + taxPercent / 100.0) else 0.0
-    /** Taxable value (inclusive total minus the extracted tax). */
-    val base: Double get() = total - tax
+    private val combinedRate: Double get() = taxPercent + cessPercent
+    /** Taxable value: extracted out of the inclusive [total], or [total] itself when exclusive. */
+    val base: Double get() = if (priceIncludesTax && combinedRate > 0.0) total / (1.0 + combinedRate / 100.0) else total
+    /** GST (CGST+SGST or IGST) portion — excludes cess. */
+    val tax: Double get() = base * taxPercent / 100.0
+    /** GST Compensation Cess portion. */
+    val cess: Double get() = base * cessPercent / 100.0
 
     /** [qty] expressed in the item's primary unit, for stock math. */
     val primaryQty: Double get() = qty * primaryPerUnit
@@ -65,6 +78,9 @@ data class CartLine(
 class BillingViewModel(private val app: Application) : AndroidViewModel(app) {
 
     private val repo = Repository(app)
+
+    /** Settings > "Price includes tax", read fresh each time a line enters the cart. */
+    private val priceIncludesTax: Boolean get() = com.billing.pos.data.AppPrefs(app).priceIncludesTax
 
     /** Shown on invoices/receipts — change here to your shop's name. */
     val shopName: String = "My Shop"
@@ -157,10 +173,11 @@ class BillingViewModel(private val app: Application) : AndroidViewModel(app) {
     // ---- derived totals ----
     val subTotal: Double get() = cart.sumOf { it.base }
     val taxTotal: Double get() = cart.sumOf { it.tax }
+    val cessTotal: Double get() = cart.sumOf { it.cess }
     val additionalCharge: Double get() = additionalChargeText.toDoubleOrNull() ?: 0.0
     val discount: Double get() = discountText.toDoubleOrNull() ?: 0.0
     val grandTotal: Double get() =
-        manualTotalText.toDoubleOrNull() ?: (subTotal + taxTotal + additionalCharge - discount)
+        manualTotalText.toDoubleOrNull() ?: (subTotal + taxTotal + cessTotal + additionalCharge - discount)
     val isManualTotal: Boolean get() = manualTotalText.toDoubleOrNull() != null
 
     // ---- mutations ----
@@ -200,7 +217,8 @@ class BillingViewModel(private val app: Application) : AndroidViewModel(app) {
             cart.add(
                 CartLine(
                     item.id, item.name, choice.price, item.taxPercent, 1.0,
-                    unit = choice.unit, primaryPerUnit = choice.primaryPerUnit
+                    unit = choice.unit, primaryPerUnit = choice.primaryPerUnit,
+                    cessPercent = item.cessPercent, priceIncludesTax = priceIncludesTax
                 )
             )
         }
@@ -212,7 +230,7 @@ class BillingViewModel(private val app: Application) : AndroidViewModel(app) {
         val name = "${item.name} (${size.name})"
         val idx = cart.indexOfFirst { it.itemId == item.id && it.name == name }
         if (idx >= 0) cart[idx] = cart[idx].copy(qty = cart[idx].qty + 1)
-        else cart.add(CartLine(item.id, name, size.price, item.taxPercent, 1.0, unit = item.unit))
+        else cart.add(CartLine(item.id, name, size.price, item.taxPercent, 1.0, unit = item.unit, cessPercent = item.cessPercent, priceIncludesTax = priceIncludesTax))
         dirty = true
     }
 
@@ -227,7 +245,8 @@ class BillingViewModel(private val app: Application) : AndroidViewModel(app) {
         else cart.add(
             CartLine(
                 item.id, item.name, choice.price, item.taxPercent, 1.0, batchNo = batch.batchNo,
-                unit = choice.unit, primaryPerUnit = choice.primaryPerUnit
+                unit = choice.unit, primaryPerUnit = choice.primaryPerUnit,
+                cessPercent = item.cessPercent, priceIncludesTax = priceIncludesTax
             )
         )
         dirty = true
@@ -253,7 +272,7 @@ class BillingViewModel(private val app: Application) : AndroidViewModel(app) {
             ?: customers.value.firstOrNull { it.name.equals(customerName, true) }
         selectedCustomer = c ?: Customer(id = customerId, name = customerName)
         cart.clear()
-        lines.forEach { cart.add(CartLine(it.itemId, it.name, it.price, it.taxPercent, it.qty, unit = it.unit)) }
+        lines.forEach { cart.add(CartLine(it.itemId, it.name, it.price, it.taxPercent, it.qty, unit = it.unit, priceIncludesTax = priceIncludesTax)) }
         dirty = true
         pendingSourceKind = sourceKind
         pendingSourceIds = sourceIds
@@ -263,7 +282,7 @@ class BillingViewModel(private val app: Application) : AndroidViewModel(app) {
     fun addPriceLines(prices: List<Double>) {
         val valid = prices.filter { it > 0.0 }
         if (valid.isEmpty()) return
-        valid.forEach { p -> cart.add(CartLine(itemId = 0, name = "", price = p, taxPercent = 0.0, qty = 1.0)) }
+        valid.forEach { p -> cart.add(CartLine(itemId = 0, name = "", price = p, taxPercent = 0.0, qty = 1.0, priceIncludesTax = priceIncludesTax)) }
         manualTotalText = ""   // let the bill total compute from the lines
         dirty = true
         _message.value = "Added ${valid.size} amount(s)"
@@ -274,7 +293,7 @@ class BillingViewModel(private val app: Application) : AndroidViewModel(app) {
         saveToMaster: Boolean = false, sellingPrice: Double = 0.0
     ) {
         val name = description.trim().ifBlank { "Item" }
-        cart.add(CartLine(itemId = 0, name = name, price = price, taxPercent = taxPercent, qty = 1.0))
+        cart.add(CartLine(itemId = 0, name = name, price = price, taxPercent = taxPercent, qty = 1.0, priceIncludesTax = priceIncludesTax))
         dirty = true
         if (saveToMaster && description.isNotBlank()) {
             val masterPrice = sellingPrice.takeIf { it > 0.0 } ?: price
@@ -300,11 +319,11 @@ class BillingViewModel(private val app: Application) : AndroidViewModel(app) {
                 ?: repo.itemByName(name)
             if (match != null) {
                 val rate = if (price > 0.0) price else match.price
-                cart.add(CartLine(match.id, match.name, rate, match.taxPercent, 1.0))
+                cart.add(CartLine(match.id, match.name, rate, match.taxPercent, 1.0, cessPercent = match.cessPercent, priceIncludesTax = priceIncludesTax))
                 onResult(true, "Added ${match.name}")
             } else {
                 val id = repo.addItem(name, price, 0.0)
-                cart.add(CartLine(id, name, price, 0.0, 1.0))
+                cart.add(CartLine(id, name, price, 0.0, 1.0, priceIncludesTax = priceIncludesTax))
                 onResult(true, "New item \"$name\" saved & added")
             }
             dirty = true
@@ -324,16 +343,16 @@ class BillingViewModel(private val app: Application) : AndroidViewModel(app) {
                 if (name.isBlank() && s.price <= 0.0) return@forEach
                 if (name.isBlank()) {
                     // Price-only line (no description) — allowed; name can be set later in the cart.
-                    cart.add(CartLine(0, "", s.price, 0.0, 1.0)); added++; return@forEach
+                    cart.add(CartLine(0, "", s.price, 0.0, 1.0, priceIncludesTax = priceIncludesTax)); added++; return@forEach
                 }
                 val match = items.value.firstOrNull { it.name.equals(name, ignoreCase = true) }
                     ?: repo.itemByName(name)
                 if (match != null) {
                     val rate = if (s.price > 0.0) s.price else match.price
-                    cart.add(CartLine(match.id, match.name, rate, match.taxPercent, 1.0))
+                    cart.add(CartLine(match.id, match.name, rate, match.taxPercent, 1.0, cessPercent = match.cessPercent, priceIncludesTax = priceIncludesTax))
                 } else {
                     val id = repo.addItem(name, s.price, 0.0)
-                    cart.add(CartLine(id, name, s.price, 0.0, 1.0))
+                    cart.add(CartLine(id, name, s.price, 0.0, 1.0, priceIncludesTax = priceIncludesTax))
                 }
                 added++
             }
@@ -472,6 +491,7 @@ class BillingViewModel(private val app: Application) : AndroidViewModel(app) {
             paymentMethod = payment.label,
             subTotal = subTotal,
             taxTotal = taxTotal,
+            cessTotal = cessTotal,
             additionalCharge = additionalCharge,
             discount = discount,
             grandTotal = grandTotal,
@@ -489,6 +509,7 @@ class BillingViewModel(private val app: Application) : AndroidViewModel(app) {
                 qty = it.qty,
                 price = it.price,
                 taxPercent = it.taxPercent,
+                cessPercent = it.cessPercent,
                 lineTotal = it.total,
                 batchNo = it.batchNo,
                 unit = it.unit,
@@ -586,7 +607,8 @@ class BillingViewModel(private val app: Application) : AndroidViewModel(app) {
                 cart.add(
                     CartLine(
                         0, it.name, it.price, it.taxPercent, it.qty, batchNo = it.batchNo,
-                        unit = it.unit, primaryPerUnit = perUnit
+                        unit = it.unit, primaryPerUnit = perUnit,
+                        cessPercent = it.cessPercent, priceIncludesTax = priceIncludesTax
                     )
                 )
             }
@@ -676,14 +698,14 @@ class BillingViewModel(private val app: Application) : AndroidViewModel(app) {
         val asBill = Bill(
             id = editingBillId ?: 0, billNo = billNo, dateMillis = dateMillis,
             customerId = customer.id, customerName = customer.name,
-            paymentMethod = payment.label, subTotal = subTotal, taxTotal = taxTotal,
+            paymentMethod = payment.label, subTotal = subTotal, taxTotal = taxTotal, cessTotal = cessTotal,
             additionalCharge = additionalCharge, discount = discount, grandTotal = grandTotal,
             paidAmount = 0.0, customerGstin = customer.gstin, customerState = customer.state, remarks = remarks.trim()
         )
         val asLines = cart.map {
             BillItem(
                 billId = asBill.id, name = it.name, qty = it.qty, price = it.price,
-                taxPercent = it.taxPercent, lineTotal = it.total, unit = it.unit
+                taxPercent = it.taxPercent, cessPercent = it.cessPercent, lineTotal = it.total, unit = it.unit
             )
         }
         val saved = BillWithItems(asBill, asLines)
@@ -708,7 +730,7 @@ class BillingViewModel(private val app: Application) : AndroidViewModel(app) {
                 ?: Customer(id = e.customerId, name = e.customerName)
             editAttachments.clear()
             cart.clear()
-            lines.forEach { cart.add(CartLine(0, it.name, it.price, it.taxPercent, it.qty, unit = it.unit)) }
+            lines.forEach { cart.add(CartLine(0, it.name, it.price, it.taxPercent, it.qty, unit = it.unit, priceIncludesTax = priceIncludesTax)) }
             dirty = false
         }
     }

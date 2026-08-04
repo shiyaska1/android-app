@@ -33,6 +33,8 @@ data class Purchase(
     val discount: Double,
     val grandTotal: Double,
     val paidAmount: Double = 0.0,
+    /** GST Compensation Cess total, separate from [taxTotal] (CGST/SGST/IGST). */
+    val cessTotal: Double = 0.0,
     val supplierGstin: String = "",
     /** Snapshot of [Supplier.state] at purchase time — decides IGST vs CGST+SGST on this purchase. */
     val supplierState: String = "",
@@ -73,6 +75,8 @@ data class PurchaseItem(
     val price: Double,
     val taxPercent: Double,
     val lineTotal: Double,
+    /** GST Compensation Cess % on this line, on top of [taxPercent]. */
+    val cessPercent: Double = 0.0,
     /** Batch/lot received (when batch tracking is on). */
     val batchNo: String = "",
     /** Unit this line was purchased in (blank = the item's primary unit). */

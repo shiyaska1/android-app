@@ -49,6 +49,24 @@ class AppPrefs(context: Context) {
         get() = p.getBoolean("gst_composition", false)
         set(v) { p.edit().putBoolean("gst_composition", v).apply() }
 
+    /**
+     * True (the default — matches every version of this app before the setting existed): item
+     * prices already include tax+cess, so it's extracted out of the entered price. False: prices
+     * exclude tax+cess, so it's added on top. Only Billing and Purchase respect this.
+     */
+    var priceIncludesTax: Boolean
+        get() = p.getBoolean("price_includes_tax", true)
+        set(v) { p.edit().putBoolean("price_includes_tax", v).apply() }
+
+    /**
+     * GST Compensation Cess (tobacco, aerated drinks, coal, luxury vehicles, ...) — off by
+     * default since almost no business needs it. Only visible when [gstEnabled] is also on;
+     * turning it on reveals a per-item Cess % field.
+     */
+    var cessEnabled: Boolean
+        get() = p.getBoolean("gst_cess_enabled", false)
+        set(v) { p.edit().putBoolean("gst_cess_enabled", v).apply() }
+
     /** UPI ID (VPA) money is collected to, e.g. name@okaxis, and the payee name shown. */
     var upiId: String
         get() = p.getString("upi_id", "") ?: ""

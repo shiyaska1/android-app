@@ -76,6 +76,7 @@ object ThermalPdf {
                 add(kv("Tax", Format.money(bill.taxTotal)))
             }
         }
+        if (bill.cessTotal != 0.0 && !composition) add(kv("Cess", Format.money(bill.cessTotal)))
         if (bill.additionalCharge != 0.0) add(kv("Additional", Format.money(bill.additionalCharge)))
         if (bill.discount != 0.0) add(kv("Discount", "-" + Format.money(bill.discount)))
         add(rule())

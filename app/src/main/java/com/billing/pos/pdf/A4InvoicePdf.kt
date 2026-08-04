@@ -165,6 +165,7 @@ object A4InvoicePdf {
                 total("Tax", Format.money(bill.taxTotal))
             }
         }
+        if (bill.cessTotal != 0.0 && !composition) total("Cess", Format.money(bill.cessTotal))
         if (bill.additionalCharge != 0.0) total("Additional", Format.money(bill.additionalCharge))
         if (bill.discount != 0.0) total("Discount", "-" + Format.money(bill.discount))
         c.drawLine(cRate, y - 2f, xEnd, y - 2f, line)

@@ -1359,13 +1359,13 @@ object FullBackup {
         .put("dateMillis", b.dateMillis).put("customerId", b.customerId).put("customerName", b.customerName)
         .put("paymentMethod", b.paymentMethod).put("subTotal", b.subTotal).put("taxTotal", b.taxTotal)
         .put("additionalCharge", b.additionalCharge).put("discount", b.discount)
-        .put("grandTotal", b.grandTotal).put("paidAmount", b.paidAmount)
+        .put("grandTotal", b.grandTotal).put("paidAmount", b.paidAmount).put("cessTotal", b.cessTotal)
         .put("customerGstin", b.customerGstin).put("customerState", b.customerState).put("source", b.source).put("remarks", b.remarks)
         .put("deviceId", b.deviceId)
 
     private fun lineJson(l: BillItem) = JSONObject().put("id", l.id).put("billId", l.billId)
         .put("name", l.name).put("qty", l.qty).put("price", l.price)
-        .put("taxPercent", l.taxPercent).put("lineTotal", l.lineTotal).put("batchNo", l.batchNo)
+        .put("taxPercent", l.taxPercent).put("cessPercent", l.cessPercent).put("lineTotal", l.lineTotal).put("batchNo", l.batchNo)
         .put("unit", l.unit).put("primaryQty", l.primaryQty)
 
     private fun receiptJson(r: Receipt) = JSONObject().put("id", r.id).put("receiptNo", r.receiptNo)
@@ -1408,13 +1408,14 @@ object FullBackup {
         .put("dateMillis", p.dateMillis).put("supplierId", p.supplierId).put("supplierName", p.supplierName)
         .put("paymentMethod", p.paymentMethod).put("subTotal", p.subTotal).put("taxTotal", p.taxTotal)
         .put("additionalCharge", p.additionalCharge).put("discount", p.discount).put("grandTotal", p.grandTotal)
-        .put("paidAmount", p.paidAmount).put("supplierGstin", p.supplierGstin).put("supplierState", p.supplierState)
+        .put("paidAmount", p.paidAmount).put("cessTotal", p.cessTotal)
+        .put("supplierGstin", p.supplierGstin).put("supplierState", p.supplierState)
         .put("source", p.source)
         .put("deviceId", p.deviceId)
 
     private fun pLineJson(l: PurchaseItem) = JSONObject().put("id", l.id).put("purchaseId", l.purchaseId)
         .put("name", l.name).put("qty", l.qty).put("price", l.price)
-        .put("taxPercent", l.taxPercent).put("lineTotal", l.lineTotal).put("batchNo", l.batchNo)
+        .put("taxPercent", l.taxPercent).put("cessPercent", l.cessPercent).put("lineTotal", l.lineTotal).put("batchNo", l.batchNo)
         .put("unit", l.unit).put("primaryQty", l.primaryQty)
 
     private fun groupJson(g: AccountGroup) = JSONObject().put("id", g.id).put("name", g.name)
@@ -1909,7 +1910,8 @@ object FullBackup {
         paymentMethod = o.optString("paymentMethod"), subTotal = o.optDouble("subTotal", 0.0),
         taxTotal = o.optDouble("taxTotal", 0.0), additionalCharge = o.optDouble("additionalCharge", 0.0),
         discount = o.optDouble("discount", 0.0), grandTotal = o.optDouble("grandTotal", 0.0),
-        paidAmount = o.optDouble("paidAmount", 0.0), customerGstin = o.optString("customerGstin"),
+        paidAmount = o.optDouble("paidAmount", 0.0), cessTotal = o.optDouble("cessTotal", 0.0),
+        customerGstin = o.optString("customerGstin"),
         customerState = o.optString("customerState"),
         source = o.optString("source"), remarks = o.optString("remarks"), deviceId = o.optString("deviceId")
     )
@@ -1917,7 +1919,8 @@ object FullBackup {
     private fun readLine(o: JSONObject) = BillItem(
         id = o.optLong("id"), billId = o.optLong("billId"), name = o.optString("name"),
         qty = o.optDouble("qty", 0.0), price = o.optDouble("price", 0.0),
-        taxPercent = o.optDouble("taxPercent", 0.0), lineTotal = o.optDouble("lineTotal", 0.0),
+        taxPercent = o.optDouble("taxPercent", 0.0), cessPercent = o.optDouble("cessPercent", 0.0),
+        lineTotal = o.optDouble("lineTotal", 0.0),
         batchNo = o.optString("batchNo"), unit = o.optString("unit"),
         primaryQty = o.optDouble("primaryQty", 0.0)
     )
@@ -1982,7 +1985,8 @@ object FullBackup {
         paymentMethod = o.optString("paymentMethod"), subTotal = o.optDouble("subTotal", 0.0),
         taxTotal = o.optDouble("taxTotal", 0.0), additionalCharge = o.optDouble("additionalCharge", 0.0),
         discount = o.optDouble("discount", 0.0), grandTotal = o.optDouble("grandTotal", 0.0),
-        paidAmount = o.optDouble("paidAmount", 0.0), supplierGstin = o.optString("supplierGstin"),
+        paidAmount = o.optDouble("paidAmount", 0.0), cessTotal = o.optDouble("cessTotal", 0.0),
+        supplierGstin = o.optString("supplierGstin"),
         supplierState = o.optString("supplierState"),
         source = o.optString("source"), deviceId = o.optString("deviceId")
     )
@@ -1990,7 +1994,8 @@ object FullBackup {
     private fun readPLine(o: JSONObject) = PurchaseItem(
         id = o.optLong("id"), purchaseId = o.optLong("purchaseId"), name = o.optString("name"),
         qty = o.optDouble("qty", 0.0), price = o.optDouble("price", 0.0),
-        taxPercent = o.optDouble("taxPercent", 0.0), lineTotal = o.optDouble("lineTotal", 0.0),
+        taxPercent = o.optDouble("taxPercent", 0.0), cessPercent = o.optDouble("cessPercent", 0.0),
+        lineTotal = o.optDouble("lineTotal", 0.0),
         batchNo = o.optString("batchNo"), unit = o.optString("unit"),
         primaryQty = o.optDouble("primaryQty", 0.0)
     )
