@@ -17,6 +17,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Checklist
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Edit
@@ -25,6 +27,7 @@ import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Divider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -40,6 +43,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -104,6 +108,14 @@ class InvoiceListViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { repo.deleteBill(bill); message.value = "Invoice ${bill.billNo} deleted" }
     }
 
+    fun deleteMany(bills: List<Bill>) {
+        if (bills.isEmpty()) return
+        viewModelScope.launch {
+            bills.forEach { repo.deleteBill(it) }
+            message.value = "${bills.size} invoice(s) deleted"
+        }
+    }
+
     fun exportAndShare(context: Context) {
         viewModelScope.launch {
             val json = withContext(Dispatchers.IO) { repo.exportJson(Session.sourceLabel) }
@@ -156,6 +168,9 @@ fun InvoiceListScreen(
     val itemNamesByBill by vm.itemNamesByBill.collectAsStateSafe()
     val message by vm.message.collectAsStateSafe()
     var pendingDelete by remember { mutableStateOf<Bill?>(null) }
+    var selectMode by remember { mutableStateOf(false) }
+    val selectedIds = remember { mutableStateListOf<Long>() }
+    var confirmBulkDelete by remember { mutableStateOf(false) }
     var searchQ by remember { mutableStateOf("") }
     var fromMillis by remember { mutableStateOf<Long?>(null) }
     var toMillis by remember { mutableStateOf<Long?>(null) }
@@ -236,25 +251,46 @@ fun InvoiceListScreen(
                     actionIconContentColor = MaterialTheme.colorScheme.onPrimary
                 ),
                 actions = {
-                    if (!noTaxOnly && onOpenNoTax != null) {
-                        IconButton(onClick = onOpenNoTax) {
-                            Icon(Icons.Filled.ReceiptLong, contentDescription = "No Tax Invoices")
+                    if (selectMode) {
+                        Text(
+                            "${selectedIds.size} selected",
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier.padding(end = 4.dp)
+                        )
+                        if (Session.canDelete) {
+                            IconButton(onClick = { if (selectedIds.isNotEmpty()) confirmBulkDelete = true }, enabled = selectedIds.isNotEmpty()) {
+                                Icon(Icons.Filled.Delete, contentDescription = "Delete selected")
+                            }
                         }
-                    }
-                    IconButton(onClick = { downloadPdf { buildInvoicesPdf() } }) {
-                        Icon(Icons.Filled.PictureAsPdf, contentDescription = "Download list PDF")
-                    }
-                    IconButton(onClick = { downloadXlsx { buildInvoicesXlsx() } }) {
-                        Icon(Icons.Filled.GridOn, contentDescription = "Download Excel")
-                    }
-                    if (Session.canExport) {
-                        IconButton(onClick = { vm.exportAndShare(context) }) {
-                            Icon(Icons.Filled.Share, contentDescription = "Export & share")
+                        IconButton(onClick = { selectMode = false; selectedIds.clear() }) {
+                            Icon(Icons.Filled.Close, contentDescription = "Cancel selection")
                         }
-                    }
-                    if (Session.canImport) {
-                        IconButton(onClick = { importPicker.launch("*/*") }) {
-                            Icon(Icons.Filled.Download, contentDescription = "Import data")
+                    } else {
+                        if (!noTaxOnly && onOpenNoTax != null) {
+                            IconButton(onClick = onOpenNoTax) {
+                                Icon(Icons.Filled.ReceiptLong, contentDescription = "No Tax Invoices")
+                            }
+                        }
+                        if (Session.canDelete) {
+                            IconButton(onClick = { selectMode = true }) {
+                                Icon(Icons.Filled.Checklist, contentDescription = "Select invoices")
+                            }
+                        }
+                        IconButton(onClick = { downloadPdf { buildInvoicesPdf() } }) {
+                            Icon(Icons.Filled.PictureAsPdf, contentDescription = "Download list PDF")
+                        }
+                        IconButton(onClick = { downloadXlsx { buildInvoicesXlsx() } }) {
+                            Icon(Icons.Filled.GridOn, contentDescription = "Download Excel")
+                        }
+                        if (Session.canExport) {
+                            IconButton(onClick = { vm.exportAndShare(context) }) {
+                                Icon(Icons.Filled.Share, contentDescription = "Export & share")
+                            }
+                        }
+                        if (Session.canImport) {
+                            IconButton(onClick = { importPicker.launch("*/*") }) {
+                                Icon(Icons.Filled.Download, contentDescription = "Import data")
+                            }
                         }
                     }
                 }
@@ -283,9 +319,21 @@ fun InvoiceListScreen(
                 } else LazyColumn(Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
                     items(filtered, key = { it.id }) { bill ->
                     Row(
-                        Modifier.fillMaxWidth().clickable { onEdit(bill.id) }.padding(vertical = 8.dp),
+                        Modifier.fillMaxWidth()
+                            .clickable {
+                                if (selectMode) {
+                                    if (bill.id in selectedIds) selectedIds.remove(bill.id) else selectedIds.add(bill.id)
+                                } else onEdit(bill.id)
+                            }
+                            .padding(vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        if (selectMode) {
+                            Checkbox(
+                                checked = bill.id in selectedIds,
+                                onCheckedChange = { checked -> if (checked) selectedIds.add(bill.id) else selectedIds.remove(bill.id) }
+                            )
+                        }
                         Column(Modifier.weight(1f)) {
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Text(bill.billNo, fontWeight = FontWeight.Bold)
@@ -304,14 +352,16 @@ fun InvoiceListScreen(
                             )
                         }
                         Text(Format.rupee(bill.grandTotal), fontWeight = FontWeight.Bold)
-                        if (Session.canEdit) {
-                            IconButton(onClick = { onEdit(bill.id) }) {
-                                Icon(Icons.Filled.Edit, "Edit")
+                        if (!selectMode) {
+                            if (Session.canEdit) {
+                                IconButton(onClick = { onEdit(bill.id) }) {
+                                    Icon(Icons.Filled.Edit, "Edit")
+                                }
                             }
-                        }
-                        if (Session.canDelete) {
-                            IconButton(onClick = { pendingDelete = bill }) {
-                                Icon(Icons.Filled.Delete, "Delete", tint = MaterialTheme.colorScheme.error)
+                            if (Session.canDelete) {
+                                IconButton(onClick = { pendingDelete = bill }) {
+                                    Icon(Icons.Filled.Delete, "Delete", tint = MaterialTheme.colorScheme.error)
+                                }
                             }
                         }
                     }
@@ -331,6 +381,21 @@ fun InvoiceListScreen(
                 TextButton(onClick = { vm.delete(bill); pendingDelete = null }) { Text("Delete") }
             },
             dismissButton = { TextButton(onClick = { pendingDelete = null }) { Text("Cancel") } }
+        )
+    }
+
+    if (confirmBulkDelete) {
+        AlertDialog(
+            onDismissRequest = { confirmBulkDelete = false },
+            title = { Text("Delete ${selectedIds.size} invoice(s)?") },
+            text = { Text("This cannot be undone.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    vm.deleteMany(filtered.filter { it.id in selectedIds })
+                    confirmBulkDelete = false; selectMode = false; selectedIds.clear()
+                }) { Text("Delete") }
+            },
+            dismissButton = { TextButton(onClick = { confirmBulkDelete = false }) { Text("Cancel") } }
         )
     }
 }

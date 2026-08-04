@@ -455,6 +455,7 @@ private fun AppNav() {
                 onCashbook = { nav.navigate("cashbook") },
                 onReports = { nav.navigate("reports") },
                 onCustomers = { nav.navigate("customers") },
+                onCustomerTypes = { nav.navigate("customertypes") },
                 onContacts = { nav.navigate("contacts") },
                 onSendSms = { nav.navigate("sendsms") },
                 onBulkSms = { nav.navigate("bulksms") },
@@ -463,6 +464,7 @@ private fun AppNav() {
                 onSmsReport = { nav.navigate("smsreport") },
                 onSmsSettings = { nav.navigate("smssettings") },
                 onItems = { nav.navigate("items") },
+                onItemCategories = { nav.navigate("itemcategories") },
                 onBundles = { nav.navigate("bundles") },
                 onNewPurchase = { nav.navigate("purchase") },
                 onPurchases = { nav.navigate("purchases") },
@@ -641,6 +643,9 @@ private fun AppNav() {
         composable("orderstatusreport") { com.billing.pos.ui.order.OrderStatusReportScreen(onBack = { nav.popBackStack() }) }
         composable("customers") {
             CustomersScreen(onBack = { nav.popBackStack() })
+        }
+        composable("customertypes") {
+            com.billing.pos.ui.masters.CustomerTypeMasterScreen(onBack = { nav.popBackStack() })
         }
         composable("contacts") {
             com.billing.pos.ui.sms.ContactsScreen(onBack = { nav.popBackStack() })
@@ -938,6 +943,9 @@ private fun AppNav() {
         }
         composable("items") {
             ItemsScreen(onBack = { nav.popBackStack() })
+        }
+        composable("itemcategories") {
+            com.billing.pos.ui.masters.ItemCategoryMasterScreen(onBack = { nav.popBackStack() })
         }
         composable(
             route = "items/edit/{id}",

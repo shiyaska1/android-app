@@ -314,6 +314,18 @@ class AppPrefs(context: Context) {
         if (customerTypes.none { it.equals(n, true) }) customerTypes = customerTypes + n
     }
 
+    /** User-added item categories (a saved set, in addition to any already used by items) — lets
+     *  a category be created from its master list before any item uses it. */
+    var itemCategories: List<String>
+        get() = (p.getString("item_categories", "") ?: "").split("|").map { it.trim() }.filter { it.isNotBlank() }
+        set(v) { p.edit().putString("item_categories", v.joinToString("|")).apply() }
+
+    fun addItemCategory(name: String) {
+        val n = name.trim()
+        if (n.isBlank()) return
+        if (itemCategories.none { it.equals(n, true) }) itemCategories = itemCategories + n
+    }
+
     // ---- licensing / trial ----
     var mobileNumber: String
         get() = p.getString("mobile", "") ?: ""

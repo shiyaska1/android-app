@@ -62,6 +62,7 @@ object FullBackup {
         .put("smsBearer", prefs.smsBearer)
         .put("gymSlots", prefs.gymSlots.joinToString("|"))
         .put("customerTypes", prefs.customerTypes.joinToString("|"))
+        .put("itemCategories", prefs.itemCategories.joinToString("|"))
         .put("weighScaleEnabled", prefs.weighScaleEnabled)
         .put("weighScalePrefix", prefs.weighScalePrefix)
         .put("weighScaleItemCodeLen", prefs.weighScaleItemCodeLen)
@@ -109,6 +110,7 @@ object FullBackup {
         prefs.smsBearer = s.optBoolean("smsBearer", prefs.smsBearer)
         if (s.has("gymSlots")) prefs.gymSlots = s.optString("gymSlots", "").split("|").map { it.trim() }.filter { it.isNotBlank() }
         if (s.has("customerTypes")) prefs.customerTypes = s.optString("customerTypes", "").split("|").map { it.trim() }.filter { it.isNotBlank() }
+        if (s.has("itemCategories")) prefs.itemCategories = s.optString("itemCategories", "").split("|").map { it.trim() }.filter { it.isNotBlank() }
         prefs.weighScaleEnabled = s.optBoolean("weighScaleEnabled", prefs.weighScaleEnabled)
         prefs.weighScalePrefix = s.optString("weighScalePrefix", prefs.weighScalePrefix)
         prefs.weighScaleItemCodeLen = s.optInt("weighScaleItemCodeLen", prefs.weighScaleItemCodeLen)
