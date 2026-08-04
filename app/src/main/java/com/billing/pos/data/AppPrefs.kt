@@ -428,6 +428,15 @@ class AppPrefs(context: Context) {
         get() = p.getBoolean("app_lock", false)
         set(v) { p.edit().putBoolean("app_lock", v).apply() }
 
+    /** Off by default: the app auto-signs in as the super admin, no login screen. On: every app
+     *  open shows the username/password login screen instead — the owner creates one account per
+     *  staff member (Users) with per-module permissions, and each signs in with their own
+     *  credentials. Carried by backup, so restoring the owner's backup onto a staff phone also
+     *  turns this on there. */
+    var requireLoginOnLaunch: Boolean
+        get() = p.getBoolean("require_login_on_launch", false)
+        set(v) { p.edit().putBoolean("require_login_on_launch", v).apply() }
+
     // ---- medical store: expiring-stock alerts ----
     /** Medical store only: warn about batches nearing expiry (daily notification + popup on open). */
     var expiryAlert: Boolean

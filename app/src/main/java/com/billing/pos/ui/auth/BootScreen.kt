@@ -21,7 +21,7 @@ class BootViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = Repository(app)
     private val prefs = AppPrefs(app)
 
-    /** Resolves the start route: "license", "dashboard" or "login". */
+    /** Resolves the start route: "license", "login" or "dashboard". */
     fun resolve(onResolved: (route: String) -> Unit) {
         viewModelScope.launch {
             repo.ensureDefaults()
@@ -32,9 +32,14 @@ class BootViewModel(app: Application) : AndroidViewModel(app) {
                 // its own key, so this asks again whenever a later milestone falls due.
                 License.dueMilestone(prefs.installDateMillis) > prefs.licensedMilestone ->
                     onResolved("license")
+                // Settings > "Require login on app open": every launch needs a real sign-in
+                // instead of the single-user auto-login below (Users defines who and with what
+                // module permissions). Carried by backup, so a staff phone that pulls the
+                // owner's backup starts asking for login too.
+                prefs.requireLoginOnLaunch -> onResolved("login")
                 else -> {
-                    // Single-user app: log in the super-admin automatically. No login screen,
-                    // no password change, no logout — the app opens straight to the dashboard.
+                    // Single-user app (default): log in the super-admin automatically. No login
+                    // screen, no password change, no logout — the app opens straight to the dashboard.
                     val user = repo.superAdmin()
                     if (user != null) {
                         Session.login(user)

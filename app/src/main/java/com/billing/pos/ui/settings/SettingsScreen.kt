@@ -202,6 +202,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
         if (granted) { autoVoiceDiary = true; com.billing.pos.audio.AutoDiaryService.start(context) }
     }
     var appLock by remember { mutableStateOf(prefs.appLock) }
+    var requireLoginOnLaunch by remember { mutableStateOf(prefs.requireLoginOnLaunch) }
     var expiryAlert by remember { mutableStateOf(prefs.expiryAlert) }
     var expiryDays by remember { mutableStateOf(prefs.expiryAlertDays.toString()) }
     // Warn if the lock is switched on but the phone itself has no lock to check against.
@@ -541,6 +542,22 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
                     "This phone has no screen lock set. Set a PIN/pattern/fingerprint in Android Settings, or the app will open without asking.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error
                 )
+            }
+
+            Divider(Modifier.padding(vertical = 16.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    HighlightText("Require login on app open", MaterialTheme.typography.titleSmall, settingAnchors, highlightedSetting)
+                    Text(
+                        "Off by default: the app opens straight to the dashboard, no sign-in. On: every " +
+                            "app open shows a username/password login screen instead — set up one account " +
+                            "per staff member from Users, with only the modules they need turned on. This " +
+                            "setting travels with backup, so a staff phone that pulls the owner's backup " +
+                            "starts asking for login too.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline
+                    )
+                }
+                Switch(checked = requireLoginOnLaunch, onCheckedChange = { requireLoginOnLaunch = it; prefs.requireLoginOnLaunch = it })
             }
 
             Divider(Modifier.padding(vertical = 16.dp))

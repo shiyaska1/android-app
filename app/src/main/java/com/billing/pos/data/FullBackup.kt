@@ -76,6 +76,7 @@ object FullBackup {
         .put("zatcaVatNumber", prefs.zatcaVatNumber)
         .put("uaeVatEnabled", prefs.uaeVatEnabled)
         .put("uaeTrn", prefs.uaeTrn)
+        .put("requireLoginOnLaunch", prefs.requireLoginOnLaunch)
 
     /** Applies a [settingsJson] object to [prefs]. Missing keys (older backups) keep the current
      *  local value — only keys actually present overwrite. */
@@ -122,6 +123,7 @@ object FullBackup {
         prefs.zatcaVatNumber = s.optString("zatcaVatNumber", prefs.zatcaVatNumber)
         prefs.uaeVatEnabled = s.optBoolean("uaeVatEnabled", prefs.uaeVatEnabled)
         prefs.uaeTrn = s.optString("uaeTrn", prefs.uaeTrn)
+        prefs.requireLoginOnLaunch = s.optBoolean("requireLoginOnLaunch", prefs.requireLoginOnLaunch)
     }
 
     /**
