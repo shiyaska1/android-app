@@ -162,18 +162,24 @@ private fun EvalMasterDialog(existing: LabEvalMaster?, groups: List<LabGroup>, o
                     OutlinedTextField(value = unit, onValueChange = { unit = it }, label = { Text("Unit") }, singleLine = true, modifier = Modifier.weight(1f))
                     OutlinedTextField(value = normal, onValueChange = { normal = it }, label = { Text("Normal value") }, singleLine = true, modifier = Modifier.weight(1.4f))
                 }
-                ExposedDropdownMenuBox(expanded = groupMenu, onExpandedChange = { groupMenu = !groupMenu }) {
+                // Plain field + inline list, not ExposedDropdownMenuBox — that popup-based
+                // combobox fights with the keyboard on real devices (typing the first
+                // character snaps the field back to the old value and blocks further typing).
+                Column {
                     OutlinedTextField(
-                        value = groupQuery, onValueChange = { groupQuery = it; group = it }, label = { Text("Group (optional)") }, singleLine = true,
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(groupMenu) },
-                        modifier = Modifier.menuAnchor().fillMaxWidth()
+                        value = groupQuery, onValueChange = { groupQuery = it; group = it; groupMenu = true }, label = { Text("Group (optional)") }, singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
                             .onFocusChanged { fs ->
                                 if (fs.isFocused) { groupQuery = ""; groupMenu = true }
-                                else if (!groupMenu) groupQuery = group
+                                else { groupMenu = false; groupQuery = group }
                             }
                     )
-                    if (groups.isNotEmpty()) ExposedDropdownMenu(expanded = groupMenu, onDismissRequest = { groupMenu = false }) {
-                        groups.forEach { g -> DropdownMenuItem(text = { Text(g.name) }, onClick = { group = g.name; groupQuery = g.name; groupMenu = false }) }
+                    if (groupMenu && groups.isNotEmpty()) {
+                        com.billing.pos.ui.common.SearchPickList(
+                            items = groups.filter { groupQuery.isBlank() || it.name.contains(groupQuery, ignoreCase = true) },
+                            itemLabel = { it.name },
+                            onPick = { g -> group = g.name; groupQuery = g.name; groupMenu = false }
+                        )
                     }
                 }
             }

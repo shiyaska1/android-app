@@ -635,27 +635,32 @@ fun ItemsScreen(
                 }
                 var catMenu by remember { mutableStateOf(false) }
                 var catQuery by remember { mutableStateOf(filterCategory.ifBlank { "All categories" }) }
-                ExposedDropdownMenuBox(expanded = catMenu, onExpandedChange = { catMenu = !catMenu }) {
+                // Plain field + inline list, not ExposedDropdownMenuBox — that popup-based
+                // combobox fights with the keyboard on real devices (typing the first character
+                // snaps the field back to the old value and blocks further typing).
+                Column {
                     OutlinedTextField(
                         value = catQuery,
                         onValueChange = { catQuery = it; catMenu = true },
                         label = { Text("Category") },
                         placeholder = { Text("Search category") },
                         singleLine = true,
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(catMenu) },
-                        modifier = Modifier.menuAnchor().fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth()
                             .onFocusChanged { fs ->
                                 if (fs.isFocused) { catQuery = ""; catMenu = true }
-                                else if (!catMenu) catQuery = filterCategory.ifBlank { "All categories" }
+                                else { catMenu = false; catQuery = filterCategory.ifBlank { "All categories" } }
                             }
                     )
-                    val catMatches = categories.filter { catQuery.isBlank() || it.contains(catQuery, true) }
-                    ExposedDropdownMenu(expanded = catMenu, onDismissRequest = { catMenu = false; catQuery = filterCategory.ifBlank { "All categories" } }) {
-                        DropdownMenuItem(text = { Text("All categories") }, onClick = { filterCategory = ""; catQuery = "All categories"; catMenu = false })
-                        catMatches.forEach { cat ->
-                            DropdownMenuItem(text = { Text(cat) }, onClick = { filterCategory = cat; catQuery = cat; catMenu = false })
-                        }
-                        if (catMatches.isEmpty() && catQuery.isNotBlank()) DropdownMenuItem(text = { Text("No match") }, onClick = { catMenu = false })
+                    if (catMenu) {
+                        val catMatches = categories.filter { catQuery.isBlank() || it.contains(catQuery, true) }
+                        com.billing.pos.ui.common.SearchPickList(
+                            items = listOf("All categories") + catMatches,
+                            itemLabel = { it },
+                            onPick = { cat ->
+                                filterCategory = if (cat == "All categories") "" else cat
+                                catQuery = cat; catMenu = false
+                            }
+                        )
                     }
                 }
             }
@@ -1046,42 +1051,50 @@ private fun ItemDialog(
                 }
 
                 // Primary unit — price and stock are always expressed in this unit.
-                ExposedDropdownMenuBox(expanded = unitMenu, onExpandedChange = { unitMenu = !unitMenu }) {
+                // Plain field + inline list, not ExposedDropdownMenuBox — that popup-based
+                // combobox fights with the keyboard on real devices (typing the first character
+                // snaps the field back to the old value and blocks further typing).
+                Column {
                     OutlinedTextField(
-                        value = unitQuery, onValueChange = { unitQuery = it; unit = it }, label = { Text("Primary unit") }, singleLine = true,
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = unitMenu) },
-                        modifier = Modifier.menuAnchor().fillMaxWidth()
+                        value = unitQuery,
+                        onValueChange = { unitQuery = it; unit = it; unitMenu = true },
+                        label = { Text("Primary unit") }, singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
                             .onFocusChanged { fs ->
                                 if (fs.isFocused) { unitQuery = ""; unitMenu = true }
-                                else if (!unitMenu) unitQuery = unit
+                                else { unitMenu = false; unitQuery = unit }
                             }
                     )
-                    ExposedDropdownMenu(expanded = unitMenu, onDismissRequest = { unitMenu = false }) {
-                        ITEM_UNITS.forEach { u ->
-                            DropdownMenuItem(text = { Text(u) }, onClick = { unit = u; unitQuery = u; unitMenu = false })
-                        }
+                    if (unitMenu) {
+                        val unitMatches = ITEM_UNITS.filter { unitQuery.isBlank() || it.contains(unitQuery, ignoreCase = true) }
+                        com.billing.pos.ui.common.SearchPickList(
+                            items = unitMatches,
+                            itemLabel = { it },
+                            onPick = { u -> unit = u; unitQuery = u; unitMenu = false }
+                        )
                     }
                 }
 
                 // Secondary unit + how many of it make one primary unit.
                 Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Box(Modifier.weight(1f)) {
-                        ExposedDropdownMenuBox(expanded = secUnitMenu, onExpandedChange = { secUnitMenu = !secUnitMenu }) {
-                            OutlinedTextField(
-                                value = secondaryUnitQuery, onValueChange = { secondaryUnitQuery = it; secondaryUnit = it },
-                                label = { Text("Secondary unit") }, singleLine = true,
-                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = secUnitMenu) },
-                                modifier = Modifier.menuAnchor().fillMaxWidth()
-                                    .onFocusChanged { fs ->
-                                        if (fs.isFocused) { secondaryUnitQuery = ""; secUnitMenu = true }
-                                        else if (!secUnitMenu) secondaryUnitQuery = secondaryUnit
-                                    }
-                            )
-                            ExposedDropdownMenu(expanded = secUnitMenu, onDismissRequest = { secUnitMenu = false }) {
-                                ITEM_UNITS.forEach { u ->
-                                    DropdownMenuItem(text = { Text(u) }, onClick = { secondaryUnit = u; secondaryUnitQuery = u; secUnitMenu = false })
+                    Column(Modifier.weight(1f)) {
+                        OutlinedTextField(
+                            value = secondaryUnitQuery,
+                            onValueChange = { secondaryUnitQuery = it; secondaryUnit = it; secUnitMenu = true },
+                            label = { Text("Secondary unit") }, singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                                .onFocusChanged { fs ->
+                                    if (fs.isFocused) { secondaryUnitQuery = ""; secUnitMenu = true }
+                                    else { secUnitMenu = false; secondaryUnitQuery = secondaryUnit }
                                 }
-                            }
+                        )
+                        if (secUnitMenu) {
+                            val secUnitMatches = ITEM_UNITS.filter { secondaryUnitQuery.isBlank() || it.contains(secondaryUnitQuery, ignoreCase = true) }
+                            com.billing.pos.ui.common.SearchPickList(
+                                items = secUnitMatches,
+                                itemLabel = { it },
+                                onPick = { u -> secondaryUnit = u; secondaryUnitQuery = u; secUnitMenu = false }
+                            )
                         }
                     }
                     OutlinedTextField(
@@ -1105,32 +1118,29 @@ private fun ItemDialog(
                 )
 
                 // Category: pick an existing one from the dropdown, or type/tap + for a new one.
+                // Plain field + inline list, not ExposedDropdownMenuBox — that popup-based
+                // combobox fights with the keyboard on real devices (typing the first character
+                // snaps the field back to the old value and blocks further typing).
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    ExposedDropdownMenuBox(
-                        expanded = catMenu,
-                        onExpandedChange = { catMenu = !catMenu },
-                        modifier = Modifier.weight(1f)
-                    ) {
+                    Column(Modifier.weight(1f)) {
                         OutlinedTextField(
                             value = categoryQuery,
-                            onValueChange = { categoryQuery = it; category = it },
+                            onValueChange = { categoryQuery = it; category = it; catMenu = true },
                             label = { Text("Category") },
                             singleLine = true,
-                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = catMenu) },
-                            modifier = Modifier.menuAnchor().fillMaxWidth()
+                            modifier = Modifier.fillMaxWidth()
                                 .onFocusChanged { fs ->
                                     if (fs.isFocused) { categoryQuery = ""; catMenu = true }
-                                    else if (!catMenu) categoryQuery = category
+                                    else { catMenu = false; categoryQuery = category }
                                 }
                         )
-                        if (categories.isNotEmpty()) {
+                        if (catMenu && categories.isNotEmpty()) {
                             val catMatches = categories.filter { categoryQuery.isBlank() || it.contains(categoryQuery, true) }
-                            ExposedDropdownMenu(expanded = catMenu, onDismissRequest = { catMenu = false }) {
-                                catMatches.forEach { c ->
-                                    DropdownMenuItem(text = { Text(c) }, onClick = { category = c; categoryQuery = c; catMenu = false })
-                                }
-                                if (catMatches.isEmpty()) DropdownMenuItem(text = { Text("No match") }, onClick = { catMenu = false })
-                            }
+                            com.billing.pos.ui.common.SearchPickList(
+                                items = catMatches,
+                                itemLabel = { it },
+                                onPick = { c -> category = c; categoryQuery = c; catMenu = false }
+                            )
                         }
                     }
                     IconButton(onClick = { category = ""; categoryQuery = ""; catMenu = false }) {

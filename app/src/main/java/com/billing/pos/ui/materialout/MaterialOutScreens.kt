@@ -370,21 +370,29 @@ fun MaterialOutListScreen(onBack: () -> Unit, onOpen: (Long) -> Unit, onNew: () 
             var itemMenu by remember { mutableStateOf(false) }
             var itemQuery by remember { mutableStateOf(itemFilter) }
             val itemMatches = remember(itemQuery, items) { if (itemQuery.isBlank()) items else items.filter { it.name.contains(itemQuery, true) } }
-            ExposedDropdownMenuBox(expanded = itemMenu, onExpandedChange = { itemMenu = !itemMenu }, modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
+            // Plain field + inline list, not ExposedDropdownMenuBox — that popup-based
+            // combobox fights with the keyboard on real devices (typing the first character
+            // snaps the field back to the old value and blocks further typing).
+            Column(Modifier.padding(horizontal = 12.dp, vertical = 6.dp)) {
                 OutlinedTextField(
                     value = itemQuery,
                     onValueChange = { itemQuery = it; itemFilter = it; itemMenu = true },
                     label = { Text("Filter by item (search)") },
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(itemMenu) },
-                    singleLine = true, modifier = Modifier.menuAnchor().fillMaxWidth()
+                    singleLine = true, modifier = Modifier.fillMaxWidth()
                         .onFocusChanged { fs ->
                             if (fs.isFocused) { itemQuery = ""; itemMenu = true }
-                            else if (!itemMenu) itemQuery = itemFilter
+                            else { itemMenu = false; itemQuery = itemFilter }
                         }
                 )
-                ExposedDropdownMenu(expanded = itemMenu, onDismissRequest = { itemMenu = false }) {
-                    DropdownMenuItem(text = { Text("All items") }, onClick = { itemFilter = ""; itemQuery = ""; itemMenu = false })
-                    itemMatches.take(30).forEach { it2 -> DropdownMenuItem(text = { Text(it2.name) }, onClick = { itemFilter = it2.name; itemQuery = it2.name; itemMenu = false }) }
+                if (itemMenu) {
+                    com.billing.pos.ui.common.SearchPickList(
+                        items = listOf("All items") + itemMatches.take(30).map { it2 -> it2.name },
+                        itemLabel = { it },
+                        onPick = { name ->
+                            itemFilter = if (name == "All items") "" else name
+                            itemQuery = name; itemMenu = false
+                        }
+                    )
                 }
             }
             // Result-invoice filter — dropdown.

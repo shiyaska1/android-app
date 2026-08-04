@@ -335,20 +335,25 @@ fun MaterialReceiptScreen(editId: Long?, onBack: () -> Unit, vm: MaterialReceipt
                 if (supQuery.isBlank()) suppliers else suppliers.filter { it.name.contains(supQuery, ignoreCase = true) }
             }
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 6.dp)) {
-                ExposedDropdownMenuBox(expanded = supMenu, onExpandedChange = { supMenu = !supMenu }, modifier = Modifier.weight(1f)) {
+                // Plain field + inline list, not ExposedDropdownMenuBox — that popup-based
+                // combobox fights with the keyboard on real devices (typing the first
+                // character snaps the field back to the old value and blocks further typing).
+                Column(Modifier.weight(1f)) {
                     OutlinedTextField(
                         value = supQuery, onValueChange = { supQuery = it; supMenu = true },
                         label = { Text("Supplier *") },
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(supMenu) },
-                        modifier = Modifier.menuAnchor().fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth()
                             .onFocusChanged { fs ->
                                 if (fs.isFocused) { supQuery = ""; supMenu = true }
-                                else if (!supMenu) supQuery = vm.selectedSupplier?.name ?: ""
+                                else { supMenu = false; supQuery = vm.selectedSupplier?.name ?: "" }
                             }
                     )
-                    ExposedDropdownMenu(expanded = supMenu, onDismissRequest = { supMenu = false }) {
-                        if (supMatches.isEmpty()) DropdownMenuItem(text = { Text("No match") }, onClick = { supMenu = false })
-                        supMatches.forEach { s -> DropdownMenuItem(text = { Text(s.name) }, onClick = { vm.selectSupplier(s); supQuery = s.name; supMenu = false }) }
+                    if (supMenu) {
+                        com.billing.pos.ui.common.SearchPickList(
+                            items = supMatches,
+                            itemLabel = { it.name },
+                            onPick = { s -> vm.selectSupplier(s); supQuery = s.name; supMenu = false }
+                        )
                     }
                 }
                 IconButton(onClick = { showNewSupplier = true }) { Icon(Icons.Filled.PersonAdd, "New supplier") }

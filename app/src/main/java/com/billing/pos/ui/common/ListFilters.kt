@@ -164,6 +164,44 @@ fun PartyFilterField(
     }
 }
 
+/**
+ * Renders [items] as a tappable list, meant to sit directly under a plain (non-popup) search
+ * field — see [PartyFilterField] for why: `ExposedDropdownMenuBox`'s popup fights with the
+ * keyboard on real devices (typing the first character snaps the field back to the old value
+ * and blocks further typing). Every searchable picker in the app should be built from a plain
+ * `OutlinedTextField` + this list, not `ExposedDropdownMenuBox`.
+ */
+@Composable
+fun <T> SearchPickList(
+    items: List<T>,
+    itemLabel: (T) -> String,
+    onPick: (T) -> Unit,
+    modifier: Modifier = Modifier,
+    maxHeight: androidx.compose.ui.unit.Dp = 232.dp,
+    emptyText: String = "No match"
+) {
+    Column(modifier.fillMaxWidth().heightIn(max = maxHeight).verticalScroll(rememberScrollState())) {
+        if (items.isEmpty()) {
+            Text(
+                emptyText,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(vertical = 10.dp, horizontal = 4.dp)
+            )
+        } else {
+            items.forEach { item ->
+                Text(
+                    itemLabel(item),
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 2,
+                    modifier = Modifier.fillMaxWidth()
+                        .clickable { onPick(item) }
+                        .padding(vertical = 10.dp, horizontal = 4.dp)
+                )
+            }
+        }
+    }
+}
+
 /** One month back from now — the default window for lists that show "recent" documents. */
 fun oneMonthAgoMillis(): Long = Calendar.getInstance().apply { add(Calendar.MONTH, -1) }.timeInMillis
 

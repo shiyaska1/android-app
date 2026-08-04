@@ -228,26 +228,30 @@ fun RecurringJournalEntryScreen(
                     LaunchedEffect(line.headName) { if (!expanded) headQuery = line.headName }
                     Column(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }, modifier = Modifier.weight(1f)) {
+                            // Plain field + inline list, not ExposedDropdownMenuBox — that
+                            // popup-based combobox fights with the keyboard on real devices
+                            // (typing the first character snaps the field back to the old
+                            // value and blocks further typing).
+                            Column(Modifier.weight(1f)) {
                                 OutlinedTextField(
                                     value = headQuery,
                                     onValueChange = { headQuery = it; expanded = true },
                                     label = { Text("Account head") },
                                     placeholder = { Text("Search account") },
                                     singleLine = true,
-                                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
-                                    modifier = Modifier.menuAnchor().fillMaxWidth()
+                                    modifier = Modifier.fillMaxWidth()
                                         .onFocusChanged { fs ->
                                             if (fs.isFocused) { headQuery = ""; expanded = true }
-                                            else if (!expanded) headQuery = line.headName
+                                            else { expanded = false; headQuery = line.headName }
                                         }
                                 )
-                                val matches = heads.filter { headQuery.isBlank() || it.name.contains(headQuery, true) }.take(5)
-                                ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false; headQuery = line.headName }) {
-                                    matches.forEach { h ->
-                                        DropdownMenuItem(text = { Text(h.name) }, onClick = { vm.setHead(index, h); headQuery = h.name; expanded = false })
-                                    }
-                                    if (matches.isEmpty()) DropdownMenuItem(text = { Text("No match") }, onClick = { expanded = false })
+                                if (expanded) {
+                                    val matches = heads.filter { headQuery.isBlank() || it.name.contains(headQuery, true) }.take(5)
+                                    com.billing.pos.ui.common.SearchPickList(
+                                        items = matches,
+                                        itemLabel = { it.name },
+                                        onPick = { h -> vm.setHead(index, h); headQuery = h.name; expanded = false }
+                                    )
                                 }
                             }
                             IconButton(onClick = { vm.removeLine(index) }) { Icon(Icons.Filled.Delete, "Remove", tint = MaterialTheme.colorScheme.error) }

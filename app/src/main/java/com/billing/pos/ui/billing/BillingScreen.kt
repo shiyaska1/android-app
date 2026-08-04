@@ -388,23 +388,24 @@ fun BillingScreen(
                     if (custQuery.isBlank()) customers
                     else customers.filter { it.name.contains(custQuery, ignoreCase = true) || it.phone.contains(custQuery) }
                 }
-                ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }, modifier = Modifier.weight(1.5f)) {
+                // Plain field + inline list, not ExposedDropdownMenuBox — that popup-based
+                // combobox fights with the keyboard on real devices (typing the first
+                // character snaps the field back to the old value and blocks further typing).
+                Column(Modifier.weight(1.5f)) {
                     OutlinedTextField(
                         value = custQuery, onValueChange = { custQuery = it; expanded = true },
                         label = { Text("Customer") }, placeholder = { Text("Search") }, singleLine = true,
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
-                        modifier = Modifier.menuAnchor().fillMaxWidth().onFocusChanged { fs ->
-                            if (fs.isFocused) { custQuery = ""; expanded = true } else custQuery = vm.selectedCustomer?.name ?: ""
+                        modifier = Modifier.fillMaxWidth().onFocusChanged { fs ->
+                            if (fs.isFocused) { custQuery = ""; expanded = true }
+                            else { expanded = false; custQuery = vm.selectedCustomer?.name ?: "" }
                         }
                     )
-                    ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                        filteredCustomers.forEach { c ->
-                            DropdownMenuItem(
-                                text = { Text(c.name + if (c.isDefault) "  (default)" else "") },
-                                onClick = { vm.selectCustomer(c); custQuery = c.name; expanded = false; focusManager.clearFocus() }
-                            )
-                        }
-                        if (filteredCustomers.isEmpty()) DropdownMenuItem(text = { Text("No match") }, onClick = { expanded = false })
+                    if (expanded) {
+                        com.billing.pos.ui.common.SearchPickList(
+                            items = filteredCustomers,
+                            itemLabel = { it.name + if (it.isDefault) "  (default)" else "" },
+                            onPick = { c -> vm.selectCustomer(c); custQuery = c.name; expanded = false; focusManager.clearFocus() }
+                        )
                     }
                 }
                 IconButton(onClick = { showNewCustomer = true }) { Icon(Icons.Filled.PersonAdd, "New customer") }

@@ -109,10 +109,10 @@ fun SupplierBillMapDialog(
                         val q = supplierQuery.trim()
                         if (q.isBlank()) suppliers else suppliers.filter { it.name.contains(q, ignoreCase = true) }
                     }
-                    ExposedDropdownMenuBox(
-                        expanded = supplierExpanded && supplierSuggestions.isNotEmpty(),
-                        onExpandedChange = { supplierExpanded = it }
-                    ) {
+                    // Plain field + inline list, not ExposedDropdownMenuBox — that popup-based
+                    // combobox fights with the keyboard on real devices (typing the first
+                    // character snaps the field back to the old value and blocks further typing).
+                    Column {
                         OutlinedTextField(
                             value = supplierQuery,
                             onValueChange = { q ->
@@ -121,22 +121,18 @@ fun SupplierBillMapDialog(
                             },
                             label = { Text("Supplier") }, singleLine = true,
                             supportingText = { if (supplierId == null) Text("No match — pick one, or set it in the form below") },
-                            modifier = Modifier.menuAnchor().fillMaxWidth()
+                            modifier = Modifier.fillMaxWidth()
                                 .onFocusChanged { fs ->
                                     if (fs.isFocused) { supplierQuery = ""; supplierExpanded = true }
-                                    else if (!supplierExpanded) supplierQuery = suppliers.firstOrNull { it.id == supplierId }?.name ?: supplierQuery
+                                    else { supplierExpanded = false; supplierQuery = suppliers.firstOrNull { it.id == supplierId }?.name ?: supplierQuery }
                                 }
                         )
-                        ExposedDropdownMenu(
-                            expanded = supplierExpanded && supplierSuggestions.isNotEmpty(),
-                            onDismissRequest = { supplierExpanded = false }
-                        ) {
-                            supplierSuggestions.forEach { s ->
-                                DropdownMenuItem(
-                                    text = { Text(s.name) },
-                                    onClick = { supplierQuery = s.name; supplierId = s.id; supplierExpanded = false }
-                                )
-                            }
+                        if (supplierExpanded && supplierSuggestions.isNotEmpty()) {
+                            com.billing.pos.ui.common.SearchPickList(
+                                items = supplierSuggestions,
+                                itemLabel = { it.name },
+                                onPick = { s -> supplierQuery = s.name; supplierId = s.id; supplierExpanded = false }
+                            )
                         }
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
@@ -202,33 +198,32 @@ fun SupplierBillMapDialog(
                                     else masterItems.filter { it.name.contains(q, ignoreCase = true) }
                                         .sortedBy { it.name.lowercase() }.take(6)
                                 }
-                                ExposedDropdownMenuBox(
-                                    expanded = expanded && suggestions.isNotEmpty(),
-                                    onExpandedChange = { expanded = it },
-                                    modifier = Modifier.weight(1f)
-                                ) {
+                                // Plain field + inline list, not ExposedDropdownMenuBox — that
+                                // popup-based combobox fights with the keyboard on real devices
+                                // (typing the first character snaps the field back to the old
+                                // value and blocks further typing).
+                                Column(Modifier.weight(1f)) {
                                     OutlinedTextField(
                                         value = nameQuery,
                                         onValueChange = { nameQuery = it; row.name = it; expanded = true },
                                         label = { Text("Item name") }, singleLine = true,
-                                        modifier = Modifier.menuAnchor().fillMaxWidth()
+                                        modifier = Modifier.fillMaxWidth()
                                             .onFocusChanged { fs ->
                                                 if (fs.isFocused) { nameQuery = ""; expanded = true }
-                                                else if (!expanded) nameQuery = row.name
+                                                else { expanded = false; nameQuery = row.name }
                                             }
                                     )
-                                    ExposedDropdownMenu(expanded = expanded && suggestions.isNotEmpty(), onDismissRequest = { expanded = false }) {
-                                        suggestions.forEach { item ->
-                                            DropdownMenuItem(
-                                                text = { Text("${item.name}   ₹${trimNum(item.costRate)}") },
-                                                onClick = {
-                                                    row.name = item.name
-                                                    nameQuery = item.name
-                                                    row.price = trimNum(item.costRate)
-                                                    expanded = false
-                                                }
-                                            )
-                                        }
+                                    if (expanded && suggestions.isNotEmpty()) {
+                                        com.billing.pos.ui.common.SearchPickList(
+                                            items = suggestions,
+                                            itemLabel = { "${it.name}   ₹${trimNum(it.costRate)}" },
+                                            onPick = { item ->
+                                                row.name = item.name
+                                                nameQuery = item.name
+                                                row.price = trimNum(item.costRate)
+                                                expanded = false
+                                            }
+                                        )
                                     }
                                 }
                                 IconButton(onClick = { rows.removeAt(index) }) { Icon(Icons.Filled.Delete, "Remove", tint = MaterialTheme.colorScheme.error) }

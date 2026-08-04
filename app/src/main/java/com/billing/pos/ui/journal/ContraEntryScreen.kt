@@ -224,26 +224,30 @@ private fun CashBankHeadField(
 ) {
     var expanded by remember { mutableStateOf(false) }
     var query by remember(selectedName) { mutableStateOf(selectedName) }
-    ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
+    // Plain field + inline list, not ExposedDropdownMenuBox — that popup-based combobox fights
+    // with the keyboard on real devices (typing the first character snaps the field back to
+    // the old value and blocks further typing).
+    Column {
         OutlinedTextField(
             value = query,
             onValueChange = { query = it; expanded = true },
             label = { Text(label) },
             placeholder = { Text("Search Cash/Bank account") },
             singleLine = true,
-            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
-            modifier = Modifier.menuAnchor().fillMaxWidth().padding(top = 4.dp)
+            modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
                 .onFocusChanged { fs ->
                     if (fs.isFocused) { query = ""; expanded = true }
-                    else if (!expanded) query = selectedName
+                    else { expanded = false; query = selectedName }
                 }
         )
-        val matches = heads.filter { query.isBlank() || it.name.contains(query, true) }.take(6)
-        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false; query = selectedName }) {
-            matches.forEach { h ->
-                DropdownMenuItem(text = { Text(h.name) }, onClick = { onPick(h); query = h.name; expanded = false })
-            }
-            if (matches.isEmpty()) DropdownMenuItem(text = { Text("No Cash/Bank account found") }, onClick = { expanded = false })
+        if (expanded) {
+            val matches = heads.filter { query.isBlank() || it.name.contains(query, true) }.take(6)
+            com.billing.pos.ui.common.SearchPickList(
+                items = matches,
+                itemLabel = { it.name },
+                onPick = { h -> onPick(h); query = h.name; expanded = false },
+                emptyText = "No Cash/Bank account found"
+            )
         }
     }
 }
