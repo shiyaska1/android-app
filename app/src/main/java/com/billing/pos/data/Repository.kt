@@ -1336,6 +1336,8 @@ class Repository(private val context: Context) {
     suspend fun itemsAll(): List<Item> = itemDao.all()
     suspend fun salesReturnsAll(): List<SalesReturn> = salesReturnDao.all()
     suspend fun customersAll(): List<Customer> = customerDao.all()
+    suspend fun suppliersAll(): List<Supplier> = supplierDao.all()
+    suspend fun purchaseReturnsAll(): List<PurchaseReturn> = purchaseReturnDao.all()
 
     suspend fun updateSupplier(supplier: Supplier) = supplierDao.update(supplier)
 

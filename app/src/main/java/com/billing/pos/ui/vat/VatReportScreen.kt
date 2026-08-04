@@ -649,6 +649,7 @@ fun VatReportScreen(
             val gstEnabled = remember { AppPrefs(context).gstEnabled }
             val cessEnabled = remember { AppPrefs(context).cessEnabled }
             TaxDetailReportsSection(vm, gstEnabled, cessEnabled)
+            GstRegisterSection(vm, gstEnabled)
         }
     }
 }
