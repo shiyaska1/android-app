@@ -501,7 +501,7 @@ fun FastBillDialog(
                 Row {
                     TextButton(onClick = {
                         askSave = false
-                        storeTape { msg -> android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show() }
+                        storeTape(onDone = { msg -> android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show() })
                     }) { Text("Save") }
                     TextButton(onClick = {
                         askSave = false
