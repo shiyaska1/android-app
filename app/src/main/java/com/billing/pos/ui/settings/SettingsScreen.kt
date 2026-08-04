@@ -145,6 +145,10 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
     var cessEnabled by remember { mutableStateOf(prefs.cessEnabled) }
     var noTaxInvoiceEnabled by remember { mutableStateOf(prefs.noTaxInvoiceEnabled) }
     var noTaxInvoicePrefix by remember { mutableStateOf(prefs.noTaxInvoicePrefix) }
+    var zatcaEnabled by remember { mutableStateOf(prefs.zatcaEnabled) }
+    var zatcaVatNumber by remember { mutableStateOf(prefs.zatcaVatNumber) }
+    var uaeVatEnabled by remember { mutableStateOf(prefs.uaeVatEnabled) }
+    var uaeTrn by remember { mutableStateOf(prefs.uaeTrn) }
     var priceIncludesTax by remember { mutableStateOf(prefs.priceIncludesTax) }
     var upiId by remember { mutableStateOf(prefs.upiId) }
     var upiName by remember { mutableStateOf(prefs.upiName) }
@@ -411,6 +415,52 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
                 },
                 modifier = Modifier.fillMaxWidth().padding(top = 16.dp)
             ) { Text("Save") }
+
+            Divider(Modifier.padding(vertical = 16.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    HighlightText("Saudi ZATCA invoice", MaterialTheme.typography.titleSmall, settingAnchors, highlightedSetting)
+                    Text(
+                        "Off by default. When on, PDF invoices print as a ZATCA \"Simplified Tax Invoice\" " +
+                            "(seller + VAT Reg. No., SAR totals, ZATCA QR code) instead of the GST/plain " +
+                            "layout — for KSA-registered sellers only.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline
+                    )
+                }
+                Switch(checked = zatcaEnabled, onCheckedChange = { zatcaEnabled = it; prefs.zatcaEnabled = it; if (it) { uaeVatEnabled = false; prefs.uaeVatEnabled = false } })
+            }
+            if (zatcaEnabled) {
+                OutlinedTextField(
+                    value = zatcaVatNumber,
+                    onValueChange = { zatcaVatNumber = it; prefs.zatcaVatNumber = it },
+                    label = { Text("Seller VAT registration number (15 digits)") }, singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                )
+            }
+
+            Divider(Modifier.padding(vertical = 16.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    HighlightText("UAE VAT invoice", MaterialTheme.typography.titleSmall, settingAnchors, highlightedSetting)
+                    Text(
+                        "Off by default. When on, PDF invoices print as a UAE FTA-style tax invoice — " +
+                            "seller TRN and a single VAT line (no state split like GST), totals in AED. " +
+                            "UAE's standard VAT rate is 5% — set that on each item's Tax % field.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline
+                    )
+                }
+                Switch(checked = uaeVatEnabled, onCheckedChange = { uaeVatEnabled = it; prefs.uaeVatEnabled = it; if (it) { zatcaEnabled = false; prefs.zatcaEnabled = false } })
+            }
+            if (uaeVatEnabled) {
+                OutlinedTextField(
+                    value = uaeTrn,
+                    onValueChange = { uaeTrn = it; prefs.uaeTrn = it },
+                    label = { Text("Seller Tax Registration Number (TRN)") }, singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                )
+            }
 
             Divider(Modifier.padding(vertical = 16.dp))
             HighlightText("Company logo (A4 invoice)", MaterialTheme.typography.titleSmall, settingAnchors, highlightedSetting)

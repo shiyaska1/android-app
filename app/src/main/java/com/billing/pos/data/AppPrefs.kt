@@ -83,6 +83,30 @@ class AppPrefs(context: Context) {
         get() = p.getString("no_tax_invoice_prefix", "NT-") ?: "NT-"
         set(v) { p.edit().putString("no_tax_invoice_prefix", v.trim()).apply() }
 
+    /** Saudi ZATCA mode — off by default. When on, PDF invoices print as a ZATCA "Simplified Tax
+     *  Invoice" (seller + VAT reg. no., SAR totals, ZATCA QR code) instead of the GST/plain layout;
+     *  mutually exclusive with GST mode in what gets printed. */
+    var zatcaEnabled: Boolean
+        get() = p.getBoolean("zatca_enabled", false)
+        set(v) { p.edit().putBoolean("zatca_enabled", v).apply() }
+
+    /** Seller's 15-digit Saudi VAT registration number, encoded into the ZATCA QR. */
+    var zatcaVatNumber: String
+        get() = p.getString("zatca_vat_number", "") ?: ""
+        set(v) { p.edit().putString("zatca_vat_number", v.trim()).apply() }
+
+    /** UAE VAT mode — off by default, mutually exclusive with GST/ZATCA in what gets printed.
+     *  Prints a UAE FTA-style tax invoice: seller TRN, a single VAT line (no CGST/SGST-style
+     *  state split), totals in AED. UAE's standard rate is 5%. */
+    var uaeVatEnabled: Boolean
+        get() = p.getBoolean("uae_vat_enabled", false)
+        set(v) { p.edit().putBoolean("uae_vat_enabled", v).apply() }
+
+    /** Seller's 15-digit UAE Tax Registration Number (TRN), printed on the invoice. */
+    var uaeTrn: String
+        get() = p.getString("uae_trn", "") ?: ""
+        set(v) { p.edit().putString("uae_trn", v.trim()).apply() }
+
     /**
      * Weighing-scale barcodes — off by default. Turns on parsing "in-store" barcodes (a fixed
      * prefix digit + item PLU code + weight-or-price value + a standard EAN-13 check digit) so

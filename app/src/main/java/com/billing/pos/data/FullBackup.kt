@@ -72,6 +72,10 @@ object FullBackup {
         .put("barcodeShowPrice", prefs.barcodeShowPrice)
         .put("barcodeShowCompanyName", prefs.barcodeShowCompanyName)
         .put("barcodeShowSize", prefs.barcodeShowSize)
+        .put("zatcaEnabled", prefs.zatcaEnabled)
+        .put("zatcaVatNumber", prefs.zatcaVatNumber)
+        .put("uaeVatEnabled", prefs.uaeVatEnabled)
+        .put("uaeTrn", prefs.uaeTrn)
 
     /** Applies a [settingsJson] object to [prefs]. Missing keys (older backups) keep the current
      *  local value — only keys actually present overwrite. */
@@ -114,6 +118,10 @@ object FullBackup {
         prefs.barcodeShowPrice = s.optBoolean("barcodeShowPrice", prefs.barcodeShowPrice)
         prefs.barcodeShowCompanyName = s.optBoolean("barcodeShowCompanyName", prefs.barcodeShowCompanyName)
         prefs.barcodeShowSize = s.optBoolean("barcodeShowSize", prefs.barcodeShowSize)
+        prefs.zatcaEnabled = s.optBoolean("zatcaEnabled", prefs.zatcaEnabled)
+        prefs.zatcaVatNumber = s.optString("zatcaVatNumber", prefs.zatcaVatNumber)
+        prefs.uaeVatEnabled = s.optBoolean("uaeVatEnabled", prefs.uaeVatEnabled)
+        prefs.uaeTrn = s.optString("uaeTrn", prefs.uaeTrn)
     }
 
     /**
