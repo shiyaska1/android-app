@@ -1004,6 +1004,9 @@ object FullBackup {
                     .also { nid -> log.add("diaryEntries", nid) }
             }
         }
+        // NOTE: diary entries themselves aren't deduped above (every merge inserts them fresh),
+        // so a per-entry attachment dedup here would never trigger — the real fix is deduping
+        // diaryEntries first (e.g. by title), which is a separate, riskier change.
         root.optJSONArray("diaryAttachments")?.let {
             for (i in 0 until it.length()) {
                 val a = readAtt(context, it.getJSONObject(i)); val ne = diaryMap[a.entryId] ?: continue
@@ -1016,10 +1019,16 @@ object FullBackup {
                 db.diaryDao().insertBlock(b.copy(id = 0, entryId = ne))
             }
         }
-        // Item attachments
+        // Item attachments — deduped per item by name, same as the bill/expense/customer
+        // attachment blocks above (items themselves are already deduped by name, so unlike
+        // diary entries this dedup is effective across repeated merge cycles).
+        val existingItemAttNames = db.itemAttachmentDao().all().groupBy { it.itemId }
+            .mapValues { (_, l) -> l.map { it.name }.toMutableSet() }
         root.optJSONArray("itemAttachments")?.let {
             for (i in 0 until it.length()) {
                 val a = readItemAtt(context, it.getJSONObject(i)); val ni = itemMap[a.itemId] ?: continue
+                val names = existingItemAttNames.getOrPut(ni) { mutableSetOf() }
+                if (!names.add(a.name)) continue
                 db.itemAttachmentDao().insert(a.copy(id = 0, itemId = ni))
             }
         }
@@ -1197,25 +1206,40 @@ object FullBackup {
         root.optJSONArray("materialOutItems")?.let {
             for (i in 0 until it.length()) { val l = readMatOutItem(it.getJSONObject(i)); val nm = matOutMap[l.outId] ?: continue; db.materialOutDao().insertLines(listOf(l.copy(id = 0, outId = nm))) }
         }
-        // Bill attachments
+        // Bill attachments — deduped per bill by name, so repeated cloud-sync pull/merge cycles
+        // (which re-send the same attachment records every time, since push never sends the
+        // files themselves) don't keep re-inserting the same attachment forever.
+        val existingBillAttNames = db.billAttachmentDao().all().groupBy { it.billId }
+            .mapValues { (_, l) -> l.map { it.name }.toMutableSet() }
         root.optJSONArray("billAttachments")?.let {
             for (i in 0 until it.length()) {
                 val a = readBillAtt(context, it.getJSONObject(i)); val nb = billMap[a.billId] ?: continue
+                val names = existingBillAttNames.getOrPut(nb) { mutableSetOf() }
+                if (!names.add(a.name)) continue
                 db.billAttachmentDao().insert(a.copy(id = 0, billId = nb))
             }
         }
-        // Payment attachments (voice / photo / file)
+        // Payment attachments (voice / photo / file) — same per-parent dedup as bill attachments.
+        val existingExpenseAttNames = db.expenseAttachmentDao().all().groupBy { it.expenseId }
+            .mapValues { (_, l) -> l.map { it.name }.toMutableSet() }
         root.optJSONArray("expenseAttachments")?.let {
             for (i in 0 until it.length()) {
                 val a = readExpenseAtt(context, it.getJSONObject(i)); val ne = expMap[a.expenseId] ?: continue
+                val names = existingExpenseAttNames.getOrPut(ne) { mutableSetOf() }
+                if (!names.add(a.name)) continue
                 db.expenseAttachmentDao().insert(a.copy(id = 0, expenseId = ne))
             }
         }
-        // Customer documents follow whichever customer row they ended up attached to.
+        // Customer documents follow whichever customer row they ended up attached to — same
+        // per-parent dedup as bill attachments.
+        val existingCustAttNames = db.customerAttachmentDao().all().groupBy { it.customerId }
+            .mapValues { (_, l) -> l.map { it.name }.toMutableSet() }
         root.optJSONArray("customerAttachments")?.let {
             for (i in 0 until it.length()) {
                 val a2 = readCustAtt(context, it.getJSONObject(i))
                 val nc = custMap[a2.customerId] ?: continue
+                val names = existingCustAttNames.getOrPut(nc) { mutableSetOf() }
+                if (!names.add(a2.name)) continue
                 db.customerAttachmentDao().insert(a2.copy(id = 0, customerId = nc))
             }
         }
