@@ -61,7 +61,7 @@ object ThermalPrinter {
             f.outputStream().use { bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
             f.absolutePath
         }.getOrNull() else null
-        sendBytes(context, buildReceipt(company, bill, lines, imagePaths, title, qrPath))
+        sendBytes(context, buildReceipt(context, company, bill, lines, imagePaths, title, qrPath))
     }
 
     /** Prints a diary entry: type, title, body, with the date and time. */
@@ -329,8 +329,9 @@ object ThermalPrinter {
         ESC.toByte(), 'G'.code.toByte(), 1
     )
 
-    private fun buildReceipt(company: CompanyInfo, bill: Bill, lines: List<BillItem>, imagePaths: List<String> = emptyList(), title: String? = null, qrPath: String? = null): ByteArray {
-        val actualTitle = title ?: if (bill.taxTotal > 0.0) "TAX INVOICE" else "INVOICE"
+    private fun buildReceipt(context: Context, company: CompanyInfo, bill: Bill, lines: List<BillItem>, imagePaths: List<String> = emptyList(), title: String? = null, qrPath: String? = null): ByteArray {
+        val gst = com.billing.pos.data.AppPrefs(context).gstEnabled
+        val actualTitle = title ?: if (gst || bill.taxTotal > 0.0) "TAX INVOICE" else "INVOICE"
         val sb = StringBuilder()
         sb.append(center(company.name)).append('\n')
         if (company.address.isNotBlank()) sb.append(center(company.address)).append('\n')
@@ -341,6 +342,11 @@ object ThermalPrinter {
         sb.append("Date: ${Format.dateTime(bill.dateMillis)}\n")
         sb.append("Cust: ${bill.customerName}\n")
         sb.append("Pay : ${bill.paymentMethod}\n")
+        if (gst) {
+            val supplyType = if (bill.customerGstin.isNotBlank()) "B2B" else "B2C"
+            if (bill.customerGstin.isNotBlank()) sb.append(clip("GSTIN: ${bill.customerGstin}", COLS)).append('\n')
+            sb.append("Supply: $supplyType\n")
+        }
         sb.append(line()).append('\n')
         sb.append(row("Item", "Qty", "Amount")).append('\n')
         sb.append(line()).append('\n')
@@ -351,7 +357,14 @@ object ThermalPrinter {
         }
         sb.append(line()).append('\n')
         sb.append(kv("Sub Total", Format.money(bill.subTotal))).append('\n')
-        if (bill.taxTotal != 0.0) sb.append(kv("Tax", Format.money(bill.taxTotal))).append('\n')
+        if (bill.taxTotal != 0.0) {
+            if (gst) {
+                sb.append(kv("CGST", Format.money(bill.taxTotal / 2.0))).append('\n')
+                sb.append(kv("SGST", Format.money(bill.taxTotal / 2.0))).append('\n')
+            } else {
+                sb.append(kv("Tax", Format.money(bill.taxTotal))).append('\n')
+            }
+        }
         if (bill.additionalCharge != 0.0)
             sb.append(kv("Additional", Format.money(bill.additionalCharge))).append('\n')
         if (bill.discount != 0.0)

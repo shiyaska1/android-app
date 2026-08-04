@@ -832,6 +832,7 @@ private fun ItemDialog(
     onSave: (String, Double, Double, String, String, String, Double, String, String, String, String, Double, Double, Double) -> Unit
 ) {
     val context = LocalContext.current
+    val gstEnabled = remember { com.billing.pos.data.AppPrefs(context).gstEnabled }
     var showBatchInput by remember { mutableStateOf(false) }
     var editBatchIndex by remember { mutableStateOf(-1) }
     var showSizeInput by remember { mutableStateOf(false) }
@@ -1193,9 +1194,16 @@ private fun ItemDialog(
                 if (taxable) {
                     OutlinedTextField(
                         value = taxPercent, onValueChange = { taxPercent = it.filter { c -> c.isDigit() || c == '.' } },
-                        label = { Text("Tax %") }, singleLine = true,
+                        label = { Text(if (gstEnabled) "GST %" else "Tax %") }, singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth()
                     )
+                    if (gstEnabled) {
+                        val half = (taxPercent.toDoubleOrNull() ?: 0.0) / 2.0
+                        Text(
+                            "= ${Format.money(half)}% CGST + ${Format.money(half)}% SGST on the invoice",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline
+                        )
+                    }
                 }
                 OutlinedTextField(
                     value = barcode, onValueChange = { barcode = it },

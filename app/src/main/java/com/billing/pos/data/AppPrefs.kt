@@ -30,6 +30,16 @@ class AppPrefs(context: Context) {
 
     val company: CompanyInfo get() = CompanyInfo(companyName, companyAddress, companyPhone, companyGstin)
 
+    /**
+     * India GST mode. When on: item entry labels its tax field "GST %", invoices always
+     * title "TAX INVOICE" and split the tax total into CGST + SGST (assumes intra-state
+     * sales, the common case for a single-location shop), and print the customer's GSTIN
+     * with a B2B/B2C tag based on whether one was entered for that customer.
+     */
+    var gstEnabled: Boolean
+        get() = p.getBoolean("gst_enabled", false)
+        set(v) { p.edit().putBoolean("gst_enabled", v).apply() }
+
     /** UPI ID (VPA) money is collected to, e.g. name@okaxis, and the payee name shown. */
     var upiId: String
         get() = p.getString("upi_id", "") ?: ""

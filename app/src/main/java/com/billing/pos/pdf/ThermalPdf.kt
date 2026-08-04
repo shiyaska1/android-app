@@ -36,7 +36,8 @@ object ThermalPdf {
 
     fun invoice(context: Context, company: CompanyInfo, bill: Bill, lines: List<BillItem>, imagePaths: List<String> = emptyList(), title: String? = null): Uri {
         applyWidth(context)
-        val actualTitle = title ?: if (bill.taxTotal > 0.0) "TAX INVOICE" else "INVOICE"
+        val gst = com.billing.pos.data.AppPrefs(context).gstEnabled
+        val actualTitle = title ?: if (gst || bill.taxTotal > 0.0) "TAX INVOICE" else "INVOICE"
         val out = ArrayList<Line>()
         fun add(text: String, bold: Boolean = false) { out.add(Line(text, bold)) }
         addHeader(out, company)
@@ -46,6 +47,11 @@ object ThermalPdf {
         add("Date: ${Format.dateTime(bill.dateMillis)}")
         add("Cust: " + clip(bill.customerName, 26))
         add("Pay : ${bill.paymentMethod}")
+        if (gst) {
+            val supplyType = if (bill.customerGstin.isNotBlank()) "B2B" else "B2C"
+            if (bill.customerGstin.isNotBlank()) add(clip("GSTIN: ${bill.customerGstin}", COLS))
+            add("Supply: $supplyType")
+        }
         add(rule())
         add(row("Item", "Qty", "Amount"))
         add(rule())
@@ -55,7 +61,14 @@ object ThermalPdf {
         }
         add(rule())
         add(kv("Sub Total", Format.money(bill.subTotal)))
-        if (bill.taxTotal != 0.0) add(kv("Tax", Format.money(bill.taxTotal)))
+        if (bill.taxTotal != 0.0) {
+            if (gst) {
+                add(kv("CGST", Format.money(bill.taxTotal / 2.0)))
+                add(kv("SGST", Format.money(bill.taxTotal / 2.0)))
+            } else {
+                add(kv("Tax", Format.money(bill.taxTotal)))
+            }
+        }
         if (bill.additionalCharge != 0.0) add(kv("Additional", Format.money(bill.additionalCharge)))
         if (bill.discount != 0.0) add(kv("Discount", "-" + Format.money(bill.discount)))
         add(rule())

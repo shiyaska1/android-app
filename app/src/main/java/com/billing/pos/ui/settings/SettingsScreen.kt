@@ -90,6 +90,7 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
     var address by remember { mutableStateOf(prefs.companyAddress) }
     var phone by remember { mutableStateOf(prefs.companyPhone) }
     var gstin by remember { mutableStateOf(prefs.companyGstin) }
+    var gstEnabled by remember { mutableStateOf(prefs.gstEnabled) }
     var upiId by remember { mutableStateOf(prefs.upiId) }
     var upiName by remember { mutableStateOf(prefs.upiName) }
     var upiQrOnPrint by remember { mutableStateOf(prefs.showUpiQrOnPrint) }
@@ -224,6 +225,18 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
                 label = { Text("GSTIN / TIN") }, singleLine = true,
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
             )
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
+                Column(Modifier.weight(1f)) {
+                    Text("GST mode (India)", style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        "Item entry shows \"GST %\" instead of \"Tax %\". Invoices always print as " +
+                            "\"TAX INVOICE\", split the tax into CGST + SGST (assumes sales within your " +
+                            "own state), and print the customer's GSTIN with a B2B/B2C tag when one is set.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline
+                    )
+                }
+                Switch(checked = gstEnabled, onCheckedChange = { gstEnabled = it; prefs.gstEnabled = it })
+            }
             OutlinedTextField(
                 value = upiId, onValueChange = { upiId = it },
                 label = { Text("UPI ID for payment QR (e.g. name@okaxis)") }, singleLine = true,

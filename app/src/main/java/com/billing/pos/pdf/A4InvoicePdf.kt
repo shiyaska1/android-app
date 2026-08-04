@@ -24,8 +24,9 @@ object A4InvoicePdf {
     private const val M = 36f        // margin
 
     fun invoice(context: Context, company: CompanyInfo, bill: Bill, lines: List<BillItem>, imagePaths: List<String> = emptyList(), docTitle: String? = null): Uri {
-        val actualDocTitle = docTitle ?: if (bill.taxTotal > 0.0) "TAX INVOICE" else "INVOICE"
         val prefs = AppPrefs(context)
+        val gst = prefs.gstEnabled
+        val actualDocTitle = docTitle ?: if (gst || bill.taxTotal > 0.0) "TAX INVOICE" else "INVOICE"
         val doc = PdfDocument()
 
         val black = Paint().apply { color = 0xFF000000.toInt(); isAntiAlias = true }
@@ -89,6 +90,13 @@ object A4InvoicePdf {
         y += 15f
         c.drawText("Bill To: ${bill.customerName}", x0, y, sub)
         c.drawText("Payment: ${bill.paymentMethod}", cRate - 40f, y, sub)
+        y += 15f
+        if (gst) {
+            val supplyType = if (bill.customerGstin.isNotBlank()) "B2B" else "B2C"
+            val gstinText = if (bill.customerGstin.isNotBlank()) "GSTIN: ${bill.customerGstin}  ·  $supplyType" else supplyType
+            c.drawText(gstinText, x0, y, sub)
+            y += 15f
+        }
         y += 12f
 
         // ---- Table header ----
@@ -143,7 +151,14 @@ object A4InvoicePdf {
             y += 17f
         }
         total("Sub Total", Format.money(bill.subTotal))
-        if (bill.taxTotal != 0.0) total("Tax", Format.money(bill.taxTotal))
+        if (bill.taxTotal != 0.0) {
+            if (gst) {
+                total("CGST", Format.money(bill.taxTotal / 2.0))
+                total("SGST", Format.money(bill.taxTotal / 2.0))
+            } else {
+                total("Tax", Format.money(bill.taxTotal))
+            }
+        }
         if (bill.additionalCharge != 0.0) total("Additional", Format.money(bill.additionalCharge))
         if (bill.discount != 0.0) total("Discount", "-" + Format.money(bill.discount))
         c.drawLine(cRate, y - 2f, xEnd, y - 2f, line)
