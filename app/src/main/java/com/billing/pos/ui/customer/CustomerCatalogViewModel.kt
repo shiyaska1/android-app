@@ -3,6 +3,7 @@ package com.billing.pos.ui.customer
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.billing.pos.customer.OrderSubmit
 import com.billing.pos.customer.ShopCatalogSync
 import com.billing.pos.data.AppDatabase
 import com.billing.pos.data.AppPrefs
@@ -28,11 +29,15 @@ class CustomerCatalogViewModel(app: Application) : AndroidViewModel(app) {
 
     val lastFetchedAt: Long get() = prefs.catalogLastFetchedAt
 
-    // Selected quantities, keyed by ShopCatalogItem.id. There's no cart/checkout/order-POST
-    // flow yet (needs a server contract for placing orders) — this only drives the "share order
-    // to WhatsApp" text below, a no-server way to place an order today.
+    // Selected quantities, keyed by ShopCatalogItem.id.
     private val _qty = MutableStateFlow<Map<Long, Int>>(emptyMap())
     val qty: StateFlow<Map<Long, Int>> = _qty
+
+    private val _saving = MutableStateFlow(false)
+    val saving: StateFlow<Boolean> = _saving
+
+    val savedCustomerName: String get() = prefs.customerName
+    val savedCustomerPhone: String get() = prefs.customerPhone
 
     init {
         // First open after install: the cache is empty, so fetch immediately without
@@ -61,6 +66,28 @@ class CustomerCatalogViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun clearSelection() { _qty.value = emptyMap() }
+
+    /** POSTs the current selection to the shop's server. Remembers name/phone for next time. */
+    fun saveOrder(name: String, phone: String) {
+        val selection = _qty.value.mapNotNull { (id, count) ->
+            items.value.find { it.id == id }?.let { it to count }
+        }
+        if (selection.isEmpty()) { _message.value = "Nothing selected"; return }
+        if (_saving.value) return
+        prefs.customerName = name
+        prefs.customerPhone = phone
+        viewModelScope.launch {
+            _saving.value = true
+            when (val result = OrderSubmit.submit(getApplication(), selection, name, phone)) {
+                is OrderSubmit.Result.Ok -> {
+                    _message.value = "Order saved — the shop will contact you"
+                    clearSelection()
+                }
+                is OrderSubmit.Result.Failed -> _message.value = "Could not save order: ${result.message}"
+            }
+            _saving.value = false
+        }
+    }
 
     /** WhatsApp text for the current selection: item lines + total. Blank if nothing's selected. */
     fun orderMessage(): String {

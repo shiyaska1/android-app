@@ -18,6 +18,8 @@ import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.filled.Save
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.BottomAppBar
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -27,11 +29,14 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedIconButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -57,8 +62,9 @@ import java.util.Locale
 /**
  * The entire app, for a customer install: the shop's item catalog, grouped by category, with a
  * manual refresh. Cached offline (see [CustomerCatalogViewModel]) so it still opens with data
- * after the first successful fetch. Ordering (cart, registration, place order) is not built yet —
- * this is browsing only.
+ * after the first successful fetch. Picking a quantity on any item reveals two ways to act on
+ * it: Share (WhatsApp text, no server) or Save (POSTs to the shop's server for a real order —
+ * asks for name/phone once, then remembers them).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -69,8 +75,10 @@ fun CustomerCatalogScreen(onExitTestMode: () -> Unit = {}, vm: CustomerCatalogVi
     val refreshing by vm.refreshing.collectAsStateSafe()
     val message by vm.message.collectAsStateSafe()
     val qty by vm.qty.collectAsStateSafe()
+    val saving by vm.saving.collectAsStateSafe()
     val snackbar = remember { SnackbarHostState() }
     var selectedCategory by rememberSaveable { mutableStateOf("All") }
+    var showSaveDialog by rememberSaveable { mutableStateOf(false) }
     // Re-read after every fetch (a plain remember would freeze these at first composition).
     val shopName = prefs.shopDisplayName
     val shopPhone = prefs.shopContactPhone
@@ -152,18 +160,28 @@ fun CustomerCatalogScreen(onExitTestMode: () -> Unit = {}, vm: CustomerCatalogVi
                             Text("${qty.values.sum()} item(s)", style = MaterialTheme.typography.labelMedium)
                             Text("₹" + Format.money(total), fontWeight = FontWeight.Bold)
                         }
-                        Button(onClick = {
-                            val text = vm.orderMessage()
-                            val digits = shopPhone.filter { it.isDigit() }
-                            val target = if (digits.isNotBlank()) "https://wa.me/$digits" else "https://wa.me/"
-                            val intent = android.content.Intent(
-                                android.content.Intent.ACTION_VIEW,
-                                android.net.Uri.parse("$target?text=${android.net.Uri.encode(text)}")
-                            )
-                            runCatching { context.startActivity(intent) }
-                        }) {
-                            Icon(Icons.Default.Chat, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Text("  $shareLabel")
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(onClick = {
+                                val text = vm.orderMessage()
+                                val digits = shopPhone.filter { it.isDigit() }
+                                val target = if (digits.isNotBlank()) "https://wa.me/$digits" else "https://wa.me/"
+                                val intent = android.content.Intent(
+                                    android.content.Intent.ACTION_VIEW,
+                                    android.net.Uri.parse("$target?text=${android.net.Uri.encode(text)}")
+                                )
+                                runCatching { context.startActivity(intent) }
+                            }) {
+                                Icon(Icons.Default.Chat, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Text("  $shareLabel")
+                            }
+                            Button(onClick = { showSaveDialog = true }, enabled = !saving) {
+                                if (saving) {
+                                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                                } else {
+                                    Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Text("  Save")
+                                }
+                            }
                         }
                     }
                 }
@@ -223,6 +241,61 @@ fun CustomerCatalogScreen(onExitTestMode: () -> Unit = {}, vm: CustomerCatalogVi
             }
         }
     }
+
+    if (showSaveDialog) {
+        SaveOrderDialog(
+            initialName = vm.savedCustomerName,
+            initialPhone = vm.savedCustomerPhone,
+            onDismiss = { showSaveDialog = false },
+            onConfirm = { name, phone ->
+                showSaveDialog = false
+                vm.saveOrder(name, phone)
+            }
+        )
+    }
+}
+
+@Composable
+private fun SaveOrderDialog(
+    initialName: String,
+    initialPhone: String,
+    onDismiss: () -> Unit,
+    onConfirm: (name: String, phone: String) -> Unit
+) {
+    var name by rememberSaveable { mutableStateOf(initialName) }
+    var phone by rememberSaveable { mutableStateOf(initialPhone) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Your details") },
+        text = {
+            Column {
+                Text(
+                    "So the shop knows who ordered and can reach you.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.outline,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+                OutlinedTextField(
+                    value = name, onValueChange = { name = it },
+                    label = { Text("Your name") }, singleLine = true,
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                )
+                OutlinedTextField(
+                    value = phone, onValueChange = { phone = it },
+                    label = { Text("Mobile number") }, singleLine = true,
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onConfirm(name.trim(), phone.trim()) },
+                enabled = name.isNotBlank() && phone.isNotBlank()
+            ) { Text("Save order") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
 }
 
 @Composable

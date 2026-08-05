@@ -18,8 +18,21 @@
  * FETCH (from a customer's app, opened via that shop's Play Store link):
  *   GET this URL with ?shop=<DeviceID> to get that same JSON back.
  *
- * Both directions use the SAME url — the app decides GET vs POST depending
- * on whether it's a shop-owner install or a customer install.
+ * PLACE ORDER (from the customer's app, "Save" on the order screen):
+ *   POST a JSON body to this URL with ?do=order added:
+ *     { "shop": "<DeviceID>", "customerName": "...", "customerPhone": "...",
+ *       "items": [ { "id": "...", "name": "...", "qty": 0, "price": 0.0 }, ... ],
+ *       "total": 0.0 }
+ *   Appended to pos_online_catalog/<DeviceID>/orders.json (an array) — this
+ *   file only grows via this endpoint; it's trimmed by the fetch below.
+ *
+ * FETCH ORDERS (from the shop owner's app, "Orders" button):
+ *   GET this URL with ?do=orders&shop=<DeviceID> — returns every order
+ *   placed since the last fetch, THEN clears them from the server (the app
+ *   keeps its own permanent copy locally, so this file never grows forever).
+ *
+ * All four directions use the SAME url — the app decides which one to call
+ * based on GET/POST and the "do" param, depending on which screen it's on.
  *
  * --- Install ---
  * 1. Upload this single file next to pos_backup_sync.php on your server, e.g.:
@@ -76,6 +89,84 @@ function pos_catalog_shop_from_get() {
         pos_catalog_fail(400, 'Invalid or missing shop code');
     }
     return $shop;
+}
+
+$do = isset($_GET['do']) ? (string) $_GET['do'] : '';
+
+if (($method === 'POST' || $method === 'PUT') && $do === 'order') {
+    $raw = file_get_contents('php://input');
+    if ($raw === false || $raw === '') {
+        pos_catalog_fail(400, 'Empty order');
+    }
+    $body = json_decode($raw, true);
+    if (!is_array($body)) {
+        pos_catalog_fail(400, 'Body is not valid JSON');
+    }
+    $shop = isset($body['shop']) ? (string) $body['shop'] : '';
+    if (!preg_match('/^[A-Za-z0-9_]+$/', $shop)) {
+        pos_catalog_fail(400, 'Invalid or missing "shop" in body');
+    }
+    $folder = $STORAGE_DIR . '/' . $shop;
+    if (!is_dir($folder) && !@mkdir($folder, 0755, true)) {
+        pos_catalog_fail(500, 'Could not create storage folder — check permissions on ' . $STORAGE_DIR);
+    }
+    $order = array(
+        'id' => uniqid('', true),
+        'receivedAt' => date('c'),
+        'customerName' => isset($body['customerName']) ? (string) $body['customerName'] : '',
+        'customerPhone' => isset($body['customerPhone']) ? (string) $body['customerPhone'] : '',
+        'items' => isset($body['items']) && is_array($body['items']) ? $body['items'] : array(),
+        'total' => isset($body['total']) ? (float) $body['total'] : 0.0
+    );
+    $path = $folder . '/orders.json';
+    // Locked read-modify-write, so two orders arriving at the same moment don't overwrite
+    // each other (the risk plain file_put_contents has, unlike the single-writer catalog upload).
+    $fh = fopen($path, 'c+');
+    if ($fh === false) {
+        pos_catalog_fail(500, 'Could not open orders file — check folder permissions');
+    }
+    flock($fh, LOCK_EX);
+    $existingRaw = stream_get_contents($fh);
+    $existing = json_decode($existingRaw, true);
+    if (!is_array($existing)) {
+        $existing = array();
+    }
+    $existing[] = $order;
+    ftruncate($fh, 0);
+    rewind($fh);
+    fwrite($fh, json_encode($existing));
+    fflush($fh);
+    flock($fh, LOCK_UN);
+    fclose($fh);
+    header('Content-Type: text/plain');
+    echo 'OK: order saved for ' . $shop;
+    exit;
+}
+
+if ($method === 'GET' && $do === 'orders') {
+    $shop = pos_catalog_shop_from_get();
+    $path = $STORAGE_DIR . '/' . $shop . '/orders.json';
+    if (!file_exists($path)) {
+        header('Content-Type: application/json');
+        echo '[]';
+        exit;
+    }
+    // Read then clear, locked, so orders are handed out exactly once — the app keeps its
+    // own permanent local copy from here, this file is only ever a short-lived queue.
+    $fh = fopen($path, 'c+');
+    if ($fh === false) {
+        pos_catalog_fail(500, 'Could not open orders file — check folder permissions');
+    }
+    flock($fh, LOCK_EX);
+    $raw = stream_get_contents($fh);
+    ftruncate($fh, 0);
+    fflush($fh);
+    flock($fh, LOCK_UN);
+    fclose($fh);
+    $orders = json_decode($raw, true);
+    header('Content-Type: application/json');
+    echo is_array($orders) ? json_encode($orders) : '[]';
+    exit;
 }
 
 if ($method === 'POST' || $method === 'PUT') {

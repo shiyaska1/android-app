@@ -279,6 +279,14 @@ class AppPrefs(context: Context) {
     var shopContactPhone: String
         get() = (p.getString("shop_contact_phone", "") ?: "").trim()
         set(v) { p.edit().putString("shop_contact_phone", v.trim()).apply() }
+    /** Customer install: this customer's own name/phone, asked once (first "Save" on an order)
+     *  and remembered so they don't retype it every time. */
+    var customerName: String
+        get() = (p.getString("customer_own_name", "") ?: "").trim()
+        set(v) { p.edit().putString("customer_own_name", v.trim()).apply() }
+    var customerPhone: String
+        get() = (p.getString("customer_own_phone", "") ?: "").trim()
+        set(v) { p.edit().putString("customer_own_phone", v.trim()).apply() }
     /** Seconds between auto pull+merge+push cycles. Callers should floor this at ~10s before use so a mistyped value can't hammer the server. */
     var cloudAutoSyncIntervalSec: Int
         get() = p.getInt("cloud_auto_sync_interval_sec", 300)
