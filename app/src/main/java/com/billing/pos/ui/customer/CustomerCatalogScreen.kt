@@ -47,6 +47,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -298,6 +299,19 @@ private fun SaveOrderDialog(
     )
 }
 
+/** Item photos travel as a base64 data URI in the catalog fetch itself (see ThumbnailCompressor /
+ *  OnlineCatalogUpload) — no separate image download, so this just decodes what's already there. */
+private fun decodeDataUriBitmap(dataUri: String): androidx.compose.ui.graphics.ImageBitmap? {
+    if (!dataUri.startsWith("data:image")) return null
+    val comma = dataUri.indexOf(',')
+    if (comma < 0) return null
+    return runCatching {
+        val bytes = android.util.Base64.decode(dataUri.substring(comma + 1), android.util.Base64.DEFAULT)
+        android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+            ?.asImageBitmap()
+    }.getOrNull()
+}
+
 @Composable
 private fun CatalogItemRow(item: ShopCatalogItem, qty: Int, onQtyChange: (Int) -> Unit) {
     Card(Modifier.fillMaxWidth()) {
@@ -306,6 +320,15 @@ private fun CatalogItemRow(item: ShopCatalogItem, qty: Int, onQtyChange: (Int) -
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
+            val thumb = remember(item.imageUrl) { decodeDataUriBitmap(item.imageUrl) }
+            if (thumb != null) {
+                androidx.compose.foundation.Image(
+                    thumb,
+                    contentDescription = item.name,
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                    modifier = Modifier.size(52.dp).padding(end = 12.dp)
+                )
+            }
             Column(Modifier.weight(1f)) {
                 Text(item.name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                 if (item.description.isNotBlank()) {

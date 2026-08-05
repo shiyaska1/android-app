@@ -1,6 +1,8 @@
 package com.billing.pos.customer
 
 import android.content.Context
+import android.util.Base64
+import com.billing.pos.data.AppDatabase
 import com.billing.pos.data.AppPrefs
 import com.billing.pos.data.Item
 import com.billing.pos.data.License
@@ -35,6 +37,7 @@ object OnlineCatalogUpload {
         val shop = prefs.shopCode.ifBlank { License.deviceId(context) }
         if (base.isBlank()) return@withContext Result.Failed("Set the online catalog URL in Settings first")
 
+        val attachmentDao = AppDatabase.get(context).itemAttachmentDao()
         val body = JSONObject().apply {
             put("shop", shop)
             put("shopName", prefs.companyName)
@@ -47,6 +50,15 @@ object OnlineCatalogUpload {
                         put("category", item.category)
                         put("price", if (item.onlineOfferPrice > 0.0) item.onlineOfferPrice else item.price)
                         put("unit", item.unit)
+                        // Whatever photo is already attached to this item (Items > photo), shrunk to a
+                        // small thumbnail and embedded directly — the customer app gets it in the same
+                        // fetch that gets the item list, no separate image hosting needed.
+                        val photoPath = attachmentDao.forItem(item.id).firstOrNull { it.kind == "PHOTO" }?.path
+                        val thumb = photoPath?.let { runCatching { ThumbnailCompressor.compress(it) }.getOrNull() }
+                        if (thumb != null) {
+                            val base64 = Base64.encodeToString(thumb, Base64.NO_WRAP)
+                            put("imageUrl", "data:image/jpeg;base64,$base64")
+                        }
                     })
                 }
             })
