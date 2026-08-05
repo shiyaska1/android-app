@@ -639,6 +639,18 @@ class Repository(private val context: Context) {
         list.forEach { customerAttachmentDao.insert(it.copy(id = 0, customerId = customerId)) }
     }
 
+    /** Same as [appendCustomerAttachments] for one file, returning its new row id — lets the
+     *  caller remember which attachment it just added (e.g. a calculation's [SavedCalc.linkedAttachmentId]). */
+    suspend fun appendCustomerAttachment(customerId: Long, attachment: CustomerAttachment): Long =
+        customerAttachmentDao.insert(attachment.copy(id = 0, customerId = customerId))
+
+    /** Removes one customer attachment (row + file) by id — a no-op if it's already gone. */
+    suspend fun removeCustomerAttachment(id: Long) {
+        val att = customerAttachmentDao.byId(id) ?: return
+        runCatching { java.io.File(att.path).delete() }
+        customerAttachmentDao.deleteById(id)
+    }
+
     private val savedCalcDao = db.savedCalcDao()
 
     /** Saved calculator tapes, newest first. */
@@ -651,19 +663,50 @@ class Repository(private val context: Context) {
 
     suspend fun calcById(id: Long): SavedCalc? = savedCalcDao.byId(id)
 
-    /** Deletes the calculation and, if it's still safe to, the quick-due invoice it created
-     *  for its customer (see [SavedCalc.linkedBillId]) — so deleting a calculation never
-     *  leaves a stranded due on the customer. "Safe" means the due is still a legacy quick
-     *  invoice (never a real sale bill made from the calculator) that hasn't been paid against
-     *  yet, by a direct receipt or by an amount already recorded on the bill itself — deleting
-     *  either of those would silently erase real money collected from the customer. */
+    /** Deletes the calculation, and cleans up whatever it had created for its customer: the
+     *  linked customer-attachment PDF (always, it's harmless) and the linked quick-due invoice
+     *  when it's still safe to (see [removeQuickInvoiceIfSafe]) — so deleting a calculation
+     *  never leaves a stranded PDF or due behind. */
     suspend fun deleteCalc(id: Long) {
         val calc = savedCalcDao.byId(id)
         savedCalcDao.delete(id)
+        calc?.linkedAttachmentId?.takeIf { it > 0 }?.let { removeCustomerAttachment(it) }
         val bill = calc?.linkedBillId?.takeIf { it > 0 }?.let { billDao.byId(it) } ?: return
+        removeQuickInvoiceIfSafe(bill)
+    }
+
+    /** Deletes a quick-due invoice only if it's still safe to: still a legacy quick invoice
+     *  (never a real sale bill made from the calculator) that hasn't been paid against yet, by
+     *  a direct receipt or by an amount already recorded on the bill itself — deleting either
+     *  of those would silently erase real money collected from the customer. A no-op otherwise. */
+    suspend fun removeQuickInvoiceIfSafe(bill: Bill) {
         if (!bill.isLegacy || bill.paidAmount > 0.0) return
         if (receiptDao.all().any { it.billId == bill.id }) return
         deleteBill(bill)
+    }
+
+    /**
+     * Keeps a saved calculation's quick-due invoice in step with its current customer/total —
+     * used on every Save, not just the first, so editing a calculation (e.g. correcting an
+     * amount) updates what the customer owes instead of leaving the original due frozen.
+     * Reuses [existingBillId]'s row when it's still a legacy quick invoice (updating only its
+     * amount/note — the paid amount, if any, is left untouched, so this is safe even if it's
+     * been partly paid); otherwise creates a fresh one, same as a first save. [total] <= 0
+     * means "no due should exist" — the caller is expected to have handled removing
+     * [existingBillId] first in that case (see [removeQuickInvoiceIfSafe]).
+     */
+    suspend fun syncQuickInvoice(customer: Customer, total: Double, note: String, existingBillId: Long): Long {
+        val existing = existingBillId.takeIf { it > 0 }?.let { billDao.byId(it) }
+        if (existing != null && existing.isLegacy) {
+            billDao.updateBillHeader(
+                existing.copy(
+                    customerId = customer.id, customerName = customer.name,
+                    subTotal = total, grandTotal = total, remarks = note.trim(), updatedAt = System.currentTimeMillis()
+                )
+            )
+            return existing.id
+        }
+        return addQuickInvoice(customer, total, note, System.currentTimeMillis())
     }
 
     private val expenseAttachmentDao = db.expenseAttachmentDao()

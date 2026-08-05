@@ -35,8 +35,12 @@ data class SavedCalc(
     /** The quick-due Bill this calculation created for its customer (addQuickInvoice), if any —
      *  0 = none, or the customer was the walk-in placeholder. Lets deleting this calculation
      *  clean up the due it created instead of leaving it stranded on the customer, and lets
-     *  re-saving reuse it rather than creating a fresh due every time. */
-    val linkedBillId: Long = 0
+     *  re-saving keep that same due's amount in sync instead of creating a fresh one every time. */
+    val linkedBillId: Long = 0,
+    /** The customer-attachment PDF this calculation filed (same content as [linkedBillId]'s
+     *  amount), if any. Re-saving replaces it with a fresh one instead of leaving a stale copy
+     *  behind, same reasoning as [linkedBillId]. */
+    val linkedAttachmentId: Long = 0
 ) {
     val amountList: List<Double>
         get() = amounts.split(',').mapNotNull { it.trim().toDoubleOrNull() }

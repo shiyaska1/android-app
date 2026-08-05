@@ -265,9 +265,9 @@ fun FastBillDialog(
         scope.launch {
             val customer = resolveCustomer()
             val fresh = savedId == 0L
-            // Carried forward so re-saving an edited tape never loses track of the due it
-            // already created — only a fresh save is allowed to create a new one below.
-            val existingLinkedBillId = if (fresh) 0L else repo.calcById(savedId)?.linkedBillId ?: 0L
+            // Carried forward, then reconciled below — every save keeps the due and its PDF
+            // in step with the calculation's current customer/total, not just the first one.
+            val prior = if (fresh) null else repo.calcById(savedId)
             val id = repo.saveCalc(
                 com.billing.pos.data.SavedCalc(
                     id = savedId,
@@ -278,21 +278,32 @@ fun FastBillDialog(
                     customerId = customer?.id ?: 0L,
                     customerName = customer?.name ?: com.billing.pos.data.SavedCalc.DEFAULT_CUSTOMER,
                     narration = narration.trim(),
-                    linkedBillId = existingLinkedBillId
+                    linkedBillId = prior?.linkedBillId ?: 0L,
+                    linkedAttachmentId = prior?.linkedAttachmentId ?: 0L
                 )
             )
             savedId = id
             var msg = if (fresh) "Calculation saved" else "Calculation updated"
-            // The quick-due invoice is only ever created on the calculation's first save —
-            // re-saving updates the tape but must never spawn a second due for the same
-            // calculation (that would double what the customer appears to owe), and deleting
-            // the calculation later (Repository.deleteCalc) relies on there being exactly one.
-            if (fresh && customer != null && total > 0.0 && !isSaleBill) {
-                val billId = repo.addQuickInvoice(customer, total, narration.trim(), System.currentTimeMillis())
-                repo.calcById(id)?.let { repo.saveCalc(it.copy(linkedBillId = billId)) }
-                msg += " • ${Format.rupee(total)} added as credit for ${customer.name}"
-                // Same PDF as the Share button's PDF option, filed against the customer so it
-                // shows up in their own attachments when the customer is later opened for edit.
+
+            // Whatever this calculation had previously created (a quick due, a PDF) no longer
+            // applies — the customer was cleared, the total dropped to zero, or "Sale bill" is
+            // now on (a real invoice replaces the due, via the payment-method popup instead).
+            suspend fun clearStaleLinks() {
+                if (prior == null || (prior.linkedBillId <= 0 && prior.linkedAttachmentId <= 0)) return
+                prior.linkedAttachmentId.takeIf { it > 0 }?.let { repo.removeCustomerAttachment(it) }
+                val oldBill = prior.linkedBillId.takeIf { it > 0 }?.let { repo.billById(it) }
+                repo.calcById(id)?.let { repo.saveCalc(it.copy(linkedBillId = 0, linkedAttachmentId = 0)) }
+                oldBill?.let { repo.removeQuickInvoiceIfSafe(it) }
+            }
+
+            if (isSaleBill) {
+                clearStaleLinks()
+            } else if (customer != null && total > 0.0) {
+                val billId = repo.syncQuickInvoice(customer, total, narration.trim(), prior?.linkedBillId ?: 0L)
+                // The PDF is filed fresh every save (old copy removed first) rather than
+                // updated in place, same as the Share button's PDF option's content.
+                prior?.linkedAttachmentId?.takeIf { it > 0 }?.let { repo.removeCustomerAttachment(it) }
+                var attId = 0L
                 runCatching {
                     val company = com.billing.pos.data.AppPrefs(context).company
                     com.billing.pos.pdf.ThermalPdf.calcTapeFile(
@@ -300,8 +311,13 @@ fun FastBillDialog(
                     )
                 }.getOrNull()?.let { pdf ->
                     com.billing.pos.data.CustomerAttachmentStore.importFrom(context, pdf.absolutePath, "application/pdf")
-                        ?.let { att -> repo.appendCustomerAttachments(customer.id, listOf(att)) }
+                        ?.let { att -> attId = repo.appendCustomerAttachment(customer.id, att) }
                 }
+                repo.calcById(id)?.let { repo.saveCalc(it.copy(linkedBillId = billId, linkedAttachmentId = attId)) }
+                msg += if (fresh) " • ${Format.rupee(total)} added as credit for ${customer.name}"
+                else " • due updated to ${Format.rupee(total)} for ${customer.name}"
+            } else {
+                clearStaleLinks()
             }
             onDone(msg)
             if (onShare != null) {
