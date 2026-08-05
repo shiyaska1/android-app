@@ -58,8 +58,8 @@ object OrdersFetch {
             var saved = 0
             for (i in 0 until array.length()) {
                 val o = array.optJSONObject(i) ?: continue
-                val serverId = o.optString("id").ifBlank { continue }
-                if (serverId in known) continue // already have this one (a retried fetch, etc.)
+                val serverId = o.optString("id")
+                if (serverId.isBlank() || serverId in known) continue // no id, or already have this one (a retried fetch, etc.)
 
                 val name = o.optString("customerName").ifBlank { "Online customer" }
                 val phone = o.optString("customerPhone")
