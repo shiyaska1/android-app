@@ -251,7 +251,7 @@ object ThermalPdf {
         val file = File(dir, "$safe.pdf")
         file.outputStream().use { doc.writeTo(it) }
         doc.close()
-        return FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
+        return file
     }
 
     // ---- 32-column text helpers (match the thermal printer) --------------------
