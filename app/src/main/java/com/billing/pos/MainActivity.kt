@@ -388,6 +388,9 @@ private fun AppNav() {
         composable("onlineItems") {
             com.billing.pos.ui.online.OnlineItemsScreen(onBack = { nav.popBackStack() })
         }
+        composable("onlineOrders") {
+            com.billing.pos.ui.online.OnlineOrdersScreen(onBack = { nav.popBackStack() })
+        }
         composable("dashboard") {
             // Back from the dashboard means leaving the app, so make it deliberate — a
             // stray back press should not throw away a half-finished day.
@@ -481,6 +484,7 @@ private fun AppNav() {
                 onCalcLabels = { nav.navigate("calclabels") },
                 onBundles = { nav.navigate("bundles") },
                 onOnlineItems = { nav.navigate("onlineItems") },
+                onOnlineOrders = { nav.navigate("onlineOrders") },
                 onNewPurchase = { nav.navigate("purchase") },
                 onPurchases = { nav.navigate("purchases") },
                 onSuppliers = { nav.navigate("suppliers") },

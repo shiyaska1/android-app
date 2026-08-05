@@ -164,6 +164,7 @@ fun DashboardScreen(
     onCalcLabels: () -> Unit,
     onBundles: () -> Unit,
     onOnlineItems: () -> Unit,
+    onOnlineOrders: () -> Unit,
     onNewPurchase: () -> Unit,
     onPurchases: () -> Unit,
     onSuppliers: () -> Unit,
@@ -281,6 +282,7 @@ fun DashboardScreen(
         add(Tile("Estimates", Icons.Filled.RequestQuote, onEstimates, "Transactions/Customer Relation"))
         if (Session.canViewInvoice) add(Tile("Sales Return", Icons.Filled.AssignmentReturn, onSalesReturns, "Transactions/Customer Relation"))
         add(Tile("Orders", Icons.Filled.ListAlt, onOrders, "Transactions/Customer Relation"))
+        add(Tile("Online Orders", Icons.Filled.Storefront, onOnlineOrders, "Transactions/Customer Relation"))
         // Vendor Relation: every transaction made with/for a supplier.
         add(Tile("New Purchase", Icons.Filled.ShoppingCart, onNewPurchase, "Transactions/Vendor Relation"))
         if (Session.canViewInvoice) add(Tile("Purchases", Icons.Filled.Inventory2, onPurchases, "Transactions/Vendor Relation"))

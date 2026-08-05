@@ -1098,6 +1098,20 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
                 label = { Text("Online catalog URL") }, singleLine = true,
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
             )
+            var fetchOrdersUrl by remember { mutableStateOf(prefs.fetchOrdersUrl) }
+            OutlinedTextField(
+                value = fetchOrdersUrl,
+                onValueChange = { fetchOrdersUrl = it; prefs.fetchOrdersUrl = it },
+                label = { Text("Order fetch URL (optional — defaults to the catalog URL above)") }, singleLine = true,
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+            )
+            Text(
+                "\"Online Orders\" on the dashboard uses this to check for new orders. Leave " +
+                    "blank to use the same catalog URL — only set this if orders should come from " +
+                    "a different address.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline,
+                modifier = Modifier.padding(top = 4.dp)
+            )
             Text(
                 "Your shop's phone/WhatsApp number for customer orders is the Phone number set " +
                     "above under Company details.",

@@ -51,3 +51,64 @@ interface ShopCatalogDao {
         insertAll(items)
     }
 }
+
+/**
+ * A customer order fetched from the server (shop owner side) — the app's own permanent copy,
+ * since the server only ever holds orders briefly (see pos_online_catalog.php's do=orders, which
+ * clears them once fetched). [itemsJson] is a packed `[{"name":"","qty":0,"price":0.0}, ...]`
+ * array, same pack/unpack style as [SavedCalc.labels] elsewhere in this file's neighborhood.
+ */
+@Entity(tableName = "online_orders")
+data class OnlineOrder(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val serverId: String,
+    /** The matched-or-created [Customer] this order was attributed to. */
+    val customerId: Long,
+    val customerName: String,
+    val customerPhone: String,
+    val itemsJson: String,
+    val total: Double,
+    val receivedAt: String,
+    val fetchedAt: Long,
+    /** PENDING / DELIVERED / CANCELLED — shop owner manages this locally. */
+    val status: String = "PENDING"
+) {
+    data class Line(val name: String, val qty: Int, val price: Double)
+
+    val items: List<Line> get() = runCatching {
+        val arr = org.json.JSONArray(itemsJson)
+        (0 until arr.length()).map { i ->
+            val o = arr.getJSONObject(i)
+            Line(o.optString("name"), o.optInt("qty", 1), o.optDouble("price", 0.0))
+        }
+    }.getOrDefault(emptyList())
+
+    companion object {
+        fun packItems(items: List<Line>) = org.json.JSONArray().apply {
+            items.forEach { line ->
+                put(org.json.JSONObject().apply {
+                    put("name", line.name); put("qty", line.qty); put("price", line.price)
+                })
+            }
+        }.toString()
+    }
+}
+
+enum class OnlineOrderStatus(val label: String) {
+    PENDING("Pending"), DELIVERED("Delivered"), CANCELLED("Cancelled")
+}
+
+@Dao
+interface OnlineOrderDao {
+    @Query("SELECT * FROM online_orders ORDER BY fetchedAt DESC")
+    fun observeAll(): Flow<List<OnlineOrder>>
+
+    @Query("SELECT serverId FROM online_orders")
+    suspend fun allServerIds(): List<String>
+
+    @Insert
+    suspend fun insert(order: OnlineOrder): Long
+
+    @Query("UPDATE online_orders SET status = :status WHERE id = :id")
+    suspend fun updateStatus(id: Long, status: String)
+}
