@@ -103,6 +103,77 @@ object ThermalPdf {
         return write(context, "invoice_${bill.billNo}", out, imagePaths, qr)
     }
 
+    /** A Fast bill / calculator tape, at the same receipt width as everything else — so its
+     *  shared PDF looks like the paper tape from the thermal printer, not an A4 sheet. [entries]
+     *  is (signed amount, label) pairs, in tape order. */
+    fun calcTape(
+        context: Context,
+        company: CompanyInfo,
+        customerName: String,
+        customerPhone: String,
+        narration: String,
+        entries: List<Pair<Double, String>>,
+        title: String = "Calculation"
+    ): Uri {
+        applyWidth(context)
+        return write(context, "calc_${System.currentTimeMillis()}", calcTapeLines(company, customerName, customerPhone, narration, entries, title))
+    }
+
+    /** Same as [calcTape], but returns the raw file — needed where the PDF is copied into
+     *  another store (e.g. filed as a customer attachment) rather than shared as-is. */
+    fun calcTapeFile(
+        context: Context,
+        company: CompanyInfo,
+        customerName: String,
+        customerPhone: String,
+        narration: String,
+        entries: List<Pair<Double, String>>,
+        title: String = "Calculation"
+    ): File {
+        applyWidth(context)
+        return writeFile(context, "calc_${System.currentTimeMillis()}", calcTapeLines(company, customerName, customerPhone, narration, entries, title))
+    }
+
+    private fun calcTapeLines(
+        company: CompanyInfo,
+        customerName: String,
+        customerPhone: String,
+        narration: String,
+        entries: List<Pair<Double, String>>,
+        title: String
+    ): List<Line> {
+        val out = ArrayList<Line>()
+        fun add(text: String, bold: Boolean = false) { out.add(Line(text, bold)) }
+        addHeader(out, company)
+        add(center(title), true)
+        add(rule())
+        add("Date: ${Format.dateTime(System.currentTimeMillis())}")
+        if (customerName.isNotBlank() && customerName != com.billing.pos.data.SavedCalc.DEFAULT_CUSTOMER) {
+            add("Cust: " + clip(customerName, 26))
+            if (customerPhone.isNotBlank()) add("Ph  : $customerPhone")
+        }
+        add(rule())
+        entries.forEach { (amt, label) ->
+            val sign = if (amt < 0) "-" else "+"
+            if (label.isNotBlank()) {
+                add(clip(label, COLS))
+                add(kv("  $sign", Format.money(kotlin.math.abs(amt))))
+            } else {
+                add(kv(sign, Format.money(kotlin.math.abs(amt))))
+            }
+        }
+        add(rule())
+        add(kv("TOTAL", Format.money(entries.sumOf { it.first })), true)
+        add(rule())
+        if (narration.isNotBlank()) {
+            add("Note:")
+            narration.chunked(COLS).forEach { add(it) }
+            add(rule())
+        }
+        add(center("Thank you"))
+        return out
+    }
+
     fun receipt(context: Context, company: CompanyInfo, r: Receipt): Uri {
         applyWidth(context)
         val out = ArrayList<Line>()
@@ -130,6 +201,11 @@ object ThermalPdf {
     }
 
     private fun write(context: Context, name: String, lines: List<Line>, imagePaths: List<String> = emptyList(), qr: android.graphics.Bitmap? = null): Uri {
+        val file = writeFile(context, name, lines, imagePaths, qr)
+        return FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
+    }
+
+    private fun writeFile(context: Context, name: String, lines: List<Line>, imagePaths: List<String> = emptyList(), qr: android.graphics.Bitmap? = null): File {
         val body = Paint().apply { typeface = Typeface.MONOSPACE; isAntiAlias = true; color = Color.BLACK; textSize = 10f }
         val content = PAGE_W - 2 * MARGIN
         val measured = body.measureText("0".repeat(COLS)).coerceAtLeast(1f)

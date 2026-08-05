@@ -92,6 +92,20 @@ object ThermalPrinter {
         sendBytes(context, buildPaymentVoucher(company, expense))
     }
 
+    /** Prints a Fast bill / calculator tape. [entries] is (signed amount, label) pairs, tape order. */
+    @SuppressLint("MissingPermission")
+    fun printCalcTape(
+        context: Context,
+        company: CompanyInfo,
+        customerName: String,
+        customerPhone: String,
+        narration: String,
+        entries: List<Pair<Double, String>>
+    ) {
+        applyWidth(context)
+        sendBytes(context, buildCalcTape(company, customerName, customerPhone, narration, entries))
+    }
+
     /** Prints a purchase voucher. */
     @SuppressLint("MissingPermission")
     fun printPurchase(context: Context, company: CompanyInfo, purchase: Purchase, lines: List<PurchaseItem>) {
@@ -546,6 +560,51 @@ object ThermalPrinter {
         sb.append(line()).append('\n')
         sb.append(kv("RECEIVED", Format.money(r.amount))).append('\n')
         sb.append(line()).append('\n')
+        sb.append(center("Thank you")).append('\n')
+        sb.append("\n\n\n")
+
+        val text = sb.toString().toByteArray(Charsets.US_ASCII)
+        val init = byteArrayOf(ESC.toByte(), '@'.code.toByte())
+        val cut = byteArrayOf(GS.toByte(), 'V'.code.toByte(), 66, 0)
+        return init + BOLD_ON + text + cut
+    }
+
+    private fun buildCalcTape(
+        company: CompanyInfo,
+        customerName: String,
+        customerPhone: String,
+        narration: String,
+        entries: List<Pair<Double, String>>
+    ): ByteArray {
+        val sb = StringBuilder()
+        sb.append(center(company.name)).append('\n')
+        if (company.address.isNotBlank()) sb.append(center(company.address)).append('\n')
+        if (company.phone.isNotBlank()) sb.append(center("Ph: ${company.phone}")).append('\n')
+        sb.append(center("CALCULATION")).append('\n')
+        sb.append(line()).append('\n')
+        sb.append("Date: ${Format.dateTime(System.currentTimeMillis())}\n")
+        if (customerName.isNotBlank() && customerName != com.billing.pos.data.SavedCalc.DEFAULT_CUSTOMER) {
+            sb.append("Cust: $customerName\n")
+            if (customerPhone.isNotBlank()) sb.append("Ph  : $customerPhone\n")
+        }
+        sb.append(line()).append('\n')
+        for ((amt, label) in entries) {
+            val sign = if (amt < 0) "-" else "+"
+            if (label.isNotBlank()) {
+                sb.append(clip(label, COLS)).append('\n')
+                sb.append(kv("  $sign", Format.money(kotlin.math.abs(amt)))).append('\n')
+            } else {
+                sb.append(kv(sign, Format.money(kotlin.math.abs(amt)))).append('\n')
+            }
+        }
+        sb.append(line()).append('\n')
+        sb.append(kv("TOTAL", Format.money(entries.sumOf { it.first }))).append('\n')
+        sb.append(line()).append('\n')
+        if (narration.isNotBlank()) {
+            sb.append("Note:\n")
+            narration.chunked(COLS).forEach { sb.append(it).append('\n') }
+            sb.append(line()).append('\n')
+        }
         sb.append(center("Thank you")).append('\n')
         sb.append("\n\n\n")
 

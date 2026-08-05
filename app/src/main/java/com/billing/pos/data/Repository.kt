@@ -443,6 +443,55 @@ class Repository(private val context: Context) {
 
     fun quickInvoicesForCustomer(customerId: Long): Flow<List<Bill>> = billDao.quickInvoicesForCustomer(customerId)
 
+    /** A real sale invoice built from a Fast bill calculator tape — unlike [addQuickInvoice]
+     *  this is a normal (non-legacy) bill with a chosen payment method, so it counts in sales
+     *  and GST reports like any other invoice. Each positive entry becomes its own line, named
+     *  after its label ("Amount" when blank); subtracted (negative) entries have no natural
+     *  place on a sale line, so — same as the calculator's own "Save to bill" hand-off — they're
+     *  left out rather than turned into a negative-priced line. */
+    suspend fun addSaleInvoiceFromTape(
+        customer: Customer,
+        entries: List<Pair<Double, String>>,
+        note: String,
+        dateMillis: Long,
+        paymentMethod: String
+    ): Long {
+        ensureCustomerHead(customer.name)
+        val lines = entries.filter { it.first > 0.0 }.map { (amount, label) ->
+            BillItem(billId = 0, name = label.ifBlank { "Amount" }, qty = 1.0, price = amount, taxPercent = 0.0, lineTotal = amount)
+        }
+        val grandTotal = lines.sumOf { it.lineTotal }
+        val paid = if (paymentMethod.equals(PaymentMethod.CREDIT.label, ignoreCase = true)) 0.0 else grandTotal
+        val bill = Bill(
+            billNo = nextBillNo(),
+            dateMillis = dateMillis,
+            customerId = customer.id,
+            customerName = customer.name,
+            paymentMethod = paymentMethod,
+            subTotal = grandTotal,
+            taxTotal = 0.0,
+            additionalCharge = 0.0,
+            discount = 0.0,
+            grandTotal = grandTotal,
+            paidAmount = paid,
+            customerGstin = customer.gstin,
+            customerState = customer.state,
+            remarks = note.trim(),
+            isLegacy = false,
+            updatedAt = System.currentTimeMillis()
+        )
+        return billDao.saveBill(bill, lines)
+    }
+
+    /** Ensures a calculator label also exists as a sellable item, so a labelled tape entry can
+     *  be turned straight into a real sale invoice line. A no-op when the name is already an
+     *  item — never overwrites a price/tax the user has since set on it. */
+    suspend fun ensureItemForLabel(label: String) {
+        val n = label.trim()
+        if (n.isBlank() || itemDao.byName(n) != null) return
+        itemDao.insert(Item(name = n, price = 0.0, taxPercent = 0.0))
+    }
+
     val allCustomers: Flow<List<Customer>> get() = customers
 
     suspend fun addItem(

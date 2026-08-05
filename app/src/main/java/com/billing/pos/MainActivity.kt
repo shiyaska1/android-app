@@ -949,7 +949,16 @@ private fun AppNav() {
             com.billing.pos.ui.masters.ItemCategoryMasterScreen(onBack = { nav.popBackStack() })
         }
         composable("calclabels") {
-            com.billing.pos.ui.masters.CalcLabelMasterScreen(onBack = { nav.popBackStack() })
+            com.billing.pos.ui.masters.CalcLabelMasterScreen(
+                onBack = { nav.popBackStack() },
+                onOpenHistory = { label ->
+                    com.billing.pos.ui.masters.CalcLabelNav.label = label
+                    nav.navigate("calclabelhistory")
+                }
+            )
+        }
+        composable("calclabelhistory") {
+            com.billing.pos.ui.masters.CalcLabelHistoryScreen(onBack = { nav.popBackStack() })
         }
         composable(
             route = "items/edit/{id}",
