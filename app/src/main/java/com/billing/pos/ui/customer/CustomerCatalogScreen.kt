@@ -19,6 +19,7 @@ import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.BottomAppBar
 import androidx.compose.material3.Button
@@ -103,11 +104,15 @@ fun CustomerCatalogScreen(onExitTestMode: () -> Unit = {}, vm: CustomerCatalogVi
         message?.let { snackbar.showSnackbar(it); vm.messageShown() }
     }
 
+    var searchQuery by rememberSaveable { mutableStateOf("") }
+
     val categories = remember(items) {
         listOf("All") + items.map { it.category }.filter { it.isNotBlank() }.distinct().sortedBy { it.lowercase() }
     }
-    val shown = remember(items, selectedCategory) {
-        if (selectedCategory == "All") items else items.filter { it.category == selectedCategory }
+    val shown = remember(items, selectedCategory, searchQuery) {
+        items
+            .filter { selectedCategory == "All" || it.category == selectedCategory }
+            .filter { searchQuery.isBlank() || it.name.contains(searchQuery, ignoreCase = true) }
     }
 
     Scaffold(
@@ -200,6 +205,17 @@ fun CustomerCatalogScreen(onExitTestMode: () -> Unit = {}, vm: CustomerCatalogVi
                 )
             }
 
+            if (items.isNotEmpty()) {
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    label = { Text("Search items…") },
+                    singleLine = true,
+                    leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)
+                )
+            }
+
             if (categories.size > 1) {
                 LazyRow(
                     contentPadding = PaddingValues(horizontal = 12.dp),
@@ -225,6 +241,10 @@ fun CustomerCatalogScreen(onExitTestMode: () -> Unit = {}, vm: CustomerCatalogVi
                             color = MaterialTheme.colorScheme.outline
                         )
                     }
+                }
+            } else if (shown.isEmpty()) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("No items match \"$searchQuery\"", color = MaterialTheme.colorScheme.outline)
                 }
             } else {
                 LazyColumn(
