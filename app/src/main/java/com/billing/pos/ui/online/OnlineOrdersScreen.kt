@@ -69,6 +69,10 @@ fun OnlineOrdersScreen(onBack: () -> Unit, vm: OnlineOrdersViewModel = viewModel
     val message by vm.message.collectAsStateSafe()
     val snackbar = remember { SnackbarHostState() }
     var messageTarget by remember { mutableStateOf<OnlineOrder?>(null) }
+    var selectedFilter by rememberSaveable { mutableStateOf("All") } // "All" or an OnlineOrderStatus name
+    val shown = remember(orders, selectedFilter) {
+        if (selectedFilter == "All") orders else orders.filter { it.status == selectedFilter }
+    }
 
     LaunchedEffect(Unit) { vm.fetch() }
     LaunchedEffect(message) {
@@ -94,20 +98,40 @@ fun OnlineOrdersScreen(onBack: () -> Unit, vm: OnlineOrdersViewModel = viewModel
         },
         snackbarHost = { SnackbarHost(snackbar) }
     ) { padding ->
-        if (orders.isEmpty()) {
-            Column(Modifier.fillMaxSize().padding(padding).padding(24.dp)) {
-                Text(
-                    if (fetching) "Checking for orders…" else "No orders yet — tap refresh to check again.",
-                    color = MaterialTheme.colorScheme.outline
-                )
+        Column(Modifier.fillMaxSize().padding(padding)) {
+            if (orders.isNotEmpty()) {
+                val filters = listOf("All") + OnlineOrderStatus.entries.map { it.name }
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(filters) { f ->
+                        FilterChip(
+                            selected = selectedFilter == f,
+                            onClick = { selectedFilter = f },
+                            label = { Text(if (f == "All") "All" else OnlineOrderStatus.valueOf(f).label) }
+                        )
+                    }
+                }
             }
-        } else {
+            if (orders.isEmpty()) {
+                Column(Modifier.fillMaxSize().padding(24.dp)) {
+                    Text(
+                        if (fetching) "Checking for orders…" else "No orders yet — tap refresh to check again.",
+                        color = MaterialTheme.colorScheme.outline
+                    )
+                }
+            } else if (shown.isEmpty()) {
+                Column(Modifier.fillMaxSize().padding(24.dp)) {
+                    Text("No orders in this status.", color = MaterialTheme.colorScheme.outline)
+                }
+            } else {
             LazyColumn(
-                Modifier.fillMaxSize().padding(padding),
+                Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(12.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                items(orders, key = { it.id }) { order ->
+                items(shown, key = { it.id }) { order ->
                     OrderCard(
                         order = order,
                         onStatusChange = { status -> vm.setStatus(order, status) },
@@ -162,6 +186,7 @@ fun OnlineOrdersScreen(onBack: () -> Unit, vm: OnlineOrdersViewModel = viewModel
                         }
                     )
                 }
+            }
             }
         }
     }

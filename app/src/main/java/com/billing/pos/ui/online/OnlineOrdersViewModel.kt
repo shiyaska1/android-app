@@ -7,7 +7,12 @@ import com.billing.pos.customer.OrderStatusPush
 import com.billing.pos.customer.OrdersFetch
 import com.billing.pos.customer.ShopOrderPoll
 import com.billing.pos.data.AppDatabase
+import com.billing.pos.data.CustOrder
+import com.billing.pos.data.CustOrderItem
+import com.billing.pos.data.License
 import com.billing.pos.data.OnlineOrder
+import com.billing.pos.data.OnlineOrderStatus
+import com.billing.pos.data.Repository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -16,6 +21,7 @@ import kotlinx.coroutines.launch
 
 class OnlineOrdersViewModel(app: Application) : AndroidViewModel(app) {
     private val dao = AppDatabase.get(app).onlineOrderDao()
+    private val repo = Repository(app)
 
     init {
         // Best-effort background poll for new orders (no push server behind this app) —
@@ -49,9 +55,13 @@ class OnlineOrdersViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setStatus(order: OnlineOrder, status: String) {
         viewModelScope.launch {
-            dao.updateStatus(order.id, status)
             // Best-effort — the local status change stands even if the customer isn't notified.
             OrderStatusPush.push(getApplication(), order.customerPhone, order.serverId, status = status)
+            if (status == OnlineOrderStatus.ACCEPTED.name) {
+                convertToOrderAndRemove(order)
+            } else {
+                dao.updateStatus(order.id, status)
+            }
         }
     }
 
@@ -61,5 +71,41 @@ class OnlineOrdersViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             OrderStatusPush.push(getApplication(), order.customerPhone, order.serverId, message = message)
         }
+    }
+
+    /** Accepting an order hands it off to the app's regular Orders (Masters > Orders), where
+     *  "select orders > Convert to Sale" already exists — this only needs to create the order
+     *  and remove it from this list, not rebuild that whole workflow here. */
+    private suspend fun convertToOrderAndRemove(order: OnlineOrder) {
+        val (lat, lng) = parseLatLng(order.location)
+        val orderNo = repo.nextOrderNo()
+        val custOrder = CustOrder(
+            orderNo = orderNo,
+            dateMillis = System.currentTimeMillis(),
+            customerId = order.customerId,
+            customerName = order.customerName,
+            remark = order.note,
+            latitude = lat,
+            longitude = lng,
+            grandTotal = order.total,
+            deviceId = License.deviceId(getApplication())
+        )
+        val lines = order.items.map { line ->
+            CustOrderItem(
+                orderId = 0, itemId = 0, name = line.name,
+                qty = line.qty.toDouble(), price = line.price, lineTotal = line.price * line.qty
+            )
+        }
+        repo.saveOrder(custOrder, lines)
+        dao.delete(order)
+        _message.value = "Accepted — moved to Orders as $orderNo"
+    }
+
+    private fun parseLatLng(location: String): Pair<Double, Double> {
+        val q = runCatching { android.net.Uri.parse(location).getQueryParameter("q") }.getOrNull() ?: return 0.0 to 0.0
+        val parts = q.split(",")
+        val lat = parts.getOrNull(0)?.toDoubleOrNull() ?: 0.0
+        val lng = parts.getOrNull(1)?.toDoubleOrNull() ?: 0.0
+        return lat to lng
     }
 }

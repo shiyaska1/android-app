@@ -1,6 +1,7 @@
 package com.billing.pos.data
 
 import androidx.room.Dao
+import androidx.room.Delete
 import androidx.room.Entity
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
@@ -121,6 +122,9 @@ interface OnlineOrderDao {
 
     @Query("UPDATE online_orders SET status = :status WHERE id = :id")
     suspend fun updateStatus(id: Long, status: String)
+
+    @Delete
+    suspend fun delete(order: OnlineOrder)
 }
 
 /**
