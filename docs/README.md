@@ -38,3 +38,23 @@ fallen back and the conjuncts will be wrong.
 
 The version number appears twice in the HTML (masthead and footer); update
 both when the app version changes.
+
+## Regenerating the Play Store QR code
+
+The QR code in the download box is a base64 PNG embedded directly in the
+HTML (`<img src="data:image/png;base64,...">`), so the document stays a
+single file. Regenerate it if the Play Store link ever changes:
+
+```sh
+pip install qrcode[pil]
+python3 -c "
+import qrcode, base64
+url = 'https://play.google.com/store/apps/details?id=com.billing.pos&pcampaignid=web_share'
+img = qrcode.make(url, error_correction=qrcode.constants.ERROR_CORRECT_M)
+img.save('play-qr.png')
+print(base64.b64encode(open('play-qr.png','rb').read()).decode())
+"
+```
+
+Paste the printed base64 string in place of the existing one after
+`data:image/png;base64,` in the `.cta-qr img` tag.
