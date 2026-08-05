@@ -3,6 +3,7 @@ package com.billing.pos.ui.online
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.billing.pos.customer.OrderStatusPush
 import com.billing.pos.customer.OrdersFetch
 import com.billing.pos.data.AppDatabase
 import com.billing.pos.data.OnlineOrder
@@ -40,6 +41,18 @@ class OnlineOrdersViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun setStatus(order: OnlineOrder, status: String) {
-        viewModelScope.launch { dao.updateStatus(order.id, status) }
+        viewModelScope.launch {
+            dao.updateStatus(order.id, status)
+            // Best-effort — the local status change stands even if the customer isn't notified.
+            OrderStatusPush.push(getApplication(), order.customerPhone, order.serverId, status = status)
+        }
+    }
+
+    /** A free-text message to the customer about this order, not tied to a status change. */
+    fun sendMessage(order: OnlineOrder, message: String) {
+        if (message.isBlank()) return
+        viewModelScope.launch {
+            OrderStatusPush.push(getApplication(), order.customerPhone, order.serverId, message = message)
+        }
     }
 }

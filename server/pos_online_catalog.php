@@ -33,13 +33,29 @@
  *   To keep storage down on a low-resource host, any attachmentImage still sitting
  *   in that file (not yet fetched by the shop owner) older than 7 days is cleared
  *   — the rest of the order is kept, only the photo is dropped.
+ *   Responds with { "ok": true, "id": "<order id>" } — the app keeps that id so a
+ *   later status notification about this order can be matched back to it.
  *
  * FETCH ORDERS (from the shop owner's app, "Orders" button):
  *   GET this URL with ?do=orders&shop=<DeviceID> — returns every order
  *   placed since the last fetch, THEN clears them from the server (the app
  *   keeps its own permanent copy locally, so this file never grows forever).
  *
- * All four directions use the SAME url — the app decides which one to call
+ * SEND STATUS (from the shop owner's app, changing an order's status or sending a message):
+ *   POST a JSON body to this URL with ?do=status added:
+ *     { "shop": "<DeviceID>", "customerPhone": "...", "orderId": "..." (optional),
+ *       "status": "ACCEPTED" (optional, one of OnlineOrderStatus's names),
+ *       "message": "..." (optional, free text) }
+ *   Appended to pos_online_catalog/<DeviceID>/notifications.json — trimmed by the
+ *   fetch below, same as orders.
+ *
+ * FETCH NOTIFICATIONS (from a customer's app, polling for order updates):
+ *   GET this URL with ?do=notifications&shop=<DeviceID>&phone=<their phone> —
+ *   returns every status/message sent to that phone number since the last
+ *   fetch, THEN clears just those from the server (other customers' pending
+ *   notifications are left untouched).
+ *
+ * All six directions use the SAME url — the app decides which one to call
  * based on GET/POST and the "do" param, depending on which screen it's on.
  *
  * --- Install ---
@@ -162,8 +178,97 @@ if (($method === 'POST' || $method === 'PUT') && $do === 'order') {
     fflush($fh);
     flock($fh, LOCK_UN);
     fclose($fh);
+    header('Content-Type: application/json');
+    echo json_encode(array('ok' => true, 'id' => $order['id']));
+    exit;
+}
+
+if (($method === 'POST' || $method === 'PUT') && $do === 'status') {
+    $raw = file_get_contents('php://input');
+    if ($raw === false || $raw === '') {
+        pos_catalog_fail(400, 'Empty status update');
+    }
+    $body = json_decode($raw, true);
+    if (!is_array($body)) {
+        pos_catalog_fail(400, 'Body is not valid JSON');
+    }
+    $shop = isset($body['shop']) ? (string) $body['shop'] : '';
+    if (!preg_match('/^[A-Za-z0-9_]+$/', $shop)) {
+        pos_catalog_fail(400, 'Invalid or missing "shop" in body');
+    }
+    $phone = isset($body['customerPhone']) ? (string) $body['customerPhone'] : '';
+    if ($phone === '') {
+        pos_catalog_fail(400, 'Missing "customerPhone" in body');
+    }
+    $folder = $STORAGE_DIR . '/' . $shop;
+    if (!is_dir($folder) && !@mkdir($folder, 0755, true)) {
+        pos_catalog_fail(500, 'Could not create storage folder — check permissions on ' . $STORAGE_DIR);
+    }
+    $notification = array(
+        'customerPhone' => $phone,
+        'orderId' => isset($body['orderId']) ? (string) $body['orderId'] : '',
+        'status' => isset($body['status']) ? (string) $body['status'] : '',
+        'message' => isset($body['message']) ? (string) $body['message'] : '',
+        'sentAt' => date('c')
+    );
+    $path = $folder . '/notifications.json';
+    $fh = fopen($path, 'c+');
+    if ($fh === false) {
+        pos_catalog_fail(500, 'Could not open notifications file — check folder permissions');
+    }
+    flock($fh, LOCK_EX);
+    $existing = json_decode(stream_get_contents($fh), true);
+    if (!is_array($existing)) {
+        $existing = array();
+    }
+    $existing[] = $notification;
+    ftruncate($fh, 0);
+    rewind($fh);
+    fwrite($fh, json_encode($existing));
+    fflush($fh);
+    flock($fh, LOCK_UN);
+    fclose($fh);
     header('Content-Type: text/plain');
-    echo 'OK: order saved for ' . $shop;
+    echo 'OK: notification queued for ' . $phone;
+    exit;
+}
+
+if ($method === 'GET' && $do === 'notifications') {
+    $shop = pos_catalog_shop_from_get();
+    $phone = isset($_GET['phone']) ? (string) $_GET['phone'] : '';
+    $path = $STORAGE_DIR . '/' . $shop . '/notifications.json';
+    if ($phone === '' || !file_exists($path)) {
+        header('Content-Type: application/json');
+        echo '[]';
+        exit;
+    }
+    // Only this phone's notifications are removed — everyone else's stay queued.
+    $fh = fopen($path, 'c+');
+    if ($fh === false) {
+        pos_catalog_fail(500, 'Could not open notifications file — check folder permissions');
+    }
+    flock($fh, LOCK_EX);
+    $all = json_decode(stream_get_contents($fh), true);
+    if (!is_array($all)) {
+        $all = array();
+    }
+    $mine = array();
+    $rest = array();
+    foreach ($all as $n) {
+        if (isset($n['customerPhone']) && $n['customerPhone'] === $phone) {
+            $mine[] = $n;
+        } else {
+            $rest[] = $n;
+        }
+    }
+    ftruncate($fh, 0);
+    rewind($fh);
+    fwrite($fh, json_encode($rest));
+    fflush($fh);
+    flock($fh, LOCK_UN);
+    fclose($fh);
+    header('Content-Type: application/json');
+    echo json_encode($mine);
     exit;
 }
 

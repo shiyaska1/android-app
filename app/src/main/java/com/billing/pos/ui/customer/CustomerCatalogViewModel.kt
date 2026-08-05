@@ -3,12 +3,15 @@ package com.billing.pos.ui.customer
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.billing.pos.customer.CustomerNotificationPoll
 import com.billing.pos.customer.LocationHelper
+import com.billing.pos.customer.NotificationsFetch
 import com.billing.pos.customer.OrderSubmit
 import com.billing.pos.customer.ShopCatalogSync
 import com.billing.pos.customer.ShopSwitch
 import com.billing.pos.data.AppDatabase
 import com.billing.pos.data.AppPrefs
+import com.billing.pos.data.CustomerNotification
 import com.billing.pos.data.CustomerOrderHistory
 import com.billing.pos.data.ShopCatalogItem
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -21,12 +24,19 @@ class CustomerCatalogViewModel(app: Application) : AndroidViewModel(app) {
     private val prefs = AppPrefs(app)
     private val dao = AppDatabase.get(app).shopCatalogDao()
     private val historyDao = AppDatabase.get(app).customerOrderHistoryDao()
+    private val notificationDao = AppDatabase.get(app).customerNotificationDao()
 
     val items: StateFlow<List<ShopCatalogItem>> =
         dao.observeAll().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val history: StateFlow<List<CustomerOrderHistory>> =
         historyDao.observeAll().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val notifications: StateFlow<List<CustomerNotification>> =
+        notificationDao.observeAll().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val unreadNotifications: StateFlow<Int> =
+        notificationDao.observeUnreadCount().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
     private val _refreshing = MutableStateFlow(false)
     val refreshing: StateFlow<Boolean> = _refreshing
@@ -52,6 +62,16 @@ class CustomerCatalogViewModel(app: Application) : AndroidViewModel(app) {
         // First open after install: the cache is empty, so fetch immediately without
         // waiting for the user to find the refresh button.
         if (prefs.catalogLastFetchedAt <= 0L) refresh()
+        // Best-effort background poll for order-status updates (no push server behind this
+        // app) — arms itself on every open, since there's no separate "leaving customer mode"
+        // hook to arm it from once and forget.
+        CustomerNotificationPoll.schedule(app)
+        viewModelScope.launch { runCatching { NotificationsFetch.fetch(app) } }
+    }
+
+    /** Marks every notification read — called when the customer opens the notification list. */
+    fun notificationsOpened() {
+        viewModelScope.launch { notificationDao.markAllRead() }
     }
 
     fun refresh() {
@@ -116,7 +136,8 @@ class CustomerCatalogViewModel(app: Application) : AndroidViewModel(app) {
                             itemsJson = CustomerOrderHistory.packItems(lines),
                             total = total,
                             placedAt = System.currentTimeMillis(),
-                            location = locationLink.orEmpty()
+                            location = locationLink.orEmpty(),
+                            serverId = result.orderId
                         )
                     )
                     clearSelection()

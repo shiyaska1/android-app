@@ -22,12 +22,16 @@ import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.BottomAppBar
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -67,7 +71,9 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.billing.pos.customer.ShopSwitch
 import com.billing.pos.customer.ThumbnailCompressor
 import com.billing.pos.data.AppPrefs
+import com.billing.pos.data.CustomerNotification
 import com.billing.pos.data.CustomerOrderHistory
+import com.billing.pos.data.OnlineOrderStatus
 import com.billing.pos.data.ShopCatalogItem
 import com.billing.pos.ui.billing.collectAsStateSafe
 import com.billing.pos.util.Format
@@ -102,7 +108,10 @@ fun CustomerCatalogScreen(onExitTestMode: () -> Unit = {}, vm: CustomerCatalogVi
     var showSaveDialog by rememberSaveable { mutableStateOf(false) }
     var showSwitchShop by rememberSaveable { mutableStateOf(false) }
     var showHistory by rememberSaveable { mutableStateOf(false) }
+    var showNotifications by rememberSaveable { mutableStateOf(false) }
     val history by vm.history.collectAsStateSafe()
+    val notifications by vm.notifications.collectAsStateSafe()
+    val unreadNotifications by vm.unreadNotifications.collectAsStateSafe()
     // Re-read after every fetch (a plain remember would freeze these at first composition).
     val shopName = prefs.shopDisplayName
     val shopPhone = prefs.shopContactPhone
@@ -153,6 +162,14 @@ fun CustomerCatalogScreen(onExitTestMode: () -> Unit = {}, vm: CustomerCatalogVi
                             runCatching { context.startActivity(intent) }
                         }) {
                             Icon(Icons.Default.Chat, contentDescription = "Message shop on WhatsApp")
+                        }
+                    }
+                    IconButton(onClick = { showNotifications = true }) {
+                        BadgedBox(badge = { if (unreadNotifications > 0) Badge { Text("$unreadNotifications") } }) {
+                            Icon(
+                                if (unreadNotifications > 0) Icons.Default.NotificationsActive else Icons.Default.Notifications,
+                                contentDescription = "Notifications"
+                            )
                         }
                     }
                     IconButton(onClick = { showHistory = true }) {
@@ -319,6 +336,50 @@ fun CustomerCatalogScreen(onExitTestMode: () -> Unit = {}, vm: CustomerCatalogVi
             onReorder = { order -> vm.reorder(order); showHistory = false }
         )
     }
+    if (showNotifications) {
+        LaunchedEffect(Unit) { vm.notificationsOpened() }
+        NotificationsDialog(
+            notifications = notifications,
+            onDismiss = { showNotifications = false }
+        )
+    }
+}
+
+@Composable
+private fun NotificationsDialog(
+    notifications: List<CustomerNotification>,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Notifications") },
+        text = {
+            if (notifications.isEmpty()) {
+                Text("No notifications yet.", color = MaterialTheme.colorScheme.outline)
+            } else {
+                Column {
+                    notifications.forEach { n ->
+                        val statusLabel = OnlineOrderStatus.entries.find { it.name == n.status }?.label
+                        Column(Modifier.padding(vertical = 8.dp)) {
+                            if (statusLabel != null) {
+                                Text(statusLabel, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleSmall)
+                            }
+                            if (n.message.isNotBlank()) {
+                                Text(n.message, style = MaterialTheme.typography.bodySmall)
+                            }
+                            Text(
+                                SimpleDateFormat("dd MMM, HH:mm", Locale.getDefault()).format(Date(n.receivedAt)),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.outline
+                            )
+                            Divider(Modifier.padding(top = 6.dp))
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } }
+    )
 }
 
 @Composable

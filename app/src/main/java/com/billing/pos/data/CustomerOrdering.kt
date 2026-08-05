@@ -104,7 +104,8 @@ data class OnlineOrder(
 }
 
 enum class OnlineOrderStatus(val label: String) {
-    PENDING("Pending"), DELIVERED("Delivered"), CANCELLED("Cancelled")
+    PENDING("Pending"), ACCEPTED("Accepted"), REJECTED("Rejected"),
+    OUT_FOR_DELIVERY("Out for delivery"), DELIVERED("Delivered"), CANCELLED("Cancelled")
 }
 
 @Dao
@@ -133,7 +134,11 @@ data class CustomerOrderHistory(
     val itemsJson: String,
     val total: Double,
     val placedAt: Long,
-    val location: String = ""
+    val location: String = "",
+    /** The server's id for this order (see pos_online_catalog.php's do=order response), so a
+     *  status-change notification for this order can be matched back to it. Blank on an old row
+     *  saved before the server started returning one. */
+    val serverId: String = ""
 ) {
     /** [serverId] is the catalog item's id, so Re-order can find it again even if its name changed. */
     data class Line(val serverId: String, val name: String, val qty: Int, val price: Double)
@@ -165,4 +170,38 @@ interface CustomerOrderHistoryDao {
 
     @Insert
     suspend fun insert(order: CustomerOrderHistory): Long
+}
+
+/**
+ * Customer install: a status update (or a plain message) the shop sent about one of this
+ * customer's orders — see [com.billing.pos.customer.NotificationsFetch] (pulls from the server's
+ * do=notifications, a short-lived queue, same read-once convention as orders/catalog) and
+ * [com.billing.pos.ui.online.OnlineOrdersScreen] on the shop owner side for where these originate.
+ */
+@Entity(tableName = "customer_notifications")
+data class CustomerNotification(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    /** The order this is about, matching [CustomerOrderHistory.serverId] — blank for a message
+     *  that isn't tied to a specific order. */
+    val orderId: String = "",
+    /** One of [OnlineOrderStatus]'s names, or blank for a plain message with no status change. */
+    val status: String = "",
+    val message: String = "",
+    val receivedAt: Long,
+    val read: Boolean = false
+)
+
+@Dao
+interface CustomerNotificationDao {
+    @Query("SELECT * FROM customer_notifications ORDER BY receivedAt DESC")
+    fun observeAll(): Flow<List<CustomerNotification>>
+
+    @Query("SELECT COUNT(*) FROM customer_notifications WHERE read = 0")
+    fun observeUnreadCount(): Flow<Int>
+
+    @Insert
+    suspend fun insert(notification: CustomerNotification): Long
+
+    @Query("UPDATE customer_notifications SET read = 1")
+    suspend fun markAllRead()
 }

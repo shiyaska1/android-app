@@ -18,7 +18,7 @@ import java.net.URL
 object OrderSubmit {
 
     sealed class Result {
-        object Ok : Result()
+        data class Ok(val orderId: String) : Result()
         data class Failed(val message: String) : Result()
     }
 
@@ -74,8 +74,16 @@ object OrderSubmit {
             conn.setFixedLengthStreamingMode(bytes.size)
             conn.outputStream.use { it.write(bytes) }
             val code = conn.responseCode
+            val responseBody = runCatching {
+                (if (code in 200..299) conn.inputStream else conn.errorStream)?.bufferedReader()?.use { it.readText() }
+            }.getOrNull()
             conn.disconnect()
-            if (code in 200..299) Result.Ok else Result.Failed("Server returned HTTP $code")
+            if (code in 200..299) {
+                val orderId = runCatching { JSONObject(responseBody.orEmpty()).optString("id") }.getOrNull().orEmpty()
+                Result.Ok(orderId)
+            } else {
+                Result.Failed("Server returned HTTP $code")
+            }
         } catch (e: Exception) {
             Result.Failed(e.javaClass.simpleName + (e.message?.let { ": $it" } ?: ""))
         }
