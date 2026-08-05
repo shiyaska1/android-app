@@ -1079,17 +1079,17 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
             Divider(Modifier.padding(vertical = 16.dp))
             HighlightText("Online ordering", MaterialTheme.typography.titleSmall, settingAnchors, highlightedSetting)
             Text(
-                "Set these once, then use Masters > Online Items to pick which items customers " +
-                    "can order and \"Upload\". Give this shop's code + this URL to whoever builds your " +
-                    "customer install links/QR codes — the customer app fetches the catalog from here.",
+                "Set the catalog URL once, then use Masters > Online Items to pick which items " +
+                    "customers can order and \"Upload\". Your shop code is this device's own Device ID " +
+                    "below — give it, and the URL, to whoever builds your customer install links/QR codes.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline
             )
-            var shopCode by remember { mutableStateOf(prefs.shopCode) }
+            var shopCode by remember { mutableStateOf(prefs.shopCode.ifBlank { com.billing.pos.data.License.deviceId(context) }) }
             var onlineCatalogUrl by remember { mutableStateOf(prefs.onlineCatalogUrl) }
             OutlinedTextField(
                 value = shopCode,
                 onValueChange = { shopCode = it; prefs.shopCode = it },
-                label = { Text("Shop code") }, singleLine = true,
+                label = { Text("Shop code (defaults to Device ID)") }, singleLine = true,
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
             )
             OutlinedTextField(

@@ -3,6 +3,7 @@ package com.billing.pos.customer
 import android.content.Context
 import com.billing.pos.data.AppPrefs
 import com.billing.pos.data.Item
+import com.billing.pos.data.License
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -16,6 +17,10 @@ import java.net.URL
  * id (a Long, local to this device) becomes the "id" the customer app hands back on an order —
  * good enough while there's one catalog per shop; a multi-device shop would need something more
  * durable, but that's not built yet.
+ *
+ * The shop "code" is just this device's [License.deviceId] — the same id already shown on the
+ * license/activation screen, so there's nothing extra for the shop owner to set up. [AppPrefs.shopCode]
+ * can still override it (e.g. a shop that reinstalls and wants to keep the same customer links).
  */
 object OnlineCatalogUpload {
 
@@ -27,9 +32,8 @@ object OnlineCatalogUpload {
     suspend fun upload(context: Context, items: List<Item>): Result = withContext(Dispatchers.IO) {
         val prefs = AppPrefs(context)
         val base = prefs.onlineCatalogUrl
-        val shop = prefs.shopCode
+        val shop = prefs.shopCode.ifBlank { License.deviceId(context) }
         if (base.isBlank()) return@withContext Result.Failed("Set the online catalog URL in Settings first")
-        if (shop.isBlank()) return@withContext Result.Failed("Set your shop code in Settings first")
 
         val body = JSONObject().apply {
             put("shop", shop)
