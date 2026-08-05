@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -216,26 +217,26 @@ private fun OrderCard(
 ) {
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(14.dp)) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Column(Modifier.weight(1f)) {
-                    Text(order.customerName, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleSmall)
-                    if (order.customerPhone.isNotBlank()) {
-                        Text(order.customerPhone, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
-                    }
-                    if (order.customerAddress.isNotBlank()) {
-                        Text(order.customerAddress, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
-                    }
+            Column {
+                Text(order.customerName, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleSmall)
+                if (order.customerPhone.isNotBlank()) {
+                    Text(order.customerPhone, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
                 }
-                Row {
-                    IconButton(onClick = onMessage) { Icon(Icons.Default.Message, contentDescription = "Message customer") }
-                    IconButton(onClick = onShareToSalesman) { Icon(Icons.Default.Share, contentDescription = "Share to salesman") }
-                    if (order.location.isNotBlank()) {
-                        IconButton(onClick = onLocation) { Icon(Icons.Default.Place, contentDescription = "Delivery location") }
-                    }
-                    if (order.customerPhone.isNotBlank()) {
-                        IconButton(onClick = onCall) { Icon(Icons.Default.Call, contentDescription = "Call") }
-                        IconButton(onClick = onWhatsApp) { Icon(Icons.Default.Chat, contentDescription = "WhatsApp") }
-                    }
+                if (order.customerAddress.isNotBlank()) {
+                    Text(order.customerAddress, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                }
+            }
+            // Its own full-width row, not squeezed next to the name — five icons plus a long
+            // name overlapped badly on narrower phones.
+            Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.End) {
+                IconButton(onClick = onMessage) { Icon(Icons.Default.Message, contentDescription = "Message customer") }
+                IconButton(onClick = onShareToSalesman) { Icon(Icons.Default.Share, contentDescription = "Share to salesman") }
+                if (order.location.isNotBlank()) {
+                    IconButton(onClick = onLocation) { Icon(Icons.Default.Place, contentDescription = "Delivery location") }
+                }
+                if (order.customerPhone.isNotBlank()) {
+                    IconButton(onClick = onCall) { Icon(Icons.Default.Call, contentDescription = "Call") }
+                    IconButton(onClick = onWhatsApp) { Icon(Icons.Default.Chat, contentDescription = "WhatsApp") }
                 }
             }
 
@@ -266,12 +267,14 @@ private fun OrderCard(
             }
             Text("Total: ₹${Format.money(order.total)}", fontWeight = FontWeight.Bold)
 
-            Row(
-                Modifier.fillMaxWidth().padding(top = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically
+            // A plain Row can't fit all six statuses — it used to squeeze the last chip's text
+            // into a vertical letter-stack instead of overflowing sensibly. A horizontally
+            // scrollable full-width row never does that, whatever the label length.
+            LazyRow(
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                OnlineOrderStatus.entries.forEach { s ->
+                items(OnlineOrderStatus.entries.toList()) { s ->
                     FilterChip(
                         selected = order.status == s.name,
                         onClick = { onStatusChange(s.name) },
