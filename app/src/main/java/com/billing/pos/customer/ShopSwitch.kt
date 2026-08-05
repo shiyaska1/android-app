@@ -1,9 +1,15 @@
 package com.billing.pos.customer
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.net.Uri
 import com.billing.pos.data.AppDatabase
 import com.billing.pos.data.AppPrefs
+import com.google.zxing.BinaryBitmap
+import com.google.zxing.DecodeHintType
+import com.google.zxing.MultiFormatReader
+import com.google.zxing.RGBLuminanceSource
+import com.google.zxing.common.HybridBinarizer
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -89,6 +95,20 @@ object ShopSwitch {
             }
         }
         prefs.customerRecentShops = result.toString()
+    }
+
+    /** Decodes a QR code from a still image (e.g. a screenshot shared over WhatsApp, or a photo
+     *  of a printed QR) — an alternative to the live camera scan for when the shop's QR only
+     *  exists as a picture. Same ZXing approach used elsewhere in the app for photo barcodes. */
+    fun decodeFromBitmap(bitmap: Bitmap): String? {
+        val hints = mapOf(DecodeHintType.TRY_HARDER to true)
+        val w = bitmap.width; val h = bitmap.height
+        if (w <= 0 || h <= 0) return null
+        val pixels = IntArray(w * h)
+        bitmap.getPixels(pixels, 0, w, 0, 0, w, h)
+        val source = RGBLuminanceSource(w, h, pixels)
+        return runCatching { MultiFormatReader().decode(BinaryBitmap(HybridBinarizer(source)), hints).text }.getOrNull()
+            ?: runCatching { MultiFormatReader().decode(BinaryBitmap(HybridBinarizer(source.invert())), hints).text }.getOrNull()
     }
 
     private fun removeRecent(prefs: AppPrefs, shopCode: String) {

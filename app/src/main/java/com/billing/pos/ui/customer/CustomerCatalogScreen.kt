@@ -485,7 +485,9 @@ private fun SwitchShopDialog(
     onSwitch: (ShopSwitch.Shop) -> Unit
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var scanError by remember { mutableStateOf(false) }
+    var decoding by remember { mutableStateOf(false) }
     val scanLauncher = rememberLauncherForActivityResult(ScanContract()) { result ->
         val contents = result.contents ?: return@rememberLauncherForActivityResult
         val shop = ShopSwitch.parse(contents)
@@ -501,6 +503,29 @@ private fun SwitchShopDialog(
             cameraPermission.launch(Manifest.permission.CAMERA)
         }
     }
+    val galleryPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        decoding = true
+        scope.launch {
+            val shop = withContext(Dispatchers.IO) {
+                runCatching {
+                    context.contentResolver.openInputStream(uri)?.use { input ->
+                        val bytes = input.readBytes()
+                        val opt = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                        android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opt)
+                        var sample = 1
+                        while (opt.outWidth / sample > 2000 || opt.outHeight / sample > 2000) sample *= 2
+                        val bmp = android.graphics.BitmapFactory.decodeByteArray(
+                            bytes, 0, bytes.size, android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }
+                        )
+                        bmp?.let { ShopSwitch.decodeFromBitmap(it) }?.let { ShopSwitch.parse(it) }
+                    }
+                }.getOrNull()
+            }
+            decoding = false
+            if (shop != null) onSwitch(shop) else scanError = true
+        }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -512,6 +537,24 @@ private fun SwitchShopDialog(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.outline
                 )
+                Row(
+                    Modifier.fillMaxWidth().padding(top = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(onClick = { startScan() }, enabled = !decoding, modifier = Modifier.weight(1f)) {
+                        Text("Scan QR")
+                    }
+                    OutlinedButton(
+                        onClick = { galleryPicker.launch("image/*") },
+                        enabled = !decoding, modifier = Modifier.weight(1f)
+                    ) {
+                        if (decoding) {
+                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                        } else {
+                            Text("From gallery")
+                        }
+                    }
+                }
                 if (scanError) {
                     Text(
                         "That QR code isn't a shop link.",
@@ -532,8 +575,7 @@ private fun SwitchShopDialog(
                 }
             }
         },
-        confirmButton = { TextButton(onClick = { startScan() }) { Text("Scan QR") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } }
     )
 }
 
