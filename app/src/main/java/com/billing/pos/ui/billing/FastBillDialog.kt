@@ -264,6 +264,10 @@ fun FastBillDialog(
         val total = all.sumOf { it.amount }
         scope.launch {
             val customer = resolveCustomer()
+            val fresh = savedId == 0L
+            // Carried forward so re-saving an edited tape never loses track of the due it
+            // already created — only a fresh save is allowed to create a new one below.
+            val existingLinkedBillId = if (fresh) 0L else repo.calcById(savedId)?.linkedBillId ?: 0L
             val id = repo.saveCalc(
                 com.billing.pos.data.SavedCalc(
                     id = savedId,
@@ -273,14 +277,19 @@ fun FastBillDialog(
                     total = total,
                     customerId = customer?.id ?: 0L,
                     customerName = customer?.name ?: com.billing.pos.data.SavedCalc.DEFAULT_CUSTOMER,
-                    narration = narration.trim()
+                    narration = narration.trim(),
+                    linkedBillId = existingLinkedBillId
                 )
             )
-            val fresh = savedId == 0L
             savedId = id
             var msg = if (fresh) "Calculation saved" else "Calculation updated"
-            if (customer != null && total > 0.0 && !isSaleBill) {
-                repo.addQuickInvoice(customer, total, narration.trim(), System.currentTimeMillis())
+            // The quick-due invoice is only ever created on the calculation's first save —
+            // re-saving updates the tape but must never spawn a second due for the same
+            // calculation (that would double what the customer appears to owe), and deleting
+            // the calculation later (Repository.deleteCalc) relies on there being exactly one.
+            if (fresh && customer != null && total > 0.0 && !isSaleBill) {
+                val billId = repo.addQuickInvoice(customer, total, narration.trim(), System.currentTimeMillis())
+                repo.calcById(id)?.let { repo.saveCalc(it.copy(linkedBillId = billId)) }
                 msg += " • ${Format.rupee(total)} added as credit for ${customer.name}"
                 // Same PDF as the Share button's PDF option, filed against the customer so it
                 // shows up in their own attachments when the customer is later opened for edit.

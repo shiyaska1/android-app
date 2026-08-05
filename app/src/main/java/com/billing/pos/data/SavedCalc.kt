@@ -31,7 +31,12 @@ data class SavedCalc(
     /** Kept by name as well, so a tape still reads correctly if the customer is renamed. */
     val customerName: String = DEFAULT_CUSTOMER,
     val narration: String = "",
-    val labels: String = ""
+    val labels: String = "",
+    /** The quick-due Bill this calculation created for its customer (addQuickInvoice), if any —
+     *  0 = none, or the customer was the walk-in placeholder. Lets deleting this calculation
+     *  clean up the due it created instead of leaving it stranded on the customer, and lets
+     *  re-saving reuse it rather than creating a fresh due every time. */
+    val linkedBillId: Long = 0
 ) {
     val amountList: List<Double>
         get() = amounts.split(',').mapNotNull { it.trim().toDoubleOrNull() }
@@ -56,6 +61,9 @@ interface SavedCalcDao {
 
     @Query("SELECT * FROM saved_calcs ORDER BY dateMillis DESC")
     suspend fun all(): List<SavedCalc>
+
+    @Query("SELECT * FROM saved_calcs WHERE id = :id LIMIT 1")
+    suspend fun byId(id: Long): SavedCalc?
 
     @Insert suspend fun insert(c: SavedCalc): Long
 

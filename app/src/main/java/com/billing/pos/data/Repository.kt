@@ -649,7 +649,22 @@ class Repository(private val context: Context) {
     suspend fun saveCalc(c: SavedCalc): Long =
         if (c.id == 0L) savedCalcDao.insert(c) else { savedCalcDao.update(c); c.id }
 
-    suspend fun deleteCalc(id: Long) = savedCalcDao.delete(id)
+    suspend fun calcById(id: Long): SavedCalc? = savedCalcDao.byId(id)
+
+    /** Deletes the calculation and, if it's still safe to, the quick-due invoice it created
+     *  for its customer (see [SavedCalc.linkedBillId]) — so deleting a calculation never
+     *  leaves a stranded due on the customer. "Safe" means the due is still a legacy quick
+     *  invoice (never a real sale bill made from the calculator) that hasn't been paid against
+     *  yet, by a direct receipt or by an amount already recorded on the bill itself — deleting
+     *  either of those would silently erase real money collected from the customer. */
+    suspend fun deleteCalc(id: Long) {
+        val calc = savedCalcDao.byId(id)
+        savedCalcDao.delete(id)
+        val bill = calc?.linkedBillId?.takeIf { it > 0 }?.let { billDao.byId(it) } ?: return
+        if (!bill.isLegacy || bill.paidAmount > 0.0) return
+        if (receiptDao.all().any { it.billId == bill.id }) return
+        deleteBill(bill)
+    }
 
     private val expenseAttachmentDao = db.expenseAttachmentDao()
     suspend fun expenseAttachmentsFor(expenseId: Long): List<ExpenseAttachment> =
