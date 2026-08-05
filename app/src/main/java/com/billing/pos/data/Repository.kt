@@ -448,10 +448,10 @@ class Repository(private val context: Context) {
      *  list/sales & GST reports, same as [addQuickInvoice] — calculator invoices are meant to be
      *  seen through the customer they're for, not mixed into the regular sales flow — but the
      *  payment method still correctly moves the customer's payable or the Cash/Bank balance.
-     *  Each positive entry becomes its own line, named after its label ("Amount" when blank);
-     *  subtracted (negative) entries have no natural place on a sale line, so — same as the
-     *  calculator's own "Save to bill" hand-off — they're left out rather than turned into a
-     *  negative-priced line. */
+     *  Each added (positive) entry becomes its own line, named after its label ("Amount" when
+     *  blank). Subtracted (negative) entries are totalled into the invoice's discount, so the
+     *  grand total always matches the tape's own total — a line with a negative price would
+     *  instead distort the item-wise sales figures. */
     suspend fun addSaleInvoiceFromTape(
         customer: Customer,
         entries: List<Pair<Double, String>>,
@@ -464,7 +464,11 @@ class Repository(private val context: Context) {
         val lines = entries.filter { it.first > 0.0 }.map { (amount, label) ->
             BillItem(billId = 0, name = label.ifBlank { "Amount" }, qty = 1.0, price = amount, taxPercent = 0.0, lineTotal = amount)
         }
-        val grandTotal = lines.sumOf { it.lineTotal }
+        val subTotal = lines.sumOf { it.lineTotal }
+        // Negatives are stored negative on the tape, so this flips them back to a positive
+        // discount figure.
+        val discount = -entries.filter { it.first < 0.0 }.sumOf { it.first }
+        val grandTotal = subTotal - discount
         val paid = if (paymentMethod.equals(PaymentMethod.CREDIT.label, ignoreCase = true)) 0.0 else grandTotal
         // Re-saving an edited calculation updates the invoice it already made rather than
         // adding a second one — its number and date stay put, only the amounts/lines/payment
@@ -475,7 +479,7 @@ class Repository(private val context: Context) {
                 existing.copy(
                     customerId = customer.id, customerName = customer.name,
                     paymentMethod = paymentMethod,
-                    subTotal = grandTotal, grandTotal = grandTotal, paidAmount = paid,
+                    subTotal = subTotal, discount = discount, grandTotal = grandTotal, paidAmount = paid,
                     customerGstin = customer.gstin, customerState = customer.state,
                     remarks = note.trim(), updatedAt = System.currentTimeMillis()
                 ),
@@ -489,10 +493,10 @@ class Repository(private val context: Context) {
             customerId = customer.id,
             customerName = customer.name,
             paymentMethod = paymentMethod,
-            subTotal = grandTotal,
+            subTotal = subTotal,
             taxTotal = 0.0,
             additionalCharge = 0.0,
-            discount = 0.0,
+            discount = discount,
             grandTotal = grandTotal,
             paidAmount = paid,
             customerGstin = customer.gstin,

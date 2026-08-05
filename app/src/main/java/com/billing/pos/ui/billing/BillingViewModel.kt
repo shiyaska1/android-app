@@ -305,11 +305,19 @@ class BillingViewModel(private val app: Application) : AndroidViewModel(app) {
 
     fun addPriceLines(prices: List<Double>) {
         val valid = prices.filter { it > 0.0 }
-        if (valid.isEmpty()) return
+        // Amounts subtracted on the calculator arrive negative. They can't be a cart line
+        // (a negative price would distort the item-wise sales figures), so they go to the
+        // bill's discount instead — dropping them would silently overcharge the customer.
+        val deduction = -prices.filter { it < 0.0 }.sum()
+        if (valid.isEmpty() && deduction == 0.0) return
         valid.forEach { p -> cart.add(CartLine(itemId = 0, name = "", price = p, taxPercent = 0.0, qty = 1.0, priceIncludesTax = priceIncludesTax)) }
+        if (deduction > 0.0) setDiscount(com.billing.pos.util.Format.money(discount + deduction))
         manualTotalText = ""   // let the bill total compute from the lines
         dirty = true
-        _message.value = "Added ${valid.size} amount(s)"
+        _message.value = buildString {
+            append("Added ${valid.size} amount(s)")
+            if (deduction > 0.0) append(" • ${com.billing.pos.util.Format.money(deduction)} as discount")
+        }
     }
 
     fun addCustomLine(
