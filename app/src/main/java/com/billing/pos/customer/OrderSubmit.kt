@@ -26,7 +26,11 @@ object OrderSubmit {
         context: Context,
         selection: List<Pair<ShopCatalogItem, Int>>,
         customerName: String,
-        customerPhone: String
+        customerPhone: String,
+        locationLink: String? = null,
+        customerAddress: String? = null,
+        note: String? = null,
+        attachmentImage: String? = null
     ): Result = withContext(Dispatchers.IO) {
         val prefs = AppPrefs(context)
         val base = prefs.onlineCatalogUrl
@@ -40,6 +44,10 @@ object OrderSubmit {
             put("customerName", customerName)
             put("customerPhone", customerPhone)
             put("total", total)
+            if (!locationLink.isNullOrBlank()) put("location", locationLink)
+            if (!customerAddress.isNullOrBlank()) put("customerAddress", customerAddress)
+            if (!note.isNullOrBlank()) put("note", note)
+            if (!attachmentImage.isNullOrBlank()) put("attachmentImage", attachmentImage)
             put("items", JSONArray().apply {
                 selection.forEach { (item, qty) ->
                     put(JSONObject().apply {

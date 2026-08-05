@@ -1,5 +1,8 @@
 package com.billing.pos.ui.customer
 
+import android.Manifest
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,19 +15,24 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Chat
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.BottomAppBar
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Divider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
@@ -44,6 +52,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -51,12 +60,22 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.billing.pos.customer.ShopSwitch
+import com.billing.pos.customer.ThumbnailCompressor
 import com.billing.pos.data.AppPrefs
+import com.billing.pos.data.CustomerOrderHistory
 import com.billing.pos.data.ShopCatalogItem
 import com.billing.pos.ui.billing.collectAsStateSafe
 import com.billing.pos.util.Format
+import com.journeyapps.barcodescanner.ScanContract
+import com.journeyapps.barcodescanner.ScanOptions
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -81,6 +100,9 @@ fun CustomerCatalogScreen(onExitTestMode: () -> Unit = {}, vm: CustomerCatalogVi
     val snackbar = remember { SnackbarHostState() }
     var selectedCategory by rememberSaveable { mutableStateOf("All") }
     var showSaveDialog by rememberSaveable { mutableStateOf(false) }
+    var showSwitchShop by rememberSaveable { mutableStateOf(false) }
+    var showHistory by rememberSaveable { mutableStateOf(false) }
+    val history by vm.history.collectAsStateSafe()
     // Re-read after every fetch (a plain remember would freeze these at first composition).
     val shopName = prefs.shopDisplayName
     val shopPhone = prefs.shopContactPhone
@@ -133,6 +155,12 @@ fun CustomerCatalogScreen(onExitTestMode: () -> Unit = {}, vm: CustomerCatalogVi
                             Icon(Icons.Default.Chat, contentDescription = "Message shop on WhatsApp")
                         }
                     }
+                    IconButton(onClick = { showHistory = true }) {
+                        Icon(Icons.Default.History, contentDescription = "Order history")
+                    }
+                    IconButton(onClick = { showSwitchShop = true }) {
+                        Icon(Icons.Default.SwapHoriz, contentDescription = "Switch shop")
+                    }
                     IconButton(onClick = { vm.refresh() }) {
                         if (refreshing) {
                             CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
@@ -176,6 +204,7 @@ fun CustomerCatalogScreen(onExitTestMode: () -> Unit = {}, vm: CustomerCatalogVi
                                     android.net.Uri.parse("$target?text=${android.net.Uri.encode(text)}")
                                 )
                                 runCatching { context.startActivity(intent) }
+                                vm.clearSelection()
                             }) {
                                 Icon(Icons.Default.Chat, contentDescription = null, modifier = Modifier.size(18.dp))
                                 Text("  $shareLabel")
@@ -267,11 +296,27 @@ fun CustomerCatalogScreen(onExitTestMode: () -> Unit = {}, vm: CustomerCatalogVi
         SaveOrderDialog(
             initialName = vm.savedCustomerName,
             initialPhone = vm.savedCustomerPhone,
+            initialAddress = vm.savedCustomerAddress,
+            premium = vm.isPremiumShop,
             onDismiss = { showSaveDialog = false },
-            onConfirm = { name, phone ->
+            onConfirm = { name, phone, address, note, attachment ->
                 showSaveDialog = false
-                vm.saveOrder(name, phone)
+                vm.saveOrder(name, phone, address, note, attachment)
             }
+        )
+    }
+    if (showSwitchShop) {
+        SwitchShopDialog(
+            recent = vm.recentShops(),
+            onDismiss = { showSwitchShop = false },
+            onSwitch = { shop -> vm.switchShop(shop) { showSwitchShop = false } }
+        )
+    }
+    if (showHistory) {
+        OrderHistoryDialog(
+            history = history,
+            onDismiss = { showHistory = false },
+            onReorder = { order -> vm.reorder(order); showHistory = false }
         )
     }
 }
@@ -280,11 +325,37 @@ fun CustomerCatalogScreen(onExitTestMode: () -> Unit = {}, vm: CustomerCatalogVi
 private fun SaveOrderDialog(
     initialName: String,
     initialPhone: String,
+    initialAddress: String,
+    premium: Boolean,
     onDismiss: () -> Unit,
-    onConfirm: (name: String, phone: String) -> Unit
+    onConfirm: (name: String, phone: String, address: String, note: String, attachmentImage: String?) -> Unit
 ) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var name by rememberSaveable { mutableStateOf(initialName) }
     var phone by rememberSaveable { mutableStateOf(initialPhone) }
+    var address by rememberSaveable { mutableStateOf(initialAddress) }
+    var note by rememberSaveable { mutableStateOf("") }
+    var attachmentDataUri by rememberSaveable { mutableStateOf<String?>(null) }
+    var compressing by remember { mutableStateOf(false) }
+
+    val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        compressing = true
+        scope.launch {
+            attachmentDataUri = withContext(Dispatchers.IO) {
+                val tempFile = java.io.File.createTempFile("attach_", ".jpg", context.cacheDir)
+                runCatching {
+                    context.contentResolver.openInputStream(uri)?.use { input ->
+                        tempFile.outputStream().use { output -> input.copyTo(output) }
+                    }
+                    val bytes = ThumbnailCompressor.compress(tempFile.absolutePath) ?: return@withContext null
+                    "data:image/jpeg;base64," + android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+                }.getOrNull().also { tempFile.delete() }
+            }
+            compressing = false
+        }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -305,17 +376,145 @@ private fun SaveOrderDialog(
                 OutlinedTextField(
                     value = phone, onValueChange = { phone = it },
                     label = { Text("Mobile number") }, singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
                 )
+                OutlinedTextField(
+                    value = address, onValueChange = { address = it },
+                    label = { Text("Address (optional)") }, singleLine = true,
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                )
+                OutlinedTextField(
+                    value = note, onValueChange = { note = it },
+                    label = { Text("Note (optional)") },
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                )
+                if (premium) {
+                    OutlinedButton(
+                        onClick = { photoPicker.launch("image/*") },
+                        enabled = !compressing,
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                    ) {
+                        if (compressing) {
+                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                        } else {
+                            Icon(Icons.Default.AttachFile, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Text(if (attachmentDataUri != null) "  Photo attached — tap to change" else "  Attach a photo (e.g. prescription)")
+                        }
+                    }
+                }
             }
         },
         confirmButton = {
             TextButton(
-                onClick = { onConfirm(name.trim(), phone.trim()) },
-                enabled = name.isNotBlank() && phone.isNotBlank()
+                onClick = { onConfirm(name.trim(), phone.trim(), address.trim(), note.trim(), attachmentDataUri) },
+                enabled = name.isNotBlank() && phone.isNotBlank() && !compressing
             ) { Text("Save order") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
+/** Scan the same QR a shop hands out for install to point this app at a different shop —
+ *  no reinstall needed — or tap a recently-used shop to switch straight back. */
+@Composable
+private fun SwitchShopDialog(
+    recent: List<ShopSwitch.Shop>,
+    onDismiss: () -> Unit,
+    onSwitch: (ShopSwitch.Shop) -> Unit
+) {
+    val context = LocalContext.current
+    var scanError by remember { mutableStateOf(false) }
+    val scanLauncher = rememberLauncherForActivityResult(ScanContract()) { result ->
+        val contents = result.contents ?: return@rememberLauncherForActivityResult
+        val shop = ShopSwitch.parse(contents)
+        if (shop != null) onSwitch(shop) else scanError = true
+    }
+    val cameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) scanLauncher.launch(ScanOptions().setPrompt("Scan the new shop's QR code").setBeepEnabled(true))
+    }
+    fun startScan() {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            scanLauncher.launch(ScanOptions().setPrompt("Scan the new shop's QR code").setBeepEnabled(true))
+        } else {
+            cameraPermission.launch(Manifest.permission.CAMERA)
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Switch shop") },
+        text = {
+            Column {
+                Text(
+                    "Scan a different shop's QR code to switch — no need to reinstall the app.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.outline
+                )
+                if (scanError) {
+                    Text(
+                        "That QR code isn't a shop link.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
+                if (recent.isNotEmpty()) {
+                    Divider(Modifier.padding(vertical = 12.dp))
+                    Text("Switch back to:", style = MaterialTheme.typography.labelMedium)
+                    recent.forEach { shop ->
+                        TextButton(
+                            onClick = { onSwitch(shop) },
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text(shop.name.ifBlank { shop.shop }, modifier = Modifier.fillMaxWidth()) }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = { startScan() }) { Text("Scan QR") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
+@Composable
+private fun OrderHistoryDialog(
+    history: List<CustomerOrderHistory>,
+    onDismiss: () -> Unit,
+    onReorder: (CustomerOrderHistory) -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Order history") },
+        text = {
+            if (history.isEmpty()) {
+                Text("No past orders yet.", color = MaterialTheme.colorScheme.outline)
+            } else {
+                Column {
+                    history.forEach { order ->
+                        Column(Modifier.padding(vertical = 8.dp)) {
+                            Text(
+                                SimpleDateFormat("dd MMM, HH:mm", Locale.getDefault()).format(Date(order.placedAt)),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.outline
+                            )
+                            order.items.forEach { line ->
+                                Text("${line.name} x${line.qty}", style = MaterialTheme.typography.bodySmall)
+                            }
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("₹" + Format.money(order.total), fontWeight = FontWeight.Bold)
+                                TextButton(onClick = { onReorder(order) }) { Text("Re-order") }
+                            }
+                            Divider(Modifier.padding(top = 4.dp))
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } }
     )
 }
 

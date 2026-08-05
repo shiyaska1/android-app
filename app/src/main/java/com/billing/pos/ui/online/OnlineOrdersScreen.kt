@@ -14,7 +14,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Chat
+import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -33,6 +35,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -117,6 +121,34 @@ fun OnlineOrdersScreen(onBack: () -> Unit, vm: OnlineOrdersViewModel = viewModel
                                     )
                                 }
                             }
+                        },
+                        onLocation = {
+                            if (order.location.isNotBlank()) {
+                                runCatching {
+                                    context.startActivity(
+                                        android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(order.location))
+                                    )
+                                }
+                            }
+                        },
+                        onShareToSalesman = {
+                            val text = buildString {
+                                append(order.customerName)
+                                if (order.customerPhone.isNotBlank()) append("\n").append(order.customerPhone)
+                                if (order.customerAddress.isNotBlank()) append("\n").append(order.customerAddress)
+                                if (order.location.isNotBlank()) append("\n").append(order.location)
+                            }
+                            runCatching {
+                                context.startActivity(
+                                    android.content.Intent.createChooser(
+                                        android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                            type = "text/plain"
+                                            putExtra(android.content.Intent.EXTRA_TEXT, text)
+                                        },
+                                        "Share delivery details"
+                                    )
+                                )
+                            }
                         }
                     )
                 }
@@ -125,12 +157,25 @@ fun OnlineOrdersScreen(onBack: () -> Unit, vm: OnlineOrdersViewModel = viewModel
     }
 }
 
+/** Order attachments travel as a base64 data URI, same convention as item photos. */
+private fun decodeDataUriBitmap(dataUri: String): androidx.compose.ui.graphics.ImageBitmap? {
+    if (!dataUri.startsWith("data:image")) return null
+    val comma = dataUri.indexOf(',')
+    if (comma < 0) return null
+    return runCatching {
+        val bytes = android.util.Base64.decode(dataUri.substring(comma + 1), android.util.Base64.DEFAULT)
+        android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+    }.getOrNull()
+}
+
 @Composable
 private fun OrderCard(
     order: OnlineOrder,
     onStatusChange: (String) -> Unit,
     onCall: () -> Unit,
-    onWhatsApp: () -> Unit
+    onWhatsApp: () -> Unit,
+    onLocation: () -> Unit,
+    onShareToSalesman: () -> Unit
 ) {
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(14.dp)) {
@@ -140,13 +185,37 @@ private fun OrderCard(
                     if (order.customerPhone.isNotBlank()) {
                         Text(order.customerPhone, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
                     }
+                    if (order.customerAddress.isNotBlank()) {
+                        Text(order.customerAddress, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                    }
                 }
                 Row {
+                    IconButton(onClick = onShareToSalesman) { Icon(Icons.Default.Share, contentDescription = "Share to salesman") }
+                    if (order.location.isNotBlank()) {
+                        IconButton(onClick = onLocation) { Icon(Icons.Default.Place, contentDescription = "Delivery location") }
+                    }
                     if (order.customerPhone.isNotBlank()) {
                         IconButton(onClick = onCall) { Icon(Icons.Default.Call, contentDescription = "Call") }
                         IconButton(onClick = onWhatsApp) { Icon(Icons.Default.Chat, contentDescription = "WhatsApp") }
                     }
                 }
+            }
+
+            if (order.note.isNotBlank()) {
+                Text(
+                    "Note: ${order.note}",
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(top = 6.dp)
+                )
+            }
+            val attachment = remember(order.attachmentImage) { decodeDataUriBitmap(order.attachmentImage) }
+            if (attachment != null) {
+                androidx.compose.foundation.Image(
+                    attachment,
+                    contentDescription = "Customer attachment",
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.size(96.dp).padding(top = 6.dp)
+                )
             }
 
             Column(Modifier.padding(top = 6.dp, bottom = 6.dp)) {

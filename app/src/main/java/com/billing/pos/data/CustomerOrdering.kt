@@ -71,7 +71,16 @@ data class OnlineOrder(
     val receivedAt: String,
     val fetchedAt: Long,
     /** PENDING / DELIVERED / CANCELLED — shop owner manages this locally. */
-    val status: String = "PENDING"
+    val status: String = "PENDING",
+    /** `https://maps.google.com/?q=lat,lng`, or blank if the customer didn't share one. */
+    val location: String = "",
+    /** Optional delivery address the customer typed in, separate from the map link. */
+    val customerAddress: String = "",
+    /** Free-text note from the customer (e.g. "no onions", or a prescription description). */
+    val note: String = "",
+    /** Premium-shop only: a compressed base64 data URI the customer attached (e.g. a prescription
+     *  photo). Blank for a non-premium shop or when the customer didn't attach anything. */
+    val attachmentImage: String = ""
 ) {
     data class Line(val name: String, val qty: Int, val price: Double)
 
@@ -111,4 +120,49 @@ interface OnlineOrderDao {
 
     @Query("UPDATE online_orders SET status = :status WHERE id = :id")
     suspend fun updateStatus(id: Long, status: String)
+}
+
+/**
+ * Customer install: this device's own record of what it has ordered — so "Order History" has
+ * something to show and "Re-order" has something to repeat from. Purely local; the server never
+ * sends this back, it's written the moment [com.billing.pos.customer.OrderSubmit] succeeds.
+ */
+@Entity(tableName = "customer_order_history")
+data class CustomerOrderHistory(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val itemsJson: String,
+    val total: Double,
+    val placedAt: Long,
+    val location: String = ""
+) {
+    /** [serverId] is the catalog item's id, so Re-order can find it again even if its name changed. */
+    data class Line(val serverId: String, val name: String, val qty: Int, val price: Double)
+
+    val items: List<Line> get() = runCatching {
+        val arr = org.json.JSONArray(itemsJson)
+        (0 until arr.length()).map { i ->
+            val o = arr.getJSONObject(i)
+            Line(o.optString("serverId"), o.optString("name"), o.optInt("qty", 1), o.optDouble("price", 0.0))
+        }
+    }.getOrDefault(emptyList())
+
+    companion object {
+        fun packItems(items: List<Line>) = org.json.JSONArray().apply {
+            items.forEach { line ->
+                put(org.json.JSONObject().apply {
+                    put("serverId", line.serverId); put("name", line.name)
+                    put("qty", line.qty); put("price", line.price)
+                })
+            }
+        }.toString()
+    }
+}
+
+@Dao
+interface CustomerOrderHistoryDao {
+    @Query("SELECT * FROM customer_order_history ORDER BY placedAt DESC")
+    fun observeAll(): Flow<List<CustomerOrderHistory>>
+
+    @Insert
+    suspend fun insert(order: CustomerOrderHistory): Long
 }

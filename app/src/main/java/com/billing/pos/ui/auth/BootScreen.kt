@@ -42,6 +42,9 @@ class BootViewModel(app: Application) : AndroidViewModel(app) {
                     // Optional — lets the catalog screen use a fitting name ("Order" / "Medicines"
                     // / "Home Collection") instead of one generic label for every business.
                     ref["type"]?.let { prefs.customerBusinessType = it }
+                    // Optional — unlocks attaching a photo to an order (Save dialog), on top of
+                    // the plain note every customer install already gets.
+                    prefs.customerPremiumShop = ref["premium"] == "1" || ref["premium"] == "true"
                     prefs.onboarded = true
                     onResolved("customerCatalog")
                     return@launch

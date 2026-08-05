@@ -21,10 +21,18 @@
  * PLACE ORDER (from the customer's app, "Save" on the order screen):
  *   POST a JSON body to this URL with ?do=order added:
  *     { "shop": "<DeviceID>", "customerName": "...", "customerPhone": "...",
+ *       "customerAddress": "..." (optional),
+ *       "location": "https://maps.google.com/?q=lat,lng" (optional),
+ *       "note": "..." (optional, free text — e.g. a prescription description),
+ *       "attachmentImage": "data:image/jpeg;base64,..." (optional, premium shops only —
+ *           a compressed photo, e.g. a prescription),
  *       "items": [ { "id": "...", "name": "...", "qty": 0, "price": 0.0 }, ... ],
  *       "total": 0.0 }
  *   Appended to pos_online_catalog/<DeviceID>/orders.json (an array) — this
  *   file only grows via this endpoint; it's trimmed by the fetch below.
+ *   To keep storage down on a low-resource host, any attachmentImage still sitting
+ *   in that file (not yet fetched by the shop owner) older than 7 days is cleared
+ *   — the rest of the order is kept, only the photo is dropped.
  *
  * FETCH ORDERS (from the shop owner's app, "Orders" button):
  *   GET this URL with ?do=orders&shop=<DeviceID> — returns every order
@@ -115,6 +123,10 @@ if (($method === 'POST' || $method === 'PUT') && $do === 'order') {
         'receivedAt' => date('c'),
         'customerName' => isset($body['customerName']) ? (string) $body['customerName'] : '',
         'customerPhone' => isset($body['customerPhone']) ? (string) $body['customerPhone'] : '',
+        'customerAddress' => isset($body['customerAddress']) ? (string) $body['customerAddress'] : '',
+        'location' => isset($body['location']) ? (string) $body['location'] : '',
+        'note' => isset($body['note']) ? (string) $body['note'] : '',
+        'attachmentImage' => isset($body['attachmentImage']) ? (string) $body['attachmentImage'] : '',
         'items' => isset($body['items']) && is_array($body['items']) ? $body['items'] : array(),
         'total' => isset($body['total']) ? (float) $body['total'] : 0.0
     );
@@ -131,6 +143,18 @@ if (($method === 'POST' || $method === 'PUT') && $do === 'order') {
     if (!is_array($existing)) {
         $existing = array();
     }
+    // Server is low on storage: an attachment sitting here more than 7 days (the shop owner
+    // hasn't fetched it yet) is dropped, keeping the rest of that order intact.
+    $attachmentCutoff = time() - 7 * 24 * 60 * 60;
+    foreach ($existing as &$old) {
+        if (!empty($old['attachmentImage']) && !empty($old['receivedAt'])) {
+            $receivedTs = strtotime($old['receivedAt']);
+            if ($receivedTs !== false && $receivedTs < $attachmentCutoff) {
+                $old['attachmentImage'] = '';
+            }
+        }
+    }
+    unset($old);
     $existing[] = $order;
     ftruncate($fh, 0);
     rewind($fh);

@@ -351,6 +351,13 @@
           <option value="Medical lab">Medical lab</option>
         </select>
       </div>
+      <div class="field">
+        <label style="display:flex;align-items:center;gap:8px;font-weight:600;">
+          <input type="checkbox" id="premium" style="width:auto;">
+          Premium shop
+        </label>
+        <p class="hint">Unlocks attaching a photo to an order, on top of the note every customer gets. No billing behind this yet — just whatever this link says.</p>
+      </div>
     </div>
 
     <div class="panel">
@@ -647,6 +654,7 @@ const els = {
   shopCode: document.getElementById('shopCode'),
   catalogUrl: document.getElementById('catalogUrl'),
   bizType: document.getElementById('bizType'),
+  premium: document.getElementById('premium'),
   referrerOut: document.getElementById('referrerOut'),
   fullLinkOut: document.getElementById('fullLinkOut'),
   qrBanner: document.getElementById('qrBanner'),
@@ -707,6 +715,7 @@ function render() {
 
   const referrerParts = ['mode=customer', 'shop=' + encodeURIComponent(shop), 'url=' + encodeURIComponent(catalogUrl)];
   if (bizType) referrerParts.push('type=' + encodeURIComponent(bizType));
+  if (els.premium.checked) referrerParts.push('premium=1');
   const referrer = referrerParts.join('&');
 
   const sep = base.indexOf('?') >= 0 ? '&' : '?';
@@ -727,7 +736,7 @@ function render() {
   }
 }
 
-[els.shopCode, els.catalogUrl, els.bizType, els.testUrl].forEach(function (el) {
+[els.shopCode, els.catalogUrl, els.bizType, els.testUrl, els.premium].forEach(function (el) {
   el.addEventListener('input', render);
   el.addEventListener('change', render);
 });

@@ -15,7 +15,8 @@ import kotlin.coroutines.resume
  * `...details?id=com.billing.pos&referrer=mode%3Dcustomer%26shop%3DABC123%26url%3Dhttps%3A%2F%2Fserver%2Fcatalog%26type%3DRestaurant`
  *
  * `type` is optional and free text ("Restaurant", "Medical store", "Medical lab", ...) — it only
- * changes wording on the catalog screen, nothing structural.
+ * changes wording on the catalog screen, nothing structural. `premium=1` is also optional — it
+ * unlocks attaching a photo to an order (no billing system behind it, just whatever the link says).
  *
  * Play decodes that into a plain query string ("mode=customer&shop=ABC123&url=https://server/catalog&type=Restaurant"),
  * which this parses like any other query string. A normal shop-owner install (no referrer, or a

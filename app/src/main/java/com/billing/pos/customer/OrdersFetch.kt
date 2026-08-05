@@ -86,7 +86,11 @@ object OrdersFetch {
                         itemsJson = OnlineOrder.packItems(lines),
                         total = o.optDouble("total", lines.sumOf { it.price * it.qty }),
                         receivedAt = o.optString("receivedAt"),
-                        fetchedAt = System.currentTimeMillis()
+                        fetchedAt = System.currentTimeMillis(),
+                        location = o.optString("location"),
+                        customerAddress = o.optString("customerAddress"),
+                        note = o.optString("note"),
+                        attachmentImage = o.optString("attachmentImage")
                     )
                 )
                 saved++

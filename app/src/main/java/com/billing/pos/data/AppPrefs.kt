@@ -250,6 +250,13 @@ class AppPrefs(context: Context) {
     var customerBusinessType: String
         get() = (p.getString("customer_business_type", "") ?: "").trim()
         set(v) { p.edit().putString("customer_business_type", v.trim()).apply() }
+    /** Customer install: true when the referrer carried premium=1 — unlocks attaching a photo
+     *  to an order, on top of the note every customer install already gets. Set once at boot,
+     *  same as [customerBusinessType]; there's no billing/tier system behind this yet, it's
+     *  purely whatever the link the shop was given says. */
+    var customerPremiumShop: Boolean
+        get() = p.getBoolean("customer_premium_shop", false)
+        set(v) { p.edit().putBoolean("customer_premium_shop", v).apply() }
     /** Shop owner: the code they hand out in their customer-facing Play Store links/QR codes,
      *  so the server can tell shops apart on one shared endpoint. Customer install: the code
      *  read back from that link's referrer, identifying which shop's catalog to fetch. */
@@ -287,6 +294,15 @@ class AppPrefs(context: Context) {
     var customerPhone: String
         get() = (p.getString("customer_own_phone", "") ?: "").trim()
         set(v) { p.edit().putString("customer_own_phone", v.trim()).apply() }
+    /** Customer install: optional delivery address, remembered the same way as name/phone. */
+    var customerAddress: String
+        get() = (p.getString("customer_own_address", "") ?: "").trim()
+        set(v) { p.edit().putString("customer_own_address", v.trim()).apply() }
+    /** Customer install: shops previously switched away from (see [com.billing.pos.customer.ShopSwitch]),
+     *  so "switch back" is one tap instead of a re-scan. Packed JSON array, newest first, capped at 5. */
+    var customerRecentShops: String
+        get() = p.getString("customer_recent_shops", "") ?: ""
+        set(v) { p.edit().putString("customer_recent_shops", v).apply() }
     /** Seconds between auto pull+merge+push cycles. Callers should floor this at ~10s before use so a mistyped value can't hammer the server. */
     var cloudAutoSyncIntervalSec: Int
         get() = p.getInt("cloud_auto_sync_interval_sec", 300)
