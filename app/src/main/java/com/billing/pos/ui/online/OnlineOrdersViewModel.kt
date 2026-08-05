@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.billing.pos.customer.OrderStatusPush
 import com.billing.pos.customer.OrdersFetch
+import com.billing.pos.customer.ShopOrderPoll
 import com.billing.pos.data.AppDatabase
 import com.billing.pos.data.OnlineOrder
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -15,6 +16,12 @@ import kotlinx.coroutines.launch
 
 class OnlineOrdersViewModel(app: Application) : AndroidViewModel(app) {
     private val dao = AppDatabase.get(app).onlineOrderDao()
+
+    init {
+        // Best-effort background poll for new orders (no push server behind this app) —
+        // arms itself every time this screen opens, same pattern as CustomerNotificationPoll.
+        ShopOrderPoll.schedule(app)
+    }
 
     val orders: StateFlow<List<OnlineOrder>> =
         dao.observeAll().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())

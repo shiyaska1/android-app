@@ -121,6 +121,10 @@
             android:exported="false" />
 
         <receiver
+            android:name=".customer.ShopOrderPollReceiver"
+            android:exported="false" />
+
+        <receiver
             android:name=".diary.BootReceiver"
             android:exported="true">
             <intent-filter>
