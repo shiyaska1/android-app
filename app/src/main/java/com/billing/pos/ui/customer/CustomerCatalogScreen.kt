@@ -89,10 +89,15 @@ import java.util.Locale
 /**
  * The entire app, for a customer install: the shop's item catalog, grouped by category, with a
  * manual refresh. Cached offline (see [CustomerCatalogViewModel]) so it still opens with data
- * after the first successful fetch. Picking a quantity on any item reveals two ways to act on
- * it: Share (WhatsApp text, no server) or Save (POSTs to the shop's server for a real order —
- * asks for name/phone once, then remembers them).
+ * after the first successful fetch. Picking a quantity on any item reveals two ways to place an
+ * order — Save, or Share (Save, then also open WhatsApp with the order text) — both go through
+ * the same pipeline: register (name/phone, asked once) if not already, then a location fix
+ * (compulsory — the shop needs to know where to deliver), then POST to the server.
  */
+private data class PendingOrderSubmit(
+    val name: String, val phone: String, val address: String,
+    val note: String, val attachment: String?, val alsoShare: Boolean
+)
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CustomerCatalogScreen(onExitTestMode: () -> Unit = {}, vm: CustomerCatalogViewModel = viewModel()) {
@@ -106,15 +111,54 @@ fun CustomerCatalogScreen(onExitTestMode: () -> Unit = {}, vm: CustomerCatalogVi
     val snackbar = remember { SnackbarHostState() }
     var selectedCategory by rememberSaveable { mutableStateOf("All") }
     var showSaveDialog by rememberSaveable { mutableStateOf(false) }
+    var saveDialogAction by rememberSaveable { mutableStateOf("save") } // "save" or "share"
+    var pendingOrderSubmit by remember { mutableStateOf<PendingOrderSubmit?>(null) }
     var showSwitchShop by rememberSaveable { mutableStateOf(false) }
     var showHistory by rememberSaveable { mutableStateOf(false) }
     var showNotifications by rememberSaveable { mutableStateOf(false) }
     val history by vm.history.collectAsStateSafe()
     val notifications by vm.notifications.collectAsStateSafe()
     val unreadNotifications by vm.unreadNotifications.collectAsStateSafe()
+    val shareText by vm.shareText.collectAsStateSafe()
+    val scope = rememberCoroutineScope()
+
+    val locationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
+        val granted = grants[Manifest.permission.ACCESS_FINE_LOCATION] == true || grants[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+        val pending = pendingOrderSubmit
+        pendingOrderSubmit = null
+        if (granted && pending != null) {
+            vm.saveOrder(pending.name, pending.phone, pending.address, pending.note, pending.attachment, pending.alsoShare)
+        } else if (!granted) {
+            scope.launch { snackbar.showSnackbar("Location permission is required to place an order") }
+        }
+    }
+    fun submitOrder(pending: PendingOrderSubmit) {
+        val hasLocation = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (hasLocation) {
+            vm.saveOrder(pending.name, pending.phone, pending.address, pending.note, pending.attachment, pending.alsoShare)
+        } else {
+            pendingOrderSubmit = pending
+            locationPermission.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
+        }
+    }
+
     // Re-read after every fetch (a plain remember would freeze these at first composition).
     val shopName = prefs.shopDisplayName
     val shopPhone = prefs.shopContactPhone
+
+    LaunchedEffect(shareText) {
+        shareText?.let { text ->
+            val digits = shopPhone.filter { it.isDigit() }
+            val target = if (digits.isNotBlank()) "https://wa.me/$digits" else "https://wa.me/"
+            val intent = android.content.Intent(
+                android.content.Intent.ACTION_VIEW,
+                android.net.Uri.parse("$target?text=${android.net.Uri.encode(text)}")
+            )
+            runCatching { context.startActivity(intent) }
+            vm.shareTextConsumed()
+        }
+    }
     val catalogLabel = remember {
         when (prefs.customerBusinessType) {
             "Medical store" -> "Medicines"
@@ -212,21 +256,26 @@ fun CustomerCatalogScreen(onExitTestMode: () -> Unit = {}, vm: CustomerCatalogVi
                             Text("₹" + Format.money(total), fontWeight = FontWeight.Bold)
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedButton(onClick = {
-                                val text = vm.orderMessage()
-                                val digits = shopPhone.filter { it.isDigit() }
-                                val target = if (digits.isNotBlank()) "https://wa.me/$digits" else "https://wa.me/"
-                                val intent = android.content.Intent(
-                                    android.content.Intent.ACTION_VIEW,
-                                    android.net.Uri.parse("$target?text=${android.net.Uri.encode(text)}")
-                                )
-                                runCatching { context.startActivity(intent) }
-                                vm.clearSelection()
-                            }) {
+                            OutlinedButton(
+                                onClick = {
+                                    saveDialogAction = "share"
+                                    if (vm.isRegistered) {
+                                        submitOrder(
+                                            PendingOrderSubmit(
+                                                vm.savedCustomerName, vm.savedCustomerPhone, vm.savedCustomerAddress,
+                                                note = "", attachment = null, alsoShare = true
+                                            )
+                                        )
+                                    } else {
+                                        showSaveDialog = true
+                                    }
+                                },
+                                enabled = !saving
+                            ) {
                                 Icon(Icons.Default.Chat, contentDescription = null, modifier = Modifier.size(18.dp))
                                 Text("  $shareLabel")
                             }
-                            Button(onClick = { showSaveDialog = true }, enabled = !saving) {
+                            Button(onClick = { saveDialogAction = "save"; showSaveDialog = true }, enabled = !saving) {
                                 if (saving) {
                                     CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
                                 } else {
@@ -318,7 +367,7 @@ fun CustomerCatalogScreen(onExitTestMode: () -> Unit = {}, vm: CustomerCatalogVi
             onDismiss = { showSaveDialog = false },
             onConfirm = { name, phone, address, note, attachment ->
                 showSaveDialog = false
-                vm.saveOrder(name, phone, address, note, attachment)
+                submitOrder(PendingOrderSubmit(name, phone, address, note, attachment, saveDialogAction == "share"))
             }
         )
     }

@@ -53,10 +53,16 @@ class CustomerCatalogViewModel(app: Application) : AndroidViewModel(app) {
     private val _saving = MutableStateFlow(false)
     val saving: StateFlow<Boolean> = _saving
 
+    // Set on a successful order that was placed via the Share button — the UI observes this
+    // once to launch the WhatsApp intent, then calls shareTextConsumed().
+    private val _shareText = MutableStateFlow<String?>(null)
+    val shareText: StateFlow<String?> = _shareText
+
     val savedCustomerName: String get() = prefs.customerName
     val savedCustomerPhone: String get() = prefs.customerPhone
     val savedCustomerAddress: String get() = prefs.customerAddress
     val isPremiumShop: Boolean get() = prefs.customerPremiumShop
+    val isRegistered: Boolean get() = prefs.customerName.isNotBlank() && prefs.customerPhone.isNotBlank()
 
     init {
         // First open after install: the cache is empty, so fetch immediately without
@@ -108,10 +114,23 @@ class CustomerCatalogViewModel(app: Application) : AndroidViewModel(app) {
 
     fun clearSelection() { _qty.value = emptyMap() }
 
+    fun shareTextConsumed() { _shareText.value = null }
+
     /** POSTs the current selection to the shop's server. Remembers name/phone/address for next
-     *  time, captures the device's current location (best-effort, needs location permission),
-     *  and — on success — files a local [CustomerOrderHistory] record for Order History/Re-order. */
-    fun saveOrder(name: String, phone: String, address: String = "", note: String = "", attachmentImage: String? = null) {
+     *  time, and — on success — files a local [CustomerOrderHistory] record for Order
+     *  History/Re-order. Location is compulsory: the shop needs to know where to deliver, so a
+     *  missing/failed location fix fails the whole order rather than silently going through
+     *  without one. The caller (the Save/Share buttons) is responsible for having already
+     *  obtained location permission before calling this. [alsoShare] additionally opens WhatsApp
+     *  with the order text once the save succeeds — see [shareText]. */
+    fun saveOrder(
+        name: String,
+        phone: String,
+        address: String = "",
+        note: String = "",
+        attachmentImage: String? = null,
+        alsoShare: Boolean = false
+    ) {
         val selection = _qty.value.mapNotNull { (id, count) ->
             items.value.find { it.id == id }?.let { it to count }
         }
@@ -124,6 +143,11 @@ class CustomerCatalogViewModel(app: Application) : AndroidViewModel(app) {
             _saving.value = true
             val app: Application = getApplication()
             val locationLink = runCatching { LocationHelper.currentLocationLink(app) }.getOrNull()
+            if (locationLink.isNullOrBlank()) {
+                _message.value = "Could not get your location — turn on Location and try again"
+                _saving.value = false
+                return@launch
+            }
             when (val result = OrderSubmit.submit(app, selection, name, phone, locationLink, address, note, attachmentImage)) {
                 is OrderSubmit.Result.Ok -> {
                     _message.value = "Order saved — the shop will contact you"
@@ -136,10 +160,11 @@ class CustomerCatalogViewModel(app: Application) : AndroidViewModel(app) {
                             itemsJson = CustomerOrderHistory.packItems(lines),
                             total = total,
                             placedAt = System.currentTimeMillis(),
-                            location = locationLink.orEmpty(),
+                            location = locationLink,
                             serverId = result.orderId
                         )
                     )
+                    if (alsoShare) _shareText.value = buildOrderText(selection, total)
                     clearSelection()
                 }
                 is OrderSubmit.Result.Failed -> _message.value = "Could not save order: ${result.message}"
@@ -157,17 +182,9 @@ class CustomerCatalogViewModel(app: Application) : AndroidViewModel(app) {
         _qty.value = restored.toMap()
     }
 
-    /** WhatsApp text for the current selection: item lines + total. Blank if nothing's selected. */
-    fun orderMessage(): String {
-        val selected = _qty.value
-        if (selected.isEmpty()) return ""
-        val byId = items.value.associateBy { it.id }
-        var total = 0.0
-        val lines = selected.entries.mapNotNull { (id, count) ->
-            val item = byId[id] ?: return@mapNotNull null
-            val lineTotal = item.price * count
-            total += lineTotal
-            "- ${item.name} x$count = ₹${com.billing.pos.util.Format.money(lineTotal)}"
+    private fun buildOrderText(selection: List<Pair<ShopCatalogItem, Int>>, total: Double): String {
+        val lines = selection.map { (item, count) ->
+            "- ${item.name} x$count = ₹${com.billing.pos.util.Format.money(item.price * count)}"
         }
         return buildString {
             append("Order from POS Billing app:\n")
