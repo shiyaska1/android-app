@@ -56,6 +56,12 @@ interface ItemDao {
     @Query("SELECT COUNT(*) FROM items")
     suspend fun count(): Int
 
+    @Query("SELECT * FROM items WHERE isOnline = 1 ORDER BY category COLLATE NOCASE ASC, name COLLATE NOCASE ASC")
+    fun observeOnline(): Flow<List<Item>>
+
+    @Query("SELECT * FROM items WHERE isOnline = 1")
+    suspend fun online(): List<Item>
+
     @Insert
     suspend fun insert(item: Item): Long
 

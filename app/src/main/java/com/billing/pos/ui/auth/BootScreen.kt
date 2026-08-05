@@ -21,12 +21,32 @@ class BootViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = Repository(app)
     private val prefs = AppPrefs(app)
 
-    /** Resolves the start route: "license", "login" or "dashboard". */
+    /** Resolves the start route: "license", "login", "customerCatalog" or "dashboard". */
     fun resolve(onResolved: (route: String) -> Unit) {
         viewModelScope.launch {
             repo.ensureDefaults()
             // Start the trial clock automatically on first launch (no registration needed).
             if (prefs.installDateMillis <= 0L) prefs.installDateMillis = System.currentTimeMillis()
+
+            // A customer install (Play referrer carried mode=customer) skips everything below —
+            // no business type, no trial/license, no login. Checked once, right after the very
+            // first install, before "onboarded" is set for either kind of install.
+            if (prefs.customerMode) { onResolved("customerCatalog"); return@launch }
+            if (!prefs.onboarded && !prefs.referrerChecked) {
+                prefs.referrerChecked = true
+                val ref = com.billing.pos.customer.InstallReferrer.read(getApplication())
+                if (ref["mode"] == "customer" && !ref["shop"].isNullOrBlank() && !ref["url"].isNullOrBlank()) {
+                    prefs.customerMode = true
+                    prefs.shopCode = ref.getValue("shop")
+                    prefs.onlineCatalogUrl = ref.getValue("url")
+                    // Optional — lets the catalog screen use a fitting name ("Order" / "Medicines"
+                    // / "Home Collection") instead of one generic label for every business.
+                    ref["type"]?.let { prefs.customerBusinessType = it }
+                    prefs.onboarded = true
+                    onResolved("customerCatalog")
+                    return@launch
+                }
+            }
             when {
                 // Licensing is staged: month 1, then 6, 12, 36 and 48. Each renewal needs
                 // its own key, so this asks again whenever a later milestone falls due.

@@ -75,6 +75,7 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.ShoppingCart
+import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -162,6 +163,7 @@ fun DashboardScreen(
     onItemCategories: () -> Unit,
     onCalcLabels: () -> Unit,
     onBundles: () -> Unit,
+    onOnlineItems: () -> Unit,
     onNewPurchase: () -> Unit,
     onPurchases: () -> Unit,
     onSuppliers: () -> Unit,
@@ -309,6 +311,7 @@ fun DashboardScreen(
         add(Tile("Item Categories", Icons.Filled.Category, onItemCategories, "Masters"))
         add(Tile("Item Bundles", Icons.Filled.Inventory2, onBundles, "Masters"))
         add(Tile("Calculator Labels", Icons.Filled.Category, onCalcLabels, "Masters"))
+        add(Tile("Online Items", Icons.Filled.Storefront, onOnlineItems, "Masters"))
         add(Tile("Suppliers", Icons.Filled.LocalShipping, onSuppliers, "Masters"))
         if (isLab) {
             add(Tile("Patients", Icons.Filled.People, onPatients, "Masters"))

@@ -47,7 +47,11 @@ data class Item(
     /** Where the item sits in the store (rack/shelf), as free text. */
     val storeLocation: String = "",
     /** Composition / salt / chemical content (medical stores). Searchable. */
-    val chemicalContent: String = ""
+    val chemicalContent: String = "",
+    /** Included in the next "Upload" to the online catalog (customer ordering). */
+    val isOnline: Boolean = false,
+    /** Price shown to online customers when set (> 0); falls back to [price] when 0. */
+    val onlineOfferPrice: Double = 0.0
 )
 
 /**

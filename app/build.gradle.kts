@@ -15,8 +15,8 @@ android {
         targetSdk = 36
         // CI sets VERSION_CODE per build (see .github/workflows/build.yml and release.yml) so every
         // APK/AAB gets a unique, always-increasing code without hand-editing this file each time.
-        versionCode = System.getenv("VERSION_CODE")?.toIntOrNull() ?: 249
-        versionName = "2.7.17"
+        versionCode = System.getenv("VERSION_CODE")?.toIntOrNull() ?: 250
+        versionName = "2.8.0"
         vectorDrawables { useSupportLibrary = true }
 
         // Real Android phones are arm. The x86/x86_64 native libs are emulator-only
@@ -142,6 +142,10 @@ dependencies {
 
     // Play in-app updates: prompt for a new version as soon as one is published.
     implementation("com.google.android.play:app-update-ktx:2.1.0")
+
+    // Play Install Referrer: reads the &referrer= param from the install link, so a customer
+    // link (shop code + catalog URL) can skip straight to the ordering screen after install.
+    implementation("com.android.installreferrer:installreferrer:2.2")
 
     // Tiny embedded HTTP server for offline LAN sync between two devices on the same WiFi.
     implementation("org.nanohttpd:nanohttpd:2.3.1")

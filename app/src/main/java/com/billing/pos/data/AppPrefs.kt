@@ -232,6 +232,53 @@ class AppPrefs(context: Context) {
     var cloudAutoSync: Boolean
         get() = p.getBoolean("cloud_auto_sync", false)
         set(v) { p.edit().putBoolean("cloud_auto_sync", v).apply() }
+
+    // ---- Online ordering ----
+    /** True for a "customer" install (Play referrer carried mode=customer) — the whole app is
+     *  the ordering catalog instead of the shop-owner billing app; no business type, no license. */
+    var customerMode: Boolean
+        get() = p.getBoolean("customer_mode", false)
+        set(v) { p.edit().putBoolean("customer_mode", v).apply() }
+    /** Set once, at first boot, so the Play Install Referrer service is only queried once. */
+    var referrerChecked: Boolean
+        get() = p.getBoolean("referrer_checked", false)
+        set(v) { p.edit().putBoolean("referrer_checked", v).apply() }
+    /** Customer install: what kind of shop this is ("Restaurant", "Medical store", "Medical lab",
+     *  ...), read from the install link's referrer — so the catalog screen can use a fitting
+     *  name ("Order" vs "Medicines" vs "Home Collection") instead of one generic label. Blank
+     *  falls back to a neutral "Order". */
+    var customerBusinessType: String
+        get() = (p.getString("customer_business_type", "") ?: "").trim()
+        set(v) { p.edit().putString("customer_business_type", v.trim()).apply() }
+    /** Shop owner: the code they hand out in their customer-facing Play Store links/QR codes,
+     *  so the server can tell shops apart on one shared endpoint. Customer install: the code
+     *  read back from that link's referrer, identifying which shop's catalog to fetch. */
+    var shopCode: String
+        get() = (p.getString("shop_code", "") ?: "").trim()
+        set(v) { p.edit().putString("shop_code", v.trim()).apply() }
+    /** Shop owner: where "Upload" POSTs the online-marked items. Customer install: where the
+     *  catalog is fetched from (GET, with shop=[shopCode] appended) — normally the same URL,
+     *  set once by the shop owner and carried into the customer link's referrer by the developer. */
+    var onlineCatalogUrl: String
+        get() = (p.getString("online_catalog_url", "") ?: "").trim()
+        set(v) { p.edit().putString("online_catalog_url", v.trim()).apply() }
+    /** Shop owner: where the customer app POSTs a placed order, and where "Orders" fetches from. */
+    var fetchOrdersUrl: String
+        get() = (p.getString("fetch_orders_url", "") ?: "").trim()
+        set(v) { p.edit().putString("fetch_orders_url", v.trim()).apply() }
+    /** When the catalog was last successfully fetched (customer install), for an offline banner. */
+    var catalogLastFetchedAt: Long
+        get() = p.getLong("catalog_last_fetched_at", 0L)
+        set(v) { p.edit().putLong("catalog_last_fetched_at", v).apply() }
+    /** Customer install: the shop's display name, carried in the catalog fetch response. */
+    var shopDisplayName: String
+        get() = (p.getString("shop_display_name", "") ?: "").trim()
+        set(v) { p.edit().putString("shop_display_name", v.trim()).apply() }
+    /** Customer install: the shop's WhatsApp/mobile number, so the customer can message them
+     *  directly ("order will be placed") — carried in the catalog fetch response. Digits only. */
+    var shopContactPhone: String
+        get() = (p.getString("shop_contact_phone", "") ?: "").trim()
+        set(v) { p.edit().putString("shop_contact_phone", v.trim()).apply() }
     /** Seconds between auto pull+merge+push cycles. Callers should floor this at ~10s before use so a mistyped value can't hammer the server. */
     var cloudAutoSyncIntervalSec: Int
         get() = p.getInt("cloud_auto_sync_interval_sec", 300)

@@ -11,14 +11,20 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.billing.pos.data.AppPrefs
 import com.billing.pos.data.Repository
+import com.billing.pos.ui.customer.DebugSimulateLinkDialog
 import com.billing.pos.ui.settings.BUSINESS_TYPES
 import kotlinx.coroutines.launch
 
@@ -29,10 +35,11 @@ import kotlinx.coroutines.launch
  * everyday tools; the shop types show the full billing app.
  */
 @Composable
-fun BusinessTypeScreen(onChosen: () -> Unit) {
+fun BusinessTypeScreen(onChosen: () -> Unit, onCustomerLinkSimulated: () -> Unit = {}) {
     val context = LocalContext.current
     val prefs = androidx.compose.runtime.remember { AppPrefs(context) }
     val scope = rememberCoroutineScope()
+    var showSimulateLink by remember { mutableStateOf(false) }
 
     Column(Modifier.fillMaxSize().padding(20.dp)) {
         Text(
@@ -47,7 +54,7 @@ fun BusinessTypeScreen(onChosen: () -> Unit) {
             color = MaterialTheme.colorScheme.outline,
             modifier = Modifier.padding(top = 6.dp, bottom = 16.dp)
         )
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(BUSINESS_TYPES) { type ->
                 Card(
                     Modifier.fillMaxWidth().clickable {
@@ -71,5 +78,25 @@ fun BusinessTypeScreen(onChosen: () -> Unit) {
                 }
             }
         }
+        if (com.billing.pos.BuildConfig.DEBUG) {
+            TextButton(onClick = { showSimulateLink = true }, modifier = Modifier.padding(top = 8.dp)) {
+                Text("Debug: simulate customer link")
+            }
+        }
+    }
+
+    if (showSimulateLink) {
+        DebugSimulateLinkDialog(
+            onDismiss = { showSimulateLink = false },
+            onApply = { shop, url, type ->
+                prefs.customerMode = true
+                prefs.shopCode = shop
+                prefs.onlineCatalogUrl = url
+                if (type.isNotBlank()) prefs.customerBusinessType = type
+                prefs.onboarded = true
+                showSimulateLink = false
+                onCustomerLinkSimulated()
+            }
+        )
     }
 }

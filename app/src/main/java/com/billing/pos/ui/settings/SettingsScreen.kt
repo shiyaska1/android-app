@@ -1077,6 +1077,35 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
             }
 
             Divider(Modifier.padding(vertical = 16.dp))
+            HighlightText("Online ordering", MaterialTheme.typography.titleSmall, settingAnchors, highlightedSetting)
+            Text(
+                "Set these once, then use Masters > Online Items to pick which items customers " +
+                    "can order and \"Upload\". Give this shop's code + this URL to whoever builds your " +
+                    "customer install links/QR codes — the customer app fetches the catalog from here.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline
+            )
+            var shopCode by remember { mutableStateOf(prefs.shopCode) }
+            var onlineCatalogUrl by remember { mutableStateOf(prefs.onlineCatalogUrl) }
+            OutlinedTextField(
+                value = shopCode,
+                onValueChange = { shopCode = it; prefs.shopCode = it },
+                label = { Text("Shop code") }, singleLine = true,
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+            )
+            OutlinedTextField(
+                value = onlineCatalogUrl,
+                onValueChange = { onlineCatalogUrl = it; prefs.onlineCatalogUrl = it },
+                label = { Text("Online catalog URL") }, singleLine = true,
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+            )
+            Text(
+                "Your shop's phone/WhatsApp number for customer orders is the Phone number set " +
+                    "above under Company details.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline,
+                modifier = Modifier.padding(top = 4.dp)
+            )
+
+            Divider(Modifier.padding(vertical = 16.dp))
             HighlightText("Salesman mapping", MaterialTheme.typography.titleSmall, settingAnchors, highlightedSetting)
             Text(
                 "Order reports show a Salesman column, resolved from the phone that took the " +

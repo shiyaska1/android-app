@@ -371,9 +371,22 @@ private fun AppNav() {
             )
         }
         composable("chooseBusiness") {
-            com.billing.pos.ui.auth.BusinessTypeScreen(onChosen = {
-                nav.navigate("dashboard") { popUpTo(0) { inclusive = true } }
-            })
+            com.billing.pos.ui.auth.BusinessTypeScreen(
+                onChosen = {
+                    nav.navigate("dashboard") { popUpTo(0) { inclusive = true } }
+                },
+                onCustomerLinkSimulated = {
+                    nav.navigate("customerCatalog") { popUpTo(0) { inclusive = true } }
+                }
+            )
+        }
+        composable("customerCatalog") {
+            com.billing.pos.ui.customer.CustomerCatalogScreen(
+                onExitTestMode = { nav.navigate("boot") { popUpTo(0) { inclusive = true } } }
+            )
+        }
+        composable("onlineItems") {
+            com.billing.pos.ui.online.OnlineItemsScreen(onBack = { nav.popBackStack() })
         }
         composable("dashboard") {
             // Back from the dashboard means leaving the app, so make it deliberate — a
@@ -467,6 +480,7 @@ private fun AppNav() {
                 onItemCategories = { nav.navigate("itemcategories") },
                 onCalcLabels = { nav.navigate("calclabels") },
                 onBundles = { nav.navigate("bundles") },
+                onOnlineItems = { nav.navigate("onlineItems") },
                 onNewPurchase = { nav.navigate("purchase") },
                 onPurchases = { nav.navigate("purchases") },
                 onSuppliers = { nav.navigate("suppliers") },
