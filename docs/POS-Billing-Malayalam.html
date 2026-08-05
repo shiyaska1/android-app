@@ -1,0 +1,776 @@
+<!DOCTYPE html>
+<html lang="ml">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  @page { size: A4; margin: 14mm 12mm; }
+  @media print {
+    body { background: #fff !important; }
+    .card, .stat, .closing, .chip { break-inside: avoid; }
+    .step, .row, .faq details { break-inside: avoid; }
+    .sec-head { break-after: avoid; }
+  }
+</style>
+</head>
+<body>
+<title>POS Billing — ആപ്പ് പരിചയം</title>
+<style>
+  :root {
+    --ink: #16283D;
+    --ink-soft: #3D5169;
+    --paper: #F4F3EF;
+    --surface: #FFFFFF;
+    --rule: #DAD7CE;
+    --rule-soft: #E7E5DE;
+    --marigold: #C87A21;
+    --ledger-green: #1F6E4F;
+    --muted: #6B7280;
+
+    --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+                 "Noto Sans Malayalam", "Malayalam Sangam MN", "Manjari", "Rachana", "Meera", sans-serif;
+    --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+    --step-0: 0.938rem;
+    --step-1: 1.063rem;
+    --step-2: 1.375rem;
+    --step-3: 1.875rem;
+    --step-4: 2.625rem;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ink: #E9E7E1;
+      --ink-soft: #A9B2BE;
+      --paper: #111820;
+      --surface: #19212B;
+      --rule: #2E3945;
+      --rule-soft: #232C37;
+      --marigold: #E39A3E;
+      --ledger-green: #43A57C;
+      --muted: #8B95A1;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ink: #E9E7E1;
+    --ink-soft: #A9B2BE;
+    --paper: #111820;
+    --surface: #19212B;
+    --rule: #2E3945;
+    --rule-soft: #232C37;
+    --marigold: #E39A3E;
+    --ledger-green: #43A57C;
+    --muted: #8B95A1;
+  }
+
+  :root[data-theme="light"] {
+    --ink: #16283D;
+    --ink-soft: #3D5169;
+    --paper: #F4F3EF;
+    --surface: #FFFFFF;
+    --rule: #DAD7CE;
+    --rule-soft: #E7E5DE;
+    --marigold: #C87A21;
+    --ledger-green: #1F6E4F;
+    --muted: #6B7280;
+  }
+
+  * { box-sizing: border-box; }
+
+  /* Malayalam conjuncts must not be tracked out the way uppercase Latin is,
+     so any Malayalam sitting inside a letter-spaced label opts back out. */
+  .ml {
+    letter-spacing: normal;
+    font-family: var(--font-sans);
+    text-transform: none;
+  }
+
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: var(--step-0);
+    line-height: 1.75;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 940px;
+    margin: 0 auto;
+    padding: 0 20px 72px;
+  }
+
+  /* ---------- masthead ---------- */
+  .masthead {
+    background: #16283D;
+    color: #F4F3EF;
+    padding: 44px 0 38px;
+    border-bottom: 3px solid var(--marigold);
+  }
+  :root[data-theme="dark"] .masthead,
+  .masthead { background: #16283D; }
+
+  .masthead .wrap { padding-bottom: 0; }
+
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 0.688rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--marigold);
+    margin: 0 0 14px;
+  }
+
+  .masthead h1 {
+    font-size: var(--step-4);
+    line-height: 1.15;
+    font-weight: 700;
+    letter-spacing: -0.015em;
+    margin: 0 0 12px;
+    text-wrap: balance;
+  }
+
+  .masthead p {
+    margin: 0;
+    max-width: 56ch;
+    font-size: var(--step-1);
+    color: #C3CBD6;
+    line-height: 1.7;
+  }
+
+  .meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 28px;
+    margin-top: 26px;
+    padding-top: 20px;
+    border-top: 1px solid rgba(244, 243, 239, 0.16);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    letter-spacing: 0.04em;
+    color: #9AA6B4;
+  }
+  .meta b { color: #F4F3EF; font-weight: 600; }
+
+  /* ---------- sections ---------- */
+  section { margin-top: 56px; }
+
+  .sec-head {
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+    padding-bottom: 12px;
+    border-bottom: 2px solid var(--ink);
+    margin-bottom: 24px;
+  }
+  .sec-head h2 {
+    font-size: var(--step-3);
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    margin: 0;
+    line-height: 1.25;
+    text-wrap: balance;
+  }
+  .sec-head .num {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--marigold);
+    letter-spacing: 0.1em;
+    flex: none;
+  }
+
+  .lede {
+    font-size: var(--step-1);
+    max-width: 62ch;
+    color: var(--ink-soft);
+    margin: 0 0 4px;
+  }
+
+  p { max-width: 64ch; }
+
+  /* ---------- stat strip ---------- */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 1px;
+    background: var(--rule);
+    border: 1px solid var(--rule);
+    margin-top: 28px;
+  }
+  .stat { background: var(--surface); padding: 18px 20px; }
+  .stat .n {
+    display: block;
+    font-size: var(--step-3);
+    font-weight: 700;
+    line-height: 1.1;
+    font-variant-numeric: tabular-nums;
+    color: var(--ledger-green);
+  }
+  .stat .l {
+    display: block;
+    margin-top: 4px;
+    font-size: 0.813rem;
+    color: var(--muted);
+    line-height: 1.5;
+  }
+
+  /* ---------- chips ---------- */
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 20px; }
+  .chip {
+    border: 1px solid var(--rule);
+    background: var(--surface);
+    padding: 6px 13px;
+    font-size: 0.875rem;
+    color: var(--ink);
+  }
+  .chip.on {
+    border-color: var(--marigold);
+    color: var(--marigold);
+    font-weight: 600;
+  }
+
+  /* ---------- feature blocks ---------- */
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(270px, 1fr));
+    gap: 18px;
+    margin-top: 22px;
+  }
+
+  .card {
+    border: 1px solid var(--rule);
+    background: var(--surface);
+    padding: 20px 22px 22px;
+  }
+  .card .tag {
+    font-family: var(--font-mono);
+    font-size: 0.688rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--marigold);
+    display: block;
+    margin-bottom: 10px;
+  }
+  .card h3 {
+    font-size: var(--step-2);
+    font-weight: 700;
+    margin: 0 0 10px;
+    line-height: 1.35;
+    letter-spacing: -0.008em;
+    text-wrap: balance;
+  }
+  .card p { margin: 0 0 12px; color: var(--ink-soft); font-size: 0.938rem; }
+  .card ul { margin: 0; padding-left: 1.1em; color: var(--ink-soft); font-size: 0.938rem; }
+  .card li { margin-bottom: 5px; }
+  .card li::marker { color: var(--marigold); }
+
+  /* ---------- highlight rows ---------- */
+  .rows { border-top: 1px solid var(--rule); margin-top: 22px; }
+  .row {
+    display: grid;
+    grid-template-columns: 190px 1fr;
+    gap: 8px 28px;
+    padding: 18px 0;
+    border-bottom: 1px solid var(--rule-soft);
+  }
+  .row h4 {
+    margin: 0;
+    font-size: var(--step-1);
+    font-weight: 700;
+    line-height: 1.45;
+  }
+  .row p { margin: 0; color: var(--ink-soft); }
+
+  /* ---------- demo steps ---------- */
+  .steps { counter-reset: s; margin-top: 24px; border-top: 1px solid var(--rule); }
+  .step {
+    counter-increment: s;
+    display: grid;
+    grid-template-columns: 46px 1fr;
+    gap: 18px;
+    padding: 20px 0;
+    border-bottom: 1px solid var(--rule-soft);
+  }
+  .step::before {
+    content: counter(s, decimal-leading-zero);
+    font-family: var(--font-mono);
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--marigold);
+    padding-top: 3px;
+    font-variant-numeric: tabular-nums;
+  }
+  .step h4 { margin: 0 0 5px; font-size: var(--step-1); font-weight: 700; line-height: 1.45; }
+  .step p { margin: 0; color: var(--ink-soft); }
+  .step .say {
+    margin-top: 9px;
+    padding: 10px 14px;
+    border-left: 3px solid var(--ledger-green);
+    background: var(--rule-soft);
+    font-size: 0.906rem;
+    color: var(--ink);
+  }
+  .step .say b {
+    font-family: var(--font-mono);
+    font-size: 0.688rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ledger-green);
+    display: block;
+    margin-bottom: 3px;
+    font-weight: 600;
+  }
+
+  /* ---------- faq ---------- */
+  .faq { margin-top: 22px; border-top: 1px solid var(--rule); }
+  .faq details {
+    border-bottom: 1px solid var(--rule-soft);
+    padding: 15px 0;
+  }
+  .faq summary {
+    cursor: pointer;
+    font-weight: 650;
+    font-size: var(--step-1);
+    line-height: 1.5;
+    list-style: none;
+    display: flex;
+    gap: 12px;
+    align-items: baseline;
+  }
+  .faq summary::-webkit-details-marker { display: none; }
+  .faq summary::before {
+    content: "+";
+    font-family: var(--font-mono);
+    color: var(--marigold);
+    font-size: 1.1rem;
+    flex: none;
+    line-height: 1;
+  }
+  .faq details[open] summary::before { content: "\2013"; }
+  .faq summary:focus-visible { outline: 2px solid var(--marigold); outline-offset: 3px; }
+  .faq p { margin: 9px 0 0 24px; color: var(--ink-soft); }
+
+  /* ---------- closing ---------- */
+  .closing {
+    margin-top: 56px;
+    border: 2px solid var(--ink);
+    padding: 28px 30px;
+    background: var(--surface);
+  }
+  .closing h2 { margin: 0 0 10px; font-size: var(--step-2); font-weight: 700; }
+  .closing p { margin: 0; color: var(--ink-soft); }
+
+  footer {
+    margin-top: 34px;
+    padding-top: 18px;
+    border-top: 1px solid var(--rule);
+    font-family: var(--font-mono);
+    font-size: 0.719rem;
+    letter-spacing: 0.05em;
+    color: var(--muted);
+  }
+
+  @media (max-width: 620px) {
+    :root { --step-4: 2rem; --step-3: 1.5rem; --step-2: 1.188rem; }
+    .row { grid-template-columns: 1fr; gap: 4px; }
+    .masthead { padding: 32px 0 28px; }
+    section { margin-top: 44px; }
+  }
+</style>
+
+<header class="masthead">
+  <div class="wrap">
+    <p class="eyebrow">Android <span class="ml">ബില്ലിംഗ് സോഫ്റ്റ്‌വെയർ</span></p>
+    <h1>POS Billing — കടയുടെ ബില്ലും കണക്കും ഒരൊറ്റ ഫോണിൽ</h1>
+    <p>ജിഎസ്ടി ബില്ലിംഗ്, സ്റ്റോക്ക്, കസ്റ്റമർ കണക്ക്, പൂർണ്ണ അക്കൗണ്ടിംഗ് — എല്ലാം ഒരു ആപ്പിൽ. ഇന്റർനെറ്റ് ഇല്ലാതെയും പ്രവർത്തിക്കും.</p>
+    <div class="meta">
+      <span class="ml">പതിപ്പ് <b>2.7.16</b></span>
+      <span class="ml">പ്ലാറ്റ്ഫോം <b>Android 8.0+</b></span>
+      <span class="ml">ഭാഷ <b>English &middot; മലയാളം OCR</b></span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <section>
+    <div class="sec-head">
+      <span class="num">01</span>
+      <h2>എന്താണ് ഈ ആപ്പ്?</h2>
+    </div>
+    <p class="lede">
+      ചെറുകിട–ഇടത്തരം കടകൾക്കും സ്ഥാപനങ്ങൾക്കും വേണ്ടി ഉണ്ടാക്കിയ ഒരു പൂർണ്ണ ബില്ലിംഗ് &amp; അക്കൗണ്ടിംഗ് ആപ്പാണിത്.
+      കമ്പ്യൂട്ടറോ പ്രത്യേക ഉപകരണങ്ങളോ വേണ്ട — നിങ്ങളുടെ ആൻഡ്രോയ്ഡ് ഫോൺ മാത്രം മതി.
+    </p>
+    <p>
+      ബിൽ ഉണ്ടാക്കുന്നത് മുതൽ ബാലൻസ് ഷീറ്റ് വരെ ഒരേ ആപ്പിനുള്ളിൽ ചെയ്യാം. എല്ലാ വിവരങ്ങളും ഫോണിൽ തന്നെ
+      സൂക്ഷിക്കുന്നതുകൊണ്ട് ഇന്റർനെറ്റ് ഇല്ലാത്തപ്പോഴും ബില്ലിംഗ് മുടങ്ങില്ല. ബാക്കപ്പ് വേണമെങ്കിൽ മാത്രം
+      ഇന്റർനെറ്റ് ഉപയോഗിച്ചാൽ മതി.
+    </p>
+
+    <div class="stats">
+      <div class="stat"><span class="n">15</span><span class="l">ബിസിനസ് തരങ്ങൾ</span></div>
+      <div class="stat"><span class="n">80+</span><span class="l">സ്ക്രീനുകൾ &amp; സൗകര്യങ്ങൾ</span></div>
+      <div class="stat"><span class="n">20+</span><span class="l">റിപ്പോർട്ടുകൾ</span></div>
+      <div class="stat"><span class="n">0</span><span class="l">മാസവാടക സെർവർ ചെലവ്</span></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <span class="num">02</span>
+      <h2>ആർക്കൊക്കെ ഉപയോഗിക്കാം?</h2>
+    </div>
+    <p class="lede">
+      ആദ്യം തുറക്കുമ്പോൾ ബിസിനസ് തരം തിരഞ്ഞെടുത്താൽ മതി — ആ ബിസിനസിന് വേണ്ട സ്ക്രീനുകൾ മാത്രം ആപ്പ്
+      കാണിക്കും. ബാക്കിയുള്ളവ മറഞ്ഞിരിക്കും, വേണമെങ്കിൽ പിന്നീട് മാറ്റാം.
+    </p>
+    <div class="chips">
+      <span class="chip">ജനറൽ സ്റ്റോർ</span>
+      <span class="chip">തുണിക്കട</span>
+      <span class="chip">മൊബൈൽ ഷോപ്പ്</span>
+      <span class="chip">ഇലക്ട്രിക്കൽ &amp; പ്ലംബിംഗ്</span>
+      <span class="chip">ഓട്ടോമൊബൈൽ</span>
+      <span class="chip">പലചരക്ക്</span>
+      <span class="chip">മെഡിക്കൽ സ്റ്റോർ</span>
+      <span class="chip">റെസ്റ്റോറന്റ്</span>
+      <span class="chip on">വാടക (Rental)</span>
+      <span class="chip on">മെഡിക്കൽ ലാബ്</span>
+      <span class="chip on">ജിം</span>
+      <span class="chip on">കോച്ചിംഗ് സെന്റർ</span>
+      <span class="chip on">സർവീസ് സെന്റർ</span>
+      <span class="chip on">ബൾക്ക് SMS</span>
+      <span class="chip">വ്യക്തിഗത ഉപയോഗം</span>
+    </div>
+    <p style="margin-top:16px;font-size:0.875rem;color:var(--muted);">
+      നിറമുള്ളവയ്ക്ക് അതത് മേഖലയ്ക്കുള്ള പ്രത്യേക മൊഡ്യൂളുകൾ ഉണ്ട് — വിശദാംശം വിഭാഗം 04-ൽ.
+    </p>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <span class="num">03</span>
+      <h2>പ്രധാന സൗകര്യങ്ങൾ</h2>
+    </div>
+    <p class="lede">ആപ്പിന്റെ ഡാഷ്ബോർഡിൽ ഇവ ഇതേ വിഭാഗങ്ങളായി തന്നെയാണ് കാണുക.</p>
+
+    <div class="grid">
+      <div class="card">
+        <span class="tag">Sales</span>
+        <h3>വിൽപ്പന</h3>
+        <p>ബാർകോഡ് സ്കാൻ ചെയ്തോ സാധനം തിരഞ്ഞെടുത്തോ വേഗത്തിൽ ബിൽ.</p>
+        <ul>
+          <li>പുതിയ ബിൽ &amp; ക്വിക്ക് ബിൽ</li>
+          <li>ക്വട്ടേഷൻ, എസ്റ്റിമേറ്റ്</li>
+          <li>ഓർഡർ, ഡെലിവറി നോട്ട്</li>
+          <li>സെയിൽസ് റിട്ടേൺ</li>
+          <li>ബിൽ ഹിസ്റ്ററി &amp; തിരുത്തൽ</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <span class="tag">Purchase</span>
+        <h3>വാങ്ങൽ</h3>
+        <p>സപ്ലയറിൽ നിന്ന് സാധനം വാങ്ങുന്നതിന്റെ മുഴുവൻ ഘട്ടങ്ങളും.</p>
+        <ul>
+          <li>പർച്ചേസ് എൻട്രി</li>
+          <li>പർച്ചേസ് ഓർഡർ (LPO)</li>
+          <li>പർച്ചേസ് ക്വട്ടേഷൻ താരതമ്യം</li>
+          <li>മെറ്റീരിയൽ റസീപ്റ്റ് (GRN)</li>
+          <li>പർച്ചേസ് റിട്ടേൺ</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <span class="tag">Accounts</span>
+        <h3>അക്കൗണ്ട്സ്</h3>
+        <p>ടാലി പോലെ പൂർണ്ണ ഡബിൾ എൻട്രി അക്കൗണ്ടിംഗ്.</p>
+        <ul>
+          <li>ക്യാഷ് ബുക്ക്, ജേണൽ, കോൺട്രാ</li>
+          <li>റസീപ്റ്റ് &amp; പേയ്മെന്റ്</li>
+          <li>ഔട്ട്സ്റ്റാൻഡിംഗ് (കിട്ടാനുള്ളത്/കൊടുക്കാനുള്ളത്)</li>
+          <li>ബാങ്ക് റീകൺസിലിയേഷൻ</li>
+          <li>ചെക്ക് രജിസ്റ്റർ, ഫിക്സഡ് അസറ്റ്</li>
+          <li>കോസ്റ്റ് സെന്റർ, റിക്കറിംഗ് ജേണൽ</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <span class="tag">Reports</span>
+        <h3>റിപ്പോർട്ടുകൾ</h3>
+        <p>എല്ലാ റിപ്പോർട്ടും PDF / Excel ആയി ഡൗൺലോഡ് ചെയ്യാം.</p>
+        <ul>
+          <li>ബാലൻസ് ഷീറ്റ്, ലാഭനഷ്ടം</li>
+          <li>ട്രയൽ ബാലൻസ്, ഡേ ബുക്ക്, ലെഡ്ജർ</li>
+          <li>ക്യാഷ് ഫ്ലോ സ്റ്റേറ്റ്മെന്റ്</li>
+          <li>സെയിൽസ്, ലാഭം, ഐറ്റം തിരിച്ചുള്ള വിൽപ്പന</li>
+          <li>സ്റ്റോക്ക്, ഐറ്റം മൂവ്മെന്റ്, എക്സ്പയറി</li>
+          <li>ജിഎസ്ടി / VAT റിപ്പോർട്ട്</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <span class="tag">Masters</span>
+        <h3>മാസ്റ്റർ വിവരങ്ങൾ</h3>
+        <p>ഒരിക്കൽ ചേർത്താൽ എല്ലായിടത്തും ഉപയോഗിക്കാം.</p>
+        <ul>
+          <li>കസ്റ്റമർ, സപ്ലയർ, കസ്റ്റമർ ടൈപ്പ്</li>
+          <li>സാധനങ്ങൾ, വിഭാഗം, ബണ്ടിൽ</li>
+          <li>Excel-ൽ നിന്ന് ഇംപോർട്ട്</li>
+          <li>യൂസർമാരും അനുമതികളും</li>
+          <li>ബാക്കപ്പ് &amp; റീസ്റ്റോർ</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <span class="tag">Daily use</span>
+        <h3>ദൈനംദിന ഉപകരണങ്ങൾ</h3>
+        <p>കടയിൽ ദിവസവും വേണ്ടിവരുന്ന ചെറിയ സഹായങ്ങൾ.</p>
+        <ul>
+          <li>കാൽക്കുലേറ്റർ (ലേബൽ സഹിതം)</li>
+          <li>ഡയറി &amp; സ്റ്റിക്കി നോട്ട്</li>
+          <li>പോസ്റ്റർ മേക്കർ</li>
+          <li>വില തിരയൽ (Price Search)</li>
+          <li>ബൾക്ക് SMS &amp; ടെംപ്ലേറ്റ്</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <span class="num">04</span>
+      <h2>പ്രത്യേക മേഖലകൾക്കുള്ള മൊഡ്യൂളുകൾ</h2>
+    </div>
+    <p class="lede">
+      സാധാരണ കടകൾക്കപ്പുറം, ചില മേഖലകൾക്ക് അവരുടേതായ പൂർണ്ണ സംവിധാനം ആപ്പിനുള്ളിൽ തന്നെയുണ്ട്.
+    </p>
+
+    <div class="rows">
+      <div class="row">
+        <h4>മെഡിക്കൽ ലാബ്</h4>
+        <p>ടെസ്റ്റ് മാസ്റ്റർ, രോഗികളുടെ വിവരങ്ങൾ, ലാബ് ബിൽ, റിസൾട്ട് എൻട്രി, A4 റിസൾട്ട് പ്രിന്റ്, ബാലൻസ് റസീപ്റ്റ്.</p>
+      </div>
+      <div class="row">
+        <h4>ജിം</h4>
+        <p>അംഗങ്ങളുടെ രജിസ്ട്രേഷൻ, ഫോട്ടോ, പ്ലാൻ, ഗഡുക്കളായി ഫീസ്, ഫീസ് കുടിശ്ശിക റിപ്പോർട്ട്, ബാച്ച് സമയം.</p>
+      </div>
+      <div class="row">
+        <h4>കോച്ചിംഗ് സെന്റർ</h4>
+        <p>കോഴ്സ്, ക്ലാസ്, വിഷയം, അധ്യാപകർ, വിദ്യാർത്ഥികൾ, ഫീസ്, ഹാജർ, അന്വേഷണങ്ങളും ഫോളോഅപ്പും.</p>
+      </div>
+      <div class="row">
+        <h4>സർവീസ് സെന്റർ</h4>
+        <p>ജോബ് കാർഡ്, മോഡൽ/വാഹന മാസ്റ്റർ, ജോലിക്കാരെ ഏൽപ്പിക്കൽ, മുൻഗണന, സ്റ്റാറ്റസ് ട്രാക്കിംഗ്, പെൻഡിംഗ് ജോലികൾ.</p>
+      </div>
+      <div class="row">
+        <h4>വാടക (Rental)</h4>
+        <p>വാടകയ്ക്ക് കൊടുക്കൽ ബിൽ, തിരികെ വാങ്ങൽ, വാടക കാലാവധി അലേർട്ട്, ഐറ്റം തിരിച്ചുള്ള റിപ്പോർട്ട്.</p>
+      </div>
+      <div class="row">
+        <h4>ഉൽപ്പാദനം (Production)</h4>
+        <p>റെസിപ്പി/പ്രൊസീജർ, അസംസ്കൃത വസ്തുക്കളുടെ ഉപയോഗം, ഉൽപ്പാദന ചെലവ്, യൂണിറ്റ് കോസ്റ്റ് കണക്കാക്കൽ.</p>
+      </div>
+      <div class="row">
+        <h4>ബൾക്ക് SMS</h4>
+        <p>കോൺടാക്ട് ഗ്രൂപ്പുകൾ, സന്ദേശ ടെംപ്ലേറ്റ്, ഒന്നിച്ച് അയയ്ക്കൽ, അയച്ചതിന്റെ റിപ്പോർട്ട്.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <span class="num">05</span>
+      <h2>എടുത്തുപറയേണ്ട സവിശേഷതകൾ</h2>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <span class="tag">Tax</span>
+        <h3>ജിഎസ്ടി &amp; VAT</h3>
+        <p>ഇന്ത്യൻ ജിഎസ്ടി പൂർണ്ണമായി — CGST/SGST, അന്തർസംസ്ഥാന IGST, കോമ്പോസിഷൻ സ്കീം, സെസ്, HSN,
+          സാമ്പത്തിക വർഷം അനുസരിച്ചുള്ള ബിൽ നമ്പർ. ഗൾഫിലേക്ക് സൗദി ZATCA, UAE VAT ഫോർമാറ്റുകളും.</p>
+      </div>
+
+      <div class="card">
+        <span class="tag">Print</span>
+        <h3>പ്രിന്റിംഗ്</h3>
+        <p>ബ്ലൂടൂത്ത് തെർമൽ പ്രിന്ററിൽ (58mm / 80mm) നേരിട്ട് പ്രിന്റ്, അല്ലെങ്കിൽ WiFi പ്രിന്ററിൽ A4.
+          സെറ്റിംഗ്സിൽ തിരഞ്ഞെടുക്കുന്ന വീതിക്ക് അനുസരിച്ച് PDF-ഉം അതേ അളവിൽ വരും.</p>
+      </div>
+
+      <div class="card">
+        <span class="tag">Share</span>
+        <h3>വാട്ട്‌സ്ആപ്പ് ഷെയർ</h3>
+        <p>ബിൽ PDF ആയി കസ്റ്റമറുടെ വാട്ട്‌സ്ആപ്പ് നമ്പറിലേക്ക് നേരിട്ട് അയയ്ക്കാം. യുപിഐ QR കോഡ്
+          ബില്ലിൽ ചേർത്താൽ കസ്റ്റമർക്ക് സ്കാൻ ചെയ്ത് പണം അടയ്ക്കാം.</p>
+      </div>
+
+      <div class="card">
+        <span class="tag">Backup</span>
+        <h3>ബാക്കപ്പും സിങ്കും</h3>
+        <p>ഫോണിലേക്ക് ബാക്കപ്പ് എടുക്കാം, സെർവറിലേക്ക് അയയ്ക്കാം. രണ്ട് ഫോണുകൾ ഒരേ കടയിൽ
+          ഉപയോഗിക്കുമ്പോൾ വിവരങ്ങൾ ലയിപ്പിക്കാം. ഡ്യൂപ്ലിക്കേറ്റ് വന്നാൽ ഒറ്റ ബട്ടണിൽ റിപ്പയർ.</p>
+      </div>
+
+      <div class="card">
+        <span class="tag">Input</span>
+        <h3>വേഗത്തിലുള്ള എൻട്രി</h3>
+        <p>ബാർകോഡ് സ്കാൻ, ക്യാമറ കൊണ്ട് ലിസ്റ്റ് വായിക്കൽ (OCR — മലയാളം ഉൾപ്പെടെ), ശബ്ദം കൊണ്ട്
+          ടൈപ്പിംഗ്, കൈകൊണ്ട് എഴുതൽ — എല്ലാം ഉണ്ട്.</p>
+      </div>
+
+      <div class="card">
+        <span class="tag">Calculator</span>
+        <h3>ബില്ലിംഗ് കാൽക്കുലേറ്റർ</h3>
+        <p>തിരക്കുള്ള സമയത്ത് വേഗം കൂട്ടിനോക്കാൻ. ഓരോ തുകയ്ക്കും ലേബൽ ഇടാം, കസ്റ്റമറുടെ പേരിൽ
+          സേവ് ചെയ്യാം, വേണമെങ്കിൽ അത് നേരിട്ട് ബില്ലാക്കാം. കസ്റ്റമറെ കാണിക്കാൻ ഫുൾ സ്ക്രീൻ വ്യൂ.</p>
+      </div>
+
+      <div class="card">
+        <span class="tag">Users</span>
+        <h3>ഒന്നിലധികം യൂസർമാർ</h3>
+        <p>ജോലിക്കാർക്ക് പ്രത്യേകം ലോഗിൻ. ആർക്കൊക്കെ എന്തൊക്കെ ചെയ്യാം എന്ന് നിയന്ത്രിക്കാം —
+          ഉദാ. ബിൽ ഉണ്ടാക്കാം പക്ഷേ ഡിലീറ്റ് ചെയ്യാൻ പറ്റില്ല.</p>
+      </div>
+
+      <div class="card">
+        <span class="tag">Stock</span>
+        <h3>സ്റ്റോക്ക് നിയന്ത്രണം</h3>
+        <p>ബാച്ച് നമ്പറും എക്സ്പയറി തീയതിയും, രണ്ട് യൂണിറ്റ് (ബോക്സ്/എണ്ണം), സ്റ്റോക്ക് കുറഞ്ഞാൽ അറിയിപ്പ്,
+          ഏത് ദിവസത്തെയും സ്റ്റോക്ക് നോക്കാം.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <span class="num">06</span>
+      <h2>ഡെമോ ചെയ്യുന്ന വിധം</h2>
+    </div>
+    <p class="lede">
+      ഒരു കടയുടമയ്ക്ക് 10–15 മിനിറ്റിൽ ആപ്പ് കാണിച്ചുകൊടുക്കാനുള്ള ക്രമം. ഈ ക്രമത്തിൽ പോയാൽ
+      അവർക്ക് ആദ്യ ബിൽ വരെ സ്വയം ഉണ്ടാക്കാൻ കഴിയും.
+    </p>
+
+    <div class="steps">
+      <div class="step">
+        <div>
+          <h4>ബിസിനസ് തരം തിരഞ്ഞെടുക്കുക</h4>
+          <p>ആപ്പ് ആദ്യം തുറക്കുമ്പോൾ കടയുടെ തരം ചോദിക്കും. അവരുടെ ബിസിനസ് തിരഞ്ഞെടുക്കുക.</p>
+          <div class="say"><b>പറയാൻ</b>നിങ്ങളുടെ കടയ്ക്ക് വേണ്ട സ്ക്രീനുകൾ മാത്രമേ ഇനി കാണൂ — ബാക്കിയുള്ളവ കൊണ്ട് ബുദ്ധിമുട്ടില്ല.</div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div>
+          <h4>കടയുടെ വിവരങ്ങൾ ചേർക്കുക</h4>
+          <p>Settings → കടയുടെ പേര്, വിലാസം, ഫോൺ, ജിഎസ്ടി നമ്പർ, ലോഗോ. ഇത് എല്ലാ ബില്ലിലും വരും.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div>
+          <h4>കുറച്ച് സാധനങ്ങൾ ചേർക്കുക</h4>
+          <p>Items → 2–3 സാധനങ്ങൾ ചേർക്കുക. Excel ഫയൽ ഉണ്ടെങ്കിൽ ഇംപോർട്ട് ചെയ്ത് കാണിക്കുക.</p>
+          <div class="say"><b>പറയാൻ</b>നിങ്ങളുടെ പഴയ ലിസ്റ്റ് Excel-ൽ ഉണ്ടെങ്കിൽ ഒറ്റയടിക്ക് കയറ്റാം — ഓരോന്നായി ടൈപ്പ് ചെയ്യണ്ട.</div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div>
+          <h4>ഒരു കസ്റ്റമറെ ചേർക്കുക</h4>
+          <p>Customers → പേരും ഫോൺ നമ്പറും. ഫോൺ നമ്പർ ചേർത്താലേ വാട്ട്‌സ്ആപ്പിൽ ബിൽ അയയ്ക്കാൻ പറ്റൂ.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div>
+          <h4>ആദ്യ ബിൽ ഉണ്ടാക്കുക</h4>
+          <p>New Bill → കസ്റ്റമറെ തിരഞ്ഞെടുക്കുക → സാധനങ്ങൾ ചേർക്കുക (ബാർകോഡ് ഉണ്ടെങ്കിൽ സ്കാൻ ചെയ്ത് കാണിക്കുക) → പേയ്മെന്റ് രീതി → Save.</p>
+          <div class="say"><b>ശ്രദ്ധിക്കാൻ</b>ക്രെഡിറ്റ് ആയി സേവ് ചെയ്താൽ ആ തുക കസ്റ്റമറുടെ കണക്കിൽ കിട്ടാനുള്ളതായി വരുന്നത് കാണിക്കുക.</div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div>
+          <h4>ബിൽ പ്രിന്റ് / ഷെയർ ചെയ്യുക</h4>
+          <p>അതേ സ്ക്രീനിൽ നിന്ന് PDF, വാട്ട്‌സ്ആപ്പ്, പ്രിന്റ് (ബ്ലൂടൂത്ത് അല്ലെങ്കിൽ WiFi). തെർമൽ പ്രിന്റർ ഉണ്ടെങ്കിൽ അതിൽ പ്രിന്റ് ചെയ്ത് കാണിക്കുക.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div>
+          <h4>കാൽക്കുലേറ്റർ കാണിക്കുക</h4>
+          <p>ഡാഷ്ബോർഡ് → Calculator. തുകകൾ കൂട്ടി, ലേബൽ ഇട്ട്, കസ്റ്റമറുടെ പേരിൽ സേവ് ചെയ്ത് കാണിക്കുക. ഫുൾ സ്ക്രീൻ വ്യൂവിൽ കസ്റ്റമർക്ക് കാണിക്കാം.</p>
+          <div class="say"><b>പറയാൻ</b>തിരക്കുള്ള സമയത്ത് പൂർണ്ണ ബിൽ ഉണ്ടാക്കാൻ നേരമില്ലെങ്കിൽ ഇത് മതി — പിന്നീട് ബില്ലാക്കാം.</div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div>
+          <h4>റിപ്പോർട്ടുകൾ കാണിക്കുക</h4>
+          <p>Sales Report, Outstanding (ആരൊക്കെ പണം തരാനുണ്ട്), Stock, ലാഭനഷ്ട കണക്ക്. ഏതെങ്കിലും ഒന്ന് PDF ആയി ഡൗൺലോഡ് ചെയ്ത് കാണിക്കുക.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div>
+          <h4>ബാക്കപ്പ് കാണിച്ച് അവസാനിപ്പിക്കുക</h4>
+          <p>Backup → ഫോണിലേക്ക് ബാക്കപ്പ് എടുക്കുന്നത് കാണിക്കുക.</p>
+          <div class="say"><b>പറയാൻ</b>ഫോൺ പോയാലും കണക്ക് പോകില്ല — ബാക്കപ്പ് ഫയൽ വെച്ച് പുതിയ ഫോണിൽ അതേപടി തിരികെ കിട്ടും.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <span class="num">07</span>
+      <h2>പതിവ് ചോദ്യങ്ങൾ</h2>
+    </div>
+
+    <div class="faq">
+      <details>
+        <summary>ഇന്റർനെറ്റ് വേണോ?</summary>
+        <p>ബില്ലിംഗിനും കണക്കിനും വേണ്ട. എല്ലാം ഫോണിൽ തന്നെ സൂക്ഷിക്കുന്നു. ബാക്കപ്പ് സെർവറിലേക്ക് അയയ്ക്കാനും വാട്ട്‌സ്ആപ്പിൽ ബിൽ അയയ്ക്കാനും മാത്രമേ ഇന്റർനെറ്റ് വേണ്ടൂ.</p>
+      </details>
+      <details>
+        <summary>പഴയ കണക്കുകൾ കയറ്റാൻ പറ്റുമോ?</summary>
+        <p>പറ്റും. സാധനങ്ങളും കസ്റ്റമർമാരും Excel / CSV ഫയലിൽ നിന്ന് ഇംപോർട്ട് ചെയ്യാം. കസ്റ്റമർമാരുടെ പഴയ ബാക്കി തുക ഓപ്പണിംഗ് ബാലൻസ് ആയി ചേർക്കാം.</p>
+      </details>
+      <details>
+        <summary>രണ്ട് ഫോണിൽ ഒരേസമയം ഉപയോഗിക്കാമോ?</summary>
+        <p>ആകാം. ഓരോ ഫോണിലും ബില്ലിംഗ് നടത്താം, പിന്നീട് ബാക്കപ്പ് ലയിപ്പിച്ചാൽ (Merge) രണ്ടിടത്തെയും വിവരങ്ങൾ ഒന്നിക്കും. ഓരോ ബില്ലിനും ഏത് ഫോണിൽ നിന്നാണെന്ന് അറിയാൻ പ്രത്യേക നമ്പർ ഉണ്ട്.</p>
+      </details>
+      <details>
+        <summary>ജിഎസ്ടി ഇല്ലാത്ത കടയ്ക്ക് ഉപയോഗിക്കാമോ?</summary>
+        <p>ഉപയോഗിക്കാം. സെറ്റിംഗ്സിൽ ജിഎസ്ടി ഓഫ് ചെയ്താൽ ബില്ലിൽ ടാക്സ് കാണിക്കില്ല. വേണമെങ്കിൽ കടയുടെ പേരില്ലാത്ത "No Tax Invoice" എന്ന പ്രത്യേക ബില്ലും ഉണ്ടാക്കാം.</p>
+      </details>
+      <details>
+        <summary>പ്രിന്റർ നിർബന്ധമാണോ?</summary>
+        <p>അല്ല. പ്രിന്റർ ഇല്ലെങ്കിൽ ബിൽ PDF ആയി വാട്ട്‌സ്ആപ്പിൽ അയച്ചാൽ മതി. പിന്നീട് ഏത് ബ്ലൂടൂത്ത് തെർമൽ പ്രിന്ററും ചേർക്കാം.</p>
+      </details>
+      <details>
+        <summary>ഒരു ബിൽ തെറ്റിയാൽ തിരുത്താൻ പറ്റുമോ?</summary>
+        <p>പറ്റും. ബിൽ ലിസ്റ്റിൽ നിന്ന് തുറന്ന് തിരുത്താം അല്ലെങ്കിൽ ഡിലീറ്റ് ചെയ്യാം. സ്റ്റോക്കും കസ്റ്റമറുടെ കണക്കും തനിയെ ശരിയാകും. ആരൊക്കെ എന്ത് മാറ്റി എന്ന് നിയന്ത്രിക്കാൻ യൂസർ അനുമതി ഉപയോഗിക്കാം.</p>
+      </details>
+    </div>
+  </section>
+
+  <div class="closing">
+    <h2>ഡെമോയ്ക്ക് ശേഷം</h2>
+    <p>
+      ആപ്പ് ഇൻസ്റ്റാൾ ചെയ്ത് കടയുടെ വിവരങ്ങളും കുറച്ച് സാധനങ്ങളും ചേർത്തുകൊടുത്താൽ അവർക്ക് അന്നുതന്നെ
+      ബില്ലിംഗ് തുടങ്ങാം. ആദ്യ ആഴ്ചയിൽ ഒരു തവണ വിളിച്ച് ബാക്കപ്പ് എടുക്കാൻ ഓർമിപ്പിക്കുന്നത് നല്ലതാണ്.
+    </p>
+  </div>
+
+  <footer>POS Billing &middot; പതിപ്പ് 2.7.16 &middot; ഈ രേഖ ഡെമോ ആവശ്യത്തിനുള്ളതാണ്</footer>
+
+</div>
+
+</body>
+</html>
