@@ -31,6 +31,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Backspace
+import androidx.compose.material.icons.filled.ChevronLeft
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.PointOfSale
 import androidx.compose.material.icons.filled.Delete
@@ -127,6 +129,12 @@ fun FastBillDialog(
     // sale invoice (payment method asked first) instead — see askPaymentMethod below.
     var isSaleBill by remember { mutableStateOf(false) }
     var askPaymentMethod by remember { mutableStateOf(false) }
+    // What to do once the payment method is picked — "text"/"pdf"/"print" of the real invoice
+    // just created, or null when the picker was opened from Save with nothing to share.
+    var pendingShareAction by remember { mutableStateOf<String?>(null) }
+    // Set only when Print is about to print a just-created sale invoice rather than the plain
+    // calculator tape — the Bluetooth/WiFi choice below uses this bill's own print/PDF instead.
+    var pendingPrintBill by remember { mutableStateOf<Pair<com.billing.pos.data.Bill, List<com.billing.pos.data.BillItem>>?>(null) }
     var loadedInitialCalc by remember { mutableStateOf(false) }
     // Id of the saved tape being edited, or 0 while this is a fresh calculation.
     var savedId by remember { mutableStateOf(0L) }
@@ -327,9 +335,15 @@ fun FastBillDialog(
         }
     }
 
-    /** Turns the current tape into a real, priced sale invoice — the "Sale bill" checkbox's
-     *  payment-method popup calls this once a method is picked. */
-    fun createSaleInvoice(paymentMethod: String) {
+    /**
+     * Turns the current tape into a real, priced sale invoice — the "Sale bill" checkbox's
+     * payment-method popup calls this once a method is picked. When [action] is given (the
+     * Text/PDF/Print the user actually asked for before the picker interrupted them), the real
+     * invoice — bill number, date, customer, items, the usual "INVOICE" heading, at the
+     * configured print width — is shared or printed afterward, the same document a normal sale
+     * would produce, not the calculator's own "Calculation" tape format.
+     */
+    fun createSaleInvoice(paymentMethod: String, action: String? = null) {
         val all = currentEntries()
         if (all.isEmpty()) return
         scope.launch {
@@ -340,8 +354,63 @@ fun FastBillDialog(
                 ?: customers.firstOrNull { it.name.equals(com.billing.pos.data.SavedCalc.DEFAULT_CUSTOMER, ignoreCase = true) }
                 ?: repo.addCustomerReturning(com.billing.pos.data.SavedCalc.DEFAULT_CUSTOMER, "", "General")
             all.map { it.label }.filter { it.isNotBlank() }.distinct().forEach { repo.ensureItemForLabel(it) }
-            repo.addSaleInvoiceFromTape(customer, all.map { it.amount to it.label }, narration.trim(), System.currentTimeMillis(), paymentMethod)
-            android.widget.Toast.makeText(context, "Sale invoice created for ${customer.name}", android.widget.Toast.LENGTH_SHORT).show()
+            val prior = savedId.takeIf { it > 0 }?.let { repo.calcById(it) }
+            val credit = paymentMethod.equals(com.billing.pos.data.PaymentMethod.CREDIT.label, ignoreCase = true)
+
+            // Credit keeps an invoice against the customer; Cash/UPI/Card is settled on the
+            // spot, so any invoice this calculation previously left on them is removed and
+            // their payable drops accordingly. Either way there's never a second copy.
+            val billId = if (credit) {
+                repo.addSaleInvoiceFromTape(
+                    customer, all.map { it.amount to it.label }, narration.trim(),
+                    System.currentTimeMillis(), paymentMethod, prior?.linkedBillId ?: 0L
+                )
+            } else {
+                prior?.linkedBillId?.takeIf { it > 0 }?.let { repo.billById(it) }?.let { repo.removeQuickInvoiceIfSafe(it) }
+                0L
+            }
+
+            // The filed PDF is refreshed either way, so it always shows the current amounts
+            // and the payment mode that was just chosen.
+            prior?.linkedAttachmentId?.takeIf { it > 0 }?.let { repo.removeCustomerAttachment(it) }
+            var attId = 0L
+            runCatching {
+                val company = com.billing.pos.data.AppPrefs(context).company
+                com.billing.pos.pdf.ThermalPdf.calcTapeFile(
+                    context, company, customer.name, customer.phone, narration.trim(),
+                    all.map { it.amount to it.label }, paymentMode = paymentMethod
+                )
+            }.getOrNull()?.let { pdf ->
+                com.billing.pos.data.CustomerAttachmentStore.importFrom(context, pdf.absolutePath, "application/pdf")
+                    ?.let { att -> attId = repo.appendCustomerAttachment(customer.id, att) }
+            }
+            if (savedId > 0) {
+                repo.calcById(savedId)?.let { repo.saveCalc(it.copy(linkedBillId = billId, linkedAttachmentId = attId)) }
+            }
+
+            android.widget.Toast.makeText(
+                context,
+                if (credit) "Sale invoice saved for ${customer.name}" else "Sale ($paymentMethod) saved for ${customer.name}",
+                android.widget.Toast.LENGTH_SHORT
+            ).show()
+
+            if (action == null) return@launch
+            // Non-credit leaves no stored invoice, so its share/print falls back to the tape
+            // document (which now carries the payment mode) instead.
+            val bill = billId.takeIf { it > 0 }?.let { repo.billById(it) }
+            val lines = if (bill != null) repo.linesFor(bill.id) else emptyList()
+            val company = com.billing.pos.data.AppPrefs(context).company
+            if (action == "print") {
+                pendingPrintBill = if (bill != null) bill to lines else null
+                showPrintChoice = true
+            } else {
+                val uri = if (bill != null) com.billing.pos.pdf.InvoicePdf.make(context, company, bill, lines)
+                else com.billing.pos.pdf.ThermalPdf.calcTape(
+                    context, company, customer.name, customer.phone, narration.trim(),
+                    all.map { it.amount to it.label }, paymentMode = paymentMethod
+                )
+                shareCalcPdfTo(context, customer.name, customer.phone, uri)
+            }
         }
     }
 
@@ -693,11 +762,18 @@ fun FastBillDialog(
                     }) { Text("Save") }
                     TextButton(onClick = {
                         askSave = false
-                        storeTape(
-                            onDone = { msg -> android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show() },
-                            onShare = { text -> shareCalcTextTo(context, custName, custPhone, text) }
-                        )
-                        if (isSaleBill) askPaymentMethod = true
+                        if (isSaleBill) {
+                            // The real invoice (once the payment method is picked) is what gets
+                            // shared, not the calculator's own tape text.
+                            storeTape(onDone = { msg -> android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show() })
+                            pendingShareAction = "pdf"
+                            askPaymentMethod = true
+                        } else {
+                            storeTape(
+                                onDone = { msg -> android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show() },
+                                onShare = { text -> shareCalcTextTo(context, custName, custPhone, text) }
+                            )
+                        }
                     }) { Text("Save & Share") }
                 }
             },
@@ -1319,32 +1395,47 @@ fun FastBillDialog(
                         "Text", fontWeight = FontWeight.Bold,
                         modifier = Modifier.fillMaxWidth().clickable {
                             showShareChoice = false
-                            saveToDiary()
-                            if (isSaleBill) askPaymentMethod = true
-                            val header = if (custName.isNotBlank() && custName != com.billing.pos.data.SavedCalc.DEFAULT_CUSTOMER)
-                                custName + (if (custPhone.isNotBlank()) " - $custPhone" else "") + "\n\n" else ""
-                            shareCalcTextTo(context, custName, custPhone, header + tapeText())
+                            // "Sale bill" on: the real invoice (once the payment method is
+                            // picked) is what gets shared, not the calculator's own tape text.
+                            if (isSaleBill) {
+                                pendingShareAction = "text"
+                                askPaymentMethod = true
+                            } else {
+                                saveToDiary()
+                                val header = if (custName.isNotBlank() && custName != com.billing.pos.data.SavedCalc.DEFAULT_CUSTOMER)
+                                    custName + (if (custPhone.isNotBlank()) " - $custPhone" else "") + "\n\n" else ""
+                                shareCalcTextTo(context, custName, custPhone, header + tapeText())
+                            }
                         }.padding(vertical = 12.dp)
                     )
                     Text(
                         "PDF", fontWeight = FontWeight.Bold,
                         modifier = Modifier.fillMaxWidth().clickable {
                             showShareChoice = false
-                            saveToDiary()
-                            if (isSaleBill) askPaymentMethod = true
-                            val all = currentEntries()
-                            runCatching {
-                                val company = com.billing.pos.data.AppPrefs(context).company
-                                com.billing.pos.pdf.ThermalPdf.calcTape(context, company, custName, custPhone, narration, all.map { it.amount to it.label })
-                            }.onSuccess { uri -> shareCalcPdfTo(context, custName, custPhone, uri) }
+                            if (isSaleBill) {
+                                pendingShareAction = "pdf"
+                                askPaymentMethod = true
+                            } else {
+                                saveToDiary()
+                                val all = currentEntries()
+                                runCatching {
+                                    val company = com.billing.pos.data.AppPrefs(context).company
+                                    com.billing.pos.pdf.ThermalPdf.calcTape(context, company, custName, custPhone, narration, all.map { it.amount to it.label })
+                                }.onSuccess { uri -> shareCalcPdfTo(context, custName, custPhone, uri) }
+                            }
                         }.padding(vertical = 12.dp)
                     )
                     Text(
                         "Print", fontWeight = FontWeight.Bold,
                         modifier = Modifier.fillMaxWidth().clickable {
                             showShareChoice = false
-                            if (isSaleBill) askPaymentMethod = true
-                            showPrintChoice = true
+                            if (isSaleBill) {
+                                pendingShareAction = "print"
+                                askPaymentMethod = true
+                            } else {
+                                pendingPrintBill = null
+                                showPrintChoice = true
+                            }
                         }.padding(vertical = 12.dp)
                     )
                     Divider(Modifier.padding(vertical = 8.dp))
@@ -1362,27 +1453,35 @@ fun FastBillDialog(
     // Print: same Bluetooth (thermal, paired) / WiFi (system print, no pairing) choice as a
     // sales invoice's Print button.
     if (showPrintChoice) {
-        val printPermission = rememberLauncherForActivityResult(
-            ActivityResultContracts.RequestPermission()
-        ) { granted ->
-            if (granted) {
-                val all = currentEntries()
-                scope.launch {
-                    val company = com.billing.pos.data.AppPrefs(context).company
-                    val result = withContext(Dispatchers.IO) {
-                        runCatching {
+        // Set only when printing the real invoice just created by "Sale bill" — otherwise the
+        // plain calculator tape, same as before.
+        val printBill = pendingPrintBill
+        fun doBluetoothPrint() {
+            scope.launch {
+                val company = com.billing.pos.data.AppPrefs(context).company
+                val result = withContext(Dispatchers.IO) {
+                    runCatching {
+                        if (printBill != null) {
+                            com.billing.pos.print.ThermalPrinter.printBill(context, company, printBill.first, printBill.second)
+                        } else {
+                            val all = currentEntries()
                             com.billing.pos.print.ThermalPrinter.printCalcTape(context, company, custName, custPhone, narration, all.map { it.amount to it.label })
                         }
                     }
-                    result.onSuccess { android.widget.Toast.makeText(context, "Sent to printer", android.widget.Toast.LENGTH_SHORT).show() }
-                        .onFailure { android.widget.Toast.makeText(context, it.message ?: "Print failed", android.widget.Toast.LENGTH_SHORT).show() }
                 }
-            } else {
-                android.widget.Toast.makeText(context, "Allow 'Nearby devices' permission to print", android.widget.Toast.LENGTH_LONG).show()
+                result.onSuccess { android.widget.Toast.makeText(context, "Sent to printer", android.widget.Toast.LENGTH_SHORT).show() }
+                    .onFailure { android.widget.Toast.makeText(context, it.message ?: "Print failed", android.widget.Toast.LENGTH_SHORT).show() }
+                pendingPrintBill = null
             }
         }
+        val printPermission = rememberLauncherForActivityResult(
+            ActivityResultContracts.RequestPermission()
+        ) { granted ->
+            if (granted) doBluetoothPrint()
+            else android.widget.Toast.makeText(context, "Allow 'Nearby devices' permission to print", android.widget.Toast.LENGTH_LONG).show()
+        }
         AlertDialog(
-            onDismissRequest = { showPrintChoice = false },
+            onDismissRequest = { showPrintChoice = false; pendingPrintBill = null },
             title = { Text("Print") },
             text = { Text("Choose the printer connection.") },
             confirmButton = {
@@ -1391,29 +1490,24 @@ fun FastBillDialog(
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !com.billing.pos.print.ThermalPrinter.hasConnectPermission(context)) {
                         printPermission.launch(Manifest.permission.BLUETOOTH_CONNECT)
                     } else {
-                        val all = currentEntries()
-                        scope.launch {
-                            val company = com.billing.pos.data.AppPrefs(context).company
-                            val result = withContext(Dispatchers.IO) {
-                                runCatching {
-                                    com.billing.pos.print.ThermalPrinter.printCalcTape(context, company, custName, custPhone, narration, all.map { it.amount to it.label })
-                                }
-                            }
-                            result.onSuccess { android.widget.Toast.makeText(context, "Sent to printer", android.widget.Toast.LENGTH_SHORT).show() }
-                                .onFailure { android.widget.Toast.makeText(context, it.message ?: "Print failed", android.widget.Toast.LENGTH_SHORT).show() }
-                        }
+                        doBluetoothPrint()
                     }
                 }) { Text("Bluetooth (thermal)") }
             },
             dismissButton = {
                 TextButton(onClick = {
                     showPrintChoice = false
-                    val all = currentEntries()
                     runCatching {
                         val company = com.billing.pos.data.AppPrefs(context).company
-                        val uri = com.billing.pos.pdf.ThermalPdf.calcTape(context, company, custName, custPhone, narration, all.map { it.amount to it.label })
-                        com.billing.pos.print.SystemPrint.printPdf(context, uri, "Calculation")
+                        val uri = if (printBill != null) {
+                            com.billing.pos.pdf.InvoicePdf.make(context, company, printBill.first, printBill.second)
+                        } else {
+                            val all = currentEntries()
+                            com.billing.pos.pdf.ThermalPdf.calcTape(context, company, custName, custPhone, narration, all.map { it.amount to it.label })
+                        }
+                        com.billing.pos.print.SystemPrint.printPdf(context, uri, printBill?.first?.billNo ?: "Calculation")
                     }
+                    pendingPrintBill = null
                 }) { Text("WiFi / System printer") }
             }
         )
@@ -1431,14 +1525,19 @@ fun FastBillDialog(
                         Text(
                             m.label,
                             modifier = Modifier.fillMaxWidth()
-                                .clickable { askPaymentMethod = false; createSaleInvoice(m.label) }
+                                .clickable {
+                                    askPaymentMethod = false
+                                    val action = pendingShareAction
+                                    pendingShareAction = null
+                                    createSaleInvoice(m.label, action)
+                                }
                                 .padding(vertical = 12.dp)
                         )
                     }
                 }
             },
             confirmButton = {},
-            dismissButton = { TextButton(onClick = { askPaymentMethod = false }) { Text("Cancel") } }
+            dismissButton = { TextButton(onClick = { askPaymentMethod = false; pendingShareAction = null }) { Text("Cancel") } }
         )
     }
 
@@ -1487,13 +1586,17 @@ private fun CalcFullView(
         BoxWithConstraints(
             Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface).safeDrawingPadding()
         ) {
-            // One row per entry, one for the total, one held back for the close button's row —
-            // whatever height that leaves each row shrinks the font to fit them all with no
-            // scrolling, down to a floor that stays legible in a screenshot.
-            val rowCount = (entries.size + 2).coerceAtLeast(3)
-            val rowHeight = (maxHeight / rowCount).coerceIn(22.dp, 72.dp)
-            val amountFontSize = (rowHeight.value * 0.42f).coerceIn(12f, 34f).sp
-            val labelFontSize = (amountFontSize.value * 0.62f).sp
+            // A fixed, compact row size — short tapes no longer stretch to fill the screen with
+            // wide gaps. Once a page is full, the rest spill onto further pages instead.
+            val rowHeight = 40.dp
+            val amountFontSize = 18.sp
+            val labelFontSize = 14.sp
+            val hasCustomer = customerName.isNotBlank() && customerName != com.billing.pos.data.SavedCalc.DEFAULT_CUSTOMER
+            val reserved = 32.dp + (if (hasCustomer) 22.dp else 0.dp) + 48.dp + 32.dp // close row + name + total row + page nav
+            val rowsPerPage = ((maxHeight - reserved) / rowHeight).toInt().coerceAtLeast(1)
+            val pageCount = if (entries.isEmpty()) 1 else ((entries.size + rowsPerPage - 1) / rowsPerPage).coerceAtLeast(1)
+            val pagerState = androidx.compose.foundation.pager.rememberPagerState(pageCount = { pageCount })
+            val scope = androidx.compose.runtime.rememberCoroutineScope()
 
             Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
@@ -1501,36 +1604,61 @@ private fun CalcFullView(
                         Icon(Icons.Filled.Close, contentDescription = "Close", modifier = Modifier.size(20.dp))
                     }
                 }
-                if (customerName.isNotBlank() && customerName != com.billing.pos.data.SavedCalc.DEFAULT_CUSTOMER) {
+                if (hasCustomer) {
                     Text(customerName, fontWeight = FontWeight.Bold, fontSize = labelFontSize, modifier = Modifier.padding(bottom = 4.dp))
                 }
-                Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
-                    entries.forEachIndexed { i, e ->
-                        Row(
-                            Modifier.fillMaxWidth().height(rowHeight),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                if (e.amount < 0) "-" else if (i == 0) " " else "+",
-                                fontSize = amountFontSize, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold
-                            )
-                            Text(
-                                e.label.ifBlank { "" },
-                                modifier = Modifier.weight(1f).padding(horizontal = 6.dp),
-                                fontSize = labelFontSize, fontWeight = FontWeight.Medium,
-                                maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                            )
-                            Text(
-                                Format.money(kotlin.math.abs(e.amount)),
-                                fontSize = amountFontSize, fontFamily = FontFamily.Monospace,
-                                fontWeight = FontWeight.Bold, textAlign = TextAlign.End
-                            )
+                androidx.compose.foundation.pager.HorizontalPager(
+                    state = pagerState,
+                    modifier = Modifier.weight(1f)
+                ) { page ->
+                    Column {
+                        val start = page * rowsPerPage
+                        entries.drop(start).take(rowsPerPage).forEachIndexed { i, e ->
+                            Row(
+                                Modifier.fillMaxWidth().height(rowHeight),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    if (e.amount < 0) "-" else if (start + i == 0) " " else "+",
+                                    fontSize = amountFontSize, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    e.label.ifBlank { "" },
+                                    modifier = Modifier.weight(1f).padding(horizontal = 6.dp),
+                                    fontSize = labelFontSize, fontWeight = FontWeight.Medium,
+                                    maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    Format.money(kotlin.math.abs(e.amount)),
+                                    fontSize = amountFontSize, fontFamily = FontFamily.Monospace,
+                                    fontWeight = FontWeight.Bold, textAlign = TextAlign.End
+                                )
+                            }
                         }
+                    }
+                }
+                if (pageCount > 1) {
+                    Row(
+                        Modifier.fillMaxWidth().height(32.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(
+                            onClick = { scope.launch { pagerState.animateScrollToPage((pagerState.currentPage - 1).coerceAtLeast(0)) } },
+                            enabled = pagerState.currentPage > 0,
+                            modifier = Modifier.size(28.dp)
+                        ) { Icon(Icons.Filled.ChevronLeft, contentDescription = "Previous page") }
+                        Text("${pagerState.currentPage + 1} / $pageCount", style = MaterialTheme.typography.labelSmall)
+                        IconButton(
+                            onClick = { scope.launch { pagerState.animateScrollToPage((pagerState.currentPage + 1).coerceAtMost(pageCount - 1)) } },
+                            enabled = pagerState.currentPage < pageCount - 1,
+                            modifier = Modifier.size(28.dp)
+                        ) { Icon(Icons.Filled.ChevronRight, contentDescription = "Next page") }
                     }
                 }
                 Divider(thickness = 2.dp)
                 Row(
-                    Modifier.fillMaxWidth().height(rowHeight.coerceAtLeast(40.dp)),
+                    Modifier.fillMaxWidth().height(48.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text("TOTAL", fontSize = labelFontSize, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))

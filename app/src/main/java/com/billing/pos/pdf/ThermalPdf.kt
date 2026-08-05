@@ -113,10 +113,11 @@ object ThermalPdf {
         customerPhone: String,
         narration: String,
         entries: List<Pair<Double, String>>,
-        title: String = "Calculation"
+        title: String = "Calculation",
+        paymentMode: String = ""
     ): Uri {
         applyWidth(context)
-        return write(context, "calc_${System.currentTimeMillis()}", calcTapeLines(company, customerName, customerPhone, narration, entries, title))
+        return write(context, "calc_${System.currentTimeMillis()}", calcTapeLines(company, customerName, customerPhone, narration, entries, title, paymentMode))
     }
 
     /** Same as [calcTape], but returns the raw file — needed where the PDF is copied into
@@ -128,10 +129,11 @@ object ThermalPdf {
         customerPhone: String,
         narration: String,
         entries: List<Pair<Double, String>>,
-        title: String = "Calculation"
+        title: String = "Calculation",
+        paymentMode: String = ""
     ): File {
         applyWidth(context)
-        return writeFile(context, "calc_${System.currentTimeMillis()}", calcTapeLines(company, customerName, customerPhone, narration, entries, title))
+        return writeFile(context, "calc_${System.currentTimeMillis()}", calcTapeLines(company, customerName, customerPhone, narration, entries, title, paymentMode))
     }
 
     private fun calcTapeLines(
@@ -140,7 +142,8 @@ object ThermalPdf {
         customerPhone: String,
         narration: String,
         entries: List<Pair<Double, String>>,
-        title: String
+        title: String,
+        paymentMode: String = ""
     ): List<Line> {
         val out = ArrayList<Line>()
         fun add(text: String, bold: Boolean = false) { out.add(Line(text, bold)) }
@@ -152,6 +155,7 @@ object ThermalPdf {
             add("Cust: " + clip(customerName, 26))
             if (customerPhone.isNotBlank()) add("Ph  : $customerPhone")
         }
+        if (paymentMode.isNotBlank()) add("Pay : $paymentMode")
         add(rule())
         entries.forEach { (amt, label) ->
             val sign = if (amt < 0) "-" else "+"

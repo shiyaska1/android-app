@@ -443,18 +443,22 @@ class Repository(private val context: Context) {
 
     fun quickInvoicesForCustomer(customerId: Long): Flow<List<Bill>> = billDao.quickInvoicesForCustomer(customerId)
 
-    /** A real sale invoice built from a Fast bill calculator tape — unlike [addQuickInvoice]
-     *  this is a normal (non-legacy) bill with a chosen payment method, so it counts in sales
-     *  and GST reports like any other invoice. Each positive entry becomes its own line, named
-     *  after its label ("Amount" when blank); subtracted (negative) entries have no natural
-     *  place on a sale line, so — same as the calculator's own "Save to bill" hand-off — they're
-     *  left out rather than turned into a negative-priced line. */
+    /** A priced, itemised invoice built from a Fast bill calculator tape, with a chosen payment
+     *  method (unlike [addQuickInvoice], which is always Credit). Kept out of the main invoice
+     *  list/sales & GST reports, same as [addQuickInvoice] — calculator invoices are meant to be
+     *  seen through the customer they're for, not mixed into the regular sales flow — but the
+     *  payment method still correctly moves the customer's payable or the Cash/Bank balance.
+     *  Each positive entry becomes its own line, named after its label ("Amount" when blank);
+     *  subtracted (negative) entries have no natural place on a sale line, so — same as the
+     *  calculator's own "Save to bill" hand-off — they're left out rather than turned into a
+     *  negative-priced line. */
     suspend fun addSaleInvoiceFromTape(
         customer: Customer,
         entries: List<Pair<Double, String>>,
         note: String,
         dateMillis: Long,
-        paymentMethod: String
+        paymentMethod: String,
+        existingBillId: Long = 0
     ): Long {
         ensureCustomerHead(customer.name)
         val lines = entries.filter { it.first > 0.0 }.map { (amount, label) ->
@@ -462,6 +466,23 @@ class Repository(private val context: Context) {
         }
         val grandTotal = lines.sumOf { it.lineTotal }
         val paid = if (paymentMethod.equals(PaymentMethod.CREDIT.label, ignoreCase = true)) 0.0 else grandTotal
+        // Re-saving an edited calculation updates the invoice it already made rather than
+        // adding a second one — its number and date stay put, only the amounts/lines/payment
+        // method change.
+        val existing = existingBillId.takeIf { it > 0 }?.let { billDao.byId(it) }
+        if (existing != null && existing.isLegacy) {
+            billDao.updateBill(
+                existing.copy(
+                    customerId = customer.id, customerName = customer.name,
+                    paymentMethod = paymentMethod,
+                    subTotal = grandTotal, grandTotal = grandTotal, paidAmount = paid,
+                    customerGstin = customer.gstin, customerState = customer.state,
+                    remarks = note.trim(), updatedAt = System.currentTimeMillis()
+                ),
+                lines
+            )
+            return existing.id
+        }
         val bill = Bill(
             billNo = nextBillNo(),
             dateMillis = dateMillis,
@@ -477,7 +498,11 @@ class Repository(private val context: Context) {
             customerGstin = customer.gstin,
             customerState = customer.state,
             remarks = note.trim(),
-            isLegacy = false,
+            // Calculator invoices are kept out of the main invoice list/reports, same as a
+            // quick due — visible only through the customer they're for, never in the regular
+            // sales flow. The payment method/paid amount still correctly move the customer's
+            // payable (or Cash/Bank) balance; only the Sales-register/GST-return side is skipped.
+            isLegacy = true,
             updatedAt = System.currentTimeMillis()
         )
         return billDao.saveBill(bill, lines)
