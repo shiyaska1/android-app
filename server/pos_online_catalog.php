@@ -187,6 +187,24 @@ function pos_catalog_fail($code, $msg) {
     exit;
 }
 
+/** Sends the response now and, on PHP-FPM hosts (the common case — ask your host if unsure),
+ *  closes the client connection immediately so the customer/shop app isn't left waiting on
+ *  whatever runs after this call. Used right before an FCM push, which can take several seconds
+ *  per call (a JWT sign + two Google HTTPS round trips) and, for a promotion broadcast, that cost
+ *  multiplies by every registered customer — on a slow host this was the single biggest thing
+ *  making "just save the order" feel slow. Hosts without fastcgi_finish_request() (uncommon) fall
+ *  straight back to a normal synchronous response — same speed as before, no regression. */
+function pos_finish_response($body, $contentType = 'application/json') {
+    header('Content-Type: ' . $contentType);
+    echo $body;
+    if (function_exists('fastcgi_finish_request')) {
+        fastcgi_finish_request();
+    } else {
+        @ob_flush();
+        @flush();
+    }
+}
+
 // ---- FCM push (best-effort — a failure here never breaks the request it's attached to) ----
 
 /** Every push failure used to vanish silently (every call below is wrapped in @ and nothing
@@ -438,9 +456,8 @@ if (($method === 'POST' || $method === 'PUT') && $do === 'order') {
     fflush($fh);
     flock($fh, LOCK_UN);
     fclose($fh);
+    pos_finish_response(json_encode(array('ok' => true, 'id' => $order['id'])));
     pos_fcm_notify_shop($SERVICE_ACCOUNT_PATH, $STORAGE_DIR, $shop, 'new_order');
-    header('Content-Type: application/json');
-    echo json_encode(array('ok' => true, 'id' => $order['id']));
     exit;
 }
 
@@ -489,9 +506,8 @@ if (($method === 'POST' || $method === 'PUT') && $do === 'status') {
     fflush($fh);
     flock($fh, LOCK_UN);
     fclose($fh);
+    pos_finish_response('OK: notification queued for ' . $phone, 'text/plain');
     pos_fcm_notify_customer($SERVICE_ACCOUNT_PATH, $STORAGE_DIR, $shop, $phone, 'notification');
-    header('Content-Type: text/plain');
-    echo 'OK: notification queued for ' . $phone;
     exit;
 }
 
@@ -541,9 +557,8 @@ if (($method === 'POST' || $method === 'PUT') && $do === 'message') {
     fflush($fh);
     flock($fh, LOCK_UN);
     fclose($fh);
+    pos_finish_response(json_encode(array('ok' => true)));
     pos_fcm_notify_shop($SERVICE_ACCOUNT_PATH, $STORAGE_DIR, $shop, 'new_message');
-    header('Content-Type: application/json');
-    echo json_encode(array('ok' => true));
     exit;
 }
 
@@ -657,12 +672,10 @@ if (($method === 'POST' || $method === 'PUT') && $do === 'broadcast') {
     flock($fh, LOCK_UN);
     fclose($fh);
 
+    pos_finish_response(json_encode(array('ok' => true, 'count' => count($phones))));
     foreach ($phones as $phone) {
         pos_fcm_notify_customer($SERVICE_ACCOUNT_PATH, $STORAGE_DIR, $shop, $phone, 'notification');
     }
-
-    header('Content-Type: application/json');
-    echo json_encode(array('ok' => true, 'count' => count($phones)));
     exit;
 }
 
