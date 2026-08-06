@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "169760973766",
+    "project_id": "pos-billing-9bee3",
+    "storage_bucket": "pos-billing-9bee3.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:169760973766:android:9e8d15ca8bd93d8a8788c7",
+        "android_client_info": {
+          "package_name": "com.billing.pos"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC0up-rbOrkJP8WNhxihtiO_5vegzEXdbw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
