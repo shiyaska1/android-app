@@ -554,7 +554,8 @@ private fun AppNav() {
                 onUsers = { nav.navigate("users") },
                 onSettings = { nav.navigate("settings") },
                 onBackup = { nav.navigate("backup") },
-                onLogout = logout
+                onLogout = logout,
+                onTestAsCustomer = { nav.navigate("boot") { popUpTo(0) { inclusive = true } } }
             )
         }
         composable("license") {

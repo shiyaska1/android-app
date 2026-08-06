@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.Balance
 import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material.icons.filled.Assessment
 import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Handyman
 import androidx.compose.material.icons.filled.AssignmentReturn
 import androidx.compose.material.icons.automirrored.filled.Send
@@ -232,7 +233,11 @@ fun DashboardScreen(
     onUsers: () -> Unit,
     onSettings: () -> Unit,
     onBackup: () -> Unit,
-    onLogout: () -> Unit
+    onLogout: () -> Unit,
+    /** Debug builds only (see the icon below) — switches this device into customer mode using
+     *  the shop's own real shop code/catalog URL, so the owner can preview their live customer
+     *  catalog without a second device. Never reachable in the Play Store build. */
+    onTestAsCustomer: () -> Unit = {}
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val syncScope = rememberCoroutineScope()
@@ -413,6 +418,22 @@ fun DashboardScreen(
                     }
                     IconButton(onClick = onQuickNote) {
                         Icon(Icons.Filled.NoteAdd, contentDescription = "Quick note")
+                    }
+                    // Debug-build-only: lets the shop owner preview their own live customer
+                    // catalog on this same device, without a second phone. Built with the debug
+                    // signing key (app-debug.apk from build.yml) for testing — the release.yml
+                    // AAB that ships to the Play Store is a "release" build, so BuildConfig.DEBUG
+                    // is false there and this icon never appears to a real customer/reviewer.
+                    if (com.billing.pos.BuildConfig.DEBUG) {
+                        IconButton(onClick = {
+                            val p = com.billing.pos.data.AppPrefs(context)
+                            p.shopCode = p.shopCode.ifBlank { com.billing.pos.data.License.deviceId(context) }
+                            p.customerBusinessType = p.businessType
+                            p.customerMode = true
+                            onTestAsCustomer()
+                        }) {
+                            Icon(Icons.Filled.BugReport, contentDescription = "Test as customer")
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
