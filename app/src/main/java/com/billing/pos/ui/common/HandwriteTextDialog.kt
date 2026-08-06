@@ -44,7 +44,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import androidx.compose.material3.FilterChip
 import com.billing.pos.ink.InkLang
 import com.billing.pos.ink.InkRecognizer
 import kotlinx.coroutines.launch
@@ -55,12 +54,9 @@ import kotlinx.coroutines.launch
  */
 @Composable
 fun HandwriteTextDialog(onResult: (String) -> Unit, onDismiss: () -> Unit) {
-    val context = androidx.compose.ui.platform.LocalContext.current
     val scope = rememberCoroutineScope()
 
-    // Starts on the language from Settings, but stays switchable here — with handwriting
-    // you always know which language you are about to write.
-    var lang by remember { mutableStateOf(InkLang.default(context)) }
+    val lang = InkLang.ENGLISH
     val recognizer = remember(lang) { InkRecognizer(lang) }
     DisposableEffect(lang) { onDispose { recognizer.close() } }
 
@@ -123,20 +119,6 @@ fun HandwriteTextDialog(onResult: (String) -> Unit, onDismiss: () -> Unit) {
                     },
                     enabled = ready && !busy, modifier = Modifier.weight(1f)
                 ) { Text(if (busy) "Reading…" else "OK") }
-            }
-            // Language switch — what you write is read as this language, nothing else.
-            Row(
-                Modifier.fillMaxWidth().padding(top = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                listOf(InkLang.ENGLISH, InkLang.MALAYALAM, InkLang.ARABIC).forEach { tag ->
-                    FilterChip(
-                        selected = lang == tag,
-                        onClick = { if (lang != tag && !busy) { strokes.clear(); redoStack.clear(); strokeVersion++; lang = tag } },
-                        enabled = !busy,
-                        label = { Text(InkLang.label(tag)) }
-                    )
-                }
             }
             Text(
                 when {

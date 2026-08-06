@@ -2,7 +2,6 @@ package com.billing.pos.ink
 
 import android.content.Context
 import androidx.compose.ui.geometry.Offset
-import com.billing.pos.data.AppPrefs
 import com.google.android.gms.tasks.Tasks
 import com.google.mlkit.common.model.DownloadConditions
 import com.google.mlkit.common.model.RemoteModelManager
@@ -15,39 +14,21 @@ import com.google.mlkit.vision.digitalink.recognition.Ink
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-/** The handwriting languages offered on the drawing pad. */
+/** The handwriting pad reads English only (Malayalam/Arabic were removed to simplify the
+ *  writing-pad flow down to one language). */
 object InkLang {
     const val ENGLISH = "en-US"
-    const val MALAYALAM = "ml"
-    const val ARABIC = "ar"
 
-    /**
-     * Which language the pad should start on, taken from the OCR language setting.
-     * "Auto" can't apply to handwriting — nothing has been written yet to detect — so it
-     * starts on English and the user can switch on the pad itself.
-     */
-    fun default(context: Context): String = when (AppPrefs(context).ocrLanguage) {
-        AppPrefs.OCR_MALAYALAM -> MALAYALAM
-        AppPrefs.OCR_ARABIC -> ARABIC
-        else -> ENGLISH
-    }
+    fun default(context: Context): String = ENGLISH
 
-    fun label(tag: String): String = when (tag) {
-        MALAYALAM -> "മലയാളം"
-        ARABIC -> "العربية"
-        else -> "English"
-    }
+    fun label(tag: String): String = "English"
 }
 
 /**
  * Thin wrapper around ML Kit Digital Ink.
  *
- * Unlike the camera OCR — where ML Kit has no Malayalam model at all — digital ink does
- * support Malayalam, so handwriting works in both languages through the same API; only
- * the model identifier changes.
- *
- * Works fully offline once the model for [languageTag] has been downloaded. The first
- * use of each language fetches its model (~20 MB), which needs internet that one time.
+ * Works fully offline once the English model has been downloaded — the first use fetches
+ * it (~20 MB), which needs internet that one time.
  */
 class InkRecognizer(private val languageTag: String = InkLang.ENGLISH) {
 

@@ -15,8 +15,8 @@ android {
         targetSdk = 36
         // CI sets VERSION_CODE per build (see .github/workflows/build.yml and release.yml) so every
         // APK/AAB gets a unique, always-increasing code without hand-editing this file each time.
-        versionCode = System.getenv("VERSION_CODE")?.toIntOrNull() ?: 278
-        versionName = "2.19.1"
+        versionCode = System.getenv("VERSION_CODE")?.toIntOrNull() ?: 279
+        versionName = "2.19.2"
         vectorDrawables { useSupportLibrary = true }
 
         // Real Android phones are arm. The x86/x86_64 native libs are emulator-only
@@ -87,10 +87,6 @@ android {
         buildConfig = true
     }
     androidResources {
-        // Keep the Tesseract model uncompressed in the APK. A DEFLATED asset cannot be
-        // opened with openFd(), and a compressed 12 MB model also costs a slow inflate
-        // on the first scan.
-        noCompress += "traineddata"
         noCompress += "tflite"
     }
     packaging {
@@ -153,10 +149,6 @@ dependencies {
     // On-device image embeddings, for "find this item by photo" in price search.
     implementation("com.google.mediapipe:tasks-vision:0.10.35")
 
-    // Malayalam OCR. ML Kit cannot read Malayalam script at all, so Tesseract fills that
-    // gap — still fully offline (the model ships in assets/tessdata).
-    // 4.8.0+ ships 16 KB-page-aligned native libs, which Google Play requires.
-    implementation("cz.adaptech.tesseract4android:tesseract4android:4.9.0")
     // EXIF rotation, so a sideways photo still OCRs.
     implementation("androidx.exifinterface:exifinterface:1.3.7")
 
