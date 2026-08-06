@@ -1,8 +1,10 @@
 package com.billing.pos.customer
 
 import android.content.Context
+import com.billing.pos.data.AppDatabase
 import com.billing.pos.data.AppPrefs
 import com.billing.pos.data.License
+import com.billing.pos.data.ShopMessage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -11,9 +13,10 @@ import java.net.URL
 
 /**
  * Shop owner side: pushes an order's status change (or a plain message) to the server so the
- * customer app picks it up on its next [NotificationsFetch] poll. Best-effort — a failure here
- * doesn't undo the local status change (see OnlineOrdersViewModel.setStatus), it just means the
- * customer won't be notified this time.
+ * customer app picks it up on its next [NotificationsFetch] poll, and files a local "OUT"
+ * [ShopMessage] row either way — so the Messages thread shows what was sent even if the push
+ * itself failed (best-effort: a failure here doesn't undo the local status change, see
+ * OnlineOrdersViewModel.setStatus, it just means the customer won't be notified this time).
  */
 object OrderStatusPush {
 
@@ -22,7 +25,8 @@ object OrderStatusPush {
         customerPhone: String,
         orderId: String,
         status: String? = null,
-        message: String? = null
+        message: String? = null,
+        customerName: String = ""
     ): Boolean = withContext(Dispatchers.IO) {
         if (customerPhone.isBlank()) return@withContext false
         val prefs = AppPrefs(context)
@@ -40,7 +44,7 @@ object OrderStatusPush {
         val sep = if (base.contains("?")) "&" else "?"
         val url = "$base${sep}do=status"
 
-        try {
+        val ok = try {
             val conn = URL(url).openConnection() as HttpURLConnection
             conn.requestMethod = "POST"
             conn.doOutput = true
@@ -56,5 +60,17 @@ object OrderStatusPush {
         } catch (e: Exception) {
             false
         }
+
+        val text = message?.takeIf { it.isNotBlank() }
+            ?: com.billing.pos.data.OnlineOrderStatus.entries.find { it.name == status }?.label
+        if (!text.isNullOrBlank()) {
+            AppDatabase.get(context).shopMessageDao().insert(
+                ShopMessage(
+                    customerPhone = customerPhone, customerName = customerName, orderId = orderId,
+                    direction = "OUT", text = text, sentAt = System.currentTimeMillis(), read = true
+                )
+            )
+        }
+        ok
     }
 }

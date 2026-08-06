@@ -55,6 +55,19 @@
  *   fetch, THEN clears just those from the server (other customers' pending
  *   notifications are left untouched).
  *
+ * SEND MESSAGE (from a customer's app, replying to a notification — the customer->shop mirror
+ *   of SEND STATUS above):
+ *   POST a JSON body to this URL with ?do=message added:
+ *     { "shop": "<DeviceID>", "customerPhone": "...", "customerName": "..." (optional),
+ *       "orderId": "..." (optional), "message": "..." }
+ *   Appended to pos_online_catalog/<DeviceID>/messages_from_customers.json — trimmed by
+ *   the fetch below, same as orders/notifications.
+ *
+ * FETCH CUSTOMER MESSAGES (from the shop owner's app, the Messages screen):
+ *   GET this URL with ?do=customerMessages&shop=<DeviceID> — returns every message
+ *   customers have sent since the last fetch, THEN clears them from the server (the
+ *   app keeps its own permanent copy locally in the shop_messages table).
+ *
  * NEARBY SHOPS DIRECTORY (from a customer's app, "Browse shops > Nearby"):
  *   GET this URL with ?do=directory — returns every shop THAT HAS UPLOADED A
  *   CATALOG ON THIS SAME SERVER (i.e. sharing this one deployment/domain, not
@@ -66,7 +79,7 @@
  *   app computes distance from the customer's own current location itself;
  *   this just lists the candidates.
  *
- * All seven directions use the SAME url — the app decides which one to call
+ * All nine directions use the SAME url — the app decides which one to call
  * based on GET/POST and the "do" param, depending on which screen it's on.
  *
  * --- Install ---
@@ -244,6 +257,57 @@ if (($method === 'POST' || $method === 'PUT') && $do === 'status') {
     exit;
 }
 
+if (($method === 'POST' || $method === 'PUT') && $do === 'message') {
+    $raw = file_get_contents('php://input');
+    if ($raw === false || $raw === '') {
+        pos_catalog_fail(400, 'Empty message');
+    }
+    $body = json_decode($raw, true);
+    if (!is_array($body)) {
+        pos_catalog_fail(400, 'Body is not valid JSON');
+    }
+    $shop = isset($body['shop']) ? (string) $body['shop'] : '';
+    if (!preg_match('/^[A-Za-z0-9_]+$/', $shop)) {
+        pos_catalog_fail(400, 'Invalid or missing "shop" in body');
+    }
+    $phone = isset($body['customerPhone']) ? (string) $body['customerPhone'] : '';
+    $text = isset($body['message']) ? (string) $body['message'] : '';
+    if ($phone === '' || $text === '') {
+        pos_catalog_fail(400, 'Missing "customerPhone" or "message" in body');
+    }
+    $folder = $STORAGE_DIR . '/' . $shop;
+    if (!is_dir($folder) && !@mkdir($folder, 0755, true)) {
+        pos_catalog_fail(500, 'Could not create storage folder — check permissions on ' . $STORAGE_DIR);
+    }
+    $message = array(
+        'customerPhone' => $phone,
+        'customerName' => isset($body['customerName']) ? (string) $body['customerName'] : '',
+        'orderId' => isset($body['orderId']) ? (string) $body['orderId'] : '',
+        'message' => $text,
+        'sentAt' => date('c')
+    );
+    $path = $folder . '/messages_from_customers.json';
+    $fh = fopen($path, 'c+');
+    if ($fh === false) {
+        pos_catalog_fail(500, 'Could not open messages file — check folder permissions');
+    }
+    flock($fh, LOCK_EX);
+    $existing = json_decode(stream_get_contents($fh), true);
+    if (!is_array($existing)) {
+        $existing = array();
+    }
+    $existing[] = $message;
+    ftruncate($fh, 0);
+    rewind($fh);
+    fwrite($fh, json_encode($existing));
+    fflush($fh);
+    flock($fh, LOCK_UN);
+    fclose($fh);
+    header('Content-Type: application/json');
+    echo json_encode(array('ok' => true));
+    exit;
+}
+
 if ($method === 'GET' && $do === 'notifications') {
     $shop = pos_catalog_shop_from_get();
     $phone = isset($_GET['phone']) ? (string) $_GET['phone'] : '';
@@ -306,6 +370,32 @@ if ($method === 'GET' && $do === 'orders') {
     $orders = json_decode($raw, true);
     header('Content-Type: application/json');
     echo is_array($orders) ? json_encode($orders) : '[]';
+    exit;
+}
+
+if ($method === 'GET' && $do === 'customerMessages') {
+    $shop = pos_catalog_shop_from_get();
+    $path = $STORAGE_DIR . '/' . $shop . '/messages_from_customers.json';
+    if (!file_exists($path)) {
+        header('Content-Type: application/json');
+        echo '[]';
+        exit;
+    }
+    // Read then clear, locked, same "server is a short-lived queue" convention as do=orders —
+    // the shop owner's app keeps its own permanent copy in the shop_messages table.
+    $fh = fopen($path, 'c+');
+    if ($fh === false) {
+        pos_catalog_fail(500, 'Could not open messages file — check folder permissions');
+    }
+    flock($fh, LOCK_EX);
+    $raw = stream_get_contents($fh);
+    ftruncate($fh, 0);
+    fflush($fh);
+    flock($fh, LOCK_UN);
+    fclose($fh);
+    $messages = json_decode($raw, true);
+    header('Content-Type: application/json');
+    echo is_array($messages) ? json_encode($messages) : '[]';
     exit;
 }
 

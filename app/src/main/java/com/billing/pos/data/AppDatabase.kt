@@ -54,7 +54,7 @@ import androidx.room.TypeConverters
         BankReconciliation::class,
         RecurringJournal::class, RecurringJournalLine::class,
         ShopCatalogItem::class, OnlineOrder::class, CustomerOrderHistory::class,
-        CustomerNotification::class
+        CustomerNotification::class, ShopMessage::class
     ],
     // v25 quotations; v26 sales returns; v27 purchase returns; v28 purchase quotations (LPO);
     // v29 dual units; v30 rental; v31 medical lab; v32 lab masters + heading rows;
@@ -110,7 +110,10 @@ import androidx.room.TypeConverters
     // wiped on every switch, so switching back to an already-visited shop shows its catalog
     // instantly. customerKnownShops (see ShopSwitch) also grew phone/bannerImage/lastFetchedAt,
     // but that's packed JSON in an existing AppPrefs string field, not a schema change.
-    version = 94,
+    // v95 shop_messages: the shop owner's permanent local copy of the two-way chat with each
+    // customer (both an outgoing status/message push and an incoming customer reply insert a row
+    // here), for the Messages inbox (grouped by customer, unread red dot, per-customer thread).
+    version = 95,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -178,6 +181,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun onlineOrderDao(): OnlineOrderDao
     abstract fun customerOrderHistoryDao(): CustomerOrderHistoryDao
     abstract fun customerNotificationDao(): CustomerNotificationDao
+    abstract fun shopMessageDao(): ShopMessageDao
 
     companion object {
         @Volatile private var INSTANCE: AppDatabase? = null
@@ -928,6 +932,19 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** Shop owner's two-way chat thread with each customer. */
+        private val MIGRATION_94_95 = object : androidx.room.migration.Migration(94, 95) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS shop_messages (" +
+                        "id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "customerPhone TEXT NOT NULL, customerName TEXT NOT NULL DEFAULT '', " +
+                        "orderId TEXT NOT NULL DEFAULT '', direction TEXT NOT NULL, " +
+                        "text TEXT NOT NULL, sentAt INTEGER NOT NULL, read INTEGER NOT NULL DEFAULT 0)"
+                )
+            }
+        }
+
         fun get(context: Context): AppDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -935,7 +952,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "pos_billing.db"
                 )
-                    .addMigrations(MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45, MIGRATION_45_46, MIGRATION_46_47, MIGRATION_47_48, MIGRATION_48_49, MIGRATION_49_50, MIGRATION_50_51, MIGRATION_51_52, MIGRATION_52_53, MIGRATION_53_54, MIGRATION_54_55, MIGRATION_55_56, MIGRATION_56_57, MIGRATION_57_58, MIGRATION_58_59, MIGRATION_59_60, MIGRATION_60_61, MIGRATION_61_62, MIGRATION_62_63, MIGRATION_63_64, MIGRATION_64_65, MIGRATION_65_66, MIGRATION_66_67, MIGRATION_67_68, MIGRATION_68_69, MIGRATION_69_70, MIGRATION_70_71, MIGRATION_71_72, MIGRATION_72_73, MIGRATION_73_74, MIGRATION_74_75, MIGRATION_75_76, MIGRATION_76_77, MIGRATION_77_78, MIGRATION_78_79, MIGRATION_79_80, MIGRATION_80_81, MIGRATION_81_82, MIGRATION_82_83, MIGRATION_83_84, MIGRATION_84_85, MIGRATION_85_86, MIGRATION_86_87, MIGRATION_87_88, MIGRATION_88_89, MIGRATION_89_90, MIGRATION_90_91, MIGRATION_91_92, MIGRATION_92_93, MIGRATION_93_94)
+                    .addMigrations(MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45, MIGRATION_45_46, MIGRATION_46_47, MIGRATION_47_48, MIGRATION_48_49, MIGRATION_49_50, MIGRATION_50_51, MIGRATION_51_52, MIGRATION_52_53, MIGRATION_53_54, MIGRATION_54_55, MIGRATION_55_56, MIGRATION_56_57, MIGRATION_57_58, MIGRATION_58_59, MIGRATION_59_60, MIGRATION_60_61, MIGRATION_61_62, MIGRATION_62_63, MIGRATION_63_64, MIGRATION_64_65, MIGRATION_65_66, MIGRATION_66_67, MIGRATION_67_68, MIGRATION_68_69, MIGRATION_69_70, MIGRATION_70_71, MIGRATION_71_72, MIGRATION_72_73, MIGRATION_73_74, MIGRATION_74_75, MIGRATION_75_76, MIGRATION_76_77, MIGRATION_77_78, MIGRATION_78_79, MIGRATION_79_80, MIGRATION_80_81, MIGRATION_81_82, MIGRATION_82_83, MIGRATION_83_84, MIGRATION_84_85, MIGRATION_85_86, MIGRATION_86_87, MIGRATION_87_88, MIGRATION_88_89, MIGRATION_89_90, MIGRATION_90_91, MIGRATION_91_92, MIGRATION_92_93, MIGRATION_93_94, MIGRATION_94_95)
                     .fallbackToDestructiveMigration()
                     .build()
                     .also { INSTANCE = it }
