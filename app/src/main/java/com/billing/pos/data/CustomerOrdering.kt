@@ -17,6 +17,10 @@ import kotlinx.coroutines.flow.Flow
 @Entity(tableName = "shop_catalog_items")
 data class ShopCatalogItem(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    /** Which shop this item belongs to (matches [AppPrefs.shopCode]) — items from every shop
+     *  this device has ever connected to are kept side by side, so switching shops can show the
+     *  cached list instantly instead of forcing a refetch. */
+    val shop: String = "",
     /** The shop's own item id, as sent by the server — kept so a re-fetch can tell items apart. */
     val serverId: String,
     val name: String,
@@ -29,26 +33,23 @@ data class ShopCatalogItem(
 
 @Dao
 interface ShopCatalogDao {
-    @Query("SELECT * FROM shop_catalog_items ORDER BY category COLLATE NOCASE ASC, name COLLATE NOCASE ASC")
-    fun observeAll(): Flow<List<ShopCatalogItem>>
+    @Query("SELECT * FROM shop_catalog_items WHERE shop = :shop ORDER BY category COLLATE NOCASE ASC, name COLLATE NOCASE ASC")
+    fun observeForShop(shop: String): Flow<List<ShopCatalogItem>>
 
-    @Query("SELECT * FROM shop_catalog_items")
-    suspend fun all(): List<ShopCatalogItem>
-
-    @Query("SELECT COUNT(*) FROM shop_catalog_items")
-    suspend fun count(): Int
+    @Query("SELECT COUNT(*) FROM shop_catalog_items WHERE shop = :shop")
+    suspend fun countForShop(shop: String): Int
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAll(items: List<ShopCatalogItem>)
 
-    @Query("DELETE FROM shop_catalog_items")
-    suspend fun deleteAll()
+    @Query("DELETE FROM shop_catalog_items WHERE shop = :shop")
+    suspend fun deleteForShop(shop: String)
 
-    /** Replaces the whole catalog atomically, so a screen reading it mid-fetch never sees a
-     *  half-empty table. */
+    /** Replaces just [shop]'s items atomically — every other shop's cached catalog is left alone,
+     *  so switching back to them still shows their last-fetched data. */
     @Transaction
-    suspend fun replaceAll(items: List<ShopCatalogItem>) {
-        deleteAll()
+    suspend fun replaceForShop(shop: String, items: List<ShopCatalogItem>) {
+        deleteForShop(shop)
         insertAll(items)
     }
 }

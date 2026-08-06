@@ -65,18 +65,6 @@ object ShopCatalogSync {
                 prefs.shopBannerImage = root.optString("bannerImage", "")
                 prefs.shopDisplayCategory = root.optString("shopCategory", "")
                 prefs.shopDisplayAddress = root.optString("shopAddress", "")
-                // Keep this shop's entry in the "Browse shops" directory fresh, same as any
-                // other shop this device has connected to.
-                ShopSwitch.rememberKnown(
-                    context,
-                    ShopSwitch.Shop(
-                        shop = shop, url = base,
-                        type = prefs.customerBusinessType, premium = prefs.customerPremiumShop,
-                        name = prefs.shopDisplayName,
-                        category = prefs.shopDisplayCategory.ifBlank { prefs.customerBusinessType },
-                        address = prefs.shopDisplayAddress
-                    )
-                )
             }
 
             val array = parseItemsArray(body)
@@ -87,6 +75,7 @@ object ShopCatalogSync {
                 val id = o.optString("id").ifBlank { return@mapNotNull null }
                 val name = o.optString("name").ifBlank { return@mapNotNull null }
                 ShopCatalogItem(
+                    shop = shop,
                     serverId = id,
                     name = name,
                     category = o.optString("category", ""),
@@ -97,8 +86,24 @@ object ShopCatalogSync {
                 )
             }
 
-            AppDatabase.get(context).shopCatalogDao().replaceAll(items)
+            AppDatabase.get(context).shopCatalogDao().replaceForShop(shop, items)
             prefs.catalogLastFetchedAt = System.currentTimeMillis()
+
+            // Keep this shop's entry in the "Browse shops" directory — and its cached snapshot
+            // for instant switch-back — fresh, same as any other shop this device has connected to.
+            ShopSwitch.rememberKnown(
+                context,
+                ShopSwitch.Shop(
+                    shop = shop, url = base,
+                    type = prefs.customerBusinessType, premium = prefs.customerPremiumShop,
+                    name = prefs.shopDisplayName,
+                    category = prefs.shopDisplayCategory.ifBlank { prefs.customerBusinessType },
+                    address = prefs.shopDisplayAddress,
+                    phone = prefs.shopContactPhone,
+                    bannerImage = prefs.shopBannerImage,
+                    lastFetchedAt = prefs.catalogLastFetchedAt
+                )
+            )
             Result.Ok(items.size)
         } catch (e: Exception) {
             Result.Failed(e.javaClass.simpleName + (e.message?.let { ": $it" } ?: ""))

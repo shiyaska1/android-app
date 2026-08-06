@@ -17,6 +17,7 @@ import com.billing.pos.data.ShopCatalogItem
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -26,8 +27,13 @@ class CustomerCatalogViewModel(app: Application) : AndroidViewModel(app) {
     private val historyDao = AppDatabase.get(app).customerOrderHistoryDao()
     private val notificationDao = AppDatabase.get(app).customerNotificationDao()
 
-    val items: StateFlow<List<ShopCatalogItem>> =
-        dao.observeAll().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    // The active shop's code, so switching re-points [items] at that shop's own cache instead of
+    // requiring a fresh Flow collector — see switchShop().
+    private val _shopCode = MutableStateFlow(prefs.shopCode)
+
+    val items: StateFlow<List<ShopCatalogItem>> = _shopCode
+        .flatMapLatest { shop -> dao.observeForShop(shop) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val history: StateFlow<List<CustomerOrderHistory>> =
         historyDao.observeAll().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -100,13 +106,17 @@ class CustomerCatalogViewModel(app: Application) : AndroidViewModel(app) {
      *  shops" directory — grouped by category there, not just a flat quick-switch list. */
     fun knownShops(): List<ShopSwitch.Shop> = ShopSwitch.known(getApplication())
 
-    /** Points this install at a different shop (scanned QR or a recent one) — no reinstall. */
+    /** Points this install at a different shop (scanned QR or a recent one) — no reinstall.
+     *  If that shop was visited before, its cached items/details show immediately (see
+     *  [ShopSwitch.switchTo]); only a never-visited shop triggers an automatic fetch. Either way
+     *  the customer can always pull the manual refresh button for the latest items/prices. */
     fun switchShop(shop: ShopSwitch.Shop, onDone: () -> Unit) {
         viewModelScope.launch {
             ShopSwitch.switchTo(getApplication(), shop)
+            _shopCode.value = shop.shop
             clearSelection()
             onDone()
-            refresh()
+            if (prefs.catalogLastFetchedAt <= 0L) refresh()
         }
     }
 

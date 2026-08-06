@@ -3,7 +3,6 @@ package com.billing.pos.customer
 import android.content.Context
 import android.graphics.Bitmap
 import android.net.Uri
-import com.billing.pos.data.AppDatabase
 import com.billing.pos.data.AppPrefs
 import com.google.zxing.BinaryBitmap
 import com.google.zxing.DecodeHintType
@@ -28,7 +27,13 @@ object ShopSwitch {
          *  fetch response — always current, unlike [type] which is just whatever the install
          *  link said once. Used to group the "Browse shops" directory. */
         val category: String = "",
-        val address: String = ""
+        val address: String = "",
+        val phone: String = "",
+        val bannerImage: String = "",
+        /** When this shop's catalog was last fetched (ms since epoch), 0 if never. Lets
+         *  [switchTo] show a switched-to shop's cached snapshot instantly, and the UI show
+         *  "Updated ..." per shop instead of forcing a refetch on every switch. */
+        val lastFetchedAt: Long = 0
     )
 
     /** Accepts either a full Play Store link (extracts its `referrer` param) or a bare
@@ -51,17 +56,25 @@ object ShopSwitch {
     }
 
     /** Switches the app to [target]: remembers whatever shop it was pointed at before (so
-     *  "switch back" works), clears the cached catalog, points prefs at the new shop, same as a
-     *  fresh customer install minus the reinstall. Caller is responsible for re-fetching after. */
+     *  "switch back" works) and points prefs at the new shop — same as a fresh customer install
+     *  minus the reinstall. Unlike before, this no longer wipes the local item cache or forces a
+     *  refetch: if [target] has been visited before, its last-fetched items and shop details show
+     *  immediately from the cache; the caller only needs to fetch when there's genuinely nothing
+     *  cached yet (see [AppPrefs.catalogLastFetchedAt] after this returns). */
     suspend fun switchTo(context: Context, target: Shop) {
         val prefs = AppPrefs(context)
         val previous = Shop(
             shop = prefs.shopCode, url = prefs.onlineCatalogUrl,
             type = prefs.customerBusinessType, premium = prefs.customerPremiumShop,
-            name = prefs.shopDisplayName, category = prefs.shopDisplayCategory, address = prefs.shopDisplayAddress
+            name = prefs.shopDisplayName, category = prefs.shopDisplayCategory, address = prefs.shopDisplayAddress,
+            phone = prefs.shopContactPhone, bannerImage = prefs.shopBannerImage, lastFetchedAt = prefs.catalogLastFetchedAt
         )
-        if (previous.shop.isNotBlank() && previous.shop != target.shop) {
-            rememberRecent(prefs, previous)
+        if (previous.shop.isNotBlank()) {
+            // Keep the outgoing shop's directory entry current before leaving it, so switching
+            // back later shows its latest snapshot rather than whatever it looked like at its
+            // last catalog fetch.
+            rememberKnown(context, previous)
+            if (previous.shop != target.shop) rememberRecent(prefs, previous)
         }
         removeRecent(prefs, target.shop)
 
@@ -69,16 +82,17 @@ object ShopSwitch {
         prefs.onlineCatalogUrl = target.url
         prefs.customerBusinessType = target.type
         prefs.customerPremiumShop = target.premium
-        prefs.catalogLastFetchedAt = 0L
-        // Cleared, not carried over — the next fetch (do it right after calling this) repopulates
-        // everything fresh for the new shop: name, phone, banner, category, address, items.
-        prefs.shopDisplayName = ""
-        prefs.shopContactPhone = ""
-        prefs.shopBannerImage = ""
-        prefs.shopDisplayCategory = ""
-        prefs.shopDisplayAddress = ""
 
-        AppDatabase.get(context).shopCatalogDao().deleteAll()
+        // Restore this shop's own cached snapshot (if any) instead of blanking to "" — the item
+        // cache itself is untouched by a switch (see ShopCatalogDao.replaceForShop), so a shop
+        // visited before shows its items and details instantly, no network round trip needed.
+        val cached = unpack(prefs.customerKnownShops).find { it.shop == target.shop }
+        prefs.shopDisplayName = cached?.name ?: target.name
+        prefs.shopContactPhone = cached?.phone.orEmpty()
+        prefs.shopBannerImage = cached?.bannerImage.orEmpty()
+        prefs.shopDisplayCategory = (cached?.category ?: target.category).ifBlank { target.type }
+        prefs.shopDisplayAddress = cached?.address ?: target.address
+        prefs.catalogLastFetchedAt = cached?.lastFetchedAt ?: 0L
     }
 
     fun recent(context: Context): List<Shop> = unpack(AppPrefs(context).customerRecentShops)
@@ -104,6 +118,8 @@ object ShopSwitch {
                 put("shop", shop.shop); put("url", shop.url); put("type", shop.type)
                 put("premium", shop.premium); put("name", shop.name)
                 put("category", shop.category); put("address", shop.address)
+                put("phone", shop.phone); put("bannerImage", shop.bannerImage)
+                put("lastFetchedAt", shop.lastFetchedAt)
             })
         }
     }.toString()
@@ -115,7 +131,9 @@ object ShopSwitch {
             Shop(
                 shop = o.optString("shop"), url = o.optString("url"),
                 type = o.optString("type"), premium = o.optBoolean("premium"), name = o.optString("name"),
-                category = o.optString("category"), address = o.optString("address")
+                category = o.optString("category"), address = o.optString("address"),
+                phone = o.optString("phone"), bannerImage = o.optString("bannerImage"),
+                lastFetchedAt = o.optLong("lastFetchedAt", 0L)
             ).takeIf { it.shop.isNotBlank() && it.url.isNotBlank() }
         }
     }
