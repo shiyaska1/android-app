@@ -214,6 +214,20 @@ fun CustomerCatalogScreen(onExitTestMode: () -> Unit = {}, vm: CustomerCatalogVi
         runCatching { cameraCapture.launch(uri) }
             .onFailure { pendingCameraFile?.delete(); pendingCameraFile = null; scope.launch { snackbar.showSnackbar("No camera app found") } }
     }
+    // Declaring android.permission.CAMERA in the manifest (needed elsewhere, e.g. QR scanning)
+    // means the system camera intent below silently fails without this being granted first —
+    // it used to just show "No camera app found", which was misleading; the camera was there,
+    // permission just hadn't been asked for.
+    val cameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) launchCamera() else scope.launch { snackbar.showSnackbar("Camera permission is needed to attach a photo") }
+    }
+    fun requestCameraAndLaunch() {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            launchCamera()
+        } else {
+            cameraPermission.launch(Manifest.permission.CAMERA)
+        }
+    }
 
     // Without this, every order-status/chat/promotion notification is silently dropped on
     // Android 13+ (POST_NOTIFICATIONS defaults to denied until explicitly granted) — the
@@ -447,7 +461,7 @@ fun CustomerCatalogScreen(onExitTestMode: () -> Unit = {}, vm: CustomerCatalogVi
                     attachments = orderAttachments,
                     premium = vm.isPremiumShop,
                     compressing = compressingAttachment,
-                    onAddFromCamera = { launchCamera() },
+                    onAddFromCamera = { requestCameraAndLaunch() },
                     onAddFromGallery = { galleryPicker.launch("image/*") },
                     onRemoveAttachment = { orderAttachments.remove(it) },
                     onViewAttachment = { viewingAttachment = it }
