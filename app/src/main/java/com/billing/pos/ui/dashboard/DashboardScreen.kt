@@ -242,9 +242,6 @@ fun DashboardScreen(
     var repairBusy by remember { mutableStateOf(false) }
     val dashPrefs = remember { com.billing.pos.data.AppPrefs(context) }
     val businessType = remember { dashPrefs.businessType }
-    val shopName = remember { dashPrefs.companyName }
-    val shopAddress = remember { dashPrefs.companyAddress }
-    val shopLogoPath = remember { dashPrefs.logoPath }
     val isRental = businessType == "Rental"
     val isPersonal = businessType == "Personal"
     // The two counter tools, available here as well as inside a sale.
@@ -463,37 +460,6 @@ fun DashboardScreen(
         }
 
         Column(Modifier.fillMaxSize().padding(pad)) {
-            if (shopName.isNotBlank() || shopAddress.isNotBlank()) {
-                Row(
-                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    if (shopLogoPath.isNotBlank()) {
-                        val logoBmp = com.billing.pos.ui.common.rememberThumbnail(shopLogoPath, 160)
-                        if (logoBmp != null) {
-                            androidx.compose.foundation.Image(
-                                logoBmp,
-                                contentDescription = "Shop logo",
-                                contentScale = androidx.compose.ui.layout.ContentScale.Fit,
-                                modifier = Modifier.size(44.dp).padding(end = 12.dp)
-                            )
-                        }
-                    }
-                    Column {
-                        if (shopName.isNotBlank()) {
-                            Text(shopName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                        }
-                        if (shopAddress.isNotBlank()) {
-                            Text(
-                                shopAddress,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.outline,
-                                maxLines = 2
-                            )
-                        }
-                    }
-                }
-            }
             // Screens set aside with the minimise handle, waiting to be picked up again.
             val parked = com.billing.pos.ui.common.ParkedScreens.items
             if (parked.isNotEmpty()) {
