@@ -115,16 +115,19 @@ class CustomerCatalogViewModel(app: Application) : AndroidViewModel(app) {
     fun knownShops(): List<ShopSwitch.Shop> = ShopSwitch.known(getApplication())
 
     /** Points this install at a different shop (scanned QR or a recent one) — no reinstall.
-     *  If that shop was visited before, its cached items/details show immediately (see
-     *  [ShopSwitch.switchTo]); only a never-visited shop triggers an automatic fetch. Either way
-     *  the customer can always pull the manual refresh button for the latest items/prices. */
-    fun switchShop(shop: ShopSwitch.Shop, onDone: () -> Unit) {
+     *  Picking a known/recent shop from a list shows its cached items/details immediately (see
+     *  [ShopSwitch.switchTo]) and only fetches if there's genuinely nothing cached yet. A fresh
+     *  QR scan ([forceFetch]) always fetches — the whole point of scanning (rather than picking
+     *  from the list) is to add or confirm a shop right now, e.g. a friend forwarded its QR code
+     *  and the customer wants its current items even if they'd visited that shop before. Either
+     *  way the customer can always pull the manual refresh button for the latest items/prices. */
+    fun switchShop(shop: ShopSwitch.Shop, forceFetch: Boolean = false, onDone: () -> Unit) {
         viewModelScope.launch {
             ShopSwitch.switchTo(getApplication(), shop)
             _shopCode.value = shop.shop
             clearSelection()
             onDone()
-            if (prefs.catalogLastFetchedAt <= 0L) refresh()
+            if (forceFetch || prefs.catalogLastFetchedAt <= 0L) refresh()
         }
     }
 

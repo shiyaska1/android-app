@@ -407,7 +407,7 @@ fun CustomerCatalogScreen(onExitTestMode: () -> Unit = {}, vm: CustomerCatalogVi
         SwitchShopDialog(
             recent = vm.recentShops(),
             onDismiss = { showSwitchShop = false },
-            onSwitch = { shop -> vm.switchShop(shop) { showSwitchShop = false } }
+            onSwitch = { shop, fromScan -> vm.switchShop(shop, forceFetch = fromScan) { showSwitchShop = false } }
         )
     }
     if (showDirectory) {
@@ -649,12 +649,16 @@ private fun SaveOrderDialog(
 }
 
 /** Scan the same QR a shop hands out for install to point this app at a different shop —
- *  no reinstall needed — or tap a recently-used shop to switch straight back. */
+ *  no reinstall needed — or tap a recently-used shop to switch straight back. A scan (camera or
+ *  a QR photo from the gallery, e.g. one a friend forwarded over WhatsApp) always fetches that
+ *  shop's current items, even if it's a shop this device already knows — see [onSwitch]'s
+ *  `fromScan` flag. Tapping a "switch back to" entry, by contrast, is just picking an
+ *  already-known shop and shows its cache instantly (see [CustomerCatalogViewModel.switchShop]). */
 @Composable
 private fun SwitchShopDialog(
     recent: List<ShopSwitch.Shop>,
     onDismiss: () -> Unit,
-    onSwitch: (ShopSwitch.Shop) -> Unit
+    onSwitch: (shop: ShopSwitch.Shop, fromScan: Boolean) -> Unit
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -663,7 +667,7 @@ private fun SwitchShopDialog(
     val scanLauncher = rememberLauncherForActivityResult(ScanContract()) { result ->
         val contents = result.contents ?: return@rememberLauncherForActivityResult
         val shop = ShopSwitch.parse(contents)
-        if (shop != null) onSwitch(shop) else scanError = true
+        if (shop != null) onSwitch(shop, true) else scanError = true
     }
     val cameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) scanLauncher.launch(ScanOptions().setPrompt("Scan the new shop's QR code").setBeepEnabled(true))
@@ -695,7 +699,7 @@ private fun SwitchShopDialog(
                 }.getOrNull()
             }
             decoding = false
-            if (shop != null) onSwitch(shop) else scanError = true
+            if (shop != null) onSwitch(shop, true) else scanError = true
         }
     }
 
@@ -740,7 +744,7 @@ private fun SwitchShopDialog(
                     Text("Switch back to:", style = MaterialTheme.typography.labelMedium)
                     recent.forEach { shop ->
                         TextButton(
-                            onClick = { onSwitch(shop) },
+                            onClick = { onSwitch(shop, false) },
                             modifier = Modifier.fillMaxWidth()
                         ) { Text(shop.name.ifBlank { shop.shop }, modifier = Modifier.fillMaxWidth()) }
                     }
@@ -753,8 +757,9 @@ private fun SwitchShopDialog(
 
 /** Every shop this device has connected to, grouped by the shop's own category (Restaurant,
  *  Medical store, ...) — e.g. scan 3 restaurants' QR codes, and this shows all 3 under
- *  "Restaurant" so the customer can pick which one to order from. Picking one re-fetches its
- *  items/address/category/banner fresh, same as [SwitchShopDialog]. */
+ *  "Restaurant" so the customer can pick which one to order from. Picking one is choosing an
+ *  already-known shop, not scanning a fresh QR, so it shows that shop's cached items/address/
+ *  category/banner instantly (see [CustomerCatalogViewModel.switchShop]'s `forceFetch`). */
 @Composable
 private fun ShopDirectoryDialog(
     shops: List<ShopSwitch.Shop>,
