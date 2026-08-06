@@ -6,17 +6,22 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 
 /**
- * Compresses an item photo down to a small JPEG thumbnail (< [maxBytes]), for embedding
- * directly in the online catalog JSON as a base64 data URI — no separate image hosting needed,
- * the customer app gets the thumbnail in the same fetch that gets the item list.
+ * Compresses a photo down to a small JPEG (< [maxBytes]) client-side before it ever reaches the
+ * server, so nothing full-resolution is ever uploaded. Used for two different purposes with two
+ * different size targets:
+ *  - item/banner thumbnails ([maxDim] default 240px, [maxBytes] default 40KB) — embedded directly
+ *    in the online catalog JSON, tiny since one shows next to every item in a list.
+ *  - order attachments (see [maxDim]=1024 callers) — a customer's prescription/note photo, which
+ *    only needs to stay legible to the shop owner reading it, not full camera resolution.
  */
 object ThumbnailCompressor {
 
-    /** Returns a compressed JPEG under [maxBytes], or null if the file can't be read/decoded. */
-    fun compress(sourcePath: String, maxBytes: Int = 40 * 1024): ByteArray? {
-        val bitmap = decodeScaled(sourcePath, 240) ?: return null
+    /** Returns a compressed JPEG under [maxBytes] with its longest side under [maxDim], or null
+     *  if the file can't be read/decoded. */
+    fun compress(sourcePath: String, maxBytes: Int = 40 * 1024, maxDim: Int = 240): ByteArray? {
+        val bitmap = decodeScaled(sourcePath, maxDim) ?: return null
         try {
-            var dim = 240
+            var dim = maxDim
             var bytes = encode(bitmap, 82)
             if (bytes.size <= maxBytes) return bytes
 

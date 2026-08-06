@@ -668,7 +668,10 @@ private fun SaveOrderDialog(
                     context.contentResolver.openInputStream(uri)?.use { input ->
                         tempFile.outputStream().use { output -> input.copyTo(output) }
                     }
-                    val bytes = ThumbnailCompressor.compress(tempFile.absolutePath) ?: return@withContext null
+                    // 1024px, not the 240px item-thumbnail size — this needs to stay legible
+                    // (e.g. a prescription) for the shop owner to actually read, not just
+                    // recognisable in a small list.
+                    val bytes = ThumbnailCompressor.compress(tempFile.absolutePath, maxBytes = 300 * 1024, maxDim = 1024) ?: return@withContext null
                     "data:image/jpeg;base64," + android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
                 }.getOrNull().also { tempFile.delete() }
             }
