@@ -231,7 +231,14 @@ function pos_fcm_send($serviceAccountPath, $token, array $data) {
     foreach ($data as $k => $v) {
         $stringData[$k] = (string) $v;
     }
-    $payload = json_encode(array('message' => array('token' => $token, 'data' => $stringData)));
+    // "high" Android priority is what lets this arrive promptly while the phone is locked and
+    // the app is fully closed (same as WhatsApp) — the default "normal" priority gets deferred by
+    // Doze/App Standby until the device next wakes up on its own, sometimes minutes to hours later.
+    $payload = json_encode(array('message' => array(
+        'token' => $token,
+        'android' => array('priority' => 'high'),
+        'data' => $stringData
+    )));
     $context = stream_context_create(array('http' => array(
         'method' => 'POST',
         'header' => "Content-Type: application/json\r\nAuthorization: Bearer $accessToken\r\n",
