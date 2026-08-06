@@ -119,13 +119,16 @@
  *    (and optionally &type=Restaurant / Medical store / Medical lab, for wording only).
  *    The Customer Link Builder tool builds this exact link (and its QR code) for you.
  * 6. (Optional, for instant push instead of a 30-min wait) In Firebase Console > Project
- *    settings > Service accounts, click "Generate new private key" and upload the
- *    downloaded JSON file to this server yourself — ideally outside the public web
- *    root, or protected the same way $STORAGE_DIR is (a .htaccess with "Require all
- *    denied"). Then set $SERVICE_ACCOUNT_PATH in pos_config.php (see below) to that
- *    file's full server path. This file is a real credential (it can send unlimited
- *    pushes on your Firebase project) — never commit it to git, never put it in a
- *    public folder.
+ *    settings > Service accounts, click "Generate new private key" — it downloads a
+ *    JSON file. Rename it to exactly service-account.json and upload it right next to
+ *    this script (same folder, same way you upload everything else) — no server path
+ *    to type anywhere, no folder navigation needed. This script auto-detects it there
+ *    and, since a plain file upload can't reach outside the public folder, automatically
+ *    writes a .htaccess rule blocking that one filename from being downloaded directly
+ *    (Apache hosting only — ask your host if this isn't Apache). If your hosting DOES
+ *    give you access to somewhere outside the public web root, put it there instead and
+ *    set $SERVICE_ACCOUNT_PATH in pos_config.php (next point) to its full server path —
+ *    a bit safer, but not required.
  * 7. Your real $API_KEY / $SERVICE_ACCOUNT_PATH values live in pos_config.php, a
  *    second file next to this one that you create ONCE and this file never touches —
  *    so re-uploading pos_online_catalog.php after a future app update (to pick up a
@@ -152,6 +155,29 @@ $STORAGE_DIR = __DIR__ . '/pos_online_catalog';    // where each shop's catalog.
 $SERVICE_ACCOUNT_PATH = '';
 if (is_readable(__DIR__ . '/pos_config.php')) {
     require __DIR__ . '/pos_config.php';
+}
+
+// If pos_config.php didn't set a path, look for the Firebase service-account JSON in the two
+// places someone with plain file-upload access (no folder-picker, no way to see a server path)
+// could actually put it: right next to this script, or inside its storage folder. Either way,
+// no need to ever type out an absolute server path.
+if ($SERVICE_ACCOUNT_PATH === '') {
+    foreach (array(__DIR__ . '/service-account.json', $STORAGE_DIR . '/service-account.json') as $candidate) {
+        if (is_readable($candidate)) {
+            $SERVICE_ACCOUNT_PATH = $candidate;
+            break;
+        }
+    }
+}
+// A service-account file uploaded straight into this public folder (rather than a protected
+// spot outside the web root) is downloadable by anyone who guesses its URL unless blocked here —
+// same automatic protection $STORAGE_DIR gets below, just scoped to this one filename.
+if ($SERVICE_ACCOUNT_PATH !== '' && dirname($SERVICE_ACCOUNT_PATH) === __DIR__) {
+    $rule = "<Files \"" . basename($SERVICE_ACCOUNT_PATH) . "\">\nRequire all denied\n</Files>\n";
+    $existingHt = @file_get_contents(__DIR__ . '/.htaccess');
+    if ($existingHt === false || strpos($existingHt, basename($SERVICE_ACCOUNT_PATH)) === false) {
+        @file_put_contents(__DIR__ . '/.htaccess', $rule, FILE_APPEND);
+    }
 }
 
 function pos_catalog_fail($code, $msg) {

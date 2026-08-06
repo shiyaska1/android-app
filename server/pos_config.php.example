@@ -17,8 +17,8 @@ $API_KEY = '';
 
 // Full server path to the Firebase service-account JSON key you downloaded from
 // Firebase Console > Project settings > Service accounts > Generate new private key.
-// Upload that JSON file to this server yourself, ideally OUTSIDE the public web root
-// (or in a folder protected by a .htaccess "Require all denied", same as pos_online_catalog's
-// own storage folder gets automatically). Leave blank to disable push — the app still works,
-// it just falls back to its 30-min poll for everything.
+// Only needed here if you can put it somewhere outside the public web root — if you can
+// only upload plain files, skip this entirely: rename the downloaded JSON to
+// service-account.json, upload it next to pos_online_catalog.php, and it's auto-detected
+// (and auto-protected with a .htaccess rule) with no path needed here.
 $SERVICE_ACCOUNT_PATH = '';
