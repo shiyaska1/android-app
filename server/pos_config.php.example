@@ -1,0 +1,24 @@
+<?php
+/**
+ * Real config for pos_online_catalog.php — copy this file to pos_config.php (same folder,
+ * remove the .example), fill in your values, and upload ONLY pos_config.php to your server.
+ *
+ * pos_online_catalog.php loads this file automatically if it's present, and this file is never
+ * touched by a future re-upload of pos_online_catalog.php (e.g. when a bug fix ships) — so your
+ * key and service-account path survive every future update instead of silently resetting to
+ * blank.
+ *
+ * pos_config.php itself should NEVER be committed to git — it's your real credential.
+ */
+
+// Same secret you set for pos_backup_sync.php (or a different one). Leave blank to disable
+// the check entirely.
+$API_KEY = '';
+
+// Full server path to the Firebase service-account JSON key you downloaded from
+// Firebase Console > Project settings > Service accounts > Generate new private key.
+// Upload that JSON file to this server yourself, ideally OUTSIDE the public web root
+// (or in a folder protected by a .htaccess "Require all denied", same as pos_online_catalog's
+// own storage folder gets automatically). Leave blank to disable push — the app still works,
+// it just falls back to its 30-min poll for everything.
+$SERVICE_ACCOUNT_PATH = '';

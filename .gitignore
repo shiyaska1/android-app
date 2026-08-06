@@ -13,3 +13,7 @@ local.properties
 # Play Store upload keystore — never commit
 upload-keystore.jks
 upload-keystore.b64
+
+# Server credentials — real API key + Firebase service-account path; see
+# server/pos_config.php.example for the template. Never commit the real one.
+server/pos_config.php
