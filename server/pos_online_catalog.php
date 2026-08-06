@@ -122,24 +122,37 @@
  *    settings > Service accounts, click "Generate new private key" and upload the
  *    downloaded JSON file to this server yourself — ideally outside the public web
  *    root, or protected the same way $STORAGE_DIR is (a .htaccess with "Require all
- *    denied"). Then set $SERVICE_ACCOUNT_PATH below to that file's full server path.
- *    This file is a real credential (it can send unlimited pushes on your Firebase
- *    project) — never commit it to git, never put it in a public folder.
+ *    denied"). Then set $SERVICE_ACCOUNT_PATH in pos_config.php (see below) to that
+ *    file's full server path. This file is a real credential (it can send unlimited
+ *    pushes on your Firebase project) — never commit it to git, never put it in a
+ *    public folder.
+ * 7. Your real $API_KEY / $SERVICE_ACCOUNT_PATH values live in pos_config.php, a
+ *    second file next to this one that you create ONCE and this file never touches —
+ *    so re-uploading pos_online_catalog.php after a future app update (to pick up a
+ *    bug fix) never resets them back to blank. Create pos_config.php with:
+ *      <?php
+ *      $API_KEY = 'your-key';
+ *      $SERVICE_ACCOUNT_PATH = '/full/server/path/to/service-account.json';
+ *    Both are optional — omit either line to leave that one at its default (blank).
  *
  * --- Nginx note ---
  * Same as pos_backup_sync.php — see that file for the storage-folder note.
  */
 
-// ---- configuration — edit these lines ----
+// ---- configuration — these are just defaults; put your real values in pos_config.php
+// (see install step 7 above), a file this script never overwrites. ----
 $API_KEY = '';                                     // e.g. 'change-me-to-something-long'; blank = no check
 $STORAGE_DIR = __DIR__ . '/pos_online_catalog';    // where each shop's catalog.json is kept
-// Push notifications (instant instead of the app's 30-min fallback poll): set this to the full
-// path of the Firebase service-account JSON key you downloaded from Firebase Console > Project
-// settings > Service accounts > Generate new private key. Upload that file to this same server
-// YOURSELF, ideally outside the public web root (or protected by a .htaccess deny-all, same as
-// $STORAGE_DIR gets automatically). Blank = push disabled; the app still works, just falls back
-// to its 30-min poll for everything. This file is a real credential — never put it in git.
+// Push notifications (instant instead of the app's 30-min fallback poll): the full server path
+// of the Firebase service-account JSON key (Firebase Console > Project settings > Service
+// accounts > Generate new private key), uploaded to this server by you, ideally outside the
+// public web root (or protected by a .htaccess deny-all, same as $STORAGE_DIR gets
+// automatically). Blank = push disabled; the app still works, just falls back to its 30-min
+// poll for everything. Set this in pos_config.php, not here — see install step 7 above.
 $SERVICE_ACCOUNT_PATH = '';
+if (is_readable(__DIR__ . '/pos_config.php')) {
+    require __DIR__ . '/pos_config.php';
+}
 
 function pos_catalog_fail($code, $msg) {
     http_response_code($code);
@@ -150,11 +163,21 @@ function pos_catalog_fail($code, $msg) {
 
 // ---- FCM push (best-effort — a failure here never breaks the request it's attached to) ----
 
+/** Every push failure used to vanish silently (every call below is wrapped in @ and nothing
+ *  checked the result), which made "push isn't arriving" undiagnosable from outside. This appends
+ *  one line per failure to fcm.log next to the service account file, so the real reason (bad
+ *  key, wrong project, expired/unregistered token, etc.) is visible instead of guessed at. */
+function pos_fcm_log($serviceAccountPath, $msg) {
+    if ($serviceAccountPath === '') return;
+    @file_put_contents(dirname($serviceAccountPath) . '/fcm.log', date('c') . ' ' . $msg . "\n", FILE_APPEND);
+}
+
 /** Cached OAuth2 access token for the FCM HTTP v1 API, so a JWT isn't signed on every request —
  *  Google's tokens are valid ~1h; refreshed a minute early. Cache file sits next to the service
  *  account key itself, not inside a per-shop folder. */
 function pos_fcm_access_token($serviceAccountPath) {
     if ($serviceAccountPath === '' || !is_readable($serviceAccountPath)) {
+        if ($serviceAccountPath !== '') pos_fcm_log($serviceAccountPath, 'access_token: file not readable at ' . $serviceAccountPath);
         return null;
     }
     $cachePath = dirname($serviceAccountPath) . '/.fcm_token_cache.json';
@@ -165,6 +188,7 @@ function pos_fcm_access_token($serviceAccountPath) {
 
     $sa = @json_decode(@file_get_contents($serviceAccountPath), true);
     if (!is_array($sa) || empty($sa['client_email']) || empty($sa['private_key'])) {
+        pos_fcm_log($serviceAccountPath, 'access_token: service account JSON is invalid or missing client_email/private_key');
         return null;
     }
 
@@ -184,6 +208,7 @@ function pos_fcm_access_token($serviceAccountPath) {
     $signature = '';
     $ok = @openssl_sign($unsigned, $signature, $sa['private_key'], 'sha256WithRSAEncryption');
     if (!$ok) {
+        pos_fcm_log($serviceAccountPath, 'access_token: openssl_sign failed — private_key in the service account file is malformed');
         return null;
     }
     $jwt = $unsigned . '.' . $b64($signature);
@@ -202,6 +227,10 @@ function pos_fcm_access_token($serviceAccountPath) {
     $resp = @file_get_contents('https://oauth2.googleapis.com/token', false, $context);
     $data = $resp !== false ? @json_decode($resp, true) : null;
     if (!is_array($data) || empty($data['access_token'])) {
+        pos_fcm_log(
+            $serviceAccountPath,
+            'access_token: OAuth token request failed — ' . ($resp === false ? 'no response (network/DNS/firewall?)' : 'response: ' . substr($resp, 0, 300))
+        );
         return null;
     }
     @file_put_contents($cachePath, json_encode(array(
@@ -225,6 +254,7 @@ function pos_fcm_send($serviceAccountPath, $token, array $data) {
     $sa = @json_decode(@file_get_contents($serviceAccountPath), true);
     $projectId = is_array($sa) && !empty($sa['project_id']) ? $sa['project_id'] : '';
     if ($projectId === '') {
+        pos_fcm_log($serviceAccountPath, 'send: could not read project_id from the service account file');
         return false;
     }
     $stringData = array();
@@ -246,7 +276,18 @@ function pos_fcm_send($serviceAccountPath, $token, array $data) {
         'timeout' => 8,
         'ignore_errors' => true
     )));
-    @file_get_contents("https://fcm.googleapis.com/v1/projects/$projectId/messages:send", false, $context);
+    $resp = @file_get_contents("https://fcm.googleapis.com/v1/projects/$projectId/messages:send", false, $context);
+    // The old code discarded this response entirely, so an FCM-side rejection (unregistered
+    // token, wrong project, FCM API not enabled on the Google Cloud project, etc.) was completely
+    // invisible. $http_response_header is set by file_get_contents() itself after the call above.
+    $status = 0;
+    if (isset($http_response_header[0]) && preg_match('/\s(\d{3})\s/', $http_response_header[0], $m)) {
+        $status = (int) $m[1];
+    }
+    if ($status < 200 || $status >= 300) {
+        pos_fcm_log($serviceAccountPath, 'send: FCM rejected the push (HTTP ' . $status . ') — ' . ($resp === false ? 'no body' : substr($resp, 0, 300)));
+        return false;
+    }
     return true;
 }
 
