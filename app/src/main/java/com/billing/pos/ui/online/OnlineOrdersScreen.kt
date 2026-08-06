@@ -3,6 +3,7 @@ package com.billing.pos.ui.online
 import android.Manifest
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -16,6 +17,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Message
@@ -46,8 +48,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import androidx.compose.ui.text.font.FontWeight
@@ -235,15 +235,27 @@ private fun MessageDialog(onDismiss: () -> Unit, onSend: (String) -> Unit) {
     )
 }
 
-/** Order attachments travel as a base64 data URI, same convention as item photos. */
-private fun decodeDataUriBitmap(dataUri: String): androidx.compose.ui.graphics.ImageBitmap? {
-    if (!dataUri.startsWith("data:image")) return null
+/** Decodes a base64 data URI attachment to a cache file and opens it in whatever the device's
+ *  default image viewer is — that app's own share/save sheet is how the shop owner downloads it,
+ *  same as opening any other photo from a chat app. */
+private fun openAttachment(context: android.content.Context, dataUri: String) {
+    if (!dataUri.startsWith("data:image")) return
     val comma = dataUri.indexOf(',')
-    if (comma < 0) return null
-    return runCatching {
+    if (comma < 0) return
+    runCatching {
         val bytes = android.util.Base64.decode(dataUri.substring(comma + 1), android.util.Base64.DEFAULT)
-        android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
-    }.getOrNull()
+        // Must be under cacheDir/shared/ — that's the only cache location file_paths.xml exposes
+        // through the FileProvider; a file directly in cacheDir's root can't be shared this way.
+        val sharedDir = java.io.File(context.cacheDir, "shared").apply { mkdirs() }
+        val file = java.io.File(sharedDir, "order_attach_${System.nanoTime()}.jpg")
+        file.writeBytes(bytes)
+        val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
+        val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, "image/jpeg")
+            addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        context.startActivity(intent)
+    }
 }
 
 @Composable
@@ -256,6 +268,7 @@ private fun OrderCard(
     onMessage: () -> Unit,
     onShareToSalesman: () -> Unit
 ) {
+    val context = LocalContext.current
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(14.dp)) {
             Column {
@@ -288,14 +301,23 @@ private fun OrderCard(
                     modifier = Modifier.padding(top = 6.dp)
                 )
             }
-            val attachment = remember(order.attachmentImage) { decodeDataUriBitmap(order.attachmentImage) }
-            if (attachment != null) {
-                androidx.compose.foundation.Image(
-                    attachment,
-                    contentDescription = "Customer attachment",
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.size(96.dp).padding(top = 6.dp)
-                )
+            if (order.attachments.isNotEmpty()) {
+                Column(Modifier.padding(top = 6.dp)) {
+                    order.attachments.forEachIndexed { i, dataUri ->
+                        Row(
+                            Modifier.fillMaxWidth().clickable { openAttachment(context, dataUri) }.padding(vertical = 3.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.AttachFile, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
+                            Text(
+                                "  Attachment ${i + 1} — tap to open or save",
+                                color = MaterialTheme.colorScheme.primary,
+                                style = MaterialTheme.typography.bodySmall,
+                                textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline
+                            )
+                        }
+                    }
+                }
             }
 
             Column(Modifier.padding(top = 6.dp, bottom = 6.dp)) {

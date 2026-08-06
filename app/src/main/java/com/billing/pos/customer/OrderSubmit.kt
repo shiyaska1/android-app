@@ -22,6 +22,8 @@ object OrderSubmit {
         data class Failed(val message: String) : Result()
     }
 
+    /** [attachments] are already-compressed base64 data URIs (see ThumbnailCompressor), one per
+     *  photo the customer attached — premium shops only. */
     suspend fun submit(
         context: Context,
         selection: List<Pair<ShopCatalogItem, Int>>,
@@ -30,15 +32,15 @@ object OrderSubmit {
         locationLink: String? = null,
         customerAddress: String? = null,
         note: String? = null,
-        attachmentImage: String? = null
+        attachments: List<String> = emptyList()
     ): Result = withContext(Dispatchers.IO) {
         val prefs = AppPrefs(context)
         val base = prefs.onlineCatalogUrl
         val shop = prefs.shopCode
         if (base.isBlank() || shop.isBlank()) return@withContext Result.Failed("Not linked to a shop yet")
-        // A customer who doesn't want to pick from the catalog can just write what they want in
-        // the note instead — only reject if there's genuinely nothing to send either way.
-        if (selection.isEmpty() && note.isNullOrBlank()) return@withContext Result.Failed("Nothing selected")
+        // A customer who doesn't want to pick from the catalog can just write what they want, or
+        // send a photo alone — only reject if there's genuinely nothing to send at all.
+        if (selection.isEmpty() && note.isNullOrBlank() && attachments.isEmpty()) return@withContext Result.Failed("Nothing selected")
 
         val total = selection.sumOf { (item, qty) -> item.price * qty }
         val body = JSONObject().apply {
@@ -49,7 +51,7 @@ object OrderSubmit {
             if (!locationLink.isNullOrBlank()) put("location", locationLink)
             if (!customerAddress.isNullOrBlank()) put("customerAddress", customerAddress)
             if (!note.isNullOrBlank()) put("note", note)
-            if (!attachmentImage.isNullOrBlank()) put("attachmentImage", attachmentImage)
+            if (attachments.isNotEmpty()) put("attachments", JSONArray(attachments))
             put("items", JSONArray().apply {
                 selection.forEach { (item, qty) ->
                     put(JSONObject().apply {

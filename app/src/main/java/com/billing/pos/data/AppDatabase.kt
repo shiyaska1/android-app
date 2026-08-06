@@ -959,6 +959,15 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** A customer can now attach several photos to an order (not just one) — packed the same
+         *  way itemsJson packs order lines. The old single-attachment column stays untouched
+         *  (still readable on an order fetched before this change) but is no longer written to. */
+        private val MIGRATION_96_97 = object : androidx.room.migration.Migration(96, 97) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE online_orders ADD COLUMN attachmentImages TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         fun get(context: Context): AppDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(

@@ -205,15 +205,19 @@ class CustomerCatalogViewModel(app: Application) : AndroidViewModel(app) {
         phone: String,
         address: String = "",
         note: String = "",
-        attachmentImage: String? = null,
+        attachments: List<String> = emptyList(),
         alsoShare: Boolean = false
     ) {
         val selection = _qty.value.mapNotNull { (id, count) ->
             items.value.find { it.id == id }?.let { it to count }
         }
-        // A customer who doesn't want to pick from the catalog can just write what they want —
-        // only block if there's genuinely nothing to send either way.
-        if (selection.isEmpty() && note.isBlank()) { _message.value = "Add items, or write your order in the note"; return }
+        // A customer who doesn't want to pick from the catalog can just write what they want, or
+        // send a photo alone (e.g. a prescription to a shop with no browsable items at all, like
+        // a medical store) — only block if there's genuinely nothing to send at all.
+        if (selection.isEmpty() && note.isBlank() && attachments.isEmpty()) {
+            _message.value = "Add items, write your order, or attach a photo"
+            return
+        }
         if (_saving.value) return
         prefs.customerName = name
         prefs.customerPhone = phone
@@ -228,7 +232,7 @@ class CustomerCatalogViewModel(app: Application) : AndroidViewModel(app) {
                 _saving.value = false
                 return@launch
             }
-            when (val result = OrderSubmit.submit(app, selection, name, phone, locationLink, address, note, attachmentImage)) {
+            when (val result = OrderSubmit.submit(app, selection, name, phone, locationLink, address, note, attachments)) {
                 is OrderSubmit.Result.Ok -> {
                     _message.value = "Order saved — the shop will contact you"
                     val total = selection.sumOf { (item, qty) -> item.price * qty }

@@ -3,6 +3,7 @@ package com.billing.pos.ui.customer
 import android.Manifest
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -22,14 +23,15 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.AddAPhoto
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Call
+import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Chat
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DocumentScanner
-import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Notifications
@@ -55,6 +57,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -69,6 +72,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -76,12 +80,17 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.billing.pos.customer.NearbyShops
 import com.billing.pos.customer.ReferralLink
@@ -115,7 +124,7 @@ import java.util.Locale
  */
 private data class PendingOrderSubmit(
     val name: String, val phone: String, val address: String,
-    val note: String, val attachment: String?, val alsoShare: Boolean
+    val note: String, val attachments: List<String>, val alsoShare: Boolean
 )
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -144,6 +153,73 @@ fun CustomerCatalogScreen(onExitTestMode: () -> Unit = {}, vm: CustomerCatalogVi
     val shareText by vm.shareText.collectAsStateSafe()
     val scope = rememberCoroutineScope()
 
+    // Note + attachments live here, on the main screen, instead of inside the "Your details"
+    // dialog — so a shop with no browsable catalog (e.g. a medical store that only takes a
+    // prescription photo) still has somewhere to write/attach without picking any items first.
+    var orderNote by rememberSaveable { mutableStateOf("") }
+    val orderAttachments = remember { mutableStateListOf<String>() }
+    var compressingAttachment by remember { mutableStateOf(false) }
+    var viewingAttachment by remember { mutableStateOf<String?>(null) }
+    var pendingCameraFile by remember { mutableStateOf<java.io.File?>(null) }
+    val scanOrderText = rememberListScanner { lines ->
+        val scanned = lines.joinToString("\n").trim()
+        if (scanned.isNotBlank()) orderNote = if (orderNote.isBlank()) scanned else "$orderNote\n$scanned"
+    }
+
+    // 1024px so an attachment stays legible (e.g. a prescription) — not the 240px item-thumbnail
+    // size — but still compressed client-side before it ever reaches the server.
+    suspend fun compressToDataUri(sourcePath: String): String? = withContext(Dispatchers.IO) {
+        runCatching {
+            val bytes = ThumbnailCompressor.compress(sourcePath, maxBytes = 300 * 1024, maxDim = 1024) ?: return@runCatching null
+            "data:image/jpeg;base64," + android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+        }.getOrNull()
+    }
+
+    val galleryPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
+        if (uris.isEmpty()) return@rememberLauncherForActivityResult
+        compressingAttachment = true
+        scope.launch {
+            for (uri in uris) {
+                val dataUri = withContext(Dispatchers.IO) {
+                    val tempFile = java.io.File.createTempFile("attach_", ".jpg", context.cacheDir)
+                    runCatching {
+                        context.contentResolver.openInputStream(uri)?.use { input -> tempFile.outputStream().use { output -> input.copyTo(output) } }
+                    }
+                    val result = compressToDataUri(tempFile.absolutePath)
+                    tempFile.delete()
+                    result
+                }
+                if (dataUri != null) orderAttachments.add(dataUri)
+            }
+            compressingAttachment = false
+        }
+    }
+    val cameraCapture = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
+        val f = pendingCameraFile
+        pendingCameraFile = null
+        if (ok && f != null) {
+            compressingAttachment = true
+            scope.launch {
+                val dataUri = compressToDataUri(f.absolutePath)
+                f.delete()
+                if (dataUri != null) orderAttachments.add(dataUri)
+                compressingAttachment = false
+            }
+        } else {
+            f?.delete()
+        }
+    }
+    fun launchCamera() {
+        // Must be under cacheDir/shared/ — that's the only cache location file_paths.xml exposes
+        // through the FileProvider; a file directly in cacheDir's root can't be shared this way.
+        val sharedDir = java.io.File(context.cacheDir, "shared").apply { mkdirs() }
+        val file = java.io.File.createTempFile("attach_cam_", ".jpg", sharedDir)
+        pendingCameraFile = file
+        val uri = FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
+        runCatching { cameraCapture.launch(uri) }
+            .onFailure { pendingCameraFile?.delete(); pendingCameraFile = null; scope.launch { snackbar.showSnackbar("No camera app found") } }
+    }
+
     // Without this, every order-status/chat/promotion notification is silently dropped on
     // Android 13+ (POST_NOTIFICATIONS defaults to denied until explicitly granted) — the
     // notification still lands in the in-app bell (that's just a DB insert), it just never pops
@@ -163,7 +239,7 @@ fun CustomerCatalogScreen(onExitTestMode: () -> Unit = {}, vm: CustomerCatalogVi
         val pending = pendingOrderSubmit
         pendingOrderSubmit = null
         if (granted && pending != null) {
-            vm.saveOrder(pending.name, pending.phone, pending.address, pending.note, pending.attachment, pending.alsoShare)
+            vm.saveOrder(pending.name, pending.phone, pending.address, pending.note, pending.attachments, pending.alsoShare)
         } else if (!granted) {
             scope.launch { snackbar.showSnackbar("Location permission is required to place an order") }
         }
@@ -172,7 +248,7 @@ fun CustomerCatalogScreen(onExitTestMode: () -> Unit = {}, vm: CustomerCatalogVi
         val hasLocation = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED ||
             ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED
         if (hasLocation) {
-            vm.saveOrder(pending.name, pending.phone, pending.address, pending.note, pending.attachment, pending.alsoShare)
+            vm.saveOrder(pending.name, pending.phone, pending.address, pending.note, pending.attachments, pending.alsoShare)
         } else {
             pendingOrderSubmit = pending
             locationPermission.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
@@ -250,9 +326,6 @@ fun CustomerCatalogScreen(onExitTestMode: () -> Unit = {}, vm: CustomerCatalogVi
                             Icon(Icons.Default.Chat, contentDescription = "Message shop on WhatsApp")
                         }
                     }
-                    IconButton(onClick = { saveDialogAction = "save"; showSaveDialog = true }) {
-                        Icon(Icons.Default.EditNote, contentDescription = "Write your order (no items needed)")
-                    }
                     IconButton(onClick = { showNotifications = true }) {
                         BadgedBox(badge = { if (unreadNotifications > 0) Badge { Text("$unreadNotifications") } }) {
                             Icon(
@@ -291,7 +364,10 @@ fun CustomerCatalogScreen(onExitTestMode: () -> Unit = {}, vm: CustomerCatalogVi
             )
         },
         bottomBar = {
-            if (qty.isNotEmpty()) {
+            // Visible whenever there's something to submit — items picked, a note typed, or a
+            // photo attached — not just when items are picked, since some shops (e.g. a medical
+            // store) have no browsable catalog at all and only take a note/photo.
+            if (qty.isNotEmpty() || orderNote.isNotBlank() || orderAttachments.isNotEmpty()) {
                 val total = items.filter { qty.containsKey(it.id) }.sumOf { it.price * (qty[it.id] ?: 0) }
                 BottomAppBar {
                     Row(
@@ -300,8 +376,12 @@ fun CustomerCatalogScreen(onExitTestMode: () -> Unit = {}, vm: CustomerCatalogVi
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column {
-                            Text("${qty.values.sum()} item(s)", style = MaterialTheme.typography.labelMedium)
-                            Text("₹" + Format.money(total), fontWeight = FontWeight.Bold)
+                            if (qty.isNotEmpty()) {
+                                Text("${qty.values.sum()} item(s)", style = MaterialTheme.typography.labelMedium)
+                                Text("₹" + Format.money(total), fontWeight = FontWeight.Bold)
+                            } else {
+                                Text("Note / attachment ready", style = MaterialTheme.typography.labelMedium)
+                            }
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             OutlinedButton(
@@ -311,9 +391,10 @@ fun CustomerCatalogScreen(onExitTestMode: () -> Unit = {}, vm: CustomerCatalogVi
                                         submitOrder(
                                             PendingOrderSubmit(
                                                 vm.savedCustomerName, vm.savedCustomerPhone, vm.savedCustomerAddress,
-                                                note = "", attachment = null, alsoShare = true
+                                                note = orderNote.trim(), attachments = orderAttachments.toList(), alsoShare = true
                                             )
                                         )
+                                        orderNote = ""; orderAttachments.clear()
                                     } else {
                                         showSaveDialog = true
                                     }
@@ -338,81 +419,106 @@ fun CustomerCatalogScreen(onExitTestMode: () -> Unit = {}, vm: CustomerCatalogVi
         },
         snackbarHost = { SnackbarHost(snackbar) }
     ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding)) {
-            val bannerImage = prefs.shopBannerImage
-            if (bannerImage.isNotBlank()) {
-                val banner = remember(bannerImage) { decodeDataUriBitmap(bannerImage) }
-                if (banner != null) {
-                    androidx.compose.foundation.Image(
-                        banner,
-                        contentDescription = "$shopName banner",
-                        contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                        modifier = Modifier.fillMaxWidth().height(120.dp)
+        LazyColumn(
+            modifier = Modifier.fillMaxSize().padding(padding),
+            contentPadding = PaddingValues(bottom = 88.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            item {
+                val bannerImage = prefs.shopBannerImage
+                if (bannerImage.isNotBlank()) {
+                    val banner = remember(bannerImage) { decodeDataUriBitmap(bannerImage) }
+                    if (banner != null) {
+                        androidx.compose.foundation.Image(
+                            banner,
+                            contentDescription = "$shopName banner",
+                            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                            modifier = Modifier.fillMaxWidth().height(120.dp)
+                        )
+                    }
+                }
+                if (vm.lastFetchedAt > 0L) {
+                    Text(
+                        "Updated " + SimpleDateFormat("dd MMM, HH:mm", Locale.getDefault()).format(Date(vm.lastFetchedAt)),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.outline,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
                     )
                 }
             }
-            if (vm.lastFetchedAt > 0L) {
-                Text(
-                    "Updated " + SimpleDateFormat("dd MMM, HH:mm", Locale.getDefault()).format(Date(vm.lastFetchedAt)),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.outline,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
+
+            item {
+                OrderNoteCard(
+                    note = orderNote,
+                    onNoteChange = { orderNote = it },
+                    onScan = { scanOrderText() },
+                    attachments = orderAttachments,
+                    premium = vm.isPremiumShop,
+                    compressing = compressingAttachment,
+                    onAddFromCamera = { launchCamera() },
+                    onAddFromGallery = { galleryPicker.launch("image/*") },
+                    onRemoveAttachment = { orderAttachments.remove(it) },
+                    onViewAttachment = { viewingAttachment = it }
                 )
             }
 
             if (items.isNotEmpty()) {
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    label = { Text("Search items…") },
-                    singleLine = true,
-                    leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)
-                )
+                item {
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        label = { Text("Search items…") },
+                        singleLine = true,
+                        leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)
+                    )
+                }
             }
 
             if (categories.size > 1) {
-                LazyRow(
-                    contentPadding = PaddingValues(horizontal = 12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    items(categories) { cat ->
-                        FilterChip(
-                            selected = selectedCategory == cat,
-                            onClick = { selectedCategory = cat },
-                            label = { Text(cat) }
-                        )
+                item {
+                    LazyRow(
+                        contentPadding = PaddingValues(horizontal = 12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(categories) { cat ->
+                            FilterChip(
+                                selected = selectedCategory == cat,
+                                onClick = { selectedCategory = cat },
+                                label = { Text(cat) }
+                            )
+                        }
                     }
                 }
             }
 
             if (items.isEmpty()) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    if (refreshing) {
-                        CircularProgressIndicator()
-                    } else {
-                        Text(
-                            "No items yet — tap refresh",
-                            color = MaterialTheme.colorScheme.outline
-                        )
+                item {
+                    Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                        if (refreshing) {
+                            CircularProgressIndicator()
+                        } else {
+                            Text(
+                                "No items yet — tap refresh",
+                                color = MaterialTheme.colorScheme.outline
+                            )
+                        }
                     }
                 }
             } else if (shown.isEmpty()) {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("No items match \"$searchQuery\"", color = MaterialTheme.colorScheme.outline)
+                item {
+                    Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                        Text("No items match \"$searchQuery\"", color = MaterialTheme.colorScheme.outline)
+                    }
                 }
             } else {
-                LazyColumn(
-                    contentPadding = PaddingValues(start = 12.dp, top = 12.dp, end = 12.dp, bottom = 88.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    items(shown, key = { it.id }) { item ->
-                        CatalogItemRow(
-                            item = item,
-                            qty = qty[item.id] ?: 0,
-                            onQtyChange = { n -> vm.setQty(item.id, n) }
-                        )
-                    }
+                items(shown, key = { it.id }) { item ->
+                    CatalogItemRow(
+                        item = item,
+                        qty = qty[item.id] ?: 0,
+                        onQtyChange = { n -> vm.setQty(item.id, n) },
+                        modifier = Modifier.padding(horizontal = 12.dp)
+                    )
                 }
             }
         }
@@ -423,13 +529,16 @@ fun CustomerCatalogScreen(onExitTestMode: () -> Unit = {}, vm: CustomerCatalogVi
             initialName = vm.savedCustomerName,
             initialPhone = vm.savedCustomerPhone,
             initialAddress = vm.savedCustomerAddress,
-            premium = vm.isPremiumShop,
             onDismiss = { showSaveDialog = false },
-            onConfirm = { name, phone, address, note, attachment ->
+            onConfirm = { name, phone, address ->
                 showSaveDialog = false
-                submitOrder(PendingOrderSubmit(name, phone, address, note, attachment, saveDialogAction == "share"))
+                submitOrder(PendingOrderSubmit(name, phone, address, orderNote.trim(), orderAttachments.toList(), saveDialogAction == "share"))
+                orderNote = ""; orderAttachments.clear()
             }
         )
+    }
+    viewingAttachment?.let { uri ->
+        AttachmentPreviewDialog(dataUri = uri, onDismiss = { viewingAttachment = null })
     }
     if (showSwitchShop) {
         SwitchShopDialog(
@@ -641,43 +750,12 @@ private fun SaveOrderDialog(
     initialName: String,
     initialPhone: String,
     initialAddress: String,
-    premium: Boolean,
     onDismiss: () -> Unit,
-    onConfirm: (name: String, phone: String, address: String, note: String, attachmentImage: String?) -> Unit
+    onConfirm: (name: String, phone: String, address: String) -> Unit
 ) {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     var name by rememberSaveable { mutableStateOf(initialName) }
     var phone by rememberSaveable { mutableStateOf(initialPhone) }
     var address by rememberSaveable { mutableStateOf(initialAddress) }
-    var note by rememberSaveable { mutableStateOf("") }
-    var attachmentDataUri by rememberSaveable { mutableStateOf<String?>(null) }
-    var compressing by remember { mutableStateOf(false) }
-    val scanOrderText = rememberListScanner { lines ->
-        val scanned = lines.joinToString("\n").trim()
-        if (scanned.isNotBlank()) note = if (note.isBlank()) scanned else "$note\n$scanned"
-    }
-
-    val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
-        compressing = true
-        scope.launch {
-            attachmentDataUri = withContext(Dispatchers.IO) {
-                val tempFile = java.io.File.createTempFile("attach_", ".jpg", context.cacheDir)
-                runCatching {
-                    context.contentResolver.openInputStream(uri)?.use { input ->
-                        tempFile.outputStream().use { output -> input.copyTo(output) }
-                    }
-                    // 1024px, not the 240px item-thumbnail size — this needs to stay legible
-                    // (e.g. a prescription) for the shop owner to actually read, not just
-                    // recognisable in a small list.
-                    val bytes = ThumbnailCompressor.compress(tempFile.absolutePath, maxBytes = 300 * 1024, maxDim = 1024) ?: return@withContext null
-                    "data:image/jpeg;base64," + android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
-                }.getOrNull().also { tempFile.delete() }
-            }
-            compressing = false
-        }
-    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -706,46 +784,129 @@ private fun SaveOrderDialog(
                     label = { Text("Address (optional)") }, singleLine = true,
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
                 )
-                Text(
-                    "Don't want to pick items? Just write what you want here — type it, or scan a list/photo.",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.outline,
-                    modifier = Modifier.padding(top = 10.dp)
-                )
-                OutlinedTextField(
-                    value = note, onValueChange = { note = it },
-                    label = { Text("Note / your order") },
-                    trailingIcon = {
-                        IconButton(onClick = { scanOrderText() }) {
-                            Icon(Icons.Default.DocumentScanner, contentDescription = "Scan a list into the note")
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
-                )
-                if (premium) {
-                    OutlinedButton(
-                        onClick = { photoPicker.launch("image/*") },
-                        enabled = !compressing,
-                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-                    ) {
-                        if (compressing) {
-                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                        } else {
-                            Icon(Icons.Default.AttachFile, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Text(if (attachmentDataUri != null) "  Photo attached — tap to change" else "  Attach a photo (e.g. prescription)")
-                        }
-                    }
-                }
             }
         },
         confirmButton = {
             TextButton(
-                onClick = { onConfirm(name.trim(), phone.trim(), address.trim(), note.trim(), attachmentDataUri) },
-                enabled = name.isNotBlank() && phone.isNotBlank() && !compressing
+                onClick = { onConfirm(name.trim(), phone.trim(), address.trim()) },
+                enabled = name.isNotBlank() && phone.isNotBlank()
             ) { Text("Save order") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
+}
+
+/** Note + attachments, always visible on the main catalog screen (not tucked inside the "Your
+ *  details" dialog) — so a shop with no browsable catalog at all (e.g. a medical store that only
+ *  takes a prescription photo) still has somewhere to write/attach. Several photos can be
+ *  attached, from camera or gallery, each removable and viewable before sending. */
+@Composable
+private fun OrderNoteCard(
+    note: String,
+    onNoteChange: (String) -> Unit,
+    onScan: () -> Unit,
+    attachments: List<String>,
+    premium: Boolean,
+    compressing: Boolean,
+    onAddFromCamera: () -> Unit,
+    onAddFromGallery: () -> Unit,
+    onRemoveAttachment: (String) -> Unit,
+    onViewAttachment: (String) -> Unit
+) {
+    Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
+        Column(Modifier.padding(14.dp)) {
+            Text(
+                "Don't want to pick items? Write what you want here instead — type it, scan a list/photo, or just attach a photo.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.outline
+            )
+            OutlinedTextField(
+                value = note, onValueChange = onNoteChange,
+                label = { Text("Note / your order") },
+                trailingIcon = {
+                    IconButton(onClick = onScan) {
+                        Icon(Icons.Default.DocumentScanner, contentDescription = "Scan a list into the note")
+                    }
+                },
+                minLines = 3, maxLines = 8,
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+            )
+            if (premium) {
+                Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = onAddFromCamera, enabled = !compressing, modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Default.CameraAlt, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Text("  Camera")
+                    }
+                    OutlinedButton(onClick = onAddFromGallery, enabled = !compressing, modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Default.AddAPhoto, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Text("  Gallery")
+                    }
+                }
+                if (compressing) {
+                    Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                        Text("  Adding attachment…", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline, modifier = Modifier.padding(start = 6.dp))
+                    }
+                }
+                if (attachments.isNotEmpty()) {
+                    LazyRow(
+                        contentPadding = PaddingValues(top = 10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(attachments) { uri ->
+                            Box(Modifier.size(72.dp)) {
+                                val bmp = remember(uri) { decodeDataUriBitmap(uri) }
+                                if (bmp != null) {
+                                    androidx.compose.foundation.Image(
+                                        bmp, contentDescription = "Attachment",
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize()
+                                            .clip(androidx.compose.foundation.shape.RoundedCornerShape(6.dp))
+                                            .clickable { onViewAttachment(uri) }
+                                    )
+                                }
+                                OutlinedIconButton(
+                                    onClick = { onRemoveAttachment(uri) },
+                                    modifier = Modifier.size(22.dp).align(Alignment.TopEnd),
+                                    colors = IconButtonDefaults.outlinedIconButtonColors(
+                                        containerColor = MaterialTheme.colorScheme.surface
+                                    )
+                                ) {
+                                    Icon(Icons.Default.Close, contentDescription = "Remove attachment", modifier = Modifier.size(14.dp))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Full-screen preview of one not-yet-sent attachment, so the customer can verify it before
+ *  saving/sharing the order — a simpler one-off version of [com.billing.pos.ui.common.ImageViewerDialog],
+ *  which works from file paths rather than an in-memory data URI. */
+@Composable
+private fun AttachmentPreviewDialog(dataUri: String, onDismiss: () -> Unit) {
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Column(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black)) {
+            IconButton(onClick = onDismiss, modifier = Modifier.padding(4.dp)) {
+                Icon(Icons.Default.Close, contentDescription = "Close", tint = androidx.compose.ui.graphics.Color.White)
+            }
+            val bmp = remember(dataUri) { decodeDataUriBitmap(dataUri) }
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                if (bmp != null) {
+                    androidx.compose.foundation.Image(
+                        bmp, contentDescription = "Attachment",
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    Text("Could not open image", color = androidx.compose.ui.graphics.Color.White)
+                }
+            }
+        }
+    }
 }
 
 /** Scan the same QR a shop hands out for install to point this app at a different shop —
@@ -1103,8 +1264,8 @@ private fun decodeDataUriBitmap(dataUri: String): androidx.compose.ui.graphics.I
 }
 
 @Composable
-private fun CatalogItemRow(item: ShopCatalogItem, qty: Int, onQtyChange: (Int) -> Unit) {
-    Card(Modifier.fillMaxWidth()) {
+private fun CatalogItemRow(item: ShopCatalogItem, qty: Int, onQtyChange: (Int) -> Unit, modifier: Modifier = Modifier) {
+    Card(modifier.fillMaxWidth()) {
         Row(
             Modifier.fillMaxWidth().padding(14.dp),
             horizontalArrangement = Arrangement.SpaceBetween,

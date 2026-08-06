@@ -24,15 +24,17 @@
  *       "customerAddress": "..." (optional),
  *       "location": "https://maps.google.com/?q=lat,lng" (optional),
  *       "note": "..." (optional, free text — e.g. a prescription description),
- *       "attachmentImage": "data:image/jpeg;base64,..." (optional, premium shops only —
- *           a compressed photo, e.g. a prescription),
+ *       "attachments": [ "data:image/jpeg;base64,...", ... ] (optional, premium shops only —
+ *           one or more compressed photos, e.g. several pages of a prescription),
  *       "items": [ { "id": "...", "name": "...", "qty": 0, "price": 0.0 }, ... ],
  *       "total": 0.0 }
  *   Appended to pos_online_catalog/<DeviceID>/orders.json (an array) — this
  *   file only grows via this endpoint; it's trimmed by the fetch below.
- *   To keep storage down on a low-resource host, any attachmentImage still sitting
- *   in that file (not yet fetched by the shop owner) older than 7 days is cleared
- *   — the rest of the order is kept, only the photo is dropped.
+ *   To keep storage down on a low-resource host, any attachments still sitting
+ *   in that file (not yet fetched by the shop owner) older than 7 days are cleared
+ *   — the rest of the order is kept, only the photos are dropped. Once the shop owner's
+ *   app fetches an order (see FETCH ORDERS below), it's gone from this server entirely —
+ *   the shop's own copy from then on lives only on their phone.
  *   Responds with { "ok": true, "id": "<order id>" } — the app keeps that id so a
  *   later status notification about this order can be matched back to it.
  *
@@ -326,7 +328,7 @@ if (($method === 'POST' || $method === 'PUT') && $do === 'order') {
         'customerAddress' => isset($body['customerAddress']) ? (string) $body['customerAddress'] : '',
         'location' => isset($body['location']) ? (string) $body['location'] : '',
         'note' => isset($body['note']) ? (string) $body['note'] : '',
-        'attachmentImage' => isset($body['attachmentImage']) ? (string) $body['attachmentImage'] : '',
+        'attachments' => isset($body['attachments']) && is_array($body['attachments']) ? array_values($body['attachments']) : array(),
         'items' => isset($body['items']) && is_array($body['items']) ? $body['items'] : array(),
         'total' => isset($body['total']) ? (float) $body['total'] : 0.0
     );
@@ -343,14 +345,14 @@ if (($method === 'POST' || $method === 'PUT') && $do === 'order') {
     if (!is_array($existing)) {
         $existing = array();
     }
-    // Server is low on storage: an attachment sitting here more than 7 days (the shop owner
-    // hasn't fetched it yet) is dropped, keeping the rest of that order intact.
+    // Server is low on storage: attachments sitting here more than 7 days (the shop owner
+    // hasn't fetched them yet) are dropped, keeping the rest of that order intact.
     $attachmentCutoff = time() - 7 * 24 * 60 * 60;
     foreach ($existing as &$old) {
-        if (!empty($old['attachmentImage']) && !empty($old['receivedAt'])) {
+        if (!empty($old['attachments']) && !empty($old['receivedAt'])) {
             $receivedTs = strtotime($old['receivedAt']);
             if ($receivedTs !== false && $receivedTs < $attachmentCutoff) {
-                $old['attachmentImage'] = '';
+                $old['attachments'] = array();
             }
         }
     }

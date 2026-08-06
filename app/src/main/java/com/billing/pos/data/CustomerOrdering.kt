@@ -80,9 +80,14 @@ data class OnlineOrder(
     val customerAddress: String = "",
     /** Free-text note from the customer (e.g. "no onions", or a prescription description). */
     val note: String = "",
-    /** Premium-shop only: a compressed base64 data URI the customer attached (e.g. a prescription
-     *  photo). Blank for a non-premium shop or when the customer didn't attach anything. */
-    val attachmentImage: String = ""
+    /** Superseded by [attachmentImages] (a shop-owner customer can now attach several photos,
+     *  e.g. multiple pages of a prescription) — kept only so an old already-fetched order isn't
+     *  silently blanked out by the migration; never written to by new fetches. */
+    val attachmentImage: String = "",
+    /** Premium-shop only: compressed base64 data URIs the customer attached (e.g. prescription
+     *  photos), packed the same way [itemsJson] packs order lines. Empty for a non-premium shop
+     *  or when the customer didn't attach anything. */
+    val attachmentImages: String = ""
 ) {
     data class Line(val name: String, val qty: Int, val price: Double)
 
@@ -94,6 +99,11 @@ data class OnlineOrder(
         }
     }.getOrDefault(emptyList())
 
+    val attachments: List<String> get() = runCatching {
+        val arr = org.json.JSONArray(attachmentImages)
+        (0 until arr.length()).map { arr.getString(it) }
+    }.getOrDefault(emptyList())
+
     companion object {
         fun packItems(items: List<Line>) = org.json.JSONArray().apply {
             items.forEach { line ->
@@ -102,6 +112,8 @@ data class OnlineOrder(
                 })
             }
         }.toString()
+
+        fun packAttachments(dataUris: List<String>) = org.json.JSONArray(dataUris).toString()
     }
 }
 

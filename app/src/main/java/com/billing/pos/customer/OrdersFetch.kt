@@ -77,6 +77,14 @@ object OrdersFetch {
                     }
                 } ?: emptyList()
 
+                val attachmentsArr = o.optJSONArray("attachments")
+                val attachments = if (attachmentsArr != null) {
+                    (0 until attachmentsArr.length()).map { attachmentsArr.optString(it) }.filter { it.isNotBlank() }
+                } else {
+                    // Older customer app build (single attachmentImage, before multi-attachment support).
+                    o.optString("attachmentImage").takeIf { it.isNotBlank() }?.let { listOf(it) } ?: emptyList()
+                }
+
                 orderDao.insert(
                     OnlineOrder(
                         serverId = serverId,
@@ -90,7 +98,7 @@ object OrdersFetch {
                         location = o.optString("location"),
                         customerAddress = o.optString("customerAddress"),
                         note = o.optString("note"),
-                        attachmentImage = o.optString("attachmentImage")
+                        attachmentImages = OnlineOrder.packAttachments(attachments)
                     )
                 )
                 saved++
