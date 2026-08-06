@@ -445,12 +445,25 @@ fun CustomerCatalogScreen(onExitTestMode: () -> Unit = {}, vm: CustomerCatalogVi
                     }
                 }
                 if (vm.lastFetchedAt > 0L) {
-                    Text(
-                        "Updated " + SimpleDateFormat("dd MMM, HH:mm", Locale.getDefault()).format(Date(vm.lastFetchedAt)),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.outline,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
-                    )
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "Updated " + SimpleDateFormat("dd MMM, HH:mm", Locale.getDefault()).format(Date(vm.lastFetchedAt)) +
+                                " — new offer? tap refresh",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.outline
+                        )
+                        IconButton(onClick = { vm.refresh() }, modifier = Modifier.size(28.dp)) {
+                            if (refreshing) {
+                                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                            } else {
+                                Icon(Icons.Default.Refresh, contentDescription = "Refresh to see new offers", modifier = Modifier.size(18.dp))
+                            }
+                        }
+                    }
                 }
             }
 
@@ -850,7 +863,7 @@ private fun OrderNoteCard(
     Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
         Column(Modifier.padding(14.dp)) {
             Text(
-                if (premium) "Don't want to pick items? Write what you want here instead, or just attach a photo below."
+                if (premium) "Don't want to pick items? Write what you want here instead, or attach a photo using the icons."
                 else "Don't want to pick items? Write what you want here instead.",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.outline
@@ -858,33 +871,22 @@ private fun OrderNoteCard(
             OutlinedTextField(
                 value = note, onValueChange = onNoteChange,
                 label = { Text("Note / your order") },
-                minLines = 3, maxLines = 8,
+                minLines = 2, maxLines = 2,
+                trailingIcon = if (!premium) null else {
+                    {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(onClick = onAddFromCamera, enabled = !compressing) {
+                                Icon(Icons.Default.CameraAlt, contentDescription = "Attach a photo from camera")
+                            }
+                            IconButton(onClick = onAddFromGallery, enabled = !compressing) {
+                                Icon(Icons.Default.AddAPhoto, contentDescription = "Attach a photo from gallery")
+                            }
+                        }
+                    }
+                },
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
             )
             if (premium) {
-                Row(
-                    Modifier.fillMaxWidth().padding(top = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        Icons.Default.AttachFile, contentDescription = null,
-                        modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary
-                    )
-                    Text(
-                        "  Add Attachment", style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                }
-                Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = onAddFromCamera, enabled = !compressing, modifier = Modifier.weight(1f)) {
-                        Icon(Icons.Default.CameraAlt, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Text("  Camera")
-                    }
-                    OutlinedButton(onClick = onAddFromGallery, enabled = !compressing, modifier = Modifier.weight(1f)) {
-                        Icon(Icons.Default.AddAPhoto, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Text("  Gallery")
-                    }
-                }
                 if (compressing) {
                     Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                         CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
