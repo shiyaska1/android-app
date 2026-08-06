@@ -42,6 +42,11 @@ object OnlineCatalogUpload {
             put("shop", shop)
             put("shopName", prefs.companyName)
             put("shopPhone", prefs.companyPhone)
+            // The shop's own category/address (Settings > Business type / Company details) —
+            // always current, unlike the "type" baked into a customer's install link once. Lets
+            // the customer app group every shop it knows about into a "Browse shops" directory.
+            put("shopCategory", prefs.businessType)
+            put("shopAddress", prefs.companyAddress)
             // Shown at the top of the customer catalog screen — same compressed-thumbnail
             // convention as item photos, picked once in Settings > Online ordering.
             val bannerPath = prefs.onlineBannerPath

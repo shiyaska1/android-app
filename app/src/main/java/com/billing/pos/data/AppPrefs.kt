@@ -296,6 +296,23 @@ class AppPrefs(context: Context) {
     var shopBannerImage: String
         get() = p.getString("shop_banner_image", "") ?: ""
         set(v) { p.edit().putString("shop_banner_image", v).apply() }
+    /** Customer install: the shop's own category (Settings > Business type on the shop owner's
+     *  device), carried in the catalog fetch response — always current, unlike
+     *  [customerBusinessType] which is just whatever the install link said once. */
+    var shopDisplayCategory: String
+        get() = (p.getString("shop_display_category", "") ?: "").trim()
+        set(v) { p.edit().putString("shop_display_category", v.trim()).apply() }
+    /** Customer install: the shop's own address, carried in the catalog fetch response. */
+    var shopDisplayAddress: String
+        get() = (p.getString("shop_display_address", "") ?: "").trim()
+        set(v) { p.edit().putString("shop_display_address", v.trim()).apply() }
+    /** Customer install: every shop this device has ever connected to (current one included) —
+     *  see com.billing.pos.customer.ShopSwitch.rememberKnown/known. Unlike
+     *  [customerRecentShops] (capped at 5, excludes the current shop, only for quick "switch
+     *  back"), this is the full directory the "Browse shops" screen groups by category. */
+    var customerKnownShops: String
+        get() = p.getString("customer_known_shops", "") ?: ""
+        set(v) { p.edit().putString("customer_known_shops", v).apply() }
     /** Customer install: this customer's own name/phone, asked once (first "Save" on an order)
      *  and remembered so they don't retype it every time. */
     var customerName: String

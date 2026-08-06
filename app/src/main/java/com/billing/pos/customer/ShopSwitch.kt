@@ -22,7 +22,14 @@ import org.json.JSONObject
  */
 object ShopSwitch {
 
-    data class Shop(val shop: String, val url: String, val type: String, val premium: Boolean, val name: String = "")
+    data class Shop(
+        val shop: String, val url: String, val type: String, val premium: Boolean, val name: String = "",
+        /** The shop owner's own category (Settings > Business type), carried in the catalog
+         *  fetch response — always current, unlike [type] which is just whatever the install
+         *  link said once. Used to group the "Browse shops" directory. */
+        val category: String = "",
+        val address: String = ""
+    )
 
     /** Accepts either a full Play Store link (extracts its `referrer` param) or a bare
      *  referrer-style query string — same encoding [InstallReferrer] parses at install time. */
@@ -51,7 +58,7 @@ object ShopSwitch {
         val previous = Shop(
             shop = prefs.shopCode, url = prefs.onlineCatalogUrl,
             type = prefs.customerBusinessType, premium = prefs.customerPremiumShop,
-            name = prefs.shopDisplayName
+            name = prefs.shopDisplayName, category = prefs.shopDisplayCategory, address = prefs.shopDisplayAddress
         )
         if (previous.shop.isNotBlank() && previous.shop != target.shop) {
             rememberRecent(prefs, previous)
@@ -63,38 +70,59 @@ object ShopSwitch {
         prefs.customerBusinessType = target.type
         prefs.customerPremiumShop = target.premium
         prefs.catalogLastFetchedAt = 0L
+        // Cleared, not carried over — the next fetch (do it right after calling this) repopulates
+        // everything fresh for the new shop: name, phone, banner, category, address, items.
         prefs.shopDisplayName = ""
         prefs.shopContactPhone = ""
+        prefs.shopBannerImage = ""
+        prefs.shopDisplayCategory = ""
+        prefs.shopDisplayAddress = ""
 
         AppDatabase.get(context).shopCatalogDao().deleteAll()
     }
 
-    fun recent(context: Context): List<Shop> {
-        val arr = runCatching { JSONArray(AppPrefs(context).customerRecentShops.ifBlank { "[]" }) }.getOrNull() ?: return emptyList()
+    fun recent(context: Context): List<Shop> = unpack(AppPrefs(context).customerRecentShops)
+
+    /** Every shop this device has ever connected to (current one included) — see [rememberKnown].
+     *  Unlike [recent] (capped at 5, excludes the current shop, only for the quick "switch back"
+     *  list), this is the full directory the "Browse shops" screen groups by category. */
+    fun known(context: Context): List<Shop> = unpack(AppPrefs(context).customerKnownShops)
+
+    /** Upserts [shop] into the full known-shops directory — call after every successful catalog
+     *  fetch so the current shop's name/category/address stay fresh there too, not just in prefs. */
+    fun rememberKnown(context: Context, shop: Shop) {
+        if (shop.shop.isBlank() || shop.url.isBlank()) return
+        val prefs = AppPrefs(context)
+        val existing = unpack(prefs.customerKnownShops)
+        val result = (listOf(shop) + existing.filter { it.shop != shop.shop }).take(30)
+        prefs.customerKnownShops = pack(result)
+    }
+
+    private fun pack(shops: List<Shop>): String = JSONArray().apply {
+        shops.forEach { shop ->
+            put(JSONObject().apply {
+                put("shop", shop.shop); put("url", shop.url); put("type", shop.type)
+                put("premium", shop.premium); put("name", shop.name)
+                put("category", shop.category); put("address", shop.address)
+            })
+        }
+    }.toString()
+
+    private fun unpack(json: String): List<Shop> {
+        val arr = runCatching { JSONArray(json.ifBlank { "[]" }) }.getOrNull() ?: return emptyList()
         return (0 until arr.length()).mapNotNull { i ->
             val o = arr.optJSONObject(i) ?: return@mapNotNull null
             Shop(
                 shop = o.optString("shop"), url = o.optString("url"),
-                type = o.optString("type"), premium = o.optBoolean("premium"), name = o.optString("name")
+                type = o.optString("type"), premium = o.optBoolean("premium"), name = o.optString("name"),
+                category = o.optString("category"), address = o.optString("address")
             ).takeIf { it.shop.isNotBlank() && it.url.isNotBlank() }
         }
     }
 
     private fun rememberRecent(prefs: AppPrefs, shop: Shop) {
-        val entry = JSONObject().apply {
-            put("shop", shop.shop); put("url", shop.url); put("type", shop.type)
-            put("premium", shop.premium); put("name", shop.name)
-        }
-        val existing = runCatching { JSONArray(prefs.customerRecentShops.ifBlank { "[]" }) }.getOrElse { JSONArray() }
-        val result = JSONArray().apply {
-            put(entry)
-            for (i in 0 until existing.length()) {
-                if (length() >= 5) break
-                val o = existing.optJSONObject(i) ?: continue
-                if (o.optString("shop") != shop.shop) put(o)
-            }
-        }
-        prefs.customerRecentShops = result.toString()
+        val existing = unpack(prefs.customerRecentShops).filter { it.shop != shop.shop }
+        prefs.customerRecentShops = pack((listOf(shop) + existing).take(5))
     }
 
     /** Decodes a QR code from a still image (e.g. a screenshot shared over WhatsApp, or a photo
@@ -112,13 +140,6 @@ object ShopSwitch {
     }
 
     private fun removeRecent(prefs: AppPrefs, shopCode: String) {
-        val existing = runCatching { JSONArray(prefs.customerRecentShops.ifBlank { "[]" }) }.getOrElse { JSONArray() }
-        val filtered = JSONArray().apply {
-            for (i in 0 until existing.length()) {
-                val o = existing.optJSONObject(i) ?: continue
-                if (o.optString("shop") != shopCode) put(o)
-            }
-        }
-        prefs.customerRecentShops = filtered.toString()
+        prefs.customerRecentShops = pack(unpack(prefs.customerRecentShops).filter { it.shop != shopCode })
     }
 }

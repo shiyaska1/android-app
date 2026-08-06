@@ -20,6 +20,8 @@ import java.net.URL
  * real place-order flow):
  * ```
  * { "shopName": "Anand Stores", "shopPhone": "9198XXXXXXX",
+ *   "shopCategory": "Restaurant" (the shop owner's Settings > Business type),
+ *   "shopAddress": "..." (the shop owner's Company address),
  *   "bannerImage": "data:image/jpeg;base64,..." (optional, shown atop the customer catalog),
  *   "items": [{ "id": "SKU1", "name": "Chicken Biryani", "category": "Main Course",
  *               "price": 180.0, "unit": "plate", "imageUrl": "", "description": "" }, ...] }
@@ -61,6 +63,20 @@ object ShopCatalogSync {
                 root.optString("shopName").takeIf { it.isNotBlank() }?.let { prefs.shopDisplayName = it }
                 root.optString("shopPhone").takeIf { it.isNotBlank() }?.let { prefs.shopContactPhone = it }
                 prefs.shopBannerImage = root.optString("bannerImage", "")
+                prefs.shopDisplayCategory = root.optString("shopCategory", "")
+                prefs.shopDisplayAddress = root.optString("shopAddress", "")
+                // Keep this shop's entry in the "Browse shops" directory fresh, same as any
+                // other shop this device has connected to.
+                ShopSwitch.rememberKnown(
+                    context,
+                    ShopSwitch.Shop(
+                        shop = shop, url = base,
+                        type = prefs.customerBusinessType, premium = prefs.customerPremiumShop,
+                        name = prefs.shopDisplayName,
+                        category = prefs.shopDisplayCategory.ifBlank { prefs.customerBusinessType },
+                        address = prefs.shopDisplayAddress
+                    )
+                )
             }
 
             val array = parseItemsArray(body)

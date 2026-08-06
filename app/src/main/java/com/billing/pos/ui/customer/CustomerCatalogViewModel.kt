@@ -96,6 +96,10 @@ class CustomerCatalogViewModel(app: Application) : AndroidViewModel(app) {
 
     fun recentShops(): List<ShopSwitch.Shop> = ShopSwitch.recent(getApplication())
 
+    /** Every shop this device has ever connected to (current one included), for the "Browse
+     *  shops" directory — grouped by category there, not just a flat quick-switch list. */
+    fun knownShops(): List<ShopSwitch.Shop> = ShopSwitch.known(getApplication())
+
     /** Points this install at a different shop (scanned QR or a recent one) — no reinstall. */
     fun switchShop(shop: ShopSwitch.Shop, onDone: () -> Unit) {
         viewModelScope.launch {

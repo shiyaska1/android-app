@@ -3,6 +3,7 @@ package com.billing.pos.ui.customer
 import android.Manifest
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -31,6 +32,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
@@ -118,6 +120,7 @@ fun CustomerCatalogScreen(onExitTestMode: () -> Unit = {}, vm: CustomerCatalogVi
     var saveDialogAction by rememberSaveable { mutableStateOf("save") } // "save" or "share"
     var pendingOrderSubmit by remember { mutableStateOf<PendingOrderSubmit?>(null) }
     var showSwitchShop by rememberSaveable { mutableStateOf(false) }
+    var showDirectory by rememberSaveable { mutableStateOf(false) }
     var showHistory by rememberSaveable { mutableStateOf(false) }
     var showNotifications by rememberSaveable { mutableStateOf(false) }
     val history by vm.history.collectAsStateSafe()
@@ -225,6 +228,9 @@ fun CustomerCatalogScreen(onExitTestMode: () -> Unit = {}, vm: CustomerCatalogVi
                     }
                     IconButton(onClick = { showHistory = true }) {
                         Icon(Icons.Default.History, contentDescription = "Order history")
+                    }
+                    IconButton(onClick = { showDirectory = true }) {
+                        Icon(Icons.Default.Storefront, contentDescription = "Browse shops")
                     }
                     IconButton(onClick = { showSwitchShop = true }) {
                         Icon(Icons.Default.SwapHoriz, contentDescription = "Switch shop")
@@ -395,6 +401,14 @@ fun CustomerCatalogScreen(onExitTestMode: () -> Unit = {}, vm: CustomerCatalogVi
             recent = vm.recentShops(),
             onDismiss = { showSwitchShop = false },
             onSwitch = { shop -> vm.switchShop(shop) { showSwitchShop = false } }
+        )
+    }
+    if (showDirectory) {
+        ShopDirectoryDialog(
+            shops = vm.knownShops(),
+            currentShop = prefs.shopCode,
+            onDismiss = { showDirectory = false },
+            onPick = { shop -> vm.switchShop(shop) { showDirectory = false } }
         )
     }
     if (showHistory) {
@@ -654,6 +668,65 @@ private fun SwitchShopDialog(
                             onClick = { onSwitch(shop) },
                             modifier = Modifier.fillMaxWidth()
                         ) { Text(shop.name.ifBlank { shop.shop }, modifier = Modifier.fillMaxWidth()) }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } }
+    )
+}
+
+/** Every shop this device has connected to, grouped by the shop's own category (Restaurant,
+ *  Medical store, ...) — e.g. scan 3 restaurants' QR codes, and this shows all 3 under
+ *  "Restaurant" so the customer can pick which one to order from. Picking one re-fetches its
+ *  items/address/category/banner fresh, same as [SwitchShopDialog]. */
+@Composable
+private fun ShopDirectoryDialog(
+    shops: List<ShopSwitch.Shop>,
+    currentShop: String,
+    onDismiss: () -> Unit,
+    onPick: (ShopSwitch.Shop) -> Unit
+) {
+    val grouped = remember(shops) {
+        shops.groupBy { it.category.ifBlank { "Other" } }.toSortedMap(compareBy { it.lowercase() })
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Browse shops") },
+        text = {
+            if (shops.isEmpty()) {
+                Text("No shops yet — switch shop to scan one.", color = MaterialTheme.colorScheme.outline)
+            } else {
+                Column {
+                    grouped.forEach { (category, group) ->
+                        Text(category, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 10.dp))
+                        group.forEach { shop ->
+                            val isCurrent = shop.shop == currentShop
+                            Column(
+                                Modifier.fillMaxWidth()
+                                    .let { if (!isCurrent) it.clickable { onPick(shop) } else it }
+                                    .padding(vertical = 8.dp)
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        shop.name.ifBlank { shop.shop },
+                                        fontWeight = FontWeight.Medium,
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                    if (isCurrent) {
+                                        Text(
+                                            "  (current)",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                }
+                                if (shop.address.isNotBlank()) {
+                                    Text(shop.address, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                                }
+                            }
+                            Divider()
+                        }
                     }
                 }
             }

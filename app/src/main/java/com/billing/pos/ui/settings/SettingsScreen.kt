@@ -738,6 +738,11 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
             Divider(Modifier.padding(vertical = 16.dp))
             // Business type: drives medical (chemical content) and restaurant (sizes).
             HighlightText("Business type", MaterialTheme.typography.titleSmall, settingAnchors, highlightedSetting)
+            Text(
+                "Also sent with your online catalog as this shop's category — customer installs " +
+                    "that have scanned several shops group them by this under \"Browse shops\".",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline
+            )
             var typeMenu by remember { mutableStateOf(false) }
             ExposedDropdownMenuBox(expanded = typeMenu, onExpandedChange = { typeMenu = !typeMenu }) {
                 OutlinedTextField(
