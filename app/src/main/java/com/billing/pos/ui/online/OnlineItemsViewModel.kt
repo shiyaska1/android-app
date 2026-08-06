@@ -18,9 +18,6 @@ data class OnlineItemRow(val item: Item, val stock: Double, val photoPath: Strin
 class OnlineItemsViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = Repository(app)
 
-    val items: StateFlow<List<Item>> =
-        repo.items.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
     val rows: StateFlow<List<OnlineItemRow>> =
         kotlinx.coroutines.flow.combine(repo.items, repo.stockByName, repo.itemAttachments) { list, byName, attachments ->
             val photoByItem = attachments.asSequence()
@@ -50,7 +47,7 @@ class OnlineItemsViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun upload() {
-        val online = items.value.filter { it.isOnline }
+        val online = rows.value.map { it.item }.filter { it.isOnline }
         if (online.isEmpty()) { _message.value = "Mark at least one item online first"; return }
         if (_uploading.value) return
         viewModelScope.launch {
