@@ -9,11 +9,13 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -22,9 +24,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.DocumentScanner
 import androidx.compose.material.icons.filled.EditNote
+import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.NotificationsActive
@@ -33,6 +37,7 @@ import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Storefront
+import androidx.compose.material.icons.filled.SupportAgent
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
@@ -74,6 +79,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.billing.pos.customer.ShopSwitch
+import com.billing.pos.customer.TechnicalSupport
 import com.billing.pos.customer.ThumbnailCompressor
 import com.billing.pos.ocr.rememberListScanner
 import com.billing.pos.data.AppPrefs
@@ -112,6 +118,7 @@ fun CustomerCatalogScreen(onExitTestMode: () -> Unit = {}, vm: CustomerCatalogVi
     val items by vm.items.collectAsStateSafe()
     val refreshing by vm.refreshing.collectAsStateSafe()
     val message by vm.message.collectAsStateSafe()
+    val technicalError by vm.technicalError.collectAsStateSafe()
     val qty by vm.qty.collectAsStateSafe()
     val saving by vm.saving.collectAsStateSafe()
     val snackbar = remember { SnackbarHostState() }
@@ -425,6 +432,74 @@ fun CustomerCatalogScreen(onExitTestMode: () -> Unit = {}, vm: CustomerCatalogVi
             onDismiss = { showNotifications = false }
         )
     }
+    technicalError?.let { detail ->
+        TechnicalErrorDialog(
+            detail = detail,
+            shopName = shopName,
+            shopPhone = shopPhone,
+            onDismiss = { vm.technicalErrorShown() }
+        )
+    }
+}
+
+/** Shown when an order save or catalog fetch fails for a reason the customer can't fix
+ *  themselves (server down, shop moved servers, etc.) — a snackbar would just vanish and leave
+ *  them unsure whether the order went through, so this stays up until dismissed and gives two
+ *  numbers to call: the shop directly, and — only here, nowhere else in the app — the developer's
+ *  own technical support line for when the shop itself needs to chase it. */
+@Composable
+private fun TechnicalErrorDialog(
+    detail: String,
+    shopName: String,
+    shopPhone: String,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    fun call(number: String) {
+        runCatching {
+            context.startActivity(android.content.Intent(android.content.Intent.ACTION_DIAL, android.net.Uri.parse("tel:$number")))
+        }
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Default.ErrorOutline, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
+        title = { Text("Technical error") },
+        text = {
+            Column {
+                Text("Something went wrong reaching the shop's server. Please try again in a moment, or contact the shop directly below.")
+                if (detail.isNotBlank()) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                }
+                Divider(Modifier.padding(vertical = 12.dp))
+                if (shopPhone.isNotBlank()) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth().clickable { call(shopPhone) }.padding(vertical = 6.dp)
+                    ) {
+                        Icon(Icons.Default.Call, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.width(12.dp))
+                        Column {
+                            Text(shopName.ifBlank { "Shop" }, style = MaterialTheme.typography.bodyMedium)
+                            Text(shopPhone, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                        }
+                    }
+                }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth().clickable { call(TechnicalSupport.PHONE) }.padding(vertical = 6.dp)
+                ) {
+                    Icon(Icons.Default.SupportAgent, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.width(12.dp))
+                    Column {
+                        Text("App technical support", style = MaterialTheme.typography.bodyMedium)
+                        Text(TechnicalSupport.PHONE, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } }
+    )
 }
 
 @Composable

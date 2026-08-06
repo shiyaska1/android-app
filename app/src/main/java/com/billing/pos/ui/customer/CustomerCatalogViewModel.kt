@@ -50,6 +50,12 @@ class CustomerCatalogViewModel(app: Application) : AndroidViewModel(app) {
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message
 
+    // A save/fetch failure that's the server's fault (not something the customer can fix, like a
+    // missing permission) — shown as a dialog with the shop's contact details instead of a
+    // snackbar, since the customer has no other way to know their order didn't go through.
+    private val _technicalError = MutableStateFlow<String?>(null)
+    val technicalError: StateFlow<String?> = _technicalError
+
     val lastFetchedAt: Long get() = prefs.catalogLastFetchedAt
 
     // Selected quantities, keyed by ShopCatalogItem.id.
@@ -92,13 +98,15 @@ class CustomerCatalogViewModel(app: Application) : AndroidViewModel(app) {
             _refreshing.value = true
             when (val result = ShopCatalogSync.refresh(getApplication())) {
                 is ShopCatalogSync.Result.Ok -> _message.value = "Updated — ${result.count} item(s)"
-                is ShopCatalogSync.Result.Failed -> _message.value = "Could not update: ${result.message}"
+                is ShopCatalogSync.Result.Failed -> _technicalError.value = result.message
             }
             _refreshing.value = false
         }
     }
 
     fun messageShown() { _message.value = null }
+
+    fun technicalErrorShown() { _technicalError.value = null }
 
     fun recentShops(): List<ShopSwitch.Shop> = ShopSwitch.recent(getApplication())
 
@@ -184,7 +192,7 @@ class CustomerCatalogViewModel(app: Application) : AndroidViewModel(app) {
                     if (alsoShare) _shareText.value = buildOrderText(selection, total)
                     clearSelection()
                 }
-                is OrderSubmit.Result.Failed -> _message.value = "Could not save order: ${result.message}"
+                is OrderSubmit.Result.Failed -> _technicalError.value = result.message
             }
             _saving.value = false
         }
