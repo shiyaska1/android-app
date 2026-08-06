@@ -1,0 +1,898 @@
+<title>POS Billing — App Overview</title>
+<style>
+  :root {
+    --ink: #16283D;
+    --ink-soft: #3D5169;
+    --paper: #F4F3EF;
+    --surface: #FFFFFF;
+    --rule: #DAD7CE;
+    --rule-soft: #E7E5DE;
+    --marigold: #C87A21;
+    --ledger-green: #1F6E4F;
+    --muted: #6B7280;
+
+    --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+    --step-0: 0.938rem;
+    --step-1: 1.063rem;
+    --step-2: 1.375rem;
+    --step-3: 1.875rem;
+    --step-4: 2.625rem;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ink: #E9E7E1;
+      --ink-soft: #A9B2BE;
+      --paper: #111820;
+      --surface: #19212B;
+      --rule: #2E3945;
+      --rule-soft: #232C37;
+      --marigold: #E39A3E;
+      --ledger-green: #43A57C;
+      --muted: #8B95A1;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ink: #E9E7E1;
+    --ink-soft: #A9B2BE;
+    --paper: #111820;
+    --surface: #19212B;
+    --rule: #2E3945;
+    --rule-soft: #232C37;
+    --marigold: #E39A3E;
+    --ledger-green: #43A57C;
+    --muted: #8B95A1;
+  }
+
+  :root[data-theme="light"] {
+    --ink: #16283D;
+    --ink-soft: #3D5169;
+    --paper: #F4F3EF;
+    --surface: #FFFFFF;
+    --rule: #DAD7CE;
+    --rule-soft: #E7E5DE;
+    --marigold: #C87A21;
+    --ledger-green: #1F6E4F;
+    --muted: #6B7280;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: var(--step-0);
+    line-height: 1.75;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 940px;
+    margin: 0 auto;
+    padding: 0 20px 72px;
+  }
+
+  /* ---------- masthead ---------- */
+  .masthead {
+    background: #16283D;
+    color: #F4F3EF;
+    padding: 44px 0 38px;
+    border-bottom: 3px solid var(--marigold);
+  }
+  :root[data-theme="dark"] .masthead,
+  .masthead { background: #16283D; }
+
+  .masthead .wrap { padding-bottom: 0; }
+
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 0.688rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--marigold);
+    margin: 0 0 14px;
+  }
+
+  .masthead h1 {
+    font-size: var(--step-4);
+    line-height: 1.15;
+    font-weight: 700;
+    letter-spacing: -0.015em;
+    margin: 0 0 12px;
+    text-wrap: balance;
+  }
+
+  .masthead p {
+    margin: 0;
+    max-width: 56ch;
+    font-size: var(--step-1);
+    color: #C3CBD6;
+    line-height: 1.7;
+  }
+
+  .meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px 28px;
+    margin-top: 26px;
+    padding-top: 20px;
+    border-top: 1px solid rgba(244, 243, 239, 0.16);
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    letter-spacing: 0.04em;
+    color: #9AA6B4;
+  }
+  .meta b { color: #F4F3EF; font-weight: 600; }
+
+  /* ---------- download CTA ---------- */
+  .cta {
+    margin-top: 40px;
+    border: 2px solid var(--marigold);
+    background: var(--surface);
+    padding: 28px 30px;
+    break-inside: avoid;
+  }
+  .cta-inner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 30px;
+    flex-wrap: wrap;
+  }
+  .cta-text { flex: 1; min-width: 260px; }
+  .cta-tag {
+    font-family: var(--font-mono);
+    font-size: 0.688rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--marigold);
+    display: block;
+    margin-bottom: 10px;
+  }
+  .cta-text h2 {
+    font-size: var(--step-2);
+    font-weight: 700;
+    margin: 0 0 10px;
+    line-height: 1.35;
+  }
+  .cta-text p { margin: 0; color: var(--ink-soft); font-size: 0.938rem; }
+  .trial-badge {
+    display: inline-block;
+    margin-top: 12px;
+    padding: 4px 12px;
+    background: var(--ledger-green);
+    color: #F4F3EF;
+    font-weight: 700;
+    font-size: 0.813rem;
+    letter-spacing: 0.01em;
+  }
+  .cta-btn {
+    display: inline-block;
+    margin-top: 16px;
+    background: var(--marigold);
+    color: #FFFFFF;
+    padding: 13px 24px;
+    font-weight: 700;
+    font-size: var(--step-1);
+    text-decoration: none;
+    word-break: break-all;
+  }
+  .cta-qr {
+    flex: none;
+    text-align: center;
+  }
+  .cta-qr img {
+    width: 128px;
+    height: 128px;
+    background: #FFFFFF;
+    border: 1px solid var(--rule);
+    padding: 8px;
+    display: block;
+  }
+  .cta-qr span {
+    display: block;
+    margin-top: 8px;
+    font-family: var(--font-mono);
+    font-size: 0.688rem;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+  }
+
+  /* ---------- sections ---------- */
+  section { margin-top: 56px; }
+
+  .sec-head {
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+    padding-bottom: 12px;
+    border-bottom: 2px solid var(--ink);
+    margin-bottom: 24px;
+  }
+  .sec-head h2 {
+    font-size: var(--step-3);
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    margin: 0;
+    line-height: 1.25;
+    text-wrap: balance;
+  }
+  .sec-head .num {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--marigold);
+    letter-spacing: 0.1em;
+    flex: none;
+  }
+
+  .lede {
+    font-size: var(--step-1);
+    max-width: 62ch;
+    color: var(--ink-soft);
+    margin: 0 0 4px;
+  }
+
+  p { max-width: 64ch; }
+
+  /* ---------- stat strip ---------- */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 1px;
+    background: var(--rule);
+    border: 1px solid var(--rule);
+    margin-top: 28px;
+  }
+  .stat { background: var(--surface); padding: 18px 20px; }
+  .stat .n {
+    display: block;
+    font-size: var(--step-3);
+    font-weight: 700;
+    line-height: 1.1;
+    font-variant-numeric: tabular-nums;
+    color: var(--ledger-green);
+  }
+  .stat .l {
+    display: block;
+    margin-top: 4px;
+    font-size: 0.813rem;
+    color: var(--muted);
+    line-height: 1.5;
+  }
+
+  /* ---------- chips ---------- */
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 20px; }
+  .chip {
+    border: 1px solid var(--rule);
+    background: var(--surface);
+    padding: 6px 13px;
+    font-size: 0.875rem;
+    color: var(--ink);
+  }
+  .chip.on {
+    border-color: var(--marigold);
+    color: var(--marigold);
+    font-weight: 600;
+  }
+
+  /* ---------- feature blocks ---------- */
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(270px, 1fr));
+    gap: 18px;
+    margin-top: 22px;
+  }
+
+  .card {
+    border: 1px solid var(--rule);
+    background: var(--surface);
+    padding: 20px 22px 22px;
+  }
+  .card .tag {
+    font-family: var(--font-mono);
+    font-size: 0.688rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--marigold);
+    display: block;
+    margin-bottom: 10px;
+  }
+  .card h3 {
+    font-size: var(--step-2);
+    font-weight: 700;
+    margin: 0 0 10px;
+    line-height: 1.35;
+    letter-spacing: -0.008em;
+    text-wrap: balance;
+  }
+  .card p { margin: 0 0 12px; color: var(--ink-soft); font-size: 0.938rem; }
+  .card ul { margin: 0; padding-left: 1.1em; color: var(--ink-soft); font-size: 0.938rem; }
+  .card li { margin-bottom: 5px; }
+  .card li::marker { color: var(--marigold); }
+
+  /* ---------- highlight rows ---------- */
+  .rows { border-top: 1px solid var(--rule); margin-top: 22px; }
+  .row {
+    display: grid;
+    grid-template-columns: 190px 1fr;
+    gap: 8px 28px;
+    padding: 18px 0;
+    border-bottom: 1px solid var(--rule-soft);
+  }
+  .row h4 {
+    margin: 0;
+    font-size: var(--step-1);
+    font-weight: 700;
+    line-height: 1.45;
+  }
+  .row p { margin: 0; color: var(--ink-soft); }
+
+  /* ---------- demo steps ---------- */
+  .steps { counter-reset: s; margin-top: 24px; border-top: 1px solid var(--rule); }
+  .step {
+    counter-increment: s;
+    display: grid;
+    grid-template-columns: 46px 1fr;
+    gap: 18px;
+    padding: 20px 0;
+    border-bottom: 1px solid var(--rule-soft);
+  }
+  .step::before {
+    content: counter(s, decimal-leading-zero);
+    font-family: var(--font-mono);
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--marigold);
+    padding-top: 3px;
+    font-variant-numeric: tabular-nums;
+  }
+  .step h4 { margin: 0 0 5px; font-size: var(--step-1); font-weight: 700; line-height: 1.45; }
+  .step p { margin: 0; color: var(--ink-soft); }
+  .step .say {
+    margin-top: 9px;
+    padding: 10px 14px;
+    border-left: 3px solid var(--ledger-green);
+    background: var(--rule-soft);
+    font-size: 0.906rem;
+    color: var(--ink);
+  }
+  .step .say b {
+    font-family: var(--font-mono);
+    font-size: 0.688rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ledger-green);
+    display: block;
+    margin-bottom: 3px;
+    font-weight: 600;
+  }
+
+  /* ---------- faq ---------- */
+  .faq { margin-top: 22px; border-top: 1px solid var(--rule); }
+  .faq details {
+    border-bottom: 1px solid var(--rule-soft);
+    padding: 15px 0;
+  }
+  .faq summary {
+    cursor: pointer;
+    font-weight: 650;
+    font-size: var(--step-1);
+    line-height: 1.5;
+    list-style: none;
+    display: flex;
+    gap: 12px;
+    align-items: baseline;
+  }
+  .faq summary::-webkit-details-marker { display: none; }
+  .faq summary::before {
+    content: "+";
+    font-family: var(--font-mono);
+    color: var(--marigold);
+    font-size: 1.1rem;
+    flex: none;
+    line-height: 1;
+  }
+  .faq details[open] summary::before { content: "\2013"; }
+  .faq summary:focus-visible { outline: 2px solid var(--marigold); outline-offset: 3px; }
+  .faq p { margin: 9px 0 0 24px; color: var(--ink-soft); }
+
+  /* ---------- closing ---------- */
+  .closing {
+    margin-top: 56px;
+    border: 2px solid var(--ink);
+    padding: 28px 30px;
+    background: var(--surface);
+  }
+  .closing h2 { margin: 0 0 10px; font-size: var(--step-2); font-weight: 700; }
+  .closing p { margin: 0; color: var(--ink-soft); }
+
+  footer {
+    margin-top: 34px;
+    padding-top: 18px;
+    border-top: 1px solid var(--rule);
+    font-family: var(--font-mono);
+    font-size: 0.719rem;
+    letter-spacing: 0.05em;
+    color: var(--muted);
+  }
+
+  @media (max-width: 620px) {
+    :root { --step-4: 2rem; --step-3: 1.5rem; --step-2: 1.188rem; }
+    .row { grid-template-columns: 1fr; gap: 4px; }
+    .masthead { padding: 32px 0 28px; }
+    section { margin-top: 44px; }
+  }
+</style>
+
+<header class="masthead">
+  <div class="wrap">
+    <p class="eyebrow">Android Billing Software</p>
+    <h1>POS Billing — Your Shop's Billing &amp; Accounts on One Phone</h1>
+    <p>GST billing, stock, customer accounts, full accounting — all in one app. Works even without internet.</p>
+    <div class="meta">
+      <span>Version <b>2.19.2</b></span>
+      <span>Device <b>Android mobile &middot; tablet &middot; computer</b></span>
+      <span>Language <b>English &middot; Malayalam UI</b></span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <div class="cta">
+    <div class="cta-inner">
+      <div class="cta-text">
+        <span class="cta-tag">Google Play Store</span>
+        <h2>Download now</h2>
+        <p>Free to install from the Play Store. <b>First 1 month is a full free trial</b> — no card needed, start right away.</p>
+        <span class="trial-badge">🎁 First month free</span><br>
+        <a class="cta-btn" href="https://play.google.com/store/apps/details?id=com.billing.pos&amp;pcampaignid=web_share">View on Play Store →</a>
+      </div>
+      <div class="cta-qr">
+        <img src="data:image/png;base64,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" alt="Play Store QR code — POS Billing" />
+        <span>Scan to install</span>
+      </div>
+    </div>
+  </div>
+
+  <section>
+    <div class="sec-head">
+      <span class="num">01</span>
+      <h2>What is this app?</h2>
+    </div>
+    <p class="lede">
+      A complete billing &amp; accounting app built for small and medium shops and businesses.
+      No computer or extra hardware needed — just your Android phone.
+    </p>
+    <p>
+      Everything from making a bill to the balance sheet happens inside the same app. All data is
+      stored on the phone itself, so billing never stops even without internet. Internet is only
+      needed if you want to take a backup.
+    </p>
+
+    <div class="stats">
+      <div class="stat"><span class="n">15</span><span class="l">business types</span></div>
+      <div class="stat"><span class="n">80+</span><span class="l">screens &amp; features</span></div>
+      <div class="stat"><span class="n">20+</span><span class="l">reports</span></div>
+      <div class="stat"><span class="n">0</span><span class="l">monthly server cost</span></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <span class="num">02</span>
+      <h2>Who can use it?</h2>
+    </div>
+    <p class="lede">
+      Pick a business type the first time the app opens — the app then shows only the screens
+      that business needs. The rest stay hidden, and it can be changed later.
+    </p>
+    <div class="chips">
+      <span class="chip">General store</span>
+      <span class="chip">Textile shop</span>
+      <span class="chip">Mobile shop</span>
+      <span class="chip">Electrical &amp; plumbing</span>
+      <span class="chip">Automobile</span>
+      <span class="chip">Grocery</span>
+      <span class="chip">Medical store</span>
+      <span class="chip">Restaurant</span>
+      <span class="chip on">Rental</span>
+      <span class="chip on">Medical lab</span>
+      <span class="chip on">Gym</span>
+      <span class="chip on">Coaching centre</span>
+      <span class="chip on">Service centre</span>
+      <span class="chip on">Bulk SMS</span>
+      <span class="chip">Personal use</span>
+    </div>
+    <p style="margin-top:16px;font-size:0.875rem;color:var(--muted);">
+      The highlighted ones have their own dedicated module — details in section 04.
+    </p>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <span class="num">03</span>
+      <h2>Main features</h2>
+    </div>
+    <p class="lede">These are grouped the same way the app's own dashboard groups them.</p>
+
+    <div class="grid">
+      <div class="card">
+        <span class="tag">Sales</span>
+        <h3>Sales</h3>
+        <p>Fast billing by scanning a barcode or picking an item.</p>
+        <ul>
+          <li>New bill &amp; quick bill</li>
+          <li>Quotation, estimate</li>
+          <li>Order, delivery note</li>
+          <li>Sales return</li>
+          <li>Bill history &amp; correction</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <span class="tag">Purchase</span>
+        <h3>Purchase</h3>
+        <p>The full cycle of buying stock from a supplier.</p>
+        <ul>
+          <li>Purchase entry</li>
+          <li>Purchase order (LPO)</li>
+          <li>Purchase quotation comparison</li>
+          <li>Material receipt (GRN)</li>
+          <li>Purchase return</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <span class="tag">Accounts</span>
+        <h3>Accounts</h3>
+        <p>Full double-entry accounting, like Tally.</p>
+        <ul>
+          <li>Cash book, journal, contra</li>
+          <li>Receipt &amp; payment</li>
+          <li>Outstanding (receivable/payable)</li>
+          <li>Bank reconciliation</li>
+          <li>Cheque register, fixed assets</li>
+          <li>Cost centre, recurring journal</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <span class="tag">Reports</span>
+        <h3>Reports</h3>
+        <p>Every report can be downloaded as PDF / Excel.</p>
+        <ul>
+          <li>Balance sheet, profit &amp; loss</li>
+          <li>Trial balance, day book, ledger</li>
+          <li>Cash flow statement</li>
+          <li>Sales, profit, item-wise sales</li>
+          <li>Stock, item movement, expiry</li>
+          <li>GST / VAT reports</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <span class="tag">Masters</span>
+        <h3>Master data</h3>
+        <p>Add once, use everywhere.</p>
+        <ul>
+          <li>Customers, suppliers, customer type</li>
+          <li>Items, categories, bundles</li>
+          <li>Import from Excel</li>
+          <li>Users &amp; permissions</li>
+          <li>Backup &amp; restore</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <span class="tag">Daily use</span>
+        <h3>Everyday tools</h3>
+        <p>Small helpers needed every day at the shop.</p>
+        <ul>
+          <li>Calculator (with labels)</li>
+          <li>Diary &amp; sticky note</li>
+          <li>Poster maker</li>
+          <li>Price search</li>
+          <li>Bulk SMS &amp; templates</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <span class="num">04</span>
+      <h2>Modules for specialised businesses</h2>
+    </div>
+    <p class="lede">
+      Beyond a regular shop, a few business types get a complete system of their own inside the app.
+    </p>
+
+    <div class="rows">
+      <div class="row">
+        <h4>Medical lab</h4>
+        <p>Test master, patient records, lab bill, result entry, A4 result print, balance receipt.</p>
+      </div>
+      <div class="row">
+        <h4>Gym</h4>
+        <p>Member registration, photo, plan, installment fees, fee-due report, batch timing.</p>
+      </div>
+      <div class="row">
+        <h4>Coaching centre</h4>
+        <p>Course, class, subject, teachers, students, fees, attendance, enquiries and follow-up.</p>
+      </div>
+      <div class="row">
+        <h4>Service centre</h4>
+        <p>Job card, model/vehicle master, assigning to staff, priority, status tracking, pending jobs.</p>
+      </div>
+      <div class="row">
+        <h4>Rental</h4>
+        <p>Rent-out bill, return, rental-period alerts, item-wise report.</p>
+      </div>
+      <div class="row">
+        <h4>Production</h4>
+        <p>Recipe/procedure, raw-material usage, production cost, unit-cost calculation.</p>
+      </div>
+      <div class="row">
+        <h4>Bulk SMS</h4>
+        <p>Contact groups, message templates, send in bulk, delivery report.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <span class="num">05</span>
+      <h2>Online ordering &amp; the customer app</h2>
+    </div>
+    <p class="lede">
+      Alongside the shop owner's app there is a dedicated ordering system for customers — just your
+      own server, no extra monthly cost.
+    </p>
+
+    <div class="grid">
+      <div class="card">
+        <span class="tag">Catalog</span>
+        <h3>Online catalog</h3>
+        <p>The shop owner picks which items to show online, optionally with a special offer price
+          and a shop banner image, and uploads it.</p>
+      </div>
+
+      <div class="card">
+        <span class="tag">Order</span>
+        <h3>Customer ordering</h3>
+        <p>Customers browse the catalog and place an order through the customer app (or a web page
+          opened by scanning a QR code) — with location, a note, and a photo attachment. Past
+          orders can be reordered from Order History.</p>
+      </div>
+
+      <div class="card">
+        <span class="tag">Live</span>
+        <h3>Live notifications</h3>
+        <p>The shop owner is notified the moment a new order comes in, and the customer is notified
+          the moment its status changes (accepted/ready/delivered) — both inside the app.</p>
+      </div>
+
+      <div class="card">
+        <span class="tag">Chat</span>
+        <h3>Chat</h3>
+        <p>Shop owner and customer can message each other directly about an order — on both sides,
+          right inside the app, with its own notification.</p>
+      </div>
+
+      <div class="card">
+        <span class="tag">Discover</span>
+        <h3>Nearby shops &amp; referral</h3>
+        <p>Customers can browse nearby shops by category. Shop owners get a referral link to invite
+          other shop owners.</p>
+      </div>
+
+      <div class="card">
+        <span class="tag">No app</span>
+        <h3>Install-free option</h3>
+        <p>For customers who don't want to install an Android app, and for iPhone users — the same
+          ordering flow is also available as a web page (PWA) opened straight in the browser.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <span class="num">06</span>
+      <h2>Other features worth mentioning</h2>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <span class="tag">Tax</span>
+        <h3>GST &amp; VAT</h3>
+        <p>Full Indian GST — CGST/SGST, inter-state IGST, composition scheme, cess, HSN, bill numbers
+          per financial year. Also Saudi ZATCA and UAE VAT formats for the Gulf.</p>
+      </div>
+
+      <div class="card">
+        <span class="tag">Print</span>
+        <h3>Printing</h3>
+        <p>Print directly on a Bluetooth thermal printer (58mm / 80mm), or A4 on a WiFi printer.
+          PDFs come out in the same width chosen in Settings.</p>
+      </div>
+
+      <div class="card">
+        <span class="tag">Share</span>
+        <h3>WhatsApp share</h3>
+        <p>Send the bill as a PDF straight to the customer's WhatsApp number. Add a UPI QR code to
+          the bill so the customer can scan and pay.</p>
+      </div>
+
+      <div class="card">
+        <span class="tag">Backup</span>
+        <h3>Backup &amp; sync</h3>
+        <p>Back up to the phone, push to a server. Merge data when two phones are used for the same
+          shop. One-tap repair if duplicates show up.</p>
+      </div>
+
+      <div class="card">
+        <span class="tag">Input</span>
+        <h3>Fast entry</h3>
+        <p>Barcode scanning, reading a list with the camera (OCR), voice typing (including
+          Malayalam), and handwriting — all supported.</p>
+      </div>
+
+      <div class="card">
+        <span class="tag">Calculator</span>
+        <h3>Billing calculator</h3>
+        <p>For quickly adding up during a rush. Every total can carry a label, be saved under a
+          customer, and turned into a real bill later. Full-screen view to show the customer.</p>
+      </div>
+
+      <div class="card">
+        <span class="tag">Users</span>
+        <h3>Multiple users</h3>
+        <p>Separate logins for staff. Control who can do what — e.g. can create a bill but can't
+          delete one.</p>
+      </div>
+
+      <div class="card">
+        <span class="tag">Stock</span>
+        <h3>Stock control</h3>
+        <p>Batch number and expiry date, two units (box/piece), low-stock alerts, stock as of any
+          given day.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <span class="num">07</span>
+      <h2>How to run a demo</h2>
+    </div>
+    <p class="lede">
+      A sequence for showing the app to a shop owner in 10–15 minutes. Following this order gets
+      them to their first bill on their own.
+    </p>
+
+    <div class="steps">
+      <div class="step">
+        <div>
+          <h4>Pick the business type</h4>
+          <p>The app asks for the shop's type when it first opens. Pick their business.</p>
+          <div class="say"><b>Say</b>From now on you'll only see the screens your shop needs — the rest won't get in your way.</div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div>
+          <h4>Add the shop's details</h4>
+          <p>Settings → shop name, address, phone, GST number, logo. This appears on every bill.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div>
+          <h4>Add a few items</h4>
+          <p>Items → add 2–3 items. If they have an Excel file, show it importing in one go.</p>
+          <div class="say"><b>Say</b>If your old list is in Excel we can load it all at once — no need to type each one.</div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div>
+          <h4>Add a customer</h4>
+          <p>Customers → name and phone number. A phone number is needed to send bills over WhatsApp.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div>
+          <h4>Make the first bill</h4>
+          <p>New Bill → pick the customer → add items (scan a barcode if there is one) → payment method → Save.</p>
+          <div class="say"><b>Note</b>If saved as credit, show that the amount now appears as receivable in the customer's account.</div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div>
+          <h4>Print / share the bill</h4>
+          <p>From the same screen: PDF, WhatsApp, print (Bluetooth or WiFi). If there's a thermal printer, print it to show.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div>
+          <h4>Show the calculator</h4>
+          <p>Dashboard → Calculator. Add up amounts, put a label, save under a customer's name. The full-screen view can be shown to the customer.</p>
+          <div class="say"><b>Say</b>If there's no time for a full bill during a rush, this is enough — turn it into a bill later.</div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div>
+          <h4>Show the reports</h4>
+          <p>Sales Report, Outstanding (who owes money), Stock, profit &amp; loss. Download any one as PDF to show.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div>
+          <h4>Show backup and finish</h4>
+          <p>Backup → show taking a backup to the phone.</p>
+          <div class="say"><b>Say</b>Even if the phone is lost, the accounts aren't — the backup file restores everything exactly on a new phone.</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <span class="num">08</span>
+      <h2>Frequently asked questions</h2>
+    </div>
+
+    <div class="faq">
+      <details>
+        <summary>Is internet needed?</summary>
+        <p>Not for billing or accounting — everything is stored on the phone. Internet is only needed for pushing a backup to the server, sending a bill on WhatsApp, and for online ordering and chat.</p>
+      </details>
+      <details>
+        <summary>Does online ordering need its own server?</summary>
+        <p>Yes — a small, low-cost PHP hosting plan is enough. Just upload one PHP file to it; no separate database server is required.</p>
+      </details>
+      <details>
+        <summary>Can old accounts be brought in?</summary>
+        <p>Yes. Items and customers can be imported from an Excel / CSV file. A customer's old due amount can be added as an opening balance.</p>
+      </details>
+      <details>
+        <summary>Can it be used on two phones at once?</summary>
+        <p>Yes. Billing can happen on each phone separately, then merging the backups (Merge) combines the data from both. Every bill carries a number that shows which phone it came from.</p>
+      </details>
+      <details>
+        <summary>Can a shop without GST use it?</summary>
+        <p>Yes. Turning GST off in Settings hides tax on the bill. A separate "No Tax Invoice" format is also available if needed.</p>
+      </details>
+      <details>
+        <summary>Is a printer required?</summary>
+        <p>No. Without a printer, the bill can just be sent as a PDF on WhatsApp. Any Bluetooth thermal printer can be added later.</p>
+      </details>
+      <details>
+        <summary>Can a wrong bill be corrected?</summary>
+        <p>Yes. Open it from the bill list to edit or delete it. Stock and the customer's account update automatically. User permissions can control who is allowed to change what.</p>
+      </details>
+    </div>
+  </section>
+
+  <div class="closing">
+    <h2>After the demo</h2>
+    <p>
+      Once the app is installed with the shop's details and a few items added, they can start
+      billing that same day. It helps to call once in the first week as a reminder to take a backup.
+    </p>
+  </div>
+
+  <footer>POS Billing &middot; version 2.19.2 &middot; this document is for demo purposes</footer>
+
+</div>

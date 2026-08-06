@@ -1,21 +1,22 @@
 # Documentation
 
-Customer-facing material for introducing and demoing the app.
+Customer-facing material for introducing and demoing the app, in both Malayalam and English.
 
 | File | Use |
 |---|---|
-| `POS-Billing-Malayalam.pdf` | Malayalam introduction + 9-step demo guide. Print it, or send it over WhatsApp — the Malayalam font is embedded, so it renders correctly on any device. |
-| `POS-Billing-Malayalam.html` | The same document as a standalone web page. Open it in any browser; works offline. |
+| `POS-Billing-Malayalam.pdf` / `.html` | Malayalam introduction + demo guide. Print it, or send it over WhatsApp — the Malayalam font is embedded in the PDF, so it renders correctly on any device. The HTML works offline in any browser. |
+| `POS-Billing-English.pdf` / `.html` | Same document in English. |
 
 ## Contents
 
-1. **എന്താണ് ഈ ആപ്പ്** — what the app is, at a glance
-2. **ആർക്കൊക്കെ ഉപയോഗിക്കാം** — the 15 business types it covers
-3. **പ്രധാന സൗകര്യങ്ങൾ** — features, grouped the same way the app's own dashboard groups them
-4. **പ്രത്യേക മൊഡ്യൂളുകൾ** — Lab, Gym, Coaching, Service, Rental, Production, Bulk SMS
-5. **എടുത്തുപറയേണ്ട സവിശേഷതകൾ** — GST/VAT, printing, WhatsApp, backup, OCR, users, stock
-6. **ഡെമോ ചെയ്യുന്ന വിധം** — a 9-step demo script, each step with a line to say out loud
-7. **പതിവ് ചോദ്യങ്ങൾ** — the six questions shop owners usually ask
+1. **What is this app** — what the app is, at a glance
+2. **Who can use it** — the 15 business types it covers
+3. **Main features** — features, grouped the same way the app's own dashboard groups them
+4. **Modules for specialised businesses** — Lab, Gym, Coaching, Service, Rental, Production, Bulk SMS
+5. **Online ordering & the customer app** — catalog upload, customer ordering (app or QR-linked web page), live push notifications, shop↔customer chat, nearby-shop directory, referral links
+6. **Other features worth mentioning** — GST/VAT, printing, WhatsApp, backup, OCR, users, stock
+7. **How to run a demo** — a step-by-step demo script, each step with a line to say out loud
+8. **Frequently asked questions** — the questions shop owners usually ask
 
 ## Regenerating the PDF
 
@@ -30,14 +31,20 @@ chromium --headless --disable-gpu --no-sandbox \
   --print-to-pdf=docs/POS-Billing-Malayalam.pdf \
   --print-to-pdf-no-header --virtual-time-budget=6000 \
   docs/POS-Billing-Malayalam.html
+
+chromium --headless --disable-gpu --no-sandbox \
+  --print-to-pdf=docs/POS-Billing-English.pdf \
+  --print-to-pdf-no-header --virtual-time-budget=6000 \
+  docs/POS-Billing-English.html
 ```
 
 Check the result with `pdffonts` — a Malayalam face (e.g. `Meera-Regular`)
-must appear in the embedded font list, otherwise the text has silently
-fallen back and the conjuncts will be wrong.
+must appear in the embedded font list for the Malayalam PDF, otherwise the
+text has silently fallen back and the conjuncts will be wrong.
 
-The version number appears twice in the HTML (masthead and footer); update
-both when the app version changes.
+The version number appears twice in each HTML file (masthead and footer);
+update all four spots when the app version changes, and keep the two
+documents' content in sync when a feature is added or removed.
 
 ## Regenerating the Play Store QR code
 
