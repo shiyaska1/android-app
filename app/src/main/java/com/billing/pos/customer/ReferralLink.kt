@@ -5,7 +5,7 @@ import com.billing.pos.data.AppPrefs
 
 /**
  * Builds the exact same install link (and Play Store referrer payload) as the shop owner's
- * standalone `tools/customer-link-builder.html` tool — but from inside the customer app itself,
+ * standalone `server/customer-link-builder.html` tool — but from inside the customer app itself,
  * using whatever shop is currently open. Lets any customer invite a friend to this same shop in
  * one tap instead of asking the shop owner to run the builder tool for them.
  */
