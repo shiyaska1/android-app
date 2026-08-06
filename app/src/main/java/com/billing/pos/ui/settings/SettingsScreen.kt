@@ -110,6 +110,10 @@ val BUSINESS_TYPES = listOf(
     "Automobiles", "Grocery", "Medical store", "Restaurant", "Rental", "Medical lab", "Bulk SMS", "Gym", "Coaching Center", "Service Center"
 )
 
+/** Marks the machine-readable line in a "Share settings" export, so "Import settings" can find
+ *  it even inside whatever else WhatsApp forwarding/quoting wraps around it. */
+private const val SETTINGS_EXPORT_MARKER = "POSBILLING-SETTINGS:"
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
@@ -1231,6 +1235,92 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
                         prefs.shopLatitude = 0.0; prefs.shopLongitude = 0.0; shopLat = 0.0; shopLng = 0.0
                     }) { Text("Clear") }
                 }
+            }
+
+            HighlightText("Share / import settings", MaterialTheme.typography.titleSmall, settingAnchors, highlightedSetting, modifier = Modifier.padding(top = 20.dp))
+            Text(
+                "Setting up a new phone? Share this device's shop code, catalog/order/backup URLs " +
+                    "as one text block — paste it into \"Import settings\" on the new phone instead of " +
+                    "typing each field by hand.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline
+            )
+            var showImportSettings by remember { mutableStateOf(false) }
+            var importSettingsText by remember { mutableStateOf("") }
+            Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = {
+                        val csv = listOf(
+                            prefs.shopCode, prefs.onlineCatalogUrl, prefs.fetchOrdersUrl,
+                            prefs.backupPushUrl, prefs.backupOrgId, prefs.backupDeviceId, prefs.backupPullUrl
+                        ).joinToString(",")
+                        val text = "POS Billing settings — ${prefs.companyName}, ${prefs.companyAddress}\n\n" +
+                            "$SETTINGS_EXPORT_MARKER$csv"
+                        val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(android.content.Intent.EXTRA_TEXT, text)
+                        }
+                        runCatching { context.startActivity(android.content.Intent.createChooser(intent, "Share settings")) }
+                    },
+                    modifier = Modifier.weight(1f)
+                ) { Text("Share settings") }
+                OutlinedButton(onClick = { importSettingsText = ""; showImportSettings = true }, modifier = Modifier.weight(1f)) {
+                    Text("Import settings")
+                }
+            }
+            if (showImportSettings) {
+                AlertDialog(
+                    onDismissRequest = { showImportSettings = false },
+                    title = { Text("Import settings") },
+                    text = {
+                        Column {
+                            Text(
+                                "Paste the text shared from another device (WhatsApp forwarding etc. is fine).",
+                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline
+                            )
+                            OutlinedTextField(
+                                value = importSettingsText,
+                                onValueChange = { importSettingsText = it },
+                                minLines = 4, maxLines = 8,
+                                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                            )
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            val marker = importSettingsText.indexOf(SETTINGS_EXPORT_MARKER)
+                            val csv = if (marker >= 0) {
+                                importSettingsText.substring(marker + SETTINGS_EXPORT_MARKER.length)
+                                    .lineSequence().firstOrNull()?.trim().orEmpty()
+                            } else ""
+                            val fields = csv.split(",").map { it.trim() }
+                            if (fields.size == 7) {
+                                prefs.shopCode = fields[0]
+                                prefs.onlineCatalogUrl = fields[1]
+                                prefs.fetchOrdersUrl = fields[2]
+                                prefs.backupPushUrl = fields[3]
+                                prefs.backupOrgId = fields[4]
+                                prefs.backupDeviceId = fields[5]
+                                prefs.backupPullUrl = fields[6]
+                                // Keep every on-screen field in sync too — these are separate
+                                // remembered copies (see their own OutlinedTextFields above/below),
+                                // not a live re-read of prefs, so they'd otherwise show stale
+                                // values until the screen is reopened.
+                                shopCode = fields[0]
+                                onlineCatalogUrl = fields[1]
+                                fetchOrdersUrl = fields[2]
+                                backupPushUrl = fields[3]
+                                backupOrgId = fields[4]
+                                backupDeviceId = fields[5]
+                                backupPullUrl = fields[6]
+                                showImportSettings = false
+                                scope.launch { snackbar.showSnackbar("Settings imported") }
+                            } else {
+                                scope.launch { snackbar.showSnackbar("Couldn't find a valid settings block in that text") }
+                            }
+                        }) { Text("Save") }
+                    },
+                    dismissButton = { TextButton(onClick = { showImportSettings = false }) { Text("Cancel") } }
+                )
             }
 
             Divider(Modifier.padding(vertical = 16.dp))
