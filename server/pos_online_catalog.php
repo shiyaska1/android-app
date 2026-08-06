@@ -645,6 +645,15 @@ if ($method === 'GET' && $do === 'directory') {
     exit;
 }
 
+// Every recognised "do" value above ends in exit; if one was given but none of those blocks
+// matched, this server doesn't know it — most likely an app newer than this file (e.g. it was
+// updated to send do=registerToken before this file got re-uploaded). Fail loudly instead of
+// falling through to the catalog-upload handler below, which would otherwise silently overwrite
+// this shop's real catalog.json with whatever unrelated body that unknown "do" call sent.
+if ($do !== '') {
+    pos_catalog_fail(400, 'Unknown do=' . $do . ' — this server is running an older pos_online_catalog.php than the app; upload the latest version from the app\'s repo.');
+}
+
 if ($method === 'POST' || $method === 'PUT') {
     $raw = file_get_contents('php://input');
     if ($raw === false || $raw === '') {
@@ -657,6 +666,12 @@ if ($method === 'POST' || $method === 'PUT') {
     $shop = isset($body['shop']) ? (string) $body['shop'] : '';
     if (!preg_match('/^[A-Za-z0-9_]+$/', $shop)) {
         pos_catalog_fail(400, 'Invalid or missing "shop" in body');
+    }
+    // A real catalog upload always carries an "items" array (even an empty one — see
+    // OnlineCatalogUpload.kt). Requiring it here is a second guard against anything that isn't
+    // actually a catalog upload landing here and overwriting a shop's real catalog.json.
+    if (!isset($body['items']) || !is_array($body['items'])) {
+        pos_catalog_fail(400, 'Missing "items" in body — this endpoint only accepts catalog uploads without a "do" param');
     }
     $folder = $STORAGE_DIR . '/' . $shop;
     if (!is_dir($folder) && !@mkdir($folder, 0755, true)) {
