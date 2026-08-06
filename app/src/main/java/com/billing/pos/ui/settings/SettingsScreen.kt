@@ -1,5 +1,7 @@
 package com.billing.pos.ui.settings
 
+import android.Manifest
+import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -66,9 +68,12 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import com.billing.pos.data.AppPrefs
+import com.billing.pos.data.DownloadSaver
 import com.billing.pos.util.Format
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** Copies a picked file (image or PDF) into app storage, keeping a sensible extension. */
 private fun mmText(v: Double): String = if (v == v.toLong().toDouble()) v.toLong().toString() else v.toString()
@@ -1199,23 +1204,51 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
             )
             var showImportSettings by remember { mutableStateOf(false) }
             var importSettingsText by remember { mutableStateOf("") }
+            fun settingsExportText(): String {
+                val csv = listOf(
+                    prefs.shopCode, prefs.onlineCatalogUrl, prefs.fetchOrdersUrl,
+                    prefs.backupPushUrl, prefs.backupOrgId, prefs.backupDeviceId, prefs.backupPullUrl
+                ).joinToString(",")
+                return "POS Billing settings — ${prefs.companyName}, ${prefs.companyAddress}\n\n" +
+                    "$SETTINGS_EXPORT_MARKER$csv"
+            }
+            fun downloadSettings() {
+                scope.launch {
+                    val displayName = "pos-billing-settings-${prefs.shopCode.ifBlank { "device" }}.txt"
+                    val saved = withContext(Dispatchers.IO) {
+                        val file = java.io.File.createTempFile("pos_settings_", ".txt", context.cacheDir)
+                        file.writeText(settingsExportText())
+                        DownloadSaver.save(context, file, displayName, "text/plain")
+                    }
+                    snackbar.showSnackbar(if (saved) "Saved to Downloads: $displayName" else "Could not save settings")
+                }
+            }
+            val downloadPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+                if (granted) downloadSettings() else scope.launch { snackbar.showSnackbar("Storage permission denied") }
+            }
             Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(
                     onClick = {
-                        val csv = listOf(
-                            prefs.shopCode, prefs.onlineCatalogUrl, prefs.fetchOrdersUrl,
-                            prefs.backupPushUrl, prefs.backupOrgId, prefs.backupDeviceId, prefs.backupPullUrl
-                        ).joinToString(",")
-                        val text = "POS Billing settings — ${prefs.companyName}, ${prefs.companyAddress}\n\n" +
-                            "$SETTINGS_EXPORT_MARKER$csv"
                         val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
                             type = "text/plain"
-                            putExtra(android.content.Intent.EXTRA_TEXT, text)
+                            putExtra(android.content.Intent.EXTRA_TEXT, settingsExportText())
                         }
                         runCatching { context.startActivity(android.content.Intent.createChooser(intent, "Share settings")) }
                     },
                     modifier = Modifier.weight(1f)
                 ) { Text("Share settings") }
+                OutlinedButton(
+                    onClick = {
+                        if (DownloadSaver.needsLegacyPermission() &&
+                            androidx.core.content.ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED
+                        ) {
+                            downloadPermission.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                        } else {
+                            downloadSettings()
+                        }
+                    },
+                    modifier = Modifier.weight(1f)
+                ) { Text("Download") }
                 OutlinedButton(onClick = { importSettingsText = ""; showImportSettings = true }, modifier = Modifier.weight(1f)) {
                     Text("Import settings")
                 }
