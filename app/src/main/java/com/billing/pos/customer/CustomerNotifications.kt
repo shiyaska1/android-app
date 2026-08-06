@@ -15,6 +15,10 @@ import com.billing.pos.MainActivity
 import com.billing.pos.data.CustomerNotification
 import com.billing.pos.data.OnlineOrderStatus
 
+/** Marker extra: tapping this notification should open straight into the notification list
+ *  (see [MainActivity]'s captureIncoming), same convention as [com.billing.pos.diary.EXTRA_OPEN_DIARY_ID]. */
+const val EXTRA_OPEN_CUSTOMER_NOTIFICATIONS = "open_customer_notifications"
+
 /** System notifications for a customer install: order status changes / messages from the shop —
  *  same channel/builder pattern as the diary and quick-note reminders elsewhere in this app. */
 object CustomerNotifications {
@@ -44,6 +48,7 @@ object CustomerNotifications {
             context, notification.id.toInt(),
             Intent(context, MainActivity::class.java).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                putExtra(EXTRA_OPEN_CUSTOMER_NOTIFICATIONS, true)
             },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )

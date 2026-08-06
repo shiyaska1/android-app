@@ -23,9 +23,11 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Chat
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DocumentScanner
 import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.ErrorOutline
@@ -136,6 +138,7 @@ fun CustomerCatalogScreen(onExitTestMode: () -> Unit = {}, vm: CustomerCatalogVi
     val history by vm.history.collectAsStateSafe()
     val notifications by vm.notifications.collectAsStateSafe()
     val unreadNotifications by vm.unreadNotifications.collectAsStateSafe()
+    val replying by vm.replying.collectAsStateSafe()
     val shareText by vm.shareText.collectAsStateSafe()
     val scope = rememberCoroutineScope()
 
@@ -194,6 +197,12 @@ fun CustomerCatalogScreen(onExitTestMode: () -> Unit = {}, vm: CustomerCatalogVi
 
     LaunchedEffect(message) {
         message?.let { snackbar.showSnackbar(it); vm.messageShown() }
+    }
+
+    // Order-update notification tap → open the notification list straight away.
+    val pendingNotificationsOpen = com.billing.pos.auth.PendingCustomerNotificationsOpen.pending
+    LaunchedEffect(pendingNotificationsOpen) {
+        if (com.billing.pos.auth.PendingCustomerNotificationsOpen.consume()) showNotifications = true
     }
 
     var searchQuery by rememberSaveable { mutableStateOf("") }
@@ -433,7 +442,11 @@ fun CustomerCatalogScreen(onExitTestMode: () -> Unit = {}, vm: CustomerCatalogVi
         LaunchedEffect(Unit) { vm.notificationsOpened() }
         NotificationsDialog(
             notifications = notifications,
-            onDismiss = { showNotifications = false }
+            replying = replying,
+            onDismiss = { showNotifications = false },
+            onDelete = { n -> vm.deleteNotification(n) },
+            onClearAll = { vm.clearAllNotifications(); showNotifications = false },
+            onReply = { n, text -> vm.replyToNotification(n, text) }
         )
     }
     technicalError?.let { detail ->
@@ -506,14 +519,31 @@ private fun TechnicalErrorDialog(
     )
 }
 
+/** The customer's notification list — order status changes / messages the shop sent. Each one
+ *  can be deleted, and replied to right there (the customer side of a live chat with the shop —
+ *  the reply is picked up by the shop owner's Messages screen, see [CustomerMessageSend]). */
 @Composable
 private fun NotificationsDialog(
     notifications: List<CustomerNotification>,
-    onDismiss: () -> Unit
+    replying: Boolean,
+    onDismiss: () -> Unit,
+    onDelete: (CustomerNotification) -> Unit,
+    onClearAll: () -> Unit,
+    onReply: (CustomerNotification, String) -> Unit
 ) {
+    var replyTargetId by remember { mutableStateOf<Long?>(null) }
+    var replyText by rememberSaveable { mutableStateOf("") }
+
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Notifications") },
+        title = {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text("Notifications")
+                if (notifications.isNotEmpty()) {
+                    TextButton(onClick = onClearAll) { Text("Clear all") }
+                }
+            }
+        },
         text = {
             if (notifications.isEmpty()) {
                 Text("No notifications yet.", color = MaterialTheme.colorScheme.outline)
@@ -522,17 +552,46 @@ private fun NotificationsDialog(
                     notifications.forEach { n ->
                         val statusLabel = OnlineOrderStatus.entries.find { it.name == n.status }?.label
                         Column(Modifier.padding(vertical = 8.dp)) {
-                            if (statusLabel != null) {
-                                Text(statusLabel, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleSmall)
+                            Row(verticalAlignment = Alignment.Top) {
+                                Column(Modifier.weight(1f)) {
+                                    if (statusLabel != null) {
+                                        Text(statusLabel, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleSmall)
+                                    }
+                                    if (n.message.isNotBlank()) {
+                                        Text(n.message, style = MaterialTheme.typography.bodySmall)
+                                    }
+                                    Text(
+                                        SimpleDateFormat("dd MMM, HH:mm", Locale.getDefault()).format(Date(n.receivedAt)),
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.outline
+                                    )
+                                }
+                                IconButton(onClick = { onDelete(n) }, modifier = Modifier.size(32.dp)) {
+                                    Icon(Icons.Default.Delete, contentDescription = "Delete", modifier = Modifier.size(18.dp))
+                                }
                             }
-                            if (n.message.isNotBlank()) {
-                                Text(n.message, style = MaterialTheme.typography.bodySmall)
+                            if (replyTargetId == n.id) {
+                                Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    OutlinedTextField(
+                                        value = replyText, onValueChange = { replyText = it },
+                                        placeholder = { Text("Reply to the shop") },
+                                        singleLine = true, modifier = Modifier.weight(1f)
+                                    )
+                                    IconButton(
+                                        onClick = {
+                                            val text = replyText.trim()
+                                            if (text.isNotBlank()) { onReply(n, text); replyText = ""; replyTargetId = null }
+                                        },
+                                        enabled = !replying && replyText.isNotBlank()
+                                    ) {
+                                        Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send reply")
+                                    }
+                                }
+                            } else {
+                                TextButton(onClick = { replyTargetId = n.id; replyText = "" }, modifier = Modifier.padding(top = 2.dp)) {
+                                    Text("Reply")
+                                }
                             }
-                            Text(
-                                SimpleDateFormat("dd MMM, HH:mm", Locale.getDefault()).format(Date(n.receivedAt)),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.outline
-                            )
                             Divider(Modifier.padding(top = 6.dp))
                         }
                     }

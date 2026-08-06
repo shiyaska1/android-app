@@ -13,6 +13,10 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.billing.pos.MainActivity
 
+/** Which customer's thread to open (a phone number) — carried by a "new message" notification's
+ *  tap intent, same convention as [com.billing.pos.diary.EXTRA_OPEN_DIARY_ID]. */
+const val EXTRA_OPEN_MESSAGE_PHONE = "open_message_phone"
+
 /** System notification for the shop owner: a customer placed a new online order — the mirror
  *  of [CustomerNotifications] on the other side of this feature. */
 object ShopNotifications {
@@ -52,6 +56,36 @@ object ShopNotifications {
             PackageManager.PERMISSION_GRANTED
         if (allowed) {
             runCatching { NotificationManagerCompat.from(context).notify("shop_new_order", System.currentTimeMillis().toInt(), built) }
+        }
+    }
+
+    /** A customer sent a message/reply — see [ShopMessagesFetch]. Opens straight into that
+     *  customer's thread on the Messages screen rather than just the app's default screen. */
+    fun showNewMessage(context: Context, customerPhone: String, customerName: String, text: String) {
+        ensureChannel(context)
+        val title = customerName.ifBlank { customerPhone }
+        val open = PendingIntent.getActivity(
+            context, customerPhone.hashCode(),
+            Intent(context, MainActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                putExtra(EXTRA_OPEN_MESSAGE_PHONE, customerPhone)
+            },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val built = NotificationCompat.Builder(context, CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setContentTitle(title)
+            .setContentText(text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+            .setAutoCancel(true)
+            .setContentIntent(open)
+            .build()
+
+        val allowed = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
+            PackageManager.PERMISSION_GRANTED
+        if (allowed) {
+            runCatching { NotificationManagerCompat.from(context).notify("shop_message_$customerPhone", customerPhone.hashCode(), built) }
         }
     }
 }

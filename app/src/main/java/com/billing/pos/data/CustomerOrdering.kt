@@ -211,4 +211,10 @@ interface CustomerNotificationDao {
 
     @Query("UPDATE customer_notifications SET read = 1")
     suspend fun markAllRead()
+
+    @Delete
+    suspend fun delete(notification: CustomerNotification)
+
+    @Query("DELETE FROM customer_notifications")
+    suspend fun deleteAll()
 }

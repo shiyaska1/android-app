@@ -50,6 +50,12 @@ class ShopOrderPollReceiver : BroadcastReceiver() {
                         is OrdersFetch.Result.Ok -> if (result.count > 0) ShopNotifications.showNewOrders(app, result.count)
                         is OrdersFetch.Result.Failed -> {}
                     }
+                    when (val result = ShopMessagesFetch.fetch(app)) {
+                        is ShopMessagesFetch.Result.Ok -> result.fresh.forEach {
+                            ShopNotifications.showNewMessage(app, it.customerPhone, it.customerName, it.text)
+                        }
+                        is ShopMessagesFetch.Result.Failed -> {}
+                    }
                     ShopOrderPoll.schedule(app)
                 }
             } catch (e: Exception) {

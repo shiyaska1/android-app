@@ -31,11 +31,15 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.navArgument
+import com.billing.pos.auth.PendingCustomerNotificationsOpen
 import com.billing.pos.auth.PendingDiaryOpen
 import com.billing.pos.auth.PendingImport
 import com.billing.pos.auth.PendingQuickNoteOpen
+import com.billing.pos.auth.PendingShopMessageThreadOpen
 import com.billing.pos.auth.PendingSharedMedia
 import com.billing.pos.auth.Session
+import com.billing.pos.customer.EXTRA_OPEN_CUSTOMER_NOTIFICATIONS
+import com.billing.pos.customer.EXTRA_OPEN_MESSAGE_PHONE
 import com.billing.pos.diary.EXTRA_OPEN_DIARY_ID
 import com.billing.pos.quicknote.EXTRA_OPEN_QUICKNOTE_ID
 import com.billing.pos.data.AppPrefs
@@ -238,6 +242,13 @@ class MainActivity : FragmentActivity() {
 
         val quickNoteId = intent.getLongExtra(EXTRA_OPEN_QUICKNOTE_ID, 0L)
         if (quickNoteId > 0L) PendingQuickNoteOpen.id = quickNoteId
+
+        val messagePhone = intent.getStringExtra(EXTRA_OPEN_MESSAGE_PHONE)
+        if (!messagePhone.isNullOrBlank()) PendingShopMessageThreadOpen.phone = messagePhone
+
+        if (intent.getBooleanExtra(EXTRA_OPEN_CUSTOMER_NOTIFICATIONS, false)) {
+            PendingCustomerNotificationsOpen.pending = true
+        }
     }
 }
 
@@ -278,6 +289,16 @@ private fun AppNav() {
         if (qid != null && Session.isLoggedIn) {
             PendingQuickNoteOpen.consume()
             nav.navigate("quicknote/edit/$qid") { launchSingleTop = true }
+        }
+    }
+
+    // "New message" notification tap → once logged in, open that customer's thread straight away.
+    val pendingMessagePhone = PendingShopMessageThreadOpen.phone
+    androidx.compose.runtime.LaunchedEffect(pendingMessagePhone, Session.current) {
+        val phone = PendingShopMessageThreadOpen.phone
+        if (phone != null && Session.isLoggedIn) {
+            PendingShopMessageThreadOpen.consume()
+            nav.navigate("shopMessages/${Uri.encode(phone)}") { launchSingleTop = true }
         }
     }
 
@@ -391,6 +412,18 @@ private fun AppNav() {
         composable("onlineOrders") {
             com.billing.pos.ui.online.OnlineOrdersScreen(onBack = { nav.popBackStack() })
         }
+        composable("shopMessages") {
+            com.billing.pos.ui.messages.ShopMessagesScreen(onBack = { nav.popBackStack() })
+        }
+        composable(
+            route = "shopMessages/{phone}",
+            arguments = listOf(navArgument("phone") { type = NavType.StringType })
+        ) { entry ->
+            com.billing.pos.ui.messages.ShopMessagesScreen(
+                onBack = { nav.popBackStack() },
+                initialPhone = entry.arguments?.getString("phone")
+            )
+        }
         composable("dashboard") {
             // Back from the dashboard means leaving the app, so make it deliberate — a
             // stray back press should not throw away a half-finished day.
@@ -485,6 +518,7 @@ private fun AppNav() {
                 onBundles = { nav.navigate("bundles") },
                 onOnlineItems = { nav.navigate("onlineItems") },
                 onOnlineOrders = { nav.navigate("onlineOrders") },
+                onMessages = { nav.navigate("shopMessages") },
                 onNewPurchase = { nav.navigate("purchase") },
                 onPurchases = { nav.navigate("purchases") },
                 onSuppliers = { nav.navigate("suppliers") },

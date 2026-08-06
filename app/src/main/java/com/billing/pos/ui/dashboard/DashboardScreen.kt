@@ -4,6 +4,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.NoteAdd
 import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
@@ -28,6 +30,7 @@ import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material.icons.filled.Assessment
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Handyman
 import androidx.compose.material.icons.filled.AssignmentReturn
 import androidx.compose.material.icons.automirrored.filled.Send
@@ -88,6 +91,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -166,6 +170,7 @@ fun DashboardScreen(
     onBundles: () -> Unit,
     onOnlineItems: () -> Unit,
     onOnlineOrders: () -> Unit,
+    onMessages: () -> Unit,
     onNewPurchase: () -> Unit,
     onPurchases: () -> Unit,
     onSuppliers: () -> Unit,
@@ -414,6 +419,13 @@ fun DashboardScreen(
                             CircularProgressIndicator(modifier = Modifier.size(20.dp), color = MaterialTheme.colorScheme.onPrimary, strokeWidth = 2.dp)
                         } else {
                             Icon(Icons.Filled.Build, contentDescription = "Repair duplicate data")
+                        }
+                    }
+                    val unreadMessages by remember { com.billing.pos.data.AppDatabase.get(context).shopMessageDao().observeUnreadCount() }
+                        .collectAsState(initial = 0)
+                    IconButton(onClick = onMessages) {
+                        BadgedBox(badge = { if (unreadMessages > 0) Badge { Text("$unreadMessages") } }) {
+                            Icon(Icons.Filled.Chat, contentDescription = "Messages")
                         }
                     }
                     IconButton(onClick = onQuickNote) {

@@ -92,6 +92,29 @@ class CustomerCatalogViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { notificationDao.markAllRead() }
     }
 
+    fun deleteNotification(notification: CustomerNotification) {
+        viewModelScope.launch { notificationDao.delete(notification) }
+    }
+
+    fun clearAllNotifications() {
+        viewModelScope.launch { notificationDao.deleteAll() }
+    }
+
+    private val _replying = MutableStateFlow(false)
+    val replying: StateFlow<Boolean> = _replying
+
+    /** Sends a reply to the shop about [notification] — the customer side of a live chat with
+     *  the shop, picked up on the shop owner's next Messages poll/refresh. */
+    fun replyToNotification(notification: CustomerNotification, text: String) {
+        if (text.isBlank() || _replying.value) return
+        viewModelScope.launch {
+            _replying.value = true
+            val ok = com.billing.pos.customer.CustomerMessageSend.send(getApplication(), text, notification.orderId)
+            _message.value = if (ok) "Reply sent" else "Could not send reply — check your connection"
+            _replying.value = false
+        }
+    }
+
     fun refresh() {
         if (_refreshing.value) return
         viewModelScope.launch {
