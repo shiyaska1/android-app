@@ -83,9 +83,11 @@ object ParkedScreens {
 
     // Screens that make no sense to park: the dashboard itself, and the system/one-shot
     // screens. Everything else — every entry, list, master and report — can be minimised.
+    // customerCatalog is the customer-facing ordering screen (a different, non-shop-owner
+    // person uses it), so a shop-owner-only concept like a minimise tray makes no sense there.
     private val notMinimizable = setOf(
         "boot", "dashboard", "license", "login", "changepassword",
-        "settings", "printer", "backup", "mergelog", "chart"
+        "settings", "printer", "backup", "mergelog", "chart", "customerCatalog"
     )
 
     fun isMinimizable(routePattern: String?): Boolean {

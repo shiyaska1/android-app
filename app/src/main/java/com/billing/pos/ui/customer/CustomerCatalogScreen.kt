@@ -24,6 +24,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddAPhoto
+import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Call
@@ -453,7 +454,6 @@ fun CustomerCatalogScreen(onExitTestMode: () -> Unit = {}, vm: CustomerCatalogVi
                     onNoteChange = { orderNote = it },
                     onScan = { scanOrderText() },
                     attachments = orderAttachments,
-                    premium = vm.isPremiumShop,
                     compressing = compressingAttachment,
                     onAddFromCamera = { launchCamera() },
                     onAddFromGallery = { galleryPicker.launch("image/*") },
@@ -806,7 +806,6 @@ private fun OrderNoteCard(
     onNoteChange: (String) -> Unit,
     onScan: () -> Unit,
     attachments: List<String>,
-    premium: Boolean,
     compressing: Boolean,
     onAddFromCamera: () -> Unit,
     onAddFromGallery: () -> Unit,
@@ -831,49 +830,60 @@ private fun OrderNoteCard(
                 minLines = 3, maxLines = 8,
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
             )
-            if (premium) {
-                Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = onAddFromCamera, enabled = !compressing, modifier = Modifier.weight(1f)) {
-                        Icon(Icons.Default.CameraAlt, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Text("  Camera")
-                    }
-                    OutlinedButton(onClick = onAddFromGallery, enabled = !compressing, modifier = Modifier.weight(1f)) {
-                        Icon(Icons.Default.AddAPhoto, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Text("  Gallery")
-                    }
+            Row(
+                Modifier.fillMaxWidth().padding(top = 12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.Default.AttachFile, contentDescription = null,
+                    modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary
+                )
+                Text(
+                    "  Add Attachment", style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+            Row(Modifier.fillMaxWidth().padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = onAddFromCamera, enabled = !compressing, modifier = Modifier.weight(1f)) {
+                    Icon(Icons.Default.CameraAlt, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Text("  Camera")
                 }
-                if (compressing) {
-                    Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                        Text("  Adding attachment…", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline, modifier = Modifier.padding(start = 6.dp))
-                    }
+                OutlinedButton(onClick = onAddFromGallery, enabled = !compressing, modifier = Modifier.weight(1f)) {
+                    Icon(Icons.Default.AddAPhoto, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Text("  Gallery")
                 }
-                if (attachments.isNotEmpty()) {
-                    LazyRow(
-                        contentPadding = PaddingValues(top = 10.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        items(attachments) { uri ->
-                            Box(Modifier.size(72.dp)) {
-                                val bmp = remember(uri) { decodeDataUriBitmap(uri) }
-                                if (bmp != null) {
-                                    androidx.compose.foundation.Image(
-                                        bmp, contentDescription = "Attachment",
-                                        contentScale = ContentScale.Crop,
-                                        modifier = Modifier.fillMaxSize()
-                                            .clip(androidx.compose.foundation.shape.RoundedCornerShape(6.dp))
-                                            .clickable { onViewAttachment(uri) }
-                                    )
-                                }
-                                OutlinedIconButton(
-                                    onClick = { onRemoveAttachment(uri) },
-                                    modifier = Modifier.size(22.dp).align(Alignment.TopEnd),
-                                    colors = IconButtonDefaults.outlinedIconButtonColors(
-                                        containerColor = MaterialTheme.colorScheme.surface
-                                    )
-                                ) {
-                                    Icon(Icons.Default.Close, contentDescription = "Remove attachment", modifier = Modifier.size(14.dp))
-                                }
+            }
+            if (compressing) {
+                Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                    Text("  Adding attachment…", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline, modifier = Modifier.padding(start = 6.dp))
+                }
+            }
+            if (attachments.isNotEmpty()) {
+                LazyRow(
+                    contentPadding = PaddingValues(top = 10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(attachments) { uri ->
+                        Box(Modifier.size(72.dp)) {
+                            val bmp = remember(uri) { decodeDataUriBitmap(uri) }
+                            if (bmp != null) {
+                                androidx.compose.foundation.Image(
+                                    bmp, contentDescription = "Attachment",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                        .clip(androidx.compose.foundation.shape.RoundedCornerShape(6.dp))
+                                        .clickable { onViewAttachment(uri) }
+                                )
+                            }
+                            OutlinedIconButton(
+                                onClick = { onRemoveAttachment(uri) },
+                                modifier = Modifier.size(22.dp).align(Alignment.TopEnd),
+                                colors = IconButtonDefaults.outlinedIconButtonColors(
+                                    containerColor = MaterialTheme.colorScheme.surface
+                                )
+                            ) {
+                                Icon(Icons.Default.Close, contentDescription = "Remove attachment", modifier = Modifier.size(14.dp))
                             }
                         }
                     }
