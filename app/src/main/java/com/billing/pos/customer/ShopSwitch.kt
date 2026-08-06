@@ -160,4 +160,22 @@ object ShopSwitch {
     private fun removeRecent(prefs: AppPrefs, shopCode: String) {
         prefs.customerRecentShops = pack(unpack(prefs.customerRecentShops).filter { it.shop != shopCode })
     }
+
+    /** Shop codes muted via [setMuted] — see [AppPrefs.customerMutedShops]. */
+    fun mutedShops(context: Context): Set<String> {
+        val arr = runCatching { JSONArray(AppPrefs(context).customerMutedShops.ifBlank { "[]" }) }.getOrNull() ?: return emptySet()
+        return (0 until arr.length()).mapNotNull { arr.optString(it).takeIf { s -> s.isNotBlank() } }.toSet()
+    }
+
+    fun isMuted(context: Context, shop: String): Boolean = shop.isNotBlank() && shop in mutedShops(context)
+
+    /** Stops (or resumes) fetching/showing notifications from [shop] — the catalog and ordering
+     *  for that shop are unaffected, only its notifications stop arriving. */
+    fun setMuted(context: Context, shop: String, muted: Boolean) {
+        if (shop.isBlank()) return
+        val prefs = AppPrefs(context)
+        val current = mutedShops(context)
+        val updated = if (muted) current + shop else current - shop
+        prefs.customerMutedShops = JSONArray(updated.toList()).toString()
+    }
 }

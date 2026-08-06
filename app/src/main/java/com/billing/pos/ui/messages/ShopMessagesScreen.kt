@@ -6,8 +6,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -16,7 +18,9 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Campaign
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Divider
@@ -27,8 +31,11 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -45,6 +52,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.billing.pos.customer.BroadcastPromotion
 import com.billing.pos.customer.OrderStatusPush
 import com.billing.pos.customer.ShopMessagesFetch
 import com.billing.pos.data.AppDatabase
@@ -81,6 +89,30 @@ class ShopMessagesViewModel(app: Application) : AndroidViewModel(app) {
     private val _sending = MutableStateFlow(false)
     val sending: StateFlow<Boolean> = _sending
 
+    private val _broadcasting = MutableStateFlow(false)
+    val broadcasting: StateFlow<Boolean> = _broadcasting
+
+    private val _broadcastResult = MutableStateFlow<String?>(null)
+    val broadcastResult: StateFlow<String?> = _broadcastResult
+
+    fun broadcastResultShown() { _broadcastResult.value = null }
+
+    /** Sends [text] to every customer who has ever registered a push token for this shop — a
+     *  sales offer, a new-stock announcement, etc. See [BroadcastPromotion]. */
+    fun sendPromotion(text: String) {
+        if (text.isBlank() || _broadcasting.value) return
+        viewModelScope.launch {
+            _broadcasting.value = true
+            _broadcastResult.value = when (val result = BroadcastPromotion.send(getApplication(), text)) {
+                is BroadcastPromotion.Result.Ok ->
+                    if (result.count > 0) "Sent to ${result.count} customer(s)"
+                    else "No customers registered for promotions yet — they need to have opened the app at least once"
+                is BroadcastPromotion.Result.Failed -> "Failed to send: ${result.message}"
+            }
+            _broadcasting.value = false
+        }
+    }
+
     /** Collapses the flat message list into one row per customer, latest message on top. */
     fun threads(all: List<ShopMessage>): List<ChatThread> =
         all.groupBy { it.customerPhone }.map { (phone, msgs) ->
@@ -98,7 +130,16 @@ class ShopMessagesViewModel(app: Application) : AndroidViewModel(app) {
         if (_refreshing.value) return
         viewModelScope.launch {
             _refreshing.value = true
-            ShopMessagesFetch.fetch(getApplication())
+            val app: Application = getApplication()
+            // Pop an actual system notification here too, not just on the background poll/push
+            // path (ShopOrderPollReceiver) — otherwise opening this screen yourself never alerts
+            // you the way a background fetch would.
+            when (val result = ShopMessagesFetch.fetch(app)) {
+                is ShopMessagesFetch.Result.Ok -> result.fresh.forEach {
+                    com.billing.pos.customer.ShopNotifications.showNewMessage(app, it.customerPhone, it.customerName, it.text)
+                }
+                is ShopMessagesFetch.Result.Failed -> {}
+            }
             _refreshing.value = false
         }
     }
@@ -130,9 +171,24 @@ fun ShopMessagesScreen(
 ) {
     val messages by vm.messages.collectAsStateSafe()
     val refreshing by vm.refreshing.collectAsStateSafe()
+    val broadcasting by vm.broadcasting.collectAsStateSafe()
+    val broadcastResult by vm.broadcastResult.collectAsStateSafe()
     var selectedPhone by rememberSaveable { mutableStateOf(initialPhone) }
+    var showPromotionDialog by rememberSaveable { mutableStateOf(false) }
+    val snackbar = remember { SnackbarHostState() }
 
     LaunchedEffect(Unit) { vm.refresh() }
+    LaunchedEffect(broadcastResult) {
+        broadcastResult?.let { snackbar.showSnackbar(it); vm.broadcastResultShown() }
+    }
+
+    if (showPromotionDialog) {
+        SendPromotionDialog(
+            sending = broadcasting,
+            onSend = { text -> vm.sendPromotion(text); showPromotionDialog = false },
+            onDismiss = { showPromotionDialog = false }
+        )
+    }
 
     val phone = selectedPhone
     if (phone != null) {
@@ -152,6 +208,9 @@ fun ShopMessagesScreen(
                         IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
                     },
                     actions = {
+                        IconButton(onClick = { showPromotionDialog = true }) {
+                            Icon(Icons.Filled.Campaign, contentDescription = "Send promotion")
+                        }
                         IconButton(onClick = { vm.refresh() }) {
                             if (refreshing) {
                                 CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
@@ -161,7 +220,8 @@ fun ShopMessagesScreen(
                         }
                     }
                 )
-            }
+            },
+            snackbarHost = { SnackbarHost(snackbar) }
         ) { pad ->
             if (threads.isEmpty()) {
                 Box(Modifier.fillMaxSize().padding(pad), contentAlignment = Alignment.Center) {
@@ -184,6 +244,41 @@ fun ShopMessagesScreen(
             }
         }
     }
+}
+
+/** Composes one message to send to every customer who has ever registered a push token for this
+ *  shop (see [BroadcastPromotion]) — a sales offer, a new-stock announcement, etc. */
+@Composable
+private fun SendPromotionDialog(sending: Boolean, onSend: (String) -> Unit, onDismiss: () -> Unit) {
+    var text by rememberSaveable { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Filled.Campaign, contentDescription = null) },
+        title = { Text("Send promotion") },
+        text = {
+            Column {
+                Text(
+                    "Goes out to every customer who has opened your catalog before — great for a sale or a new-stock announcement.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline
+                )
+                Spacer(Modifier.height(10.dp))
+                OutlinedTextField(
+                    value = text, onValueChange = { text = it },
+                    label = { Text("Message") },
+                    placeholder = { Text("e.g. 20% off on all items this weekend!") },
+                    minLines = 3, maxLines = 6,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onSend(text.trim()) }, enabled = text.isNotBlank() && !sending) {
+                if (sending) CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                else Text("Send")
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss, enabled = !sending) { Text("Cancel") } }
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

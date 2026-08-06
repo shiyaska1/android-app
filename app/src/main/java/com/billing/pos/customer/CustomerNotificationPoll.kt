@@ -46,7 +46,7 @@ class CustomerNotificationReceiver : BroadcastReceiver() {
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 if (AppPrefs(app).customerMode) {
-                    when (val result = NotificationsFetch.fetch(app)) {
+                    when (val result = NotificationsFetch.fetchAllKnownShops(app)) {
                         is NotificationsFetch.Result.Ok -> result.fresh.forEach { CustomerNotifications.show(app, it) }
                         is NotificationsFetch.Result.Failed -> {}
                     }

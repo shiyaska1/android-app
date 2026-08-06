@@ -46,9 +46,15 @@ class OnlineOrdersViewModel(app: Application) : AndroidViewModel(app) {
         if (_fetching.value) return
         viewModelScope.launch {
             _fetching.value = true
-            when (val result = OrdersFetch.fetch(getApplication())) {
-                is OrdersFetch.Result.Ok ->
+            val app: Application = getApplication()
+            when (val result = OrdersFetch.fetch(app)) {
+                is OrdersFetch.Result.Ok -> {
                     _message.value = if (result.count > 0) "Fetched ${result.count} new order(s)" else "No new orders"
+                    // Pop an actual system notification here too, not just on the background
+                    // poll/push path (ShopOrderPollReceiver) — otherwise opening this screen
+                    // yourself never alerts you the way a background fetch would.
+                    if (result.count > 0) com.billing.pos.customer.ShopNotifications.showNewOrders(app, result.count)
+                }
                 is OrdersFetch.Result.Failed -> _message.value = "Could not fetch orders: ${result.message}"
             }
             _fetching.value = false

@@ -34,6 +34,7 @@ import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Remove
@@ -54,6 +55,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedIconButton
@@ -141,6 +143,20 @@ fun CustomerCatalogScreen(onExitTestMode: () -> Unit = {}, vm: CustomerCatalogVi
     val replying by vm.replying.collectAsStateSafe()
     val shareText by vm.shareText.collectAsStateSafe()
     val scope = rememberCoroutineScope()
+
+    // Without this, every order-status/chat/promotion notification is silently dropped on
+    // Android 13+ (POST_NOTIFICATIONS defaults to denied until explicitly granted) — the
+    // notification still lands in the in-app bell (that's just a DB insert), it just never pops
+    // as a system alert. Ask once, right when the catalog first opens, same as the diary's
+    // reminder-permission pattern elsewhere in the app.
+    val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
+    LaunchedEffect(Unit) {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
 
     val locationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
         val granted = grants[Manifest.permission.ACCESS_FINE_LOCATION] == true || grants[Manifest.permission.ACCESS_COARSE_LOCATION] == true
@@ -443,10 +459,12 @@ fun CustomerCatalogScreen(onExitTestMode: () -> Unit = {}, vm: CustomerCatalogVi
         NotificationsDialog(
             notifications = notifications,
             replying = replying,
+            isShopMuted = { shop -> vm.isShopMuted(shop) },
             onDismiss = { showNotifications = false },
             onDelete = { n -> vm.deleteNotification(n) },
             onClearAll = { vm.clearAllNotifications(); showNotifications = false },
-            onReply = { n, text -> vm.replyToNotification(n, text) }
+            onReply = { n, text -> vm.replyToNotification(n, text) },
+            onMuteShop = { shop, muted -> vm.setShopMuted(shop, muted) }
         )
     }
     technicalError?.let { detail ->
@@ -526,10 +544,12 @@ private fun TechnicalErrorDialog(
 private fun NotificationsDialog(
     notifications: List<CustomerNotification>,
     replying: Boolean,
+    isShopMuted: (String) -> Boolean,
     onDismiss: () -> Unit,
     onDelete: (CustomerNotification) -> Unit,
     onClearAll: () -> Unit,
-    onReply: (CustomerNotification, String) -> Unit
+    onReply: (CustomerNotification, String) -> Unit,
+    onMuteShop: (shop: String, muted: Boolean) -> Unit
 ) {
     var replyTargetId by remember { mutableStateOf<Long?>(null) }
     var replyText by rememberSaveable { mutableStateOf("") }
@@ -554,6 +574,9 @@ private fun NotificationsDialog(
                         Column(Modifier.padding(vertical = 8.dp)) {
                             Row(verticalAlignment = Alignment.Top) {
                                 Column(Modifier.weight(1f)) {
+                                    if (n.shopName.isNotBlank()) {
+                                        Text(n.shopName, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                                    }
                                     if (statusLabel != null) {
                                         Text(statusLabel, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleSmall)
                                     }
@@ -565,6 +588,17 @@ private fun NotificationsDialog(
                                         style = MaterialTheme.typography.labelSmall,
                                         color = MaterialTheme.colorScheme.outline
                                     )
+                                }
+                                if (n.shop.isNotBlank()) {
+                                    val muted = isShopMuted(n.shop)
+                                    IconButton(onClick = { onMuteShop(n.shop, !muted) }, modifier = Modifier.size(32.dp)) {
+                                        Icon(
+                                            if (muted) Icons.Default.NotificationsOff else Icons.Default.Notifications,
+                                            contentDescription = if (muted) "Unmute ${n.shopName.ifBlank { "this shop" }}" else "Mute ${n.shopName.ifBlank { "this shop" }}",
+                                            modifier = Modifier.size(18.dp),
+                                            tint = if (muted) MaterialTheme.colorScheme.error else LocalContentColor.current
+                                        )
+                                    }
                                 }
                                 IconButton(onClick = { onDelete(n) }, modifier = Modifier.size(32.dp)) {
                                     Icon(Icons.Default.Delete, contentDescription = "Delete", modifier = Modifier.size(18.dp))
@@ -841,6 +875,7 @@ private fun ShopDirectoryDialog(
     val grouped = remember(shops) {
         shops.groupBy { it.category.ifBlank { "Other" } }.toSortedMap(compareBy { it.lowercase() })
     }
+    var mutedShops by remember { mutableStateOf(ShopSwitch.mutedShops(context)) }
     var showNearby by remember { mutableStateOf(false) }
     var nearbyLoading by remember { mutableStateOf(false) }
     var nearbyError by remember { mutableStateOf<String?>(null) }
@@ -918,16 +953,34 @@ private fun ShopDirectoryDialog(
                                         .padding(vertical = 8.dp)
                                 ) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text(
-                                            shop.name.ifBlank { shop.shop },
-                                            fontWeight = FontWeight.Medium,
-                                            style = MaterialTheme.typography.bodyMedium
-                                        )
-                                        if (isCurrent) {
+                                        Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
                                             Text(
-                                                "  (current)",
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = MaterialTheme.colorScheme.primary
+                                                shop.name.ifBlank { shop.shop },
+                                                fontWeight = FontWeight.Medium,
+                                                style = MaterialTheme.typography.bodyMedium
+                                            )
+                                            if (isCurrent) {
+                                                Text(
+                                                    "  (current)",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.primary
+                                                )
+                                            }
+                                        }
+                                        val isMuted = shop.shop in mutedShops
+                                        IconButton(
+                                            onClick = {
+                                                val now = !isMuted
+                                                ShopSwitch.setMuted(context, shop.shop, now)
+                                                mutedShops = if (now) mutedShops + shop.shop else mutedShops - shop.shop
+                                            },
+                                            modifier = Modifier.size(32.dp)
+                                        ) {
+                                            Icon(
+                                                if (isMuted) Icons.Default.NotificationsOff else Icons.Default.Notifications,
+                                                contentDescription = if (isMuted) "Unmute ${shop.name.ifBlank { shop.shop }}" else "Mute ${shop.name.ifBlank { shop.shop }}",
+                                                modifier = Modifier.size(18.dp),
+                                                tint = if (isMuted) MaterialTheme.colorScheme.error else LocalContentColor.current
                                             )
                                         }
                                     }

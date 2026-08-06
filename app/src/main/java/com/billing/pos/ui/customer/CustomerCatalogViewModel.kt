@@ -85,7 +85,16 @@ class CustomerCatalogViewModel(app: Application) : AndroidViewModel(app) {
         // push doesn't arrive — arms itself on every open, since there's no separate "leaving
         // customer mode" hook to arm it from once and forget.
         CustomerNotificationPoll.schedule(app)
-        viewModelScope.launch { runCatching { NotificationsFetch.fetch(app) } }
+        viewModelScope.launch {
+            // Pop an actual system notification for anything new here too — not just the
+            // background poll/push path (CustomerNotificationReceiver) — otherwise a promotion
+            // that arrives while the customer already has the app open only ever shows up as an
+            // in-app badge, never as a heads-up alert.
+            when (val result = runCatching { NotificationsFetch.fetchAllKnownShops(app) }.getOrNull()) {
+                is NotificationsFetch.Result.Ok -> result.fresh.forEach { com.billing.pos.customer.CustomerNotifications.show(app, it) }
+                else -> {}
+            }
+        }
         viewModelScope.launch { PushTokenRegistration.registerIfNeeded(app) }
     }
 
@@ -102,6 +111,15 @@ class CustomerCatalogViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { notificationDao.deleteAll() }
     }
 
+    fun isShopMuted(shop: String): Boolean = com.billing.pos.customer.ShopSwitch.isMuted(getApplication(), shop)
+
+    /** Stops future notifications from [shop] (e.g. one sending too many promotions) without
+     *  affecting its catalog/ordering, or its already-received notifications. */
+    fun setShopMuted(shop: String, muted: Boolean) {
+        com.billing.pos.customer.ShopSwitch.setMuted(getApplication(), shop, muted)
+        _message.value = if (muted) "Muted — you won't get notifications from this shop anymore" else "Unmuted"
+    }
+
     private val _replying = MutableStateFlow(false)
     val replying: StateFlow<Boolean> = _replying
 
@@ -111,7 +129,16 @@ class CustomerCatalogViewModel(app: Application) : AndroidViewModel(app) {
         if (text.isBlank() || _replying.value) return
         viewModelScope.launch {
             _replying.value = true
-            val ok = com.billing.pos.customer.CustomerMessageSend.send(getApplication(), text, notification.orderId)
+            val app: Application = getApplication()
+            // Route to whichever shop actually sent this notification, not whichever shop
+            // happens to be active right now — they can differ once a customer is connected to
+            // more than one shop (see ShopSwitch). Falls back to the current shop for
+            // pre-migration rows that never recorded which shop they came from.
+            val target = com.billing.pos.customer.ShopSwitch.known(app).find { it.shop == notification.shop }
+            val ok = com.billing.pos.customer.CustomerMessageSend.send(
+                app, text, notification.orderId,
+                targetUrl = target?.url.orEmpty(), targetShop = target?.shop ?: notification.shop
+            )
             _message.value = if (ok) "Reply sent" else "Could not send reply — check your connection"
             _replying.value = false
         }

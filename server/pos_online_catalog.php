@@ -90,7 +90,16 @@
  *   it would've picked up on its next 30-min poll either way, so this endpoint being
  *   unused, failing, or never set up doesn't break anything, it's just slower.
  *
- * All ten directions use the SAME url — the app decides which one to call
+ * SEND PROMOTION (from the shop owner's app, Messages > Send promotion — sales offers etc.):
+ *   POST a JSON body to this URL with ?do=broadcast added:
+ *     { "shop": "<DeviceID>", "message": "..." }
+ *   Queued into every registered customer's notifications.json (i.e. every phone number
+ *   that has ever registered a push token for this shop — see REGISTER PUSH TOKEN above),
+ *   the exact same way a single-customer status update is, so it shows up in the customer
+ *   app's normal notification list and gets pushed instantly the same way. Responds with
+ *   { "ok": true, "count": <how many customers it was queued for> }.
+ *
+ * All eleven directions use the SAME url — the app decides which one to call
  * based on GET/POST and the "do" param, depending on which screen it's on.
  *
  * --- Install ---
@@ -514,6 +523,70 @@ if (($method === 'POST' || $method === 'PUT') && $do === 'registerToken') {
     fclose($fh);
     header('Content-Type: application/json');
     echo json_encode(array('ok' => true));
+    exit;
+}
+
+if (($method === 'POST' || $method === 'PUT') && $do === 'broadcast') {
+    $raw = file_get_contents('php://input');
+    if ($raw === false || $raw === '') {
+        pos_catalog_fail(400, 'Empty body');
+    }
+    $body = json_decode($raw, true);
+    if (!is_array($body)) {
+        pos_catalog_fail(400, 'Body is not valid JSON');
+    }
+    $shop = isset($body['shop']) ? (string) $body['shop'] : '';
+    if (!preg_match('/^[A-Za-z0-9_]+$/', $shop)) {
+        pos_catalog_fail(400, 'Invalid or missing "shop" in body');
+    }
+    $text = isset($body['message']) ? (string) $body['message'] : '';
+    if ($text === '') {
+        pos_catalog_fail(400, 'Missing "message" in body');
+    }
+    // Every phone this shop has ever registered a push token for (see do=registerToken) — the
+    // closest thing to a customer list this server keeps, since it otherwise never retains a
+    // customer registry (orders/messages are cleared once fetched). A customer only lands here
+    // once they've saved their name/phone at least once in the app, not just placed one order.
+    $tokens = pos_fcm_tokens($STORAGE_DIR, $shop);
+    $phones = array_keys($tokens['customers']);
+
+    $folder = $STORAGE_DIR . '/' . $shop;
+    if (!is_dir($folder) && !@mkdir($folder, 0755, true)) {
+        pos_catalog_fail(500, 'Could not create storage folder — check permissions on ' . $STORAGE_DIR);
+    }
+    $path = $folder . '/notifications.json';
+    $fh = fopen($path, 'c+');
+    if ($fh === false) {
+        pos_catalog_fail(500, 'Could not open notifications file — check folder permissions');
+    }
+    flock($fh, LOCK_EX);
+    $existing = json_decode(stream_get_contents($fh), true);
+    if (!is_array($existing)) {
+        $existing = array();
+    }
+    $sentAt = date('c');
+    foreach ($phones as $phone) {
+        $existing[] = array(
+            'customerPhone' => $phone,
+            'orderId' => '',
+            'status' => '',
+            'message' => $text,
+            'sentAt' => $sentAt
+        );
+    }
+    ftruncate($fh, 0);
+    rewind($fh);
+    fwrite($fh, json_encode($existing));
+    fflush($fh);
+    flock($fh, LOCK_UN);
+    fclose($fh);
+
+    foreach ($phones as $phone) {
+        pos_fcm_notify_customer($SERVICE_ACCOUNT_PATH, $STORAGE_DIR, $shop, $phone, 'notification');
+    }
+
+    header('Content-Type: application/json');
+    echo json_encode(array('ok' => true, 'count' => count($phones)));
     exit;
 }
 

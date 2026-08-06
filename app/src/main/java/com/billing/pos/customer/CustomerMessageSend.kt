@@ -14,11 +14,20 @@ import java.net.URL
  */
 object CustomerMessageSend {
 
-    suspend fun send(context: Context, message: String, orderId: String = ""): Boolean = withContext(Dispatchers.IO) {
+    /** [targetUrl]/[targetShop] let a reply go to a specific shop (e.g. replying to a
+     *  notification from a shop that isn't the one currently active — see [ShopSwitch]); left
+     *  blank, it falls back to whichever shop is active right now. */
+    suspend fun send(
+        context: Context,
+        message: String,
+        orderId: String = "",
+        targetUrl: String = "",
+        targetShop: String = ""
+    ): Boolean = withContext(Dispatchers.IO) {
         if (message.isBlank()) return@withContext false
         val prefs = AppPrefs(context)
-        val base = prefs.onlineCatalogUrl
-        val shop = prefs.shopCode
+        val base = targetUrl.ifBlank { prefs.onlineCatalogUrl }
+        val shop = targetShop.ifBlank { prefs.shopCode }
         if (base.isBlank() || shop.isBlank()) return@withContext false
 
         val body = JSONObject().apply {

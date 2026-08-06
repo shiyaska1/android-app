@@ -194,6 +194,12 @@ data class CustomerNotification(
     /** One of [OnlineOrderStatus]'s names, or blank for a plain message with no status change. */
     val status: String = "",
     val message: String = "",
+    /** Which shop this came from (matches [com.billing.pos.customer.ShopSwitch.Shop.shop]) — a
+     *  customer can be connected to several shops, so this is what tells them apart in the list
+     *  and lets a reply route back to the right one instead of whichever shop is currently
+     *  active. Blank on rows from before this field existed. */
+    val shop: String = "",
+    val shopName: String = "",
     val receivedAt: Long,
     val read: Boolean = false
 )

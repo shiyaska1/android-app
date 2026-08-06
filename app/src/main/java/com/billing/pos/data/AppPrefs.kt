@@ -340,6 +340,13 @@ class AppPrefs(context: Context) {
     var customerRecentShops: String
         get() = p.getString("customer_recent_shops", "") ?: ""
         set(v) { p.edit().putString("customer_recent_shops", v).apply() }
+    /** Customer install: shop codes this customer has chosen to stop getting notifications from
+     *  (e.g. one sending too many promotions) — see [com.billing.pos.customer.ShopSwitch.isMuted].
+     *  Packed JSON array of shop codes; that shop's catalog/ordering still works as normal, only
+     *  its notifications stop being fetched/shown. */
+    var customerMutedShops: String
+        get() = p.getString("customer_muted_shops", "") ?: ""
+        set(v) { p.edit().putString("customer_muted_shops", v).apply() }
     /** This device's current Firebase Cloud Messaging token — see PosMessagingService.onNewToken.
      *  Also readable when a push arrives, to trigger the same fetch the 30-min poll would do. */
     var fcmToken: String
