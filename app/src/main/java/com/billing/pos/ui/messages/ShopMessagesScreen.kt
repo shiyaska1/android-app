@@ -20,6 +20,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Badge
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Divider
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
@@ -120,6 +121,7 @@ class ShopMessagesViewModel(app: Application) : AndroidViewModel(app) {
  *  one on top and an unread badge — tap a row to open the full thread and reply. [initialPhone]
  *  (set when opened from a "new message" notification tap, see [com.billing.pos.MainActivity])
  *  jumps straight into that customer's thread instead of showing the list first. */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ShopMessagesScreen(
     onBack: () -> Unit,
@@ -184,6 +186,7 @@ fun ShopMessagesScreen(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ThreadScreen(
     phone: String,
