@@ -42,6 +42,13 @@ object OnlineCatalogUpload {
             put("shop", shop)
             put("shopName", prefs.companyName)
             put("shopPhone", prefs.companyPhone)
+            // Shown at the top of the customer catalog screen — same compressed-thumbnail
+            // convention as item photos, picked once in Settings > Online ordering.
+            val bannerPath = prefs.onlineBannerPath
+            val bannerThumb = if (bannerPath.isNotBlank()) runCatching { ThumbnailCompressor.compress(bannerPath) }.getOrNull() else null
+            if (bannerThumb != null) {
+                put("bannerImage", "data:image/jpeg;base64," + Base64.encodeToString(bannerThumb, Base64.NO_WRAP))
+            }
             put("items", JSONArray().apply {
                 items.forEach { item ->
                     put(JSONObject().apply {

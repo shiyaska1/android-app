@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -21,6 +22,8 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Chat
+import androidx.compose.material.icons.filled.DocumentScanner
+import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.NotificationsActive
@@ -70,6 +73,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.billing.pos.customer.ShopSwitch
 import com.billing.pos.customer.ThumbnailCompressor
+import com.billing.pos.ocr.rememberListScanner
 import com.billing.pos.data.AppPrefs
 import com.billing.pos.data.CustomerNotification
 import com.billing.pos.data.CustomerOrderHistory
@@ -208,6 +212,9 @@ fun CustomerCatalogScreen(onExitTestMode: () -> Unit = {}, vm: CustomerCatalogVi
                             Icon(Icons.Default.Chat, contentDescription = "Message shop on WhatsApp")
                         }
                     }
+                    IconButton(onClick = { saveDialogAction = "save"; showSaveDialog = true }) {
+                        Icon(Icons.Default.EditNote, contentDescription = "Write your order (no items needed)")
+                    }
                     IconButton(onClick = { showNotifications = true }) {
                         BadgedBox(badge = { if (unreadNotifications > 0) Badge { Text("$unreadNotifications") } }) {
                             Icon(
@@ -291,6 +298,18 @@ fun CustomerCatalogScreen(onExitTestMode: () -> Unit = {}, vm: CustomerCatalogVi
         snackbarHost = { SnackbarHost(snackbar) }
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
+            val bannerImage = prefs.shopBannerImage
+            if (bannerImage.isNotBlank()) {
+                val banner = remember(bannerImage) { decodeDataUriBitmap(bannerImage) }
+                if (banner != null) {
+                    androidx.compose.foundation.Image(
+                        banner,
+                        contentDescription = "$shopName banner",
+                        contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                        modifier = Modifier.fillMaxWidth().height(120.dp)
+                    )
+                }
+            }
             if (vm.lastFetchedAt > 0L) {
                 Text(
                     "Updated " + SimpleDateFormat("dd MMM, HH:mm", Locale.getDefault()).format(Date(vm.lastFetchedAt)),
@@ -448,6 +467,10 @@ private fun SaveOrderDialog(
     var note by rememberSaveable { mutableStateOf("") }
     var attachmentDataUri by rememberSaveable { mutableStateOf<String?>(null) }
     var compressing by remember { mutableStateOf(false) }
+    val scanOrderText = rememberListScanner { lines ->
+        val scanned = lines.joinToString("\n").trim()
+        if (scanned.isNotBlank()) note = if (note.isBlank()) scanned else "$note\n$scanned"
+    }
 
     val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
@@ -494,10 +517,21 @@ private fun SaveOrderDialog(
                     label = { Text("Address (optional)") }, singleLine = true,
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
                 )
+                Text(
+                    "Don't want to pick items? Just write what you want here — type it, or scan a list/photo.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.outline,
+                    modifier = Modifier.padding(top = 10.dp)
+                )
                 OutlinedTextField(
                     value = note, onValueChange = { note = it },
-                    label = { Text("Note (optional)") },
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                    label = { Text("Note / your order") },
+                    trailingIcon = {
+                        IconButton(onClick = { scanOrderText() }) {
+                            Icon(Icons.Default.DocumentScanner, contentDescription = "Scan a list into the note")
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
                 )
                 if (premium) {
                     OutlinedButton(
@@ -652,13 +686,20 @@ private fun OrderHistoryDialog(
                             order.items.forEach { line ->
                                 Text("${line.name} x${line.qty}", style = MaterialTheme.typography.bodySmall)
                             }
+                            if (order.note.isNotBlank()) {
+                                Text(order.note, style = MaterialTheme.typography.bodySmall)
+                            }
                             Row(
                                 Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text("₹" + Format.money(order.total), fontWeight = FontWeight.Bold)
-                                TextButton(onClick = { onReorder(order) }) { Text("Re-order") }
+                                if (order.items.isNotEmpty()) {
+                                    Text("₹" + Format.money(order.total), fontWeight = FontWeight.Bold)
+                                    TextButton(onClick = { onReorder(order) }) { Text("Re-order") }
+                                } else {
+                                    Text("Written order", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                                }
                             }
                             Divider(Modifier.padding(top = 4.dp))
                         }

@@ -134,7 +134,9 @@ class CustomerCatalogViewModel(app: Application) : AndroidViewModel(app) {
         val selection = _qty.value.mapNotNull { (id, count) ->
             items.value.find { it.id == id }?.let { it to count }
         }
-        if (selection.isEmpty()) { _message.value = "Nothing selected"; return }
+        // A customer who doesn't want to pick from the catalog can just write what they want —
+        // only block if there's genuinely nothing to send either way.
+        if (selection.isEmpty() && note.isBlank()) { _message.value = "Add items, or write your order in the note"; return }
         if (_saving.value) return
         prefs.customerName = name
         prefs.customerPhone = phone
@@ -161,7 +163,8 @@ class CustomerCatalogViewModel(app: Application) : AndroidViewModel(app) {
                             total = total,
                             placedAt = System.currentTimeMillis(),
                             location = locationLink,
-                            serverId = result.orderId
+                            serverId = result.orderId,
+                            note = note
                         )
                     )
                     if (alsoShare) _shareText.value = buildOrderText(selection, total)

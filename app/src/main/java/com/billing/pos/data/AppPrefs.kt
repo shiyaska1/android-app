@@ -286,6 +286,16 @@ class AppPrefs(context: Context) {
     var shopContactPhone: String
         get() = (p.getString("shop_contact_phone", "") ?: "").trim()
         set(v) { p.edit().putString("shop_contact_phone", v.trim()).apply() }
+    /** Shop owner: local file path of the banner image shown at the top of the customer catalog
+     *  screen — picked in Settings, embedded (compressed) into the next Online Items upload. */
+    var onlineBannerPath: String
+        get() = p.getString("online_banner_path", "") ?: ""
+        set(v) { p.edit().putString("online_banner_path", v).apply() }
+    /** Customer install: the shop's banner image, as a base64 data URI carried in the catalog
+     *  fetch response — same convention as item photos, cached so it survives offline reopens. */
+    var shopBannerImage: String
+        get() = p.getString("shop_banner_image", "") ?: ""
+        set(v) { p.edit().putString("shop_banner_image", v).apply() }
     /** Customer install: this customer's own name/phone, asked once (first "Save" on an order)
      *  and remembered so they don't retype it every time. */
     var customerName: String

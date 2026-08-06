@@ -1118,6 +1118,49 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline,
                 modifier = Modifier.padding(top = 4.dp)
             )
+            var onlineBannerPath by remember { mutableStateOf(prefs.onlineBannerPath) }
+            val bannerPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+                if (uri != null) scope.launch {
+                    val dest = java.io.File(context.filesDir, "online_banner.jpg")
+                    val ok = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        runCatching {
+                            context.contentResolver.openInputStream(uri)?.use { input ->
+                                dest.outputStream().use { input.copyTo(it) }
+                            }
+                        }
+                        dest.exists()
+                    }
+                    if (ok) {
+                        prefs.onlineBannerPath = dest.absolutePath; onlineBannerPath = dest.absolutePath
+                        snackbar.showSnackbar("Banner saved — Upload again in Online Items to publish it")
+                    } else snackbar.showSnackbar("Could not read image")
+                }
+            }
+            Text(
+                "Banner image shown at the top of the customer ordering screen (optional).",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline,
+                modifier = Modifier.padding(top = 12.dp)
+            )
+            if (onlineBannerPath.isNotBlank()) {
+                val bannerBmp = com.billing.pos.ui.common.rememberThumbnail(onlineBannerPath, 600)
+                if (bannerBmp != null) {
+                    Box(Modifier.fillMaxWidth().height(90.dp).padding(top = 6.dp)) {
+                        Image(bannerBmp, contentDescription = "Banner", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxWidth().height(84.dp))
+                    }
+                }
+            }
+            Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                OutlinedButton(
+                    onClick = { bannerPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text(if (onlineBannerPath.isBlank()) "Upload banner" else "Change banner")
+                }
+                if (onlineBannerPath.isNotBlank()) {
+                    Spacer(Modifier.size(8.dp))
+                    OutlinedButton(onClick = { prefs.onlineBannerPath = ""; onlineBannerPath = "" }) { Text("Remove") }
+                }
+            }
 
             Divider(Modifier.padding(vertical = 16.dp))
             HighlightText("Salesman mapping", MaterialTheme.typography.titleSmall, settingAnchors, highlightedSetting)

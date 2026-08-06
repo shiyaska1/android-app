@@ -142,7 +142,9 @@ data class CustomerOrderHistory(
     /** The server's id for this order (see pos_online_catalog.php's do=order response), so a
      *  status-change notification for this order can be matched back to it. Blank on an old row
      *  saved before the server started returning one. */
-    val serverId: String = ""
+    val serverId: String = "",
+    /** What the customer typed (and/or OCR'd) instead of — or alongside — picking catalog items. */
+    val note: String = ""
 ) {
     /** [serverId] is the catalog item's id, so Re-order can find it again even if its name changed. */
     data class Line(val serverId: String, val name: String, val qty: Int, val price: Double)

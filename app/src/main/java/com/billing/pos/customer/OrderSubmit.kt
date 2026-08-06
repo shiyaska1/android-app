@@ -36,7 +36,9 @@ object OrderSubmit {
         val base = prefs.onlineCatalogUrl
         val shop = prefs.shopCode
         if (base.isBlank() || shop.isBlank()) return@withContext Result.Failed("Not linked to a shop yet")
-        if (selection.isEmpty()) return@withContext Result.Failed("Nothing selected")
+        // A customer who doesn't want to pick from the catalog can just write what they want in
+        // the note instead — only reject if there's genuinely nothing to send either way.
+        if (selection.isEmpty() && note.isNullOrBlank()) return@withContext Result.Failed("Nothing selected")
 
         val total = selection.sumOf { (item, qty) -> item.price * qty }
         val body = JSONObject().apply {

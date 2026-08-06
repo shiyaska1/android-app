@@ -20,6 +20,7 @@ import java.net.URL
  * real place-order flow):
  * ```
  * { "shopName": "Anand Stores", "shopPhone": "9198XXXXXXX",
+ *   "bannerImage": "data:image/jpeg;base64,..." (optional, shown atop the customer catalog),
  *   "items": [{ "id": "SKU1", "name": "Chicken Biryani", "category": "Main Course",
  *               "price": 180.0, "unit": "plate", "imageUrl": "", "description": "" }, ...] }
  * ```
@@ -59,6 +60,7 @@ object ShopCatalogSync {
             if (root != null) {
                 root.optString("shopName").takeIf { it.isNotBlank() }?.let { prefs.shopDisplayName = it }
                 root.optString("shopPhone").takeIf { it.isNotBlank() }?.let { prefs.shopContactPhone = it }
+                prefs.shopBannerImage = root.optString("bannerImage", "")
             }
 
             val array = parseItemsArray(body)
