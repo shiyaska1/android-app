@@ -79,7 +79,18 @@
  *   app computes distance from the customer's own current location itself;
  *   this just lists the candidates.
  *
- * All nine directions use the SAME url — the app decides which one to call
+ * REGISTER PUSH TOKEN (from either app, silently on open — see $SERVICE_ACCOUNT_PATH below):
+ *   POST a JSON body to this URL with ?do=registerToken added:
+ *     { "shop": "<DeviceID>", "role": "shop" | "customer",
+ *       "phone": "..." (required when role=customer), "token": "<FCM token>" }
+ *   Saved to pos_online_catalog/<DeviceID>/tokens.json, one shop-owner token and one
+ *   token per customer phone number. Whenever a new order, status update, or chat
+ *   message is queued above, the matching token (if any, and if push is configured)
+ *   gets an instant silent push telling that app to fetch right away — same content
+ *   it would've picked up on its next 30-min poll either way, so this endpoint being
+ *   unused, failing, or never set up doesn't break anything, it's just slower.
+ *
+ * All ten directions use the SAME url — the app decides which one to call
  * based on GET/POST and the "do" param, depending on which screen it's on.
  *
  * --- Install ---
@@ -96,20 +107,160 @@
  *      mode=customer&shop=<DeviceID>&url=https://yourdomain.com/pos_online_catalog.php?key=YOUR_KEY
  *    (and optionally &type=Restaurant / Medical store / Medical lab, for wording only).
  *    The Customer Link Builder tool builds this exact link (and its QR code) for you.
+ * 6. (Optional, for instant push instead of a 30-min wait) In Firebase Console > Project
+ *    settings > Service accounts, click "Generate new private key" and upload the
+ *    downloaded JSON file to this server yourself — ideally outside the public web
+ *    root, or protected the same way $STORAGE_DIR is (a .htaccess with "Require all
+ *    denied"). Then set $SERVICE_ACCOUNT_PATH below to that file's full server path.
+ *    This file is a real credential (it can send unlimited pushes on your Firebase
+ *    project) — never commit it to git, never put it in a public folder.
  *
  * --- Nginx note ---
  * Same as pos_backup_sync.php — see that file for the storage-folder note.
  */
 
-// ---- configuration — edit these two lines ----
+// ---- configuration — edit these lines ----
 $API_KEY = '';                                     // e.g. 'change-me-to-something-long'; blank = no check
 $STORAGE_DIR = __DIR__ . '/pos_online_catalog';    // where each shop's catalog.json is kept
+// Push notifications (instant instead of the app's 30-min fallback poll): set this to the full
+// path of the Firebase service-account JSON key you downloaded from Firebase Console > Project
+// settings > Service accounts > Generate new private key. Upload that file to this same server
+// YOURSELF, ideally outside the public web root (or protected by a .htaccess deny-all, same as
+// $STORAGE_DIR gets automatically). Blank = push disabled; the app still works, just falls back
+// to its 30-min poll for everything. This file is a real credential — never put it in git.
+$SERVICE_ACCOUNT_PATH = '';
 
 function pos_catalog_fail($code, $msg) {
     http_response_code($code);
     header('Content-Type: text/plain');
     echo $msg;
     exit;
+}
+
+// ---- FCM push (best-effort — a failure here never breaks the request it's attached to) ----
+
+/** Cached OAuth2 access token for the FCM HTTP v1 API, so a JWT isn't signed on every request —
+ *  Google's tokens are valid ~1h; refreshed a minute early. Cache file sits next to the service
+ *  account key itself, not inside a per-shop folder. */
+function pos_fcm_access_token($serviceAccountPath) {
+    if ($serviceAccountPath === '' || !is_readable($serviceAccountPath)) {
+        return null;
+    }
+    $cachePath = dirname($serviceAccountPath) . '/.fcm_token_cache.json';
+    $cached = @json_decode(@file_get_contents($cachePath), true);
+    if (is_array($cached) && isset($cached['access_token'], $cached['expires_at']) && $cached['expires_at'] > time() + 60) {
+        return $cached['access_token'];
+    }
+
+    $sa = @json_decode(@file_get_contents($serviceAccountPath), true);
+    if (!is_array($sa) || empty($sa['client_email']) || empty($sa['private_key'])) {
+        return null;
+    }
+
+    $now = time();
+    $header = array('alg' => 'RS256', 'typ' => 'JWT');
+    $claims = array(
+        'iss' => $sa['client_email'],
+        'scope' => 'https://www.googleapis.com/auth/firebase.messaging',
+        'aud' => 'https://oauth2.googleapis.com/token',
+        'iat' => $now,
+        'exp' => $now + 3600
+    );
+    $b64 = function ($data) {
+        return rtrim(strtr(base64_encode($data), '+/', '-_'), '=');
+    };
+    $unsigned = $b64(json_encode($header)) . '.' . $b64(json_encode($claims));
+    $signature = '';
+    $ok = @openssl_sign($unsigned, $signature, $sa['private_key'], 'sha256WithRSAEncryption');
+    if (!$ok) {
+        return null;
+    }
+    $jwt = $unsigned . '.' . $b64($signature);
+
+    $body = http_build_query(array(
+        'grant_type' => 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+        'assertion' => $jwt
+    ));
+    $context = stream_context_create(array('http' => array(
+        'method' => 'POST',
+        'header' => "Content-Type: application/x-www-form-urlencoded\r\n",
+        'content' => $body,
+        'timeout' => 8,
+        'ignore_errors' => true
+    )));
+    $resp = @file_get_contents('https://oauth2.googleapis.com/token', false, $context);
+    $data = $resp !== false ? @json_decode($resp, true) : null;
+    if (!is_array($data) || empty($data['access_token'])) {
+        return null;
+    }
+    @file_put_contents($cachePath, json_encode(array(
+        'access_token' => $data['access_token'],
+        'expires_at' => $now + (isset($data['expires_in']) ? (int) $data['expires_in'] : 3600)
+    )));
+    return $data['access_token'];
+}
+
+/** Sends one silent data-only push (no title/body — the app just treats it as "go check now",
+ *  same content it would've fetched on its next 30-min poll). Never throws; every caller ignores
+ *  the return value. */
+function pos_fcm_send($serviceAccountPath, $token, array $data) {
+    if ($serviceAccountPath === '' || $token === '') {
+        return false;
+    }
+    $accessToken = pos_fcm_access_token($serviceAccountPath);
+    if ($accessToken === null) {
+        return false;
+    }
+    $sa = @json_decode(@file_get_contents($serviceAccountPath), true);
+    $projectId = is_array($sa) && !empty($sa['project_id']) ? $sa['project_id'] : '';
+    if ($projectId === '') {
+        return false;
+    }
+    $stringData = array();
+    foreach ($data as $k => $v) {
+        $stringData[$k] = (string) $v;
+    }
+    $payload = json_encode(array('message' => array('token' => $token, 'data' => $stringData)));
+    $context = stream_context_create(array('http' => array(
+        'method' => 'POST',
+        'header' => "Content-Type: application/json\r\nAuthorization: Bearer $accessToken\r\n",
+        'content' => $payload,
+        'timeout' => 8,
+        'ignore_errors' => true
+    )));
+    @file_get_contents("https://fcm.googleapis.com/v1/projects/$projectId/messages:send", false, $context);
+    return true;
+}
+
+/** Reads a shop's registered push tokens (see do=registerToken below). Returns
+ *  array('shop_token' => "...", 'customers' => array(phone => token)) — either half may be empty. */
+function pos_fcm_tokens($storageDir, $shop) {
+    $path = $storageDir . '/' . $shop . '/tokens.json';
+    $data = @json_decode(@file_get_contents($path), true);
+    if (!is_array($data)) {
+        $data = array();
+    }
+    if (!isset($data['shop_token'])) $data['shop_token'] = '';
+    if (!isset($data['customers']) || !is_array($data['customers'])) $data['customers'] = array();
+    return $data;
+}
+
+/** Best-effort: pushes to the shop owner's device (new order, new customer message). */
+function pos_fcm_notify_shop($serviceAccountPath, $storageDir, $shop, $type) {
+    if ($serviceAccountPath === '') return;
+    $tokens = pos_fcm_tokens($storageDir, $shop);
+    if ($tokens['shop_token'] !== '') {
+        pos_fcm_send($serviceAccountPath, $tokens['shop_token'], array('type' => $type));
+    }
+}
+
+/** Best-effort: pushes to one customer's device (order status change, shop reply). */
+function pos_fcm_notify_customer($serviceAccountPath, $storageDir, $shop, $phone, $type) {
+    if ($serviceAccountPath === '') return;
+    $tokens = pos_fcm_tokens($storageDir, $shop);
+    if (isset($tokens['customers'][$phone]) && $tokens['customers'][$phone] !== '') {
+        pos_fcm_send($serviceAccountPath, $tokens['customers'][$phone], array('type' => $type));
+    }
 }
 
 // ---- auth (optional — see $API_KEY above) ----
@@ -202,6 +353,7 @@ if (($method === 'POST' || $method === 'PUT') && $do === 'order') {
     fflush($fh);
     flock($fh, LOCK_UN);
     fclose($fh);
+    pos_fcm_notify_shop($SERVICE_ACCOUNT_PATH, $STORAGE_DIR, $shop, 'new_order');
     header('Content-Type: application/json');
     echo json_encode(array('ok' => true, 'id' => $order['id']));
     exit;
@@ -252,6 +404,7 @@ if (($method === 'POST' || $method === 'PUT') && $do === 'status') {
     fflush($fh);
     flock($fh, LOCK_UN);
     fclose($fh);
+    pos_fcm_notify_customer($SERVICE_ACCOUNT_PATH, $STORAGE_DIR, $shop, $phone, 'notification');
     header('Content-Type: text/plain');
     echo 'OK: notification queued for ' . $phone;
     exit;
@@ -300,6 +453,62 @@ if (($method === 'POST' || $method === 'PUT') && $do === 'message') {
     ftruncate($fh, 0);
     rewind($fh);
     fwrite($fh, json_encode($existing));
+    fflush($fh);
+    flock($fh, LOCK_UN);
+    fclose($fh);
+    pos_fcm_notify_shop($SERVICE_ACCOUNT_PATH, $STORAGE_DIR, $shop, 'new_message');
+    header('Content-Type: application/json');
+    echo json_encode(array('ok' => true));
+    exit;
+}
+
+if (($method === 'POST' || $method === 'PUT') && $do === 'registerToken') {
+    $raw = file_get_contents('php://input');
+    if ($raw === false || $raw === '') {
+        pos_catalog_fail(400, 'Empty body');
+    }
+    $body = json_decode($raw, true);
+    if (!is_array($body)) {
+        pos_catalog_fail(400, 'Body is not valid JSON');
+    }
+    $shop = isset($body['shop']) ? (string) $body['shop'] : '';
+    if (!preg_match('/^[A-Za-z0-9_]+$/', $shop)) {
+        pos_catalog_fail(400, 'Invalid or missing "shop" in body');
+    }
+    $role = isset($body['role']) ? (string) $body['role'] : '';
+    $token = isset($body['token']) ? (string) $body['token'] : '';
+    $phone = isset($body['phone']) ? (string) $body['phone'] : '';
+    if ($token === '' || ($role !== 'shop' && $role !== 'customer')) {
+        pos_catalog_fail(400, 'Missing "token" or invalid "role" (must be "shop" or "customer")');
+    }
+    if ($role === 'customer' && $phone === '') {
+        pos_catalog_fail(400, 'Missing "phone" for role=customer');
+    }
+    $folder = $STORAGE_DIR . '/' . $shop;
+    if (!is_dir($folder) && !@mkdir($folder, 0755, true)) {
+        pos_catalog_fail(500, 'Could not create storage folder — check permissions on ' . $STORAGE_DIR);
+    }
+    $path = $folder . '/tokens.json';
+    $fh = fopen($path, 'c+');
+    if ($fh === false) {
+        pos_catalog_fail(500, 'Could not open tokens file — check folder permissions');
+    }
+    flock($fh, LOCK_EX);
+    $data = json_decode(stream_get_contents($fh), true);
+    if (!is_array($data)) {
+        $data = array();
+    }
+    if (!isset($data['customers']) || !is_array($data['customers'])) {
+        $data['customers'] = array();
+    }
+    if ($role === 'shop') {
+        $data['shop_token'] = $token;
+    } else {
+        $data['customers'][$phone] = $token;
+    }
+    ftruncate($fh, 0);
+    rewind($fh);
+    fwrite($fh, json_encode($data));
     fflush($fh);
     flock($fh, LOCK_UN);
     fclose($fh);

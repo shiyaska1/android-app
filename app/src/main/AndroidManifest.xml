@@ -124,6 +124,14 @@
             android:name=".customer.ShopOrderPollReceiver"
             android:exported="false" />
 
+        <service
+            android:name=".push.PosMessagingService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+
         <receiver
             android:name=".diary.BootReceiver"
             android:exported="true">

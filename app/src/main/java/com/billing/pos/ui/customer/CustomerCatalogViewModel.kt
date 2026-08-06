@@ -7,6 +7,7 @@ import com.billing.pos.customer.CustomerNotificationPoll
 import com.billing.pos.customer.LocationHelper
 import com.billing.pos.customer.NotificationsFetch
 import com.billing.pos.customer.OrderSubmit
+import com.billing.pos.customer.PushTokenRegistration
 import com.billing.pos.customer.ShopCatalogSync
 import com.billing.pos.customer.ShopSwitch
 import com.billing.pos.data.AppDatabase
@@ -80,11 +81,12 @@ class CustomerCatalogViewModel(app: Application) : AndroidViewModel(app) {
         // First open after install: the cache is empty, so fetch immediately without
         // waiting for the user to find the refresh button.
         if (prefs.catalogLastFetchedAt <= 0L) refresh()
-        // Best-effort background poll for order-status updates (no push server behind this
-        // app) — arms itself on every open, since there's no separate "leaving customer mode"
-        // hook to arm it from once and forget.
+        // Best-effort background poll for order-status updates, as a fallback for whenever a
+        // push doesn't arrive — arms itself on every open, since there's no separate "leaving
+        // customer mode" hook to arm it from once and forget.
         CustomerNotificationPoll.schedule(app)
         viewModelScope.launch { runCatching { NotificationsFetch.fetch(app) } }
+        viewModelScope.launch { PushTokenRegistration.registerIfNeeded(app) }
     }
 
     /** Marks every notification read — called when the customer opens the notification list. */
@@ -189,6 +191,7 @@ class CustomerCatalogViewModel(app: Application) : AndroidViewModel(app) {
         prefs.customerName = name
         prefs.customerPhone = phone
         prefs.customerAddress = address
+        viewModelScope.launch { PushTokenRegistration.registerIfNeeded(getApplication()) }
         viewModelScope.launch {
             _saving.value = true
             val app: Application = getApplication()

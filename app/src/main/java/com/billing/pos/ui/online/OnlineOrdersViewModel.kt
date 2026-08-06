@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.billing.pos.customer.OrderStatusPush
 import com.billing.pos.customer.OrdersFetch
+import com.billing.pos.customer.PushTokenRegistration
 import com.billing.pos.customer.ShopOrderPoll
 import com.billing.pos.data.AppDatabase
 import com.billing.pos.data.CustOrder
@@ -24,9 +25,10 @@ class OnlineOrdersViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = Repository(app)
 
     init {
-        // Best-effort background poll for new orders (no push server behind this app) —
-        // arms itself every time this screen opens, same pattern as CustomerNotificationPoll.
+        // Best-effort background poll for new orders, as a fallback for whenever a push doesn't
+        // arrive — arms itself every time this screen opens, same pattern as CustomerNotificationPoll.
         ShopOrderPoll.schedule(app)
+        viewModelScope.launch { PushTokenRegistration.registerIfNeeded(app) }
     }
 
     val orders: StateFlow<List<OnlineOrder>> =

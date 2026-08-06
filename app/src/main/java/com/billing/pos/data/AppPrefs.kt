@@ -340,6 +340,17 @@ class AppPrefs(context: Context) {
     var customerRecentShops: String
         get() = p.getString("customer_recent_shops", "") ?: ""
         set(v) { p.edit().putString("customer_recent_shops", v).apply() }
+    /** This device's current Firebase Cloud Messaging token — see PosMessagingService.onNewToken.
+     *  Also readable when a push arrives, to trigger the same fetch the 30-min poll would do. */
+    var fcmToken: String
+        get() = p.getString("fcm_token", "") ?: ""
+        set(v) { p.edit().putString("fcm_token", v).apply() }
+    /** Identity ("shop:<code>" or "customer:<shop>:<phone>") the current [fcmToken] was last
+     *  successfully registered with the server under — see PushTokenRegistration. Re-registers
+     *  only when the token or this identity changes, so a normal app open doesn't re-POST it. */
+    var fcmTokenRegisteredFor: String
+        get() = p.getString("fcm_token_registered_for", "") ?: ""
+        set(v) { p.edit().putString("fcm_token_registered_for", v).apply() }
     /** Seconds between auto pull+merge+push cycles. Callers should floor this at ~10s before use so a mistyped value can't hammer the server. */
     var cloudAutoSyncIntervalSec: Int
         get() = p.getInt("cloud_auto_sync_interval_sec", 300)

@@ -3,6 +3,7 @@ plugins {
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
     id("com.google.devtools.ksp")
+    id("com.google.gms.google-services")
 }
 
 android {
@@ -15,8 +16,8 @@ android {
         targetSdk = 36
         // CI sets VERSION_CODE per build (see .github/workflows/build.yml and release.yml) so every
         // APK/AAB gets a unique, always-increasing code without hand-editing this file each time.
-        versionCode = System.getenv("VERSION_CODE")?.toIntOrNull() ?: 279
-        versionName = "2.19.2"
+        versionCode = System.getenv("VERSION_CODE")?.toIntOrNull() ?: 280
+        versionName = "2.20.0"
         vectorDrawables { useSupportLibrary = true }
 
         // Real Android phones are arm. The x86/x86_64 native libs are emulator-only
@@ -119,6 +120,10 @@ dependencies {
 
     // App lock via the phone's own fingerprint / PIN / pattern
     implementation("androidx.biometric:biometric:1.1.0")
+
+    // Push notifications (instant order/status/chat alerts instead of the 30-min poll)
+    implementation(platform("com.google.firebase:firebase-bom:33.5.1"))
+    implementation("com.google.firebase:firebase-messaging-ktx")
 
     // Room (local offline database)
     implementation("androidx.room:room-runtime:2.6.1")
