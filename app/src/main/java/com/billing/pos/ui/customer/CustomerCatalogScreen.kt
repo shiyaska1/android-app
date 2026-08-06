@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Save
@@ -78,6 +79,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.billing.pos.customer.NearbyShops
+import com.billing.pos.customer.ReferralLink
 import com.billing.pos.customer.ShopSwitch
 import com.billing.pos.customer.TechnicalSupport
 import com.billing.pos.customer.ThumbnailCompressor
@@ -414,8 +417,9 @@ fun CustomerCatalogScreen(onExitTestMode: () -> Unit = {}, vm: CustomerCatalogVi
         ShopDirectoryDialog(
             shops = vm.knownShops(),
             currentShop = prefs.shopCode,
+            currentShopName = shopName,
             onDismiss = { showDirectory = false },
-            onPick = { shop -> vm.switchShop(shop) { showDirectory = false } }
+            onPick = { shop, forceFetch -> vm.switchShop(shop, forceFetch = forceFetch) { showDirectory = false } }
         )
     }
     if (showHistory) {
@@ -757,53 +761,159 @@ private fun SwitchShopDialog(
 
 /** Every shop this device has connected to, grouped by the shop's own category (Restaurant,
  *  Medical store, ...) — e.g. scan 3 restaurants' QR codes, and this shows all 3 under
- *  "Restaurant" so the customer can pick which one to order from. Picking one is choosing an
- *  already-known shop, not scanning a fresh QR, so it shows that shop's cached items/address/
- *  category/banner instantly (see [CustomerCatalogViewModel.switchShop]'s `forceFetch`). */
+ *  "Restaurant" so the customer can pick which one to order from — plus a "Nearby" tab that asks
+ *  the server hosting the CURRENT shop (do=directory) for every other shop sharing that same
+ *  deployment and sorts them by distance, so a customer can discover a shop they've never scanned
+ *  a QR for. Picking a known shop shows its cache instantly (see
+ *  [CustomerCatalogViewModel.switchShop]'s `forceFetch`); picking a nearby one is a discovery —
+ *  same as a fresh QR scan — so it always fetches. "Invite a friend" at the top shares the
+ *  current shop's own install link (see [ReferralLink]). */
 @Composable
 private fun ShopDirectoryDialog(
     shops: List<ShopSwitch.Shop>,
     currentShop: String,
+    currentShopName: String,
     onDismiss: () -> Unit,
-    onPick: (ShopSwitch.Shop) -> Unit
+    onPick: (shop: ShopSwitch.Shop, forceFetch: Boolean) -> Unit
 ) {
+    val context = LocalContext.current
+    val prefs = remember { AppPrefs(context) }
+    val scope = rememberCoroutineScope()
     val grouped = remember(shops) {
         shops.groupBy { it.category.ifBlank { "Other" } }.toSortedMap(compareBy { it.lowercase() })
     }
+    var showNearby by remember { mutableStateOf(false) }
+    var nearbyLoading by remember { mutableStateOf(false) }
+    var nearbyError by remember { mutableStateOf<String?>(null) }
+    var nearbyResults by remember { mutableStateOf<List<NearbyShops.Entry>?>(null) }
+
+    fun runNearbySearch() {
+        nearbyLoading = true
+        nearbyError = null
+        scope.launch {
+            when (val result = NearbyShops.fetch(context)) {
+                is NearbyShops.Result.Ok -> nearbyResults = result.shops
+                is NearbyShops.Result.Failed -> nearbyError = result.message
+            }
+            nearbyLoading = false
+        }
+    }
+    val nearbyLocationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
+        val granted = grants[Manifest.permission.ACCESS_FINE_LOCATION] == true || grants[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+        if (granted) runNearbySearch() else nearbyError = "Location permission is required to find nearby shops"
+    }
+    fun startNearbySearch() {
+        val hasPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (hasPermission) runNearbySearch()
+        else nearbyLocationPermission.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Browse shops") },
         text = {
-            if (shops.isEmpty()) {
-                Text("No shops yet — switch shop to scan one.", color = MaterialTheme.colorScheme.outline)
-            } else {
-                Column {
-                    grouped.forEach { (category, group) ->
-                        Text(category, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 10.dp))
-                        group.forEach { shop ->
-                            val isCurrent = shop.shop == currentShop
-                            Column(
-                                Modifier.fillMaxWidth()
-                                    .let { if (!isCurrent) it.clickable { onPick(shop) } else it }
-                                    .padding(vertical = 8.dp)
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(
-                                        shop.name.ifBlank { shop.shop },
-                                        fontWeight = FontWeight.Medium,
-                                        style = MaterialTheme.typography.bodyMedium
-                                    )
-                                    if (isCurrent) {
+            Column {
+                OutlinedButton(
+                    onClick = {
+                        val link = ReferralLink.build(prefs) ?: return@OutlinedButton
+                        val text = "Order from ${currentShopName.ifBlank { "this shop" }} on the POS Billing app — install here: $link"
+                        val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(android.content.Intent.EXTRA_TEXT, text)
+                        }
+                        runCatching { context.startActivity(android.content.Intent.createChooser(intent, "Invite a friend")) }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.PersonAdd, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Text("  Invite a friend to " + currentShopName.ifBlank { "this shop" })
+                }
+                Row(
+                    Modifier.fillMaxWidth().padding(top = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    FilterChip(selected = !showNearby, onClick = { showNearby = false }, label = { Text("My shops") })
+                    FilterChip(
+                        selected = showNearby,
+                        onClick = {
+                            showNearby = true
+                            if (nearbyResults == null && !nearbyLoading) startNearbySearch()
+                        },
+                        label = { Text("Nearby") }
+                    )
+                }
+                Divider(Modifier.padding(vertical = 12.dp))
+
+                if (!showNearby) {
+                    if (shops.isEmpty()) {
+                        Text("No shops yet — switch shop to scan one.", color = MaterialTheme.colorScheme.outline)
+                    } else {
+                        grouped.forEach { (category, group) ->
+                            Text(category, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 10.dp))
+                            group.forEach { shop ->
+                                val isCurrent = shop.shop == currentShop
+                                Column(
+                                    Modifier.fillMaxWidth()
+                                        .let { if (!isCurrent) it.clickable { onPick(shop, false) } else it }
+                                        .padding(vertical = 8.dp)
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
                                         Text(
-                                            "  (current)",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.primary
+                                            shop.name.ifBlank { shop.shop },
+                                            fontWeight = FontWeight.Medium,
+                                            style = MaterialTheme.typography.bodyMedium
                                         )
+                                        if (isCurrent) {
+                                            Text(
+                                                "  (current)",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = MaterialTheme.colorScheme.primary
+                                            )
+                                        }
+                                    }
+                                    if (shop.address.isNotBlank()) {
+                                        Text(shop.address, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
                                     }
                                 }
-                                if (shop.address.isNotBlank()) {
-                                    Text(shop.address, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
-                                }
+                                Divider()
+                            }
+                        }
+                    }
+                } else {
+                    when {
+                        nearbyLoading -> Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
+                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                            Text("  Searching nearby...", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                        }
+                        nearbyError != null -> Column {
+                            Text(nearbyError!!, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                            TextButton(onClick = { startNearbySearch() }, modifier = Modifier.padding(top = 4.dp)) { Text("Try again") }
+                        }
+                        nearbyResults?.isEmpty() == true -> Text(
+                            "No other shops with a location set were found on this shop's server.",
+                            color = MaterialTheme.colorScheme.outline
+                        )
+                        else -> nearbyResults?.forEach { entry ->
+                            Column(
+                                Modifier.fillMaxWidth()
+                                    .clickable {
+                                        onPick(
+                                            ShopSwitch.Shop(
+                                                shop = entry.shop, url = prefs.onlineCatalogUrl,
+                                                type = entry.category, premium = false,
+                                                name = entry.name, category = entry.category, address = entry.address
+                                            ),
+                                            true
+                                        )
+                                    }
+                                    .padding(vertical = 8.dp)
+                            ) {
+                                Text(entry.name.ifBlank { entry.shop }, fontWeight = FontWeight.Medium, style = MaterialTheme.typography.bodyMedium)
+                                Text(
+                                    "%.1f km".format(entry.distanceKm) + (if (entry.address.isNotBlank()) " · ${entry.address}" else ""),
+                                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline
+                                )
                             }
                             Divider()
                         }

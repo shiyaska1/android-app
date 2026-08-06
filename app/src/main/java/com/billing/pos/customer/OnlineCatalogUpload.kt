@@ -47,6 +47,13 @@ object OnlineCatalogUpload {
             // the customer app group every shop it knows about into a "Browse shops" directory.
             put("shopCategory", prefs.businessType)
             put("shopAddress", prefs.companyAddress)
+            // Captured once in Settings > Online ordering — lets a customer's "Nearby shops"
+            // search (do=directory) find this shop by distance. Omitted entirely when never
+            // captured, so the server-side directory can just skip shops with no coordinates.
+            if (prefs.shopLocationCaptured) {
+                put("shopLat", prefs.shopLatitude)
+                put("shopLng", prefs.shopLongitude)
+            }
             // Shown at the top of the customer catalog screen — same compressed-thumbnail
             // convention as item photos, picked once in Settings > Online ordering.
             val bannerPath = prefs.onlineBannerPath

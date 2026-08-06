@@ -55,7 +55,18 @@
  *   fetch, THEN clears just those from the server (other customers' pending
  *   notifications are left untouched).
  *
- * All six directions use the SAME url — the app decides which one to call
+ * NEARBY SHOPS DIRECTORY (from a customer's app, "Browse shops > Nearby"):
+ *   GET this URL with ?do=directory — returns every shop THAT HAS UPLOADED A
+ *   CATALOG ON THIS SAME SERVER (i.e. sharing this one deployment/domain, not
+ *   every shop that has ever used this app anywhere) which also uploaded its
+ *   own shopLat/shopLng (Settings > Online ordering > Capture shop location,
+ *   shop owner side): [ { "shop", "shopName", "shopCategory", "shopAddress",
+ *   "shopLat", "shopLng", "itemCount" }, ... ]. A shop with no captured
+ *   location is skipped — there's nothing to sort it by distance with. The
+ *   app computes distance from the customer's own current location itself;
+ *   this just lists the candidates.
+ *
+ * All seven directions use the SAME url — the app decides which one to call
  * based on GET/POST and the "do" param, depending on which screen it's on.
  *
  * --- Install ---
@@ -295,6 +306,43 @@ if ($method === 'GET' && $do === 'orders') {
     $orders = json_decode($raw, true);
     header('Content-Type: application/json');
     echo is_array($orders) ? json_encode($orders) : '[]';
+    exit;
+}
+
+if ($method === 'GET' && $do === 'directory') {
+    $entries = array();
+    $dirs = @scandir($STORAGE_DIR);
+    if (is_array($dirs)) {
+        foreach ($dirs as $shop) {
+            if ($shop === '.' || $shop === '..') {
+                continue;
+            }
+            $catalogPath = $STORAGE_DIR . '/' . $shop . '/catalog.json';
+            if (!file_exists($catalogPath)) {
+                continue;
+            }
+            $data = json_decode(@file_get_contents($catalogPath), true);
+            if (!is_array($data) || !isset($data['shopLat']) || !isset($data['shopLng'])) {
+                continue;
+            }
+            $lat = (float) $data['shopLat'];
+            $lng = (float) $data['shopLng'];
+            if ($lat === 0.0 && $lng === 0.0) {
+                continue;
+            }
+            $entries[] = array(
+                'shop' => $shop,
+                'shopName' => isset($data['shopName']) ? (string) $data['shopName'] : '',
+                'shopCategory' => isset($data['shopCategory']) ? (string) $data['shopCategory'] : '',
+                'shopAddress' => isset($data['shopAddress']) ? (string) $data['shopAddress'] : '',
+                'shopLat' => $lat,
+                'shopLng' => $lng,
+                'itemCount' => isset($data['items']) && is_array($data['items']) ? count($data['items']) : 0
+            );
+        }
+    }
+    header('Content-Type: application/json');
+    echo json_encode($entries);
     exit;
 }
 

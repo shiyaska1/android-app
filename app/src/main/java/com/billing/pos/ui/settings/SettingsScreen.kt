@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -1164,6 +1165,71 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
                 if (onlineBannerPath.isNotBlank()) {
                     Spacer(Modifier.size(8.dp))
                     OutlinedButton(onClick = { prefs.onlineBannerPath = ""; onlineBannerPath = "" }) { Text("Remove") }
+                }
+            }
+
+            var shopLat by remember { mutableStateOf(prefs.shopLatitude) }
+            var shopLng by remember { mutableStateOf(prefs.shopLongitude) }
+            var capturingShopLocation by remember { mutableStateOf(false) }
+            fun captureShopLocation() {
+                capturingShopLocation = true
+                scope.launch {
+                    val latLng = com.billing.pos.customer.LocationHelper.currentLatLng(context)
+                    capturingShopLocation = false
+                    if (latLng != null) {
+                        prefs.shopLatitude = latLng.first; prefs.shopLongitude = latLng.second
+                        shopLat = latLng.first; shopLng = latLng.second
+                        snackbar.showSnackbar("Location captured — Upload again in Online Items to publish it")
+                    } else {
+                        snackbar.showSnackbar("Could not get location — check GPS is on and try again")
+                    }
+                }
+            }
+            val shopLocationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
+                val granted = grants[android.Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+                    grants[android.Manifest.permission.ACCESS_COARSE_LOCATION] == true
+                if (granted) captureShopLocation() else scope.launch { snackbar.showSnackbar("Location permission is required") }
+            }
+            Text(
+                "Shop location (optional) — lets a customer's \"Nearby shops\" search find this shop by distance.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline,
+                modifier = Modifier.padding(top = 12.dp)
+            )
+            if (shopLat != 0.0 || shopLng != 0.0) {
+                Text(
+                    "Captured: " + "%.5f, %.5f".format(shopLat, shopLng),
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+            }
+            Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                OutlinedButton(
+                    onClick = {
+                        val hasPermission = androidx.core.content.ContextCompat.checkSelfPermission(
+                            context, android.Manifest.permission.ACCESS_FINE_LOCATION
+                        ) == android.content.pm.PackageManager.PERMISSION_GRANTED ||
+                            androidx.core.content.ContextCompat.checkSelfPermission(
+                                context, android.Manifest.permission.ACCESS_COARSE_LOCATION
+                            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                        if (hasPermission) captureShopLocation()
+                        else shopLocationPermission.launch(
+                            arrayOf(android.Manifest.permission.ACCESS_FINE_LOCATION, android.Manifest.permission.ACCESS_COARSE_LOCATION)
+                        )
+                    },
+                    enabled = !capturingShopLocation,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    if (capturingShopLocation) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                    } else {
+                        Text(if (shopLat == 0.0 && shopLng == 0.0) "Capture shop location" else "Re-capture location")
+                    }
+                }
+                if (shopLat != 0.0 || shopLng != 0.0) {
+                    Spacer(Modifier.size(8.dp))
+                    OutlinedButton(onClick = {
+                        prefs.shopLatitude = 0.0; prefs.shopLongitude = 0.0; shopLat = 0.0; shopLng = 0.0
+                    }) { Text("Clear") }
                 }
             }
 

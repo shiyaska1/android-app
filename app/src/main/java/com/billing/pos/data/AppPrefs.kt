@@ -291,6 +291,16 @@ class AppPrefs(context: Context) {
     var onlineBannerPath: String
         get() = p.getString("online_banner_path", "") ?: ""
         set(v) { p.edit().putString("online_banner_path", v).apply() }
+    /** Shop owner: this shop's own GPS coordinates, captured once in Settings > Online ordering
+     *  and uploaded with every catalog fetch — lets a customer's "Nearby shops" search find it.
+     *  0.0/0.0 (the default) means never captured; [shopLocationCaptured] is the honest check. */
+    var shopLatitude: Double
+        get() = p.getFloat("shop_latitude", 0f).toDouble()
+        set(v) { p.edit().putFloat("shop_latitude", v.toFloat()).apply() }
+    var shopLongitude: Double
+        get() = p.getFloat("shop_longitude", 0f).toDouble()
+        set(v) { p.edit().putFloat("shop_longitude", v.toFloat()).apply() }
+    val shopLocationCaptured: Boolean get() = shopLatitude != 0.0 || shopLongitude != 0.0
     /** Customer install: the shop's banner image, as a base64 data URI carried in the catalog
      *  fetch response — same convention as item photos, cached so it survives offline reopens. */
     var shopBannerImage: String

@@ -23,10 +23,16 @@ object LocationHelper {
             ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
 
     /** A `https://maps.google.com/?q=lat,lng` link, or null if permission's missing or no fix could be had. */
-    suspend fun currentLocationLink(context: Context): String? {
+    suspend fun currentLocationLink(context: Context): String? =
+        currentLatLng(context)?.let { (lat, lng) -> "https://maps.google.com/?q=$lat,$lng" }
+
+    /** Raw (lat, lng), or null if permission's missing or no fix could be had — used both for a
+     *  customer's order location and, from the shop owner side, capturing where the shop itself
+     *  is for the "Nearby shops" directory (see [com.billing.pos.customer.NearbyShops]). */
+    suspend fun currentLatLng(context: Context): Pair<Double, Double>? {
         if (!hasPermission(context)) return null
         val loc = withTimeoutOrNull(8000) { freshLocation(context) } ?: lastKnown(context)
-        return loc?.let { "https://maps.google.com/?q=${it.latitude},${it.longitude}" }
+        return loc?.let { it.latitude to it.longitude }
     }
 
     private fun lastKnown(context: Context): Location? {
