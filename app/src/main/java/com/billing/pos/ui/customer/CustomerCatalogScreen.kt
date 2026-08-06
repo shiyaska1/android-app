@@ -32,7 +32,6 @@ import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.DocumentScanner
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Notifications
@@ -98,7 +97,6 @@ import com.billing.pos.customer.ReferralLink
 import com.billing.pos.customer.ShopSwitch
 import com.billing.pos.customer.TechnicalSupport
 import com.billing.pos.customer.ThumbnailCompressor
-import com.billing.pos.ocr.rememberListScanner
 import com.billing.pos.data.AppPrefs
 import com.billing.pos.data.CustomerNotification
 import com.billing.pos.data.CustomerOrderHistory
@@ -162,10 +160,6 @@ fun CustomerCatalogScreen(onExitTestMode: () -> Unit = {}, vm: CustomerCatalogVi
     var compressingAttachment by remember { mutableStateOf(false) }
     var viewingAttachment by remember { mutableStateOf<String?>(null) }
     var pendingCameraFile by remember { mutableStateOf<java.io.File?>(null) }
-    val scanOrderText = rememberListScanner { lines ->
-        val scanned = lines.joinToString("\n").trim()
-        if (scanned.isNotBlank()) orderNote = if (orderNote.isBlank()) scanned else "$orderNote\n$scanned"
-    }
 
     // 1024px so an attachment stays legible (e.g. a prescription) — not the 240px item-thumbnail
     // size — but still compressed client-side before it ever reaches the server.
@@ -380,8 +374,6 @@ fun CustomerCatalogScreen(onExitTestMode: () -> Unit = {}, vm: CustomerCatalogVi
                             if (qty.isNotEmpty()) {
                                 Text("${qty.values.sum()} item(s)", style = MaterialTheme.typography.labelMedium)
                                 Text("₹" + Format.money(total), fontWeight = FontWeight.Bold)
-                            } else {
-                                Text("Note / attachment ready", style = MaterialTheme.typography.labelMedium)
                             }
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -452,7 +444,6 @@ fun CustomerCatalogScreen(onExitTestMode: () -> Unit = {}, vm: CustomerCatalogVi
                 OrderNoteCard(
                     note = orderNote,
                     onNoteChange = { orderNote = it },
-                    onScan = { scanOrderText() },
                     attachments = orderAttachments,
                     compressing = compressingAttachment,
                     onAddFromCamera = { launchCamera() },
@@ -583,6 +574,35 @@ fun CustomerCatalogScreen(onExitTestMode: () -> Unit = {}, vm: CustomerCatalogVi
             shopPhone = shopPhone,
             onDismiss = { vm.technicalErrorShown() }
         )
+    }
+    if (saving) {
+        // Blocking, full-screen — the server can be slow to respond (especially with photo
+        // attachments), and without this the customer has no sign anything is happening and may
+        // think the app froze and tap Save again.
+        Dialog(
+            onDismissRequest = {},
+            properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false, usePlatformDefaultWidth = false)
+        ) {
+            Box(
+                Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.6f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator(color = androidx.compose.ui.graphics.Color.White)
+                    Spacer(Modifier.height(16.dp))
+                    Text(
+                        "Sending your order…",
+                        color = androidx.compose.ui.graphics.Color.White,
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Text(
+                        "This can take a moment — please wait",
+                        color = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.8f),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            }
+        }
     }
 }
 
@@ -804,7 +824,6 @@ private fun SaveOrderDialog(
 private fun OrderNoteCard(
     note: String,
     onNoteChange: (String) -> Unit,
-    onScan: () -> Unit,
     attachments: List<String>,
     compressing: Boolean,
     onAddFromCamera: () -> Unit,
@@ -815,18 +834,13 @@ private fun OrderNoteCard(
     Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
         Column(Modifier.padding(14.dp)) {
             Text(
-                "Don't want to pick items? Write what you want here instead — type it, scan a list/photo, or just attach a photo.",
+                "Don't want to pick items? Write what you want here instead, or just attach a photo below.",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.outline
             )
             OutlinedTextField(
                 value = note, onValueChange = onNoteChange,
                 label = { Text("Note / your order") },
-                trailingIcon = {
-                    IconButton(onClick = onScan) {
-                        Icon(Icons.Default.DocumentScanner, contentDescription = "Scan a list into the note")
-                    }
-                },
                 minLines = 3, maxLines = 8,
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
             )
