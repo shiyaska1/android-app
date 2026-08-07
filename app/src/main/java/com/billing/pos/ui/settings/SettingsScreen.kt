@@ -31,6 +31,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
 import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.QrCode2
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Divider
@@ -62,6 +63,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
@@ -1049,7 +1051,8 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
             Text(
                 "Set the catalog URL once, then use Masters > Online Items to pick which items " +
                     "customers can order and \"Upload\". Your shop code is this device's own Device ID " +
-                    "below — give it, and the URL, to whoever builds your customer install links/QR codes.",
+                    "below — tap \"QR / link for customers\" to get an install QR and link for this " +
+                    "shop, any time, at no cost.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline
             )
             var shopCode by remember { mutableStateOf(prefs.shopCode.ifBlank { com.billing.pos.data.License.deviceId(context) }) }
@@ -1066,6 +1069,18 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
                 label = { Text("Online catalog URL") }, singleLine = true,
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
             )
+            var showShopQr by remember { mutableStateOf(false) }
+            OutlinedButton(
+                onClick = { showShopQr = true },
+                enabled = shopCode.isNotBlank() && onlineCatalogUrl.isNotBlank(),
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+            ) {
+                Icon(Icons.Filled.QrCode2, contentDescription = null, modifier = Modifier.size(18.dp))
+                Text("  QR / link for customers")
+            }
+            if (showShopQr) {
+                ShopQrDialog(prefs = prefs, shopCode = shopCode, onlineCatalogUrl = onlineCatalogUrl, onDismiss = { showShopQr = false })
+            }
             var fetchOrdersUrl by remember { mutableStateOf(prefs.fetchOrdersUrl) }
             OutlinedTextField(
                 value = fetchOrdersUrl,
@@ -1368,4 +1383,61 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
             )
         }
     }
+}
+
+/**
+ * A free, self-serve install QR/link for this shop, built from whatever's already in Settings
+ * (shop code, catalog URL, business type) — see [ReferralLink.buildForOwner]. Print it, display
+ * it at the counter, or share the link directly with a walk-in customer. Deliberately has no
+ * "premium" option: that stays a paid, developer-issued QR (server/customer-link-builder.html).
+ */
+@Composable
+private fun ShopQrDialog(prefs: AppPrefs, shopCode: String, onlineCatalogUrl: String, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val link = remember(shopCode, onlineCatalogUrl, prefs.businessType) {
+        com.billing.pos.customer.ReferralLink.buildForOwner(prefs, shopCode)
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("QR / link for customers") },
+        text = {
+            Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                if (link == null) {
+                    Text(
+                        "Set the shop code and online catalog URL above first.",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                } else {
+                    val qr = remember(link) { com.billing.pos.util.UpiQr.bitmap(link) }
+                    if (qr != null) {
+                        Image(
+                            bitmap = qr.asImageBitmap(),
+                            contentDescription = "Install QR code",
+                            modifier = Modifier.size(220.dp).padding(top = 4.dp)
+                        )
+                    } else {
+                        Text("Could not make the QR", color = MaterialTheme.colorScheme.error)
+                    }
+                    Text(
+                        "A new customer scans this (or opens the link) to install the app and land " +
+                            "straight in your catalog — no key, no sign-up.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.outline,
+                        modifier = Modifier.padding(top = 10.dp)
+                    )
+                    OutlinedButton(
+                        onClick = {
+                            val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(android.content.Intent.EXTRA_TEXT, "Order from us on the POS Billing app — install here: $link")
+                            }
+                            runCatching { context.startActivity(android.content.Intent.createChooser(intent, "Share install link")) }
+                        },
+                        modifier = Modifier.fillMaxWidth().padding(top = 12.dp)
+                    ) { Text("Share link") }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } }
+    )
 }

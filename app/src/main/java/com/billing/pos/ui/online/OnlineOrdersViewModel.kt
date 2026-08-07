@@ -108,6 +108,12 @@ class OnlineOrdersViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Removes this order from the local list only — a housekeeping action for a list that only
+     *  ever grows (see [OrdersFetch]), not something the customer or server is told about. */
+    fun deleteOrder(order: OnlineOrder) {
+        viewModelScope.launch { dao.delete(order) }
+    }
+
     /** Accepting an order hands it off to the app's regular Orders (Masters > Orders), where
      *  "select orders > Convert to Sale" already exists — this only needs to create the order
      *  and remove it from this list, not rebuild that whole workflow here. */

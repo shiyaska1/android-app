@@ -1381,11 +1381,11 @@ private fun CatalogItemRow(item: ShopCatalogItem, qty: Int, onQtyChange: (Int) -
                     thumb,
                     contentDescription = item.name,
                     contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                    modifier = Modifier.size(52.dp).padding(end = 12.dp)
+                    modifier = Modifier.size(55.dp).padding(end = 12.dp)
                 )
             }
             if (galleryThumb != null) {
-                Box(Modifier.size(52.dp).padding(end = 12.dp)) {
+                Box(Modifier.size(55.dp).padding(end = 12.dp)) {
                     androidx.compose.foundation.Image(
                         galleryThumb,
                         contentDescription = item.name,

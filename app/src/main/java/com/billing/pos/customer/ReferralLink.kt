@@ -30,4 +30,29 @@ object ReferralLink {
         val sep = if (PLAY_STORE_URL.contains("?")) "&" else "?"
         return PLAY_STORE_URL + sep + "referrer=" + Uri.encode(referrer)
     }
+
+    /**
+     * The same install link, built from the SHOP OWNER's own Settings (shop code, catalog URL,
+     * business type) instead of an already-onboarded customer's — so an owner can generate and
+     * share their own QR/link with a walk-in customer, no cost and no need to ask the developer.
+     * [shop] is passed in rather than read from [prefs] directly since the Settings screen already
+     * falls back to the Device ID when the shop-code field is still blank. Deliberately never adds
+     * "premium=1": the order-with-photo premium tier stays a paid, developer-issued add-on (see
+     * server/customer-link-builder.html's Premium checkbox) — a shop owner can't grant it to
+     * themselves for free from here.
+     */
+    fun buildForOwner(prefs: AppPrefs, shop: String): String? {
+        val url = prefs.onlineCatalogUrl
+        if (shop.isBlank() || url.isBlank()) return null
+        val referrerParts = mutableListOf(
+            "mode=customer",
+            "shop=" + Uri.encode(shop),
+            "url=" + Uri.encode(url)
+        )
+        val type = prefs.businessType
+        if (type.isNotBlank()) referrerParts += "type=" + Uri.encode(type)
+        val referrer = referrerParts.joinToString("&")
+        val sep = if (PLAY_STORE_URL.contains("?")) "&" else "?"
+        return PLAY_STORE_URL + sep + "referrer=" + Uri.encode(referrer)
+    }
 }

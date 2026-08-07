@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.weight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -20,6 +21,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.Chat
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Message
 import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.Refresh
@@ -32,6 +34,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -57,6 +60,7 @@ import com.billing.pos.data.OnlineOrder
 import com.billing.pos.data.OnlineOrderStatus
 import com.billing.pos.ui.billing.collectAsStateSafe
 import com.billing.pos.util.Format
+import java.util.Calendar
 
 /**
  * Shop owner's view of orders customers have placed and saved — see [OrdersFetch] for how they
@@ -74,9 +78,16 @@ fun OnlineOrdersScreen(onBack: () -> Unit, vm: OnlineOrdersViewModel = viewModel
     val showProLimitDialog by vm.showProLimitDialog.collectAsStateSafe()
     val snackbar = remember { SnackbarHostState() }
     var messageTarget by remember { mutableStateOf<OnlineOrder?>(null) }
+    var deleteTarget by remember { mutableStateOf<OnlineOrder?>(null) }
     var selectedFilter by rememberSaveable { mutableStateOf("All") } // "All" or an OnlineOrderStatus name
-    val shown = remember(orders, selectedFilter) {
-        if (selectedFilter == "All") orders else orders.filter { it.status == selectedFilter }
+    // Defaults to the last 7 days — without a cap this list only ever grows, since every fetched
+    // order stays local forever (see OrdersFetch). The owner can widen or narrow it from here.
+    var dateFrom by rememberSaveable { mutableStateOf(startOfDay(System.currentTimeMillis() - 6L * 24 * 60 * 60 * 1000)) }
+    var dateTo by rememberSaveable { mutableStateOf(endOfDay(System.currentTimeMillis())) }
+    val shown = remember(orders, selectedFilter, dateFrom, dateTo) {
+        orders
+            .filter { selectedFilter == "All" || it.status == selectedFilter }
+            .filter { orderMillis(it) in dateFrom..dateTo }
     }
 
     if (showProLimitDialog) {
@@ -129,6 +140,17 @@ fun OnlineOrdersScreen(onBack: () -> Unit, vm: OnlineOrdersViewModel = viewModel
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
             if (orders.isNotEmpty()) {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(onClick = { pickDate(context, dateFrom) { dateFrom = startOfDay(it) } }, modifier = Modifier.weight(1f)) {
+                        Text("From: ${Format.date(dateFrom)}")
+                    }
+                    OutlinedButton(onClick = { pickDate(context, dateTo) { dateTo = endOfDay(it) } }, modifier = Modifier.weight(1f)) {
+                        Text("To: ${Format.date(dateTo)}")
+                    }
+                }
                 val filters = listOf("All") + OnlineOrderStatus.entries.map { it.name }
                 LazyRow(
                     contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
@@ -152,7 +174,7 @@ fun OnlineOrdersScreen(onBack: () -> Unit, vm: OnlineOrdersViewModel = viewModel
                 }
             } else if (shown.isEmpty()) {
                 Column(Modifier.fillMaxSize().padding(24.dp)) {
-                    Text("No orders in this status.", color = MaterialTheme.colorScheme.outline)
+                    Text("No orders in this status/date range.", color = MaterialTheme.colorScheme.outline)
                 }
             } else {
             LazyColumn(
@@ -194,6 +216,7 @@ fun OnlineOrdersScreen(onBack: () -> Unit, vm: OnlineOrdersViewModel = viewModel
                             }
                         },
                         onMessage = { messageTarget = order },
+                        onDelete = { deleteTarget = order },
                         onShareToSalesman = {
                             val text = buildString {
                                 append(order.customerName)
@@ -226,6 +249,44 @@ fun OnlineOrdersScreen(onBack: () -> Unit, vm: OnlineOrdersViewModel = viewModel
             onSend = { text -> vm.sendMessage(order, text); messageTarget = null }
         )
     }
+
+    deleteTarget?.let { order ->
+        AlertDialog(
+            onDismissRequest = { deleteTarget = null },
+            title = { Text("Delete this order?") },
+            text = { Text("${order.customerName} — ₹${Format.money(order.total)}. This only removes it from this list, on this phone.") },
+            confirmButton = {
+                TextButton(onClick = { vm.deleteOrder(order); deleteTarget = null }) { Text("Delete") }
+            },
+            dismissButton = { TextButton(onClick = { deleteTarget = null }) { Text("Cancel") } }
+        )
+    }
+}
+
+private fun startOfDay(millis: Long): Long = Calendar.getInstance().apply {
+    timeInMillis = millis
+    set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
+}.timeInMillis
+
+private fun endOfDay(millis: Long): Long = Calendar.getInstance().apply {
+    timeInMillis = millis
+    set(Calendar.HOUR_OF_DAY, 23); set(Calendar.MINUTE, 59); set(Calendar.SECOND, 59); set(Calendar.MILLISECOND, 999)
+}.timeInMillis
+
+/** The order's real timestamp — [OnlineOrder.receivedAt] is an ISO-8601 string from the server
+ *  (`date('c')`); falls back to [OnlineOrder.fetchedAt] (when this device pulled it) if that
+ *  ever fails to parse, so a malformed/blank value never drops an order out of every date range. */
+private fun orderMillis(order: OnlineOrder): Long =
+    runCatching { java.time.OffsetDateTime.parse(order.receivedAt).toInstant().toEpochMilli() }
+        .getOrDefault(order.fetchedAt)
+
+private fun pickDate(context: android.content.Context, current: Long, onPicked: (Long) -> Unit) {
+    val c = Calendar.getInstance().apply { timeInMillis = current }
+    android.app.DatePickerDialog(
+        context,
+        { _, y, m, d -> c.set(Calendar.YEAR, y); c.set(Calendar.MONTH, m); c.set(Calendar.DAY_OF_MONTH, d); onPicked(c.timeInMillis) },
+        c.get(Calendar.YEAR), c.get(Calendar.MONTH), c.get(Calendar.DAY_OF_MONTH)
+    ).show()
 }
 
 @Composable
@@ -279,6 +340,7 @@ private fun OrderCard(
     onWhatsApp: () -> Unit,
     onLocation: () -> Unit,
     onMessage: () -> Unit,
+    onDelete: () -> Unit,
     onShareToSalesman: () -> Unit
 ) {
     val context = LocalContext.current
@@ -286,6 +348,7 @@ private fun OrderCard(
         Column(Modifier.padding(14.dp)) {
             Column {
                 Text(order.customerName, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleSmall)
+                Text(Format.date(orderMillis(order)), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
                 if (order.customerPhone.isNotBlank()) {
                     Text(order.customerPhone, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
                 }
@@ -304,6 +367,9 @@ private fun OrderCard(
                 if (order.customerPhone.isNotBlank()) {
                     IconButton(onClick = onCall) { Icon(Icons.Default.Call, contentDescription = "Call") }
                     IconButton(onClick = onWhatsApp) { Icon(Icons.Default.Chat, contentDescription = "WhatsApp") }
+                }
+                IconButton(onClick = onDelete) {
+                    Icon(Icons.Default.Delete, contentDescription = "Delete order", tint = MaterialTheme.colorScheme.error)
                 }
             }
 
