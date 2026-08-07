@@ -89,7 +89,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextDecoration
@@ -1088,6 +1091,28 @@ private fun PaymentDialog(
         } else {
             payError = "Payment wasn't completed — try again, or choose Cash on delivery."
         }
+    }
+    // Safety net for a UPI app that never hands control back cleanly (e.g. the customer leaves it
+    // via the phone's Home button/app-switcher instead of its own back/Dismiss control) — normally
+    // Android delivers the activity result (clearing [waiting] above) before this screen resumes,
+    // so this only fires when that never happened, instead of leaving "Waiting for payment…" stuck
+    // forever with no way forward.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        var pausedWhileWaiting = false
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_PAUSE -> if (waiting) pausedWhileWaiting = true
+                Lifecycle.Event.ON_RESUME -> if (waiting && pausedWhileWaiting) {
+                    waiting = false
+                    pausedWhileWaiting = false
+                    payError = "Didn't hear back from the UPI app. If you completed the payment, it's fine — otherwise try again or choose Cash on delivery."
+                }
+                else -> {}
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
     AlertDialog(
         onDismissRequest = onDismiss,
