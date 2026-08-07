@@ -215,7 +215,8 @@ $html = <<<'APPHTML'
   .chip { flex:0 0 auto; border:1px solid #CAC4D0; border-radius:16px; padding:6px 14px; font-size:13px; background:#fff; cursor:pointer; white-space:nowrap; }
   .chip.active { background:var(--brand); color:#fff; border-color:var(--brand); }
   .item { display:flex; align-items:center; gap:12px; background:var(--card); border-radius:12px; padding:12px; margin-bottom:8px; box-shadow:0 1px 2px rgba(0,0,0,.08); }
-  .item img { width:52px; height:52px; border-radius:8px; object-fit:cover; flex:0 0 auto; }
+  .item img { width:55px; height:55px; border-radius:8px; object-fit:cover; flex:0 0 auto; }
+  .shopBanner { display:none; width:100%; max-height:140px; object-fit:cover; border-radius:12px; margin-bottom:10px; }
   .item .info { flex:1; min-width:0; }
   .item .name { font-weight:600; font-size:14px; }
   .item .desc { font-size:12px; color:var(--outline); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -266,6 +267,10 @@ $html = <<<'APPHTML'
   .banner span { flex:1; }
   .banner .pill { flex:none; padding:6px 12px; font-size:12px; }
   .banner .icon-btn { color:#4A3B00; font-size:16px; padding:2px 4px; flex:none; }
+  .a2hs-steps { list-style:none; margin:14px 0; padding:0; }
+  .a2hs-steps li { display:flex; align-items:flex-start; gap:10px; margin-bottom:14px; font-size:14px; line-height:1.4; }
+  .a2hs-steps .num { flex:none; width:24px; height:24px; border-radius:50%; background:var(--brand); color:#fff; font-size:12px; font-weight:700; display:flex; align-items:center; justify-content:center; }
+  .a2hs-steps .glyph { flex:none; font-size:20px; }
 </style>
 </head>
 <body>
@@ -289,7 +294,8 @@ $html = <<<'APPHTML'
   </header>
   <main>
     <div class="updated" id="updatedAt"></div>
-    <div class="banner" id="a2hsBanner"><span id="a2hsText"></span><button class="icon-btn" onclick="dismissA2hsBanner()" title="Dismiss">&times;</button></div>
+    <img id="shopBannerImg" class="shopBanner" alt="">
+    <div class="banner" id="a2hsBanner"><span id="a2hsText"></span><button class="pill primary" onclick="openA2hsModal()">How?</button><button class="icon-btn" onclick="dismissA2hsBanner()" title="Dismiss">&times;</button></div>
     <div class="banner" id="pushBanner"><span>Get notified about your order right on this phone, even with the app closed.</span><button class="pill primary" onclick="enablePush()">Enable</button><button class="icon-btn" onclick="dismissPushBanner()" title="Dismiss">&times;</button></div>
     <input type="text" class="search" id="search" placeholder="Search items…" oninput="render()">
     <div class="chips" id="chips"></div>
@@ -298,8 +304,7 @@ $html = <<<'APPHTML'
   <div class="bottombar" id="bottombar">
     <div class="total"><b id="totalAmt">₹0</b><span id="totalCount">0 item(s)</span></div>
     <div class="actions">
-      <button class="pill outline" onclick="onShareClick()" id="shareBtn">Share</button>
-      <button class="pill primary" onclick="onSaveClick()">Save</button>
+      <button class="pill primary" onclick="onSaveClick()" id="orderBtn">Order</button>
     </div>
   </div>
 </div>
@@ -319,6 +324,35 @@ $html = <<<'APPHTML'
   <div class="sheet-actions">
     <button class="pill outline" onclick="closeOverlay('saveOverlay')">Cancel</button>
     <button class="pill primary" id="saveConfirmBtn" onclick="confirmSave()">Save order</button>
+  </div>
+</div></div>
+
+<div class="overlay" id="deliveryOverlay"><div class="sheet">
+  <h2>Are you at the delivery point?</h2>
+  <div class="hint">If you're at the delivery address right now, we'll use this phone's current location. Otherwise, you'll paste a Google Maps location link for where to deliver.</div>
+  <div class="sheet-actions">
+    <button class="pill outline" onclick="deliveryNo()">No</button>
+    <button class="pill primary" onclick="deliveryYes()">Yes, I'm here</button>
+  </div>
+</div></div>
+
+<div class="overlay" id="manualLocationOverlay"><div class="sheet">
+  <h2>Delivery location</h2>
+  <div class="hint">Open Google Maps, drop a pin on the delivery address, and share/paste the link here. This is required.</div>
+  <div class="field"><label>Google Maps link</label><input type="text" id="manualLocationInput"></div>
+  <div class="err" id="manualLocationErr"></div>
+  <div class="sheet-actions">
+    <button class="pill outline" onclick="closeOverlay('manualLocationOverlay')">Cancel</button>
+    <button class="pill primary" onclick="confirmManualLocation()">Place order</button>
+  </div>
+</div></div>
+
+<div class="overlay" id="a2hsOverlay"><div class="sheet">
+  <h2>Add to Home Screen</h2>
+  <div class="hint">Two quick taps — then you'll get order updates even with this page closed.</div>
+  <ol class="a2hs-steps" id="a2hsSteps"></ol>
+  <div class="sheet-actions">
+    <button class="pill primary" style="flex:none;width:100%;" onclick="closeOverlay('a2hsOverlay')">Got it</button>
   </div>
 </div></div>
 
@@ -378,13 +412,39 @@ function updateA2hsBanner(){
   if(isStandalone() || loadJSON('posc_a2hsDismissed', false)){ el.style.display='none'; return; }
   var text = document.getElementById('a2hsText');
   text.innerHTML = isIOS()
-    ? 'Add this to your Home Screen for order alerts even with the app closed: tap <b>Share</b>, then <b>Add to Home Screen</b>.'
-    : 'Add this to your Home Screen for order alerts even with the app closed — open your browser menu and tap <b>Install app</b> / <b>Add to Home Screen</b>.';
+    ? 'Add this to your Home Screen for order alerts even with the app closed.'
+    : 'Add this to your Home Screen for order alerts even with the app closed.';
   el.style.display = 'flex';
 }
 function dismissA2hsBanner(){
   saveJSON('posc_a2hsDismissed', true);
   document.getElementById('a2hsBanner').style.display = 'none';
+}
+
+// A guided, step-by-step walkthrough — the plain banner text alone was easy to miss/ignore, and
+// "Add to Home Screen" isn't an obvious action for a customer who's never done it before. Shown
+// automatically once per browser (not just left as a passive banner) so most customers see it
+// without having to notice and tap anything first; posc_a2hsAutoShown makes sure it only
+// self-triggers the one time even if they close it without acting — the small banner (and the
+// "How?" button on it) stays available afterward for anyone who wants to see it again.
+function a2hsStepsHtml(){
+  if(isIOS()){
+    return '<li><span class="glyph">&#9081;</span><span>Tap the <b>Share</b> button in Safari’s toolbar (a square with an arrow pointing up).</span></li>' +
+      '<li><span class="num">2</span><span>Scroll down the list and tap <b>Add to Home Screen</b>.</span></li>' +
+      '<li><span class="num">3</span><span>Tap <b>Add</b> at the top right — that’s it.</span></li>';
+  }
+  return '<li><span class="num">1</span><span>Open your browser’s menu (usually three dots, top right).</span></li>' +
+    '<li><span class="num">2</span><span>Tap <b>Install app</b> or <b>Add to Home Screen</b>.</span></li>' +
+    '<li><span class="num">3</span><span>Confirm — that’s it.</span></li>';
+}
+function openA2hsModal(){
+  document.getElementById('a2hsSteps').innerHTML = a2hsStepsHtml();
+  openOverlay('a2hsOverlay');
+}
+function maybeAutoShowA2hsModal(){
+  if(isStandalone() || loadJSON('posc_a2hsAutoShown', false)) return;
+  saveJSON('posc_a2hsAutoShown', true);
+  setTimeout(function(){ openA2hsModal(); }, 1200);
 }
 
 function pushApiSupported(){
@@ -486,12 +546,13 @@ function fetchCatalog(){
     .then(function(res){ if(!res.ok) throw new Error('HTTP '+res.status); return res.text(); })
     .then(function(text){
       var root; try{ root = JSON.parse(text); }catch(e){ throw new Error('Bad response'); }
-      var list, shopName='', shopPhone='';
+      var list, shopName='', shopPhone='', bannerImage='';
       if(Array.isArray(root)){ list = root; }
-      else { list = root.items || []; shopName = root.shopName||''; shopPhone = root.shopPhone||''; }
+      else { list = root.items || []; shopName = root.shopName||''; shopPhone = root.shopPhone||''; bannerImage = root.bannerImage||''; }
       items = list.map(function(o){ return { id:String(o.id||''), name:o.name||'', category:o.category||'', price:parseFloat(o.price||0), unit:o.unit||'', imageUrl:o.imageUrl||'', description:o.description||'' }; }).filter(function(i){ return i.id && i.name; });
       if(shopName) saveJSON(ns()+'shopName', shopName);
       if(shopPhone) saveJSON(ns()+'shopPhone', shopPhone);
+      saveJSON(ns()+'bannerImage', bannerImage);
       saveJSON(ns()+'items', items);
       saveJSON(ns()+'lastFetch', Date.now());
     });
@@ -572,18 +633,16 @@ function catalogLabel(){
   if(t==='Medical lab') return 'Home Collection';
   return 'Order';
 }
-function shareLabel(){
-  var t = cfg.type;
-  if(t==='Medical store') return 'Send order';
-  if(t==='Medical lab') return 'Book collection';
-  return 'Share order';
-}
-
 function render(){
   var shopName = loadJSON(ns()+'shopName','');
   document.getElementById('shopTitle').textContent = shopName || catalogLabel();
   var shopPhone = loadJSON(ns()+'shopPhone','');
   document.getElementById('btnChat').style.display = shopPhone ? '' : 'none';
+
+  var bannerImg = document.getElementById('shopBannerImg');
+  var bannerImage = loadJSON(ns()+'bannerImage','');
+  if(bannerImage && bannerImage.indexOf('data:image')===0){ bannerImg.src = bannerImage; bannerImg.style.display='block'; }
+  else { bannerImg.style.display='none'; }
 
   var cats = ['All'];
   items.forEach(function(i){ if(i.category && cats.indexOf(i.category)<0) cats.push(i.category); });
@@ -651,27 +710,10 @@ function currentSelection(){
   }).filter(Boolean);
 }
 
-// Share is Save with an extra step: it goes through the exact same registration + compulsory
-// location + server-save pipeline as Save, then additionally opens WhatsApp with the order text
-// once the save succeeds. pendingShare tracks which button started the current submit.
-var pendingShare = false;
-
 function openOverlay(id){ document.getElementById(id).classList.add('show'); }
 function closeOverlay(id){ document.getElementById(id).classList.remove('show'); }
 
-function onSaveClick(){ pendingShare = false; openSave(); }
-
-function onShareClick(){
-  var sel = currentSelection();
-  if(sel.length===0) return;
-  pendingShare = true;
-  var c = loadJSON(ns()+'customer', {name:'',phone:'',address:''});
-  if(c.name && c.phone){
-    doSubmitOrder({name:c.name, phone:c.phone, address:c.address||''}, '', null, false);
-  } else {
-    openSave();
-  }
-}
+function onSaveClick(){ openSave(); }
 
 function openSave(){
   var sel = currentSelection();
@@ -685,7 +727,6 @@ function openSave(){
   pendingAttachment = null;
   document.getElementById('attachWrap').style.display = cfg.premium ? '' : 'none';
   document.getElementById('attachBtn').textContent = 'Attach a photo (e.g. prescription)';
-  document.getElementById('saveConfirmBtn').textContent = pendingShare ? 'Save & share' : 'Save order';
   openOverlay('saveOverlay');
 }
 
@@ -701,6 +742,10 @@ function onAttachPicked(e){
   });
 }
 
+// Save just collects who/what; where to deliver is decided next, by deliveryOverlay \u2014 see
+// deliveryYes()/deliveryNo() below.
+var pendingOrder = null;
+
 function confirmSave(){
   var name = document.getElementById('custName').value.trim();
   var phone = document.getElementById('custPhone').value.trim();
@@ -710,46 +755,62 @@ function confirmSave(){
   if(!name || !phone){ errEl.textContent = 'Name and mobile number are required.'; return; }
   saveJSON(ns()+'customer', {name:name, phone:phone, address:address});
   updatePushBanner();
-  doSubmitOrder({name:name, phone:phone, address:address}, note, pendingAttachment, true);
+  pendingOrder = { customer:{name:name, phone:phone, address:address}, note:note, attachment:pendingAttachment };
+  closeOverlay('saveOverlay');
+  openOverlay('deliveryOverlay');
+}
+
+// "Are you at the delivery point?" Yes uses this phone's live GPS fix (compulsory \u2014 see
+// getLocationLink()); No asks for a pasted Google Maps link instead (also compulsory), for a
+// customer ordering ahead from somewhere else.
+function deliveryYes(){
+  closeOverlay('deliveryOverlay');
+  submitPendingOrder(null);
+}
+function deliveryNo(){
+  closeOverlay('deliveryOverlay');
+  document.getElementById('manualLocationInput').value = '';
+  document.getElementById('manualLocationErr').textContent = '';
+  openOverlay('manualLocationOverlay');
+}
+function confirmManualLocation(){
+  var link = document.getElementById('manualLocationInput').value.trim();
+  if(!link){ document.getElementById('manualLocationErr').textContent = 'Paste a Google Maps link \u2014 this is required.'; return; }
+  closeOverlay('manualLocationOverlay');
+  submitPendingOrder(link);
 }
 
 // Location is compulsory: the shop needs to know where to deliver, so a missing/failed fix
-// fails the whole order instead of silently going through without one. Calling
-// getCurrentPosition() is itself what triggers the browser's location-permission prompt.
-function doSubmitOrder(customer, note, attachment, fromDialog){
+// fails the whole order instead of silently going through without one. When manualLink is null,
+// calling getCurrentPosition() (inside getLocationLink()) is itself what triggers the browser's
+// location-permission prompt.
+function submitPendingOrder(manualLink){
+  var po = pendingOrder;
+  pendingOrder = null;
+  if(!po) return;
   var sel = currentSelection();
-  if(sel.length===0){ pendingShare = false; if(fromDialog) closeOverlay('saveOverlay'); return; }
-  var errEl = document.getElementById('saveErr');
-  var btn = document.getElementById('saveConfirmBtn');
-  if(fromDialog){ btn.disabled = true; btn.textContent = 'Saving\u2026'; }
-  getLocationLink().then(function(loc){
+  if(sel.length===0) return;
+  var btn = document.getElementById('orderBtn');
+  btn.disabled = true;
+  toast('Saving order\u2026');
+  var locPromise = manualLink ? Promise.resolve(manualLink) : getLocationLink();
+  locPromise.then(function(loc){
     if(!loc){
-      var msg = 'Could not get your location \u2014 turn on Location and try again';
-      if(fromDialog){ errEl.textContent = msg; } else { toast(msg); }
+      toast('Could not get your location \u2014 turn on Location and try again');
       return null;
     }
-    return submitOrder(sel, customer, note, attachment, loc).then(function(orderId){
+    return submitOrder(sel, po.customer, po.note, po.attachment, loc).then(function(orderId){
       var total = sel.reduce(function(s,l){return s+l.price*l.qty;},0);
       var hist = loadJSON(ns()+'history', []);
       hist.unshift({ itemsJson: JSON.stringify(sel.map(function(l){return {serverId:l.id,name:l.name,qty:l.qty,price:l.price};})), total: total, placedAt: Date.now(), location: loc, serverId: orderId||'' });
       saveJSON(ns()+'history', hist.slice(0,50));
-      if(pendingShare){
-        var lines = sel.map(function(l){ return '- '+l.name+' x'+l.qty+' = \u20B9'+money(l.price*l.qty); });
-        var text = 'Order from POS Billing app:\n'+lines.join('\n')+'\nTotal: \u20B9'+money(total);
-        var shopPhone = (loadJSON(ns()+'shopPhone','')||'').replace(/\D/g,'');
-        var target = shopPhone ? ('https://wa.me/'+shopPhone) : 'https://wa.me/';
-        window.open(target+'?text='+encodeURIComponent(text), '_blank');
-      }
       clearCart();
-      if(fromDialog) closeOverlay('saveOverlay');
       toast('Order saved \u2014 the shop will contact you');
     });
   }).catch(function(e){
-    var msg = 'Could not save order: ' + (e && e.message ? e.message : 'unknown error');
-    if(fromDialog){ errEl.textContent = msg; } else { toast(msg); }
+    toast('Could not save order: ' + (e && e.message ? e.message : 'unknown error'));
   }).finally(function(){
-    pendingShare = false;
-    if(fromDialog){ btn.disabled = false; btn.textContent = 'Save order'; }
+    btn.disabled = false;
   });
 }
 
@@ -918,6 +979,7 @@ function boot(){
   }
   updateA2hsBanner();
   updatePushBanner();
+  maybeAutoShowA2hsModal();
 }
 boot();
 </script>
