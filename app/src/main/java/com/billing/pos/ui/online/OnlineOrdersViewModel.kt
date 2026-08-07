@@ -118,7 +118,7 @@ class OnlineOrdersViewModel(app: Application) : AndroidViewModel(app) {
      *  "select orders > Convert to Sale" already exists — this only needs to create the order
      *  and remove it from this list, not rebuild that whole workflow here. */
     private suspend fun convertToOrderAndRemove(order: OnlineOrder) {
-        val (lat, lng) = parseLatLng(order.location)
+        val (lat, lng) = com.billing.pos.customer.GeoLink.resolve(order.location) ?: (0.0 to 0.0)
         val orderNo = repo.nextOrderNo()
         val custOrder = CustOrder(
             orderNo = orderNo,
@@ -140,13 +140,5 @@ class OnlineOrdersViewModel(app: Application) : AndroidViewModel(app) {
         repo.saveOrder(custOrder, lines)
         dao.delete(order)
         _message.value = "Accepted — moved to Orders as $orderNo"
-    }
-
-    private fun parseLatLng(location: String): Pair<Double, Double> {
-        val q = runCatching { android.net.Uri.parse(location).getQueryParameter("q") }.getOrNull() ?: return 0.0 to 0.0
-        val parts = q.split(",")
-        val lat = parts.getOrNull(0)?.toDoubleOrNull() ?: 0.0
-        val lng = parts.getOrNull(1)?.toDoubleOrNull() ?: 0.0
-        return lat to lng
     }
 }

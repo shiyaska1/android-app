@@ -47,6 +47,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -62,6 +63,7 @@ import com.billing.pos.ui.billing.collectAsStateSafe
 import com.billing.pos.util.Format
 import java.util.Calendar
 import kotlin.math.roundToInt
+import kotlinx.coroutines.launch
 
 /**
  * Shop owner's view of orders customers have placed and saved — see [OrdersFetch] for how they
@@ -79,6 +81,27 @@ fun OnlineOrdersScreen(onBack: () -> Unit, vm: OnlineOrdersViewModel = viewModel
     val showProLimitDialog by vm.showProLimitDialog.collectAsStateSafe()
     val shopPrefs = remember { com.billing.pos.data.AppPrefs(context) }
     val snackbar = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+
+    // No shop location saved in Settings? Fall back to this phone's own current position — handy
+    // when the owner is out delivering and wants to see how far each order is from wherever they
+    // are right now, not from a fixed shop address.
+    var liveShopLatLng by remember { mutableStateOf<Pair<Double, Double>?>(null) }
+    val shopLocationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
+        val granted = grants[Manifest.permission.ACCESS_FINE_LOCATION] == true || grants[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+        if (granted) scope.launch { liveShopLatLng = com.billing.pos.customer.LocationHelper.currentLatLng(context) }
+    }
+    LaunchedEffect(Unit) {
+        if (!shopPrefs.shopLocationCaptured) {
+            if (com.billing.pos.customer.LocationHelper.hasPermission(context)) {
+                liveShopLatLng = com.billing.pos.customer.LocationHelper.currentLatLng(context)
+            } else {
+                shopLocationPermission.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
+            }
+        }
+    }
+    val shopLatLng = if (shopPrefs.shopLocationCaptured) shopPrefs.shopLatitude to shopPrefs.shopLongitude else liveShopLatLng
+    val usingLiveShopLocation = !shopPrefs.shopLocationCaptured && liveShopLatLng != null
     var messageTarget by remember { mutableStateOf<OnlineOrder?>(null) }
     var deleteTarget by remember { mutableStateOf<OnlineOrder?>(null) }
     var selectedFilter by rememberSaveable { mutableStateOf("All") } // "All" or an OnlineOrderStatus name
@@ -187,7 +210,8 @@ fun OnlineOrdersScreen(onBack: () -> Unit, vm: OnlineOrdersViewModel = viewModel
                 items(shown, key = { it.id }) { order ->
                     OrderCard(
                         order = order,
-                        distanceLabel = distanceLabel(shopPrefs, order),
+                        shopLatLng = shopLatLng,
+                        usingLiveShopLocation = usingLiveShopLocation,
                         onStatusChange = { status -> vm.setStatus(order, status) },
                         onCall = {
                             val digits = order.customerPhone.filter { it.isDigit() }
@@ -292,23 +316,14 @@ private fun pickDate(context: android.content.Context, current: Long, onPicked: 
     ).show()
 }
 
-/** (lat, lng) out of an order's `https://maps.google.com/?q=lat,lng` location link, or null if
- *  there's no location at all (a customer who could give neither a GPS fix nor a maps link). */
-private fun parseOrderLatLng(location: String): Pair<Double, Double>? {
-    val q = runCatching { android.net.Uri.parse(location).getQueryParameter("q") }.getOrNull() ?: return null
-    val parts = q.split(",")
-    val lat = parts.getOrNull(0)?.toDoubleOrNull() ?: return null
-    val lng = parts.getOrNull(1)?.toDoubleOrNull() ?: return null
-    return lat to lng
-}
-
-/** How far this order is from the shop — the order's location is either a GPS fix or a pasted
- *  Google Maps link depending on what the customer gave when ordering, so this works either way.
- *  Lets the owner spot a delivery worth an extra charge at a glance. */
-private fun distanceLabel(shopPrefs: com.billing.pos.data.AppPrefs, order: OnlineOrder): String {
-    if (!shopPrefs.shopLocationCaptured) return "Distance: unknown (set your shop location in Settings)"
-    val (lat, lng) = parseOrderLatLng(order.location) ?: return "Distance: unknown"
-    val km = com.billing.pos.customer.NearbyShops.haversineKm(shopPrefs.shopLatitude, shopPrefs.shopLongitude, lat, lng)
+/** How far an order is from [shopLatLng] — null coordinates on either side, or a location that
+ *  couldn't be parsed/resolved, all show as "unknown". See [com.billing.pos.customer.GeoLink] for
+ *  what location link shapes are understood. Lets the owner spot a delivery worth an extra
+ *  charge at a glance. */
+private fun distanceLabel(shopLatLng: Pair<Double, Double>?, orderLatLng: Pair<Double, Double>?, resolving: Boolean): String {
+    if (shopLatLng == null) return "Distance: unknown (allow location access, or set your shop location in Settings)"
+    if (orderLatLng == null) return if (resolving) "Distance: locating…" else "Distance: unknown"
+    val km = com.billing.pos.customer.NearbyShops.haversineKm(shopLatLng.first, shopLatLng.second, orderLatLng.first, orderLatLng.second)
     return if (km < 1.0) "Distance: ${(km * 1000).roundToInt()} m" else "Distance: ${Format.money(km)} km"
 }
 
@@ -358,7 +373,8 @@ private fun openAttachment(context: android.content.Context, dataUri: String) {
 @Composable
 private fun OrderCard(
     order: OnlineOrder,
-    distanceLabel: String,
+    shopLatLng: Pair<Double, Double>?,
+    usingLiveShopLocation: Boolean,
     onStatusChange: (String) -> Unit,
     onCall: () -> Unit,
     onWhatsApp: () -> Unit,
@@ -368,6 +384,19 @@ private fun OrderCard(
     onShareToSalesman: () -> Unit
 ) {
     val context = LocalContext.current
+    // Parses instantly for a plain link (this app's own GPS capture, or most pasted Maps links);
+    // a maps.app.goo.gl/goo.gl short link has no coordinates in the text at all, so that case
+    // needs a network round-trip to follow its redirect (see GeoLink.resolve) — hence "resolving".
+    var orderLatLng by remember(order.id) { mutableStateOf<Pair<Double, Double>?>(null) }
+    var resolving by remember(order.id) { mutableStateOf(false) }
+    LaunchedEffect(order.location) {
+        orderLatLng = com.billing.pos.customer.GeoLink.parseLatLng(order.location)
+        if (orderLatLng == null && com.billing.pos.customer.GeoLink.isShortLink(order.location)) {
+            resolving = true
+            orderLatLng = com.billing.pos.customer.GeoLink.resolve(order.location)
+            resolving = false
+        }
+    }
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(14.dp)) {
             Column {
@@ -379,7 +408,10 @@ private fun OrderCard(
                 if (order.customerAddress.isNotBlank()) {
                     Text(order.customerAddress, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
                 }
-                Text(distanceLabel, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                Text(
+                    distanceLabel(shopLatLng, orderLatLng, resolving) + if (usingLiveShopLocation && shopLatLng != null) " (from your current location)" else "",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary
+                )
             }
             // Its own full-width row, not squeezed next to the name — five icons plus a long
             // name overlapped badly on narrower phones.
