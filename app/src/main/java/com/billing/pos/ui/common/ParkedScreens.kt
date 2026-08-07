@@ -87,7 +87,7 @@ object ParkedScreens {
     // person uses it), so a shop-owner-only concept like a minimise tray makes no sense there.
     private val notMinimizable = setOf(
         "boot", "dashboard", "license", "login", "changepassword",
-        "settings", "printer", "backup", "mergelog", "chart", "customerCatalog"
+        "settings", "printer", "backup", "mergelog", "chart", "customerCatalog", "customerPreview"
     )
 
     fun isMinimizable(routePattern: String?): Boolean {

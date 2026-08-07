@@ -406,6 +406,17 @@ private fun AppNav() {
                 onExitTestMode = { nav.navigate("boot") { popUpTo(0) { inclusive = true } } }
             )
         }
+        // Shop owner previewing their own live customer catalog from the Dashboard (see
+        // DashboardScreen's "Preview customer app" icon) — a plain push onto the existing
+        // back stack, so the back arrow just pops back to the dashboard. Unlike "customerCatalog"
+        // above, this never touches AppPrefs.customerMode/onboarded — the owner's own session
+        // (login, licence, everything) is untouched underneath it.
+        composable("customerPreview") {
+            com.billing.pos.ui.customer.CustomerCatalogScreen(
+                isOwnerPreview = true,
+                onBackToShop = { nav.popBackStack() }
+            )
+        }
         composable("onlineItems") {
             com.billing.pos.ui.online.OnlineItemsScreen(onBack = { nav.popBackStack() })
         }
@@ -589,7 +600,7 @@ private fun AppNav() {
                 onSettings = { nav.navigate("settings") },
                 onBackup = { nav.navigate("backup") },
                 onLogout = logout,
-                onTestAsCustomer = { nav.navigate("boot") { popUpTo(0) { inclusive = true } } }
+                onPreviewCustomerApp = { nav.navigate("customerPreview") }
             )
         }
         composable("license") {

@@ -25,6 +25,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddAPhoto
 import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Call
@@ -134,7 +135,17 @@ private data class PendingOrderSubmit(
 )
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CustomerCatalogScreen(onExitTestMode: () -> Unit = {}, vm: CustomerCatalogViewModel = viewModel()) {
+fun CustomerCatalogScreen(
+    onExitTestMode: () -> Unit = {},
+    // True when a shop owner opened this screen from their own Dashboard (see
+    // MainActivity's "customerPreview" route) to show a customer how ordering works, on the
+    // same catalog/settings they've already configured — not an actual customer's device.
+    // Shows a back arrow instead of touching customerMode/onboarded, so returning to the shop
+    // app is a plain nav pop, with nothing to undo.
+    isOwnerPreview: Boolean = false,
+    onBackToShop: () -> Unit = {},
+    vm: CustomerCatalogViewModel = viewModel()
+) {
     val context = LocalContext.current
     val prefs = remember { AppPrefs(context) }
     val items by vm.items.collectAsStateSafe()
@@ -249,6 +260,10 @@ fun CustomerCatalogScreen(onExitTestMode: () -> Unit = {}, vm: CustomerCatalogVi
             notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
     }
+    // A real customer's device already has a cached catalog from its last fetch/install; a shop
+    // owner previewing on their own phone has never fetched their own shop as a "customer" before,
+    // so the list would otherwise open empty until they find the refresh icon themselves.
+    LaunchedEffect(isOwnerPreview) { if (isOwnerPreview) vm.refresh() }
 
     val locationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
         val granted = grants[Manifest.permission.ACCESS_FINE_LOCATION] == true || grants[Manifest.permission.ACCESS_COARSE_LOCATION] == true
@@ -327,7 +342,14 @@ fun CustomerCatalogScreen(onExitTestMode: () -> Unit = {}, vm: CustomerCatalogVi
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(shopName.ifBlank { catalogLabel }) },
+                title = { Text(shopName.ifBlank { catalogLabel } + if (isOwnerPreview) " · Preview" else "") },
+                navigationIcon = {
+                    if (isOwnerPreview) {
+                        IconButton(onClick = onBackToShop) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back to shop app")
+                        }
+                    }
+                },
                 actions = {
                     if (shopPhone.isNotBlank()) {
                         IconButton(onClick = {
