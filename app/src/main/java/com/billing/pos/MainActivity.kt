@@ -266,7 +266,10 @@ private fun AppNav() {
     var bootDone by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     val sharedGeneration = PendingSharedMedia.generation
     androidx.compose.runtime.LaunchedEffect(sharedGeneration) {
-        if (bootDone && PendingSharedMedia.awaitingDiary && Session.isLoggedIn) {
+        // A payment dialog's QR-code fallback (Preview customer app / customerCatalog) wants this
+        // share instead — e.g. a UPI app's payment-success screenshot shared straight in, meant
+        // as that order's payment proof, not a new diary entry. Let it claim the share first.
+        if (bootDone && PendingSharedMedia.awaitingDiary && Session.isLoggedIn && !PendingSharedMedia.awaitingPaymentProof) {
             PendingSharedMedia.markRouted()
             nav.navigate("diary/edit/0") { launchSingleTop = true }
         }

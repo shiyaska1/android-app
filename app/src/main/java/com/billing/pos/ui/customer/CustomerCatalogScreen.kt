@@ -1093,19 +1093,38 @@ private fun PaymentDialog(
     var showPayQr by remember { mutableStateOf(false) }
     var proofDataUri by remember { mutableStateOf<String?>(null) }
     var compressingProof by remember { mutableStateOf(false) }
+    suspend fun compressProof(uri: android.net.Uri): String? = withContext(Dispatchers.IO) {
+        runCatching {
+            val tempFile = File.createTempFile("proof_", ".jpg", context.cacheDir)
+            context.contentResolver.openInputStream(uri)?.use { input -> tempFile.outputStream().use { output -> input.copyTo(output) } }
+            val bytes = ThumbnailCompressor.compress(tempFile.absolutePath, maxBytes = 300 * 1024, maxDim = 1024)
+            tempFile.delete()
+            bytes?.let { "data:image/jpeg;base64," + android.util.Base64.encodeToString(it, android.util.Base64.NO_WRAP) }
+        }.getOrNull()
+    }
     val proofPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
         compressingProof = true
         scope.launch {
-            val dataUri = withContext(Dispatchers.IO) {
-                runCatching {
-                    val tempFile = File.createTempFile("proof_", ".jpg", context.cacheDir)
-                    context.contentResolver.openInputStream(uri)?.use { input -> tempFile.outputStream().use { output -> input.copyTo(output) } }
-                    val bytes = ThumbnailCompressor.compress(tempFile.absolutePath, maxBytes = 300 * 1024, maxDim = 1024)
-                    tempFile.delete()
-                    bytes?.let { "data:image/jpeg;base64," + android.util.Base64.encodeToString(it, android.util.Base64.NO_WRAP) }
-                }.getOrNull()
-            }
+            val dataUri = compressProof(uri)
+            compressingProof = false
+            if (dataUri != null) proofDataUri = dataUri
+        }
+    }
+    // While the QR fallback is showing, claim any file shared straight into this app (e.g. a UPI
+    // app's own "Share" on its payment-success screen) as this order's payment proof, instead of
+    // letting it fall through to the diary's generic "new entry with this attachment" handling.
+    LaunchedEffect(showPayQr) {
+        com.billing.pos.auth.PendingSharedMedia.setAwaitingPaymentProof(showPayQr)
+    }
+    DisposableEffect(Unit) {
+        onDispose { com.billing.pos.auth.PendingSharedMedia.setAwaitingPaymentProof(false) }
+    }
+    LaunchedEffect(com.billing.pos.auth.PendingSharedMedia.generation) {
+        if (showPayQr && com.billing.pos.auth.PendingSharedMedia.hasItems) {
+            val uri = com.billing.pos.auth.PendingSharedMedia.consume().firstOrNull() ?: return@LaunchedEffect
+            compressingProof = true
+            val dataUri = compressProof(uri)
             compressingProof = false
             if (dataUri != null) proofDataUri = dataUri
         }
@@ -1220,11 +1239,20 @@ private fun PaymentDialog(
                             color = MaterialTheme.colorScheme.outline,
                             modifier = Modifier.padding(top = 6.dp)
                         )
-                        // The QR path has no automatic success signal (unlike the direct-pay
-                        // button's StartActivityForResult), so the customer confirms manually —
-                        // attaching a payment-success screenshot as proof is optional but gives
-                        // the shop owner something to actually check, not just a bare claim.
+                        // Always reachable right after the QR, above the (optional) attach
+                        // section below — the QR path has no automatic success signal (unlike the
+                        // direct-pay button's StartActivityForResult), so this is how the customer
+                        // confirms manually, whether or not they also attach a screenshot.
                         val proofUri = proofDataUri
+                        Button(
+                            onClick = { onChoose("UPI", proofUri) },
+                            enabled = !compressingProof,
+                            modifier = Modifier.fillMaxWidth().padding(top = 10.dp)
+                        ) { Text("I've paid via QR") }
+                        // Optional proof — gives the shop owner something to actually check
+                        // instead of a bare claim. A screenshot shared straight from a UPI app
+                        // (its own "Share" button after a payment) lands here automatically too,
+                        // see the PendingSharedMedia effect above.
                         if (proofUri != null) {
                             val proofBmp = remember(proofUri) { decodeDataUriBitmap(proofUri) }
                             Box(Modifier.padding(top = 10.dp), contentAlignment = Alignment.TopEnd) {
@@ -1247,11 +1275,6 @@ private fun PaymentDialog(
                             onClick = { proofPicker.launch("image/*") },
                             enabled = !compressingProof
                         ) { Text(if (compressingProof) "Attaching…" else if (proofUri != null) "Change payment screenshot" else "Attach payment screenshot (optional)") }
-                        Button(
-                            onClick = { onChoose("UPI", proofUri) },
-                            enabled = !compressingProof,
-                            modifier = Modifier.fillMaxWidth().padding(top = 6.dp)
-                        ) { Text("I've paid via QR") }
                     }
                 }
                 Text(
@@ -1262,7 +1285,12 @@ private fun PaymentDialog(
                 )
             }
         },
-        confirmButton = { TextButton(onClick = { onChoose("", null) }) { Text(declineLabel) } },
+        // Once a payment screenshot is attached, the customer has already signalled they paid via
+        // QR — offering "Cash on delivery" at that point would just invite tapping the wrong
+        // button by habit. Hidden then; "I've paid via QR" above is the way forward instead.
+        confirmButton = {
+            if (proofDataUri == null) TextButton(onClick = { onChoose("", null) }) { Text(declineLabel) }
+        },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
 }

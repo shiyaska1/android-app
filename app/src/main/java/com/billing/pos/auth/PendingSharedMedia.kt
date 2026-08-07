@@ -29,6 +29,16 @@ object PendingSharedMedia {
     @Volatile var awaitingDiary: Boolean = false
         private set
 
+    /** Set (and cleared) by the customer order screen's payment dialog while its QR-code fallback
+     *  is showing — e.g. sharing a UPI app's payment-success screenshot straight to this app
+     *  (instead of picking it from gallery) should attach as that order's payment proof, not fall
+     *  through to the diary's generic "new entry with this attachment" handling below. Checked
+     *  before [awaitingDiary] routing fires. */
+    var awaitingPaymentProof by mutableStateOf(false)
+        private set
+
+    fun setAwaitingPaymentProof(active: Boolean) { awaitingPaymentProof = active }
+
     /** Bumps on every share, so an already-open screen can react and pick up extra files. */
     var generation by mutableStateOf(0)
         private set
