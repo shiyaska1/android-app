@@ -22,6 +22,8 @@ import java.net.URL
  * { "shopName": "Anand Stores", "shopPhone": "9198XXXXXXX",
  *   "shopCategory": "Restaurant" (the shop owner's Settings > Business type),
  *   "shopAddress": "..." (the shop owner's Company address),
+ *   "shopUpi": "..." (optional, the shop's UPI ID — lets the customer pay online at order time),
+ *   "shopUpiName": "..." (optional, payee name for the UPI app),
  *   "bannerImage": "data:image/jpeg;base64,..." (optional, shown atop the customer catalog),
  *   "items": [{ "id": "SKU1", "name": "Chicken Biryani", "category": "Main Course",
  *               "price": 180.0, "unit": "plate", "imageUrl": "", "description": "",
@@ -68,6 +70,8 @@ object ShopCatalogSync {
                 prefs.shopBannerImage = root.optString("bannerImage", "")
                 prefs.shopDisplayCategory = root.optString("shopCategory", "")
                 prefs.shopDisplayAddress = root.optString("shopAddress", "")
+                prefs.shopUpiId = root.optString("shopUpi", "")
+                prefs.shopUpiName = root.optString("shopUpiName", "")
             }
 
             val array = parseItemsArray(body)

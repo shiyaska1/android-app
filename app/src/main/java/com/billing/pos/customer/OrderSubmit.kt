@@ -32,7 +32,8 @@ object OrderSubmit {
         locationLink: String? = null,
         customerAddress: String? = null,
         note: String? = null,
-        attachments: List<String> = emptyList()
+        attachments: List<String> = emptyList(),
+        paymentStatus: String? = null
     ): Result = withContext(Dispatchers.IO) {
         val prefs = AppPrefs(context)
         val base = prefs.onlineCatalogUrl
@@ -51,6 +52,7 @@ object OrderSubmit {
             if (!locationLink.isNullOrBlank()) put("location", locationLink)
             if (!customerAddress.isNullOrBlank()) put("customerAddress", customerAddress)
             if (!note.isNullOrBlank()) put("note", note)
+            if (!paymentStatus.isNullOrBlank()) put("paymentStatus", paymentStatus)
             if (attachments.isNotEmpty()) put("attachments", JSONArray(attachments))
             put("items", JSONArray().apply {
                 selection.forEach { (item, qty) ->

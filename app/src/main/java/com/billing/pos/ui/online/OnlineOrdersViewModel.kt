@@ -96,12 +96,15 @@ class OnlineOrdersViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** A free-text message to the customer about this order, not tied to a status change. */
-    fun sendMessage(order: OnlineOrder, message: String) {
-        if (message.isBlank()) return
+    /** A free-text message to the customer about this order, not tied to a status change —
+     *  [amount], when set, bills them for this order (e.g. after quoting a note/prescription
+     *  order that had no fixed price at order time); the customer gets a "Pay via UPI now"
+     *  button on the notification for it. */
+    fun sendMessage(order: OnlineOrder, message: String, amount: Double = 0.0) {
+        if (message.isBlank() && amount <= 0.0) return
         viewModelScope.launch {
             if (License.reserveNotificationSend(getApplication())) {
-                OrderStatusPush.push(getApplication(), order.customerPhone, order.serverId, message = message)
+                OrderStatusPush.push(getApplication(), order.customerPhone, order.serverId, message = message, amount = amount)
             } else {
                 _showProLimitDialog.value = true
             }
@@ -129,7 +132,9 @@ class OnlineOrdersViewModel(app: Application) : AndroidViewModel(app) {
             latitude = lat,
             longitude = lng,
             grandTotal = order.total,
-            deviceId = License.deviceId(getApplication())
+            deviceId = License.deviceId(getApplication()),
+            paymentStatus = order.paymentStatus,
+            isOnlineOrder = true
         )
         val lines = order.items.map { line ->
             CustOrderItem(

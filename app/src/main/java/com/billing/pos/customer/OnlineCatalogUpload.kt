@@ -47,6 +47,14 @@ object OnlineCatalogUpload {
             // the customer app group every shop it knows about into a "Browse shops" directory.
             put("shopCategory", prefs.businessType)
             put("shopAddress", prefs.companyAddress)
+            // Settings > UPI ID — same VPA the in-shop "Scan to pay" QR already uses. Sent along
+            // so a customer ordering online can pay straight to the shop at order time; omitted
+            // entirely when the shop owner hasn't set one, so the customer app's "Pay via UPI"
+            // option just never shows.
+            if (prefs.upiId.isNotBlank()) {
+                put("shopUpi", prefs.upiId)
+                put("shopUpiName", prefs.upiName.ifBlank { prefs.companyName })
+            }
             // Captured once in Settings > Online ordering — lets a customer's "Nearby shops"
             // search (do=directory) find this shop by distance. Omitted entirely when never
             // captured, so the server-side directory can just skip shops with no coordinates.

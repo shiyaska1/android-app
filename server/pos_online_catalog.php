@@ -10,10 +10,15 @@
  * UPLOAD (from the shop owner's app, Masters > Online Items > Upload):
  *   POST a JSON body to this URL:
  *     { "shop": "<DeviceID>", "shopName": "...", "shopPhone": "...",
+ *       "shopUpi": "..." (optional, the shop owner's own UPI ID/VPA — Settings > UPI ID — so a
+ *           customer can pay for an order online; omitted entirely when never set),
+ *       "shopUpiName": "..." (optional, payee name shown in the customer's UPI app),
  *       "items": [ { "id": "...", "name": "...", "category": "...",
  *                    "price": 0.0, "unit": "..." }, ... ] }
  *   Saved as-is to pos_online_catalog/<DeviceID>/catalog.json, overwriting
- *   whatever was there before — nothing is kept or versioned.
+ *   whatever was there before — nothing is kept or versioned. Note this endpoint stores the
+ *   POSTed body verbatim (no field whitelist), so any new key the app starts sending here needs
+ *   no matching change on this side to be carried through to FETCH below.
  *
  * FETCH (from a customer's app, opened via that shop's Play Store link):
  *   GET this URL with ?shop=<DeviceID> to get that same JSON back.
@@ -27,7 +32,10 @@
  *       "attachments": [ "data:image/jpeg;base64,...", ... ] (optional, premium shops only —
  *           one or more compressed photos, e.g. several pages of a prescription),
  *       "items": [ { "id": "...", "name": "...", "qty": 0, "price": 0.0 }, ... ],
- *       "total": 0.0 }
+ *       "total": 0.0,
+ *       "paymentStatus": "UPI" (optional — the customer paid via their own UPI app at order
+ *           time, self-reported by the app's UPI response; omitted/blank means Cash on
+ *           delivery/unpaid, same as before this field existed) }
  *   Appended to pos_online_catalog/<DeviceID>/orders.json (an array) — this
  *   file only grows via this endpoint; it's trimmed by the fetch below.
  *   To keep storage down on a low-resource host, any attachments still sitting
@@ -47,7 +55,10 @@
  *   POST a JSON body to this URL with ?do=status added:
  *     { "shop": "<DeviceID>", "customerPhone": "...", "orderId": "..." (optional),
  *       "status": "ACCEPTED" (optional, one of OnlineOrderStatus's names),
- *       "message": "..." (optional, free text) }
+ *       "message": "..." (optional, free text),
+ *       "amount": 0.0 (optional — a bill amount for the customer to pay, e.g. after quoting a
+ *           note/prescription order that had no fixed price at order time; the customer app shows
+ *           a "Pay via UPI now" button when this is set) }
  *   Appended to pos_online_catalog/<DeviceID>/notifications.json — trimmed by the
  *   fetch below, same as orders.
  *
@@ -61,7 +72,9 @@
  *   of SEND STATUS above):
  *   POST a JSON body to this URL with ?do=message added:
  *     { "shop": "<DeviceID>", "customerPhone": "...", "customerName": "..." (optional),
- *       "orderId": "..." (optional), "message": "..." }
+ *       "orderId": "..." (optional), "message": "...",
+ *       "paymentStatus": "UPI" (optional — the customer just paid for orderId above via their own
+ *           UPI app; the shop owner's app flips that order's local payment status on receiving it) }
  *   Appended to pos_online_catalog/<DeviceID>/messages_from_customers.json — trimmed by
  *   the fetch below, same as orders/notifications.
  *
@@ -422,7 +435,10 @@ if (($method === 'POST' || $method === 'PUT') && $do === 'order') {
         'note' => isset($body['note']) ? (string) $body['note'] : '',
         'attachments' => isset($body['attachments']) && is_array($body['attachments']) ? array_values($body['attachments']) : array(),
         'items' => isset($body['items']) && is_array($body['items']) ? $body['items'] : array(),
-        'total' => isset($body['total']) ? (float) $body['total'] : 0.0
+        'total' => isset($body['total']) ? (float) $body['total'] : 0.0,
+        // "UPI" when the customer paid at order time (self-reported by their UPI app's own
+        // response, not a payment gateway); blank means Cash on delivery/unpaid.
+        'paymentStatus' => isset($body['paymentStatus']) ? (string) $body['paymentStatus'] : ''
     );
     $path = $folder . '/orders.json';
     // Locked read-modify-write, so two orders arriving at the same moment don't overwrite
@@ -487,6 +503,10 @@ if (($method === 'POST' || $method === 'PUT') && $do === 'status') {
         'orderId' => isset($body['orderId']) ? (string) $body['orderId'] : '',
         'status' => isset($body['status']) ? (string) $body['status'] : '',
         'message' => isset($body['message']) ? (string) $body['message'] : '',
+        // A bill amount the shop owner is asking the customer to pay (e.g. after quoting a
+        // note/prescription order that had no fixed price at order time) — 0 means "no amount
+        // attached", same as before this field existed.
+        'amount' => isset($body['amount']) ? (float) $body['amount'] : 0.0,
         'sentAt' => date('c')
     );
     $path = $folder . '/notifications.json';
@@ -538,6 +558,11 @@ if (($method === 'POST' || $method === 'PUT') && $do === 'message') {
         'customerName' => isset($body['customerName']) ? (string) $body['customerName'] : '',
         'orderId' => isset($body['orderId']) ? (string) $body['orderId'] : '',
         'message' => $text,
+        // "UPI" when this message is the customer reporting they just paid (via their own UPI
+        // app) for orderId above — lets the shop owner's app flip that order's payment status in
+        // its local Online Orders list automatically, not just show the text. Blank for a plain
+        // reply, same as before this field existed.
+        'paymentStatus' => isset($body['paymentStatus']) ? (string) $body['paymentStatus'] : '',
         'sentAt' => date('c')
     );
     $path = $folder . '/messages_from_customers.json';

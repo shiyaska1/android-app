@@ -290,7 +290,7 @@ class BillingViewModel(private val app: Application) : AndroidViewModel(app) {
     /** Fills the bill from a customer's saved documents: sets the customer and every line. */
     fun loadFromOrders(
         customerId: Long, customerName: String, lines: List<BillPrefillLine>,
-        sourceKind: String = "", sourceIds: List<Long> = emptyList()
+        sourceKind: String = "", sourceIds: List<Long> = emptyList(), paymentModeHint: String = ""
     ) {
         val c = customers.value.firstOrNull { it.id == customerId }
             ?: customers.value.firstOrNull { it.name.equals(customerName, true) }
@@ -300,6 +300,9 @@ class BillingViewModel(private val app: Application) : AndroidViewModel(app) {
         dirty = true
         pendingSourceKind = sourceKind
         pendingSourceIds = sourceIds
+        if (paymentModeHint.isNotBlank()) {
+            payment = PaymentMethod.values().firstOrNull { it.label.equals(paymentModeHint, ignoreCase = true) } ?: payment
+        }
         _message.value = "Loaded ${lines.size} item(s)"
     }
 

@@ -13,6 +13,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
+import com.journeyapps.barcodescanner.ScanContract
+import com.journeyapps.barcodescanner.ScanOptions
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxSize
@@ -32,6 +34,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.QrCode2
+import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Divider
@@ -166,6 +169,29 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
     var upiId by remember { mutableStateOf(prefs.upiId) }
     var upiName by remember { mutableStateOf(prefs.upiName) }
     var upiQrOnPrint by remember { mutableStateOf(prefs.showUpiQrOnPrint) }
+    // A shop owner often knows their bank's printed/app QR code but not their own VPA string —
+    // scanning it (any UPI QR, not just this app's own) fills the field for them instead of
+    // making them go find and type it.
+    val upiScanLauncher = rememberLauncherForActivityResult(ScanContract()) { result ->
+        val contents = result.contents ?: return@rememberLauncherForActivityResult
+        val parsed = com.billing.pos.util.UpiQr.parseVpa(contents)
+        if (parsed != null) {
+            upiId = parsed.first
+            if (parsed.second.isNotBlank()) upiName = parsed.second
+        } else {
+            scope.launch { snackbar.showSnackbar("That doesn't look like a UPI QR code") }
+        }
+    }
+    val upiCameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) upiScanLauncher.launch(ScanOptions().setPrompt("Scan your UPI QR code").setBeepEnabled(true))
+    }
+    fun scanUpiQr() {
+        if (androidx.core.content.ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+            upiScanLauncher.launch(ScanOptions().setPrompt("Scan your UPI QR code").setBeepEnabled(true))
+        } else {
+            upiCameraPermission.launch(Manifest.permission.CAMERA)
+        }
+    }
     var requireBatch by remember { mutableStateOf(prefs.requireItemBatch) }
     var fifoAutoPick by remember { mutableStateOf(prefs.fifoAutoPickBatch) }
     var weighScaleEnabled by remember { mutableStateOf(prefs.weighScaleEnabled) }
@@ -403,6 +429,11 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
             OutlinedTextField(
                 value = upiId, onValueChange = { upiId = it },
                 label = { Text("UPI ID for payment QR (e.g. name@okaxis)") }, singleLine = true,
+                trailingIcon = {
+                    IconButton(onClick = { scanUpiQr() }) {
+                        Icon(Icons.Filled.QrCodeScanner, contentDescription = "Scan your UPI QR code to fill this in")
+                    }
+                },
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
             )
             OutlinedTextField(
@@ -414,6 +445,13 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
                 Checkbox(checked = upiQrOnPrint, onCheckedChange = { upiQrOnPrint = it; prefs.showUpiQrOnPrint = it })
                 Text("Print UPI QR at the bottom of invoices")
             }
+            Text(
+                "Also used for online ordering: once set, customers can pay for an order straight to " +
+                    "this UPI ID at order time (or when you send them a bill amount) — leave it blank " +
+                    "to keep online orders Cash on delivery only.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline,
+                modifier = Modifier.padding(top = 4.dp)
+            )
             Button(
                 onClick = {
                     prefs.companyName = name.trim().ifBlank { "My Shop" }

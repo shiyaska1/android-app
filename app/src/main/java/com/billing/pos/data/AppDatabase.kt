@@ -120,7 +120,14 @@ import androidx.room.TypeConverters
     // v98 items.driveLink / shop_catalog_items.driveLink — one or more links (comma-separated) to
     // a photo/catalog for an item; direct image links become a tap-to-zoom gallery for online
     // customers, others a plain clickable link — an alternative to uploading a photo here.
-    version = 98,
+    // v99 online_orders.paymentStatus / customer_order_history.paymentStatus / cust_orders.paymentStatus
+    // — "UPI" when a customer paid for an online order at order time (self-reported via their UPI
+    // app's own response), carried from the online order through to the sale bill it's converted
+    // into (see OrderToBillLink); blank means Cash on delivery, same as before this field existed.
+    // v100 customer_notifications.amount — a bill amount the shop owner is asking to be paid (e.g.
+    // after quoting a note/prescription order that had no fixed price at order time); the
+    // customer app shows a "Pay via UPI now" button on that notification when this is set.
+    version = 100,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -983,6 +990,29 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** A customer can now pay for an online order via UPI at order time (self-reported —
+         *  see OrderSubmit/PaymentDialog). Carried from the online order through to the sale bill
+         *  it's later converted into, so the bill's payment mode can auto-fill. */
+        private val MIGRATION_98_99 = object : androidx.room.migration.Migration(98, 99) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE online_orders ADD COLUMN paymentStatus TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE customer_order_history ADD COLUMN paymentStatus TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE cust_orders ADD COLUMN paymentStatus TEXT NOT NULL DEFAULT ''")
+                // Every existing cust_orders row predates online-order payment tracking, so
+                // isOnlineOrder defaults false for all of them — exactly right, since none of
+                // them can retroactively know whether they came from an online order.
+                db.execSQL("ALTER TABLE cust_orders ADD COLUMN isOnlineOrder INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        /** A shop's status/message notification can now carry a bill amount to pay (see
+         *  OrderStatusPush/PaymentDialog) — 0 (the default) means none attached. */
+        private val MIGRATION_99_100 = object : androidx.room.migration.Migration(99, 100) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE customer_notifications ADD COLUMN amount REAL NOT NULL DEFAULT 0")
+            }
+        }
+
         fun get(context: Context): AppDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -990,7 +1020,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "pos_billing.db"
                 )
-                    .addMigrations(MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45, MIGRATION_45_46, MIGRATION_46_47, MIGRATION_47_48, MIGRATION_48_49, MIGRATION_49_50, MIGRATION_50_51, MIGRATION_51_52, MIGRATION_52_53, MIGRATION_53_54, MIGRATION_54_55, MIGRATION_55_56, MIGRATION_56_57, MIGRATION_57_58, MIGRATION_58_59, MIGRATION_59_60, MIGRATION_60_61, MIGRATION_61_62, MIGRATION_62_63, MIGRATION_63_64, MIGRATION_64_65, MIGRATION_65_66, MIGRATION_66_67, MIGRATION_67_68, MIGRATION_68_69, MIGRATION_69_70, MIGRATION_70_71, MIGRATION_71_72, MIGRATION_72_73, MIGRATION_73_74, MIGRATION_74_75, MIGRATION_75_76, MIGRATION_76_77, MIGRATION_77_78, MIGRATION_78_79, MIGRATION_79_80, MIGRATION_80_81, MIGRATION_81_82, MIGRATION_82_83, MIGRATION_83_84, MIGRATION_84_85, MIGRATION_85_86, MIGRATION_86_87, MIGRATION_87_88, MIGRATION_88_89, MIGRATION_89_90, MIGRATION_90_91, MIGRATION_91_92, MIGRATION_92_93, MIGRATION_93_94, MIGRATION_94_95, MIGRATION_95_96, MIGRATION_96_97, MIGRATION_97_98)
+                    .addMigrations(MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45, MIGRATION_45_46, MIGRATION_46_47, MIGRATION_47_48, MIGRATION_48_49, MIGRATION_49_50, MIGRATION_50_51, MIGRATION_51_52, MIGRATION_52_53, MIGRATION_53_54, MIGRATION_54_55, MIGRATION_55_56, MIGRATION_56_57, MIGRATION_57_58, MIGRATION_58_59, MIGRATION_59_60, MIGRATION_60_61, MIGRATION_61_62, MIGRATION_62_63, MIGRATION_63_64, MIGRATION_64_65, MIGRATION_65_66, MIGRATION_66_67, MIGRATION_67_68, MIGRATION_68_69, MIGRATION_69_70, MIGRATION_70_71, MIGRATION_71_72, MIGRATION_72_73, MIGRATION_73_74, MIGRATION_74_75, MIGRATION_75_76, MIGRATION_76_77, MIGRATION_77_78, MIGRATION_78_79, MIGRATION_79_80, MIGRATION_80_81, MIGRATION_81_82, MIGRATION_82_83, MIGRATION_83_84, MIGRATION_84_85, MIGRATION_85_86, MIGRATION_86_87, MIGRATION_87_88, MIGRATION_88_89, MIGRATION_89_90, MIGRATION_90_91, MIGRATION_91_92, MIGRATION_92_93, MIGRATION_93_94, MIGRATION_94_95, MIGRATION_95_96, MIGRATION_96_97, MIGRATION_97_98, MIGRATION_98_99, MIGRATION_99_100)
                     .fallbackToDestructiveMigration()
                     .build()
                     .also { INSTANCE = it }

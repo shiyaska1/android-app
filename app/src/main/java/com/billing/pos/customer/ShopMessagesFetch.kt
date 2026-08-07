@@ -48,17 +48,20 @@ object ShopMessagesFetch {
             val array = runCatching { JSONArray(body.trim()) }.getOrNull()
                 ?: return@withContext Result.Failed("Unrecognised response from server")
 
-            val dao = AppDatabase.get(context).shopMessageDao()
+            val db = AppDatabase.get(context)
+            val dao = db.shopMessageDao()
+            val orderDao = db.onlineOrderDao()
             val fresh = mutableListOf<ShopMessage>()
             for (i in 0 until array.length()) {
                 val o = array.optJSONObject(i) ?: continue
                 val phone = o.optString("customerPhone")
                 val text = o.optString("message")
                 if (phone.isBlank() || text.isBlank()) continue
+                val orderId = o.optString("orderId")
                 val message = ShopMessage(
                     customerPhone = phone,
                     customerName = o.optString("customerName"),
-                    orderId = o.optString("orderId"),
+                    orderId = orderId,
                     direction = "IN",
                     text = text,
                     sentAt = System.currentTimeMillis(),
@@ -66,6 +69,14 @@ object ShopMessagesFetch {
                 )
                 dao.insert(message)
                 fresh += message
+                // The customer's own report of paying via UPI for this order (see
+                // CustomerCatalogViewModel.markNotificationPaid) — flip the local Online Orders
+                // list's payment status too, not just leave it as a chat message the shop owner
+                // has to read and act on manually. A no-op if the order's already been
+                // Accepted/converted (no longer in online_orders).
+                if (o.optString("paymentStatus") == "UPI" && orderId.isNotBlank()) {
+                    orderDao.updatePaymentStatus(orderId, "UPI")
+                }
             }
             Result.Ok(fresh)
         } catch (e: Exception) {

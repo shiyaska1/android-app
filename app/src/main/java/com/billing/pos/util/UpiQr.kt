@@ -27,6 +27,26 @@ object UpiQr {
         return sb.toString()
     }
 
+    /**
+     * The reverse of [link] — pulls the VPA (and payee name, if present) back out of a scanned
+     * UPI QR code, e.g. a shop owner's own bank-issued QR sticker. Any standard `upi://pay?...`
+     * (or a bare `pa=...&pn=...` query string, some banks encode it without the scheme) works;
+     * null if the scanned text isn't a UPI QR at all. Lets Settings auto-fill the UPI ID field
+     * from a scan instead of the owner having to know/type their own VPA.
+     */
+    fun parseVpa(scanned: String): Pair<String, String>? {
+        val text = scanned.trim()
+        if (text.isBlank()) return null
+        val uri = runCatching { Uri.parse(text) }.getOrNull()
+        val fromQuery = uri?.getQueryParameter("pa")?.takeIf { it.isNotBlank() }
+            ?: runCatching { Uri.parse("upi://pay?$text").getQueryParameter("pa") }.getOrNull()?.takeIf { it.isNotBlank() }
+        // Some bank-issued QR stickers encode nothing but the bare VPA, no upi:// wrapper at all.
+        val pa = fromQuery ?: text.takeIf { Regex("^[\\w.\\-]+@[\\w.\\-]+$").matches(it) }
+        if (pa.isNullOrBlank()) return null
+        val pn = uri?.getQueryParameter("pn").orEmpty()
+        return pa to pn
+    }
+
     /** Encodes any text as a square QR bitmap, or null if it can't. */
     fun bitmap(content: String, size: Int = 640): Bitmap? = runCatching {
         val hints = mapOf(EncodeHintType.MARGIN to 1)

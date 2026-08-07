@@ -4,6 +4,7 @@ import android.Manifest
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -54,6 +55,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.billing.pos.data.OnlineOrder
@@ -272,7 +274,7 @@ fun OnlineOrdersScreen(onBack: () -> Unit, vm: OnlineOrdersViewModel = viewModel
     messageTarget?.let { order ->
         MessageDialog(
             onDismiss = { messageTarget = null },
-            onSend = { text -> vm.sendMessage(order, text); messageTarget = null }
+            onSend = { text, amount -> vm.sendMessage(order, text, amount); messageTarget = null }
         )
     }
 
@@ -326,21 +328,43 @@ private fun distanceLabel(shopLatLng: Pair<Double, Double>?, orderLatLng: Pair<D
     return if (km < 1.0) "Distance: ${(km * 1000).roundToInt()} m" else "Distance: ${Format.money(km)} km"
 }
 
+/** [onSend]'s amount is 0.0 when left blank — e.g. after a note/prescription order with no fixed
+ *  price at order time, set it to bill the customer; they get a "Pay via UPI now" button on the
+ *  notification. Either the message or the amount alone is enough to send — a bill can be just a
+ *  number with no extra text. */
 @Composable
-private fun MessageDialog(onDismiss: () -> Unit, onSend: (String) -> Unit) {
+private fun MessageDialog(onDismiss: () -> Unit, onSend: (String, Double) -> Unit) {
     var text by rememberSaveable { mutableStateOf("") }
+    var amountText by rememberSaveable { mutableStateOf("") }
+    val amount = amountText.toDoubleOrNull() ?: 0.0
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Message customer") },
         text = {
-            OutlinedTextField(
-                value = text, onValueChange = { text = it },
-                label = { Text("Message") },
-                modifier = Modifier.fillMaxWidth()
-            )
+            Column {
+                OutlinedTextField(
+                    value = text, onValueChange = { text = it },
+                    label = { Text("Message") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                OutlinedTextField(
+                    value = amountText, onValueChange = { amountText = it },
+                    label = { Text("Bill amount (optional)") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                )
+                Text(
+                    "Set this for a note/prescription order that had no fixed price — the " +
+                        "customer gets a \"Pay via UPI now\" button for this amount.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.outline,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+            }
         },
         confirmButton = {
-            TextButton(onClick = { onSend(text.trim()) }, enabled = text.isNotBlank()) { Text("Send") }
+            TextButton(onClick = { onSend(text.trim(), amount) }, enabled = text.isNotBlank() || amount > 0.0) { Text("Send") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
@@ -463,7 +487,23 @@ private fun OrderCard(
                     )
                 }
             }
-            Text("Total: ₹${Format.money(order.total)}", fontWeight = FontWeight.Bold)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text("Total: ₹${Format.money(order.total)}", fontWeight = FontWeight.Bold)
+                if (order.paymentStatus == "UPI") {
+                    Text(
+                        "✓ Paid via UPI",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold
+                    )
+                } else {
+                    Text(
+                        "Cash on delivery",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.outline
+                    )
+                }
+            }
 
             // A plain Row can't fit all six statuses — it used to squeeze the last chip's text
             // into a vertical letter-stack instead of overflowing sensibly. A horizontally

@@ -131,7 +131,8 @@ import java.util.Locale
  */
 private data class PendingOrderSubmit(
     val name: String, val phone: String, val address: String,
-    val note: String, val attachments: List<String>
+    val note: String, val attachments: List<String>,
+    val paymentStatus: String = ""
 )
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -157,6 +158,7 @@ fun CustomerCatalogScreen(
     val snackbar = remember { SnackbarHostState() }
     var selectedCategory by rememberSaveable { mutableStateOf("All") }
     var showSaveDialog by rememberSaveable { mutableStateOf(false) }
+    var showPaymentDialog by rememberSaveable { mutableStateOf(false) }
     var showDeliveryPointDialog by rememberSaveable { mutableStateOf(false) }
     var showManualLocationDialog by rememberSaveable { mutableStateOf(false) }
     var pendingOrderSubmit by remember { mutableStateOf<PendingOrderSubmit?>(null) }
@@ -164,6 +166,7 @@ fun CustomerCatalogScreen(
     var showDirectory by rememberSaveable { mutableStateOf(false) }
     var showHistory by rememberSaveable { mutableStateOf(false) }
     var showNotifications by rememberSaveable { mutableStateOf(false) }
+    var payingNotification by remember { mutableStateOf<CustomerNotification?>(null) }
     val history by vm.history.collectAsStateSafe()
     val notifications by vm.notifications.collectAsStateSafe()
     val unreadNotifications by vm.unreadNotifications.collectAsStateSafe()
@@ -270,7 +273,7 @@ fun CustomerCatalogScreen(
         val pending = pendingOrderSubmit
         pendingOrderSubmit = null
         if (granted && pending != null) {
-            vm.saveOrder(pending.name, pending.phone, pending.address, pending.note, pending.attachments)
+            vm.saveOrder(pending.name, pending.phone, pending.address, pending.note, pending.attachments, paymentStatus = pending.paymentStatus)
         } else if (!granted) {
             scope.launch { snackbar.showSnackbar("Location permission is required to place an order") }
         }
@@ -282,7 +285,7 @@ fun CustomerCatalogScreen(
         val hasLocation = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED ||
             ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED
         if (hasLocation) {
-            vm.saveOrder(pending.name, pending.phone, pending.address, pending.note, pending.attachments)
+            vm.saveOrder(pending.name, pending.phone, pending.address, pending.note, pending.attachments, paymentStatus = pending.paymentStatus)
             pendingOrderSubmit = null
         } else {
             pendingOrderSubmit = pending
@@ -292,7 +295,7 @@ fun CustomerCatalogScreen(
     // "No, I'm not there" path — a pasted Google Maps link stands in for GPS; no location
     // permission needed at all since the phone's own position is never read.
     fun submitOrderWithManualLocation(pending: PendingOrderSubmit, mapsLink: String) {
-        vm.saveOrder(pending.name, pending.phone, pending.address, pending.note, pending.attachments, manualLocationLink = mapsLink)
+        vm.saveOrder(pending.name, pending.phone, pending.address, pending.note, pending.attachments, manualLocationLink = mapsLink, paymentStatus = pending.paymentStatus)
     }
 
     // Re-read after every fetch (a plain remember would freeze these at first composition).
@@ -543,6 +546,7 @@ fun CustomerCatalogScreen(
     }
 
     if (showSaveDialog) {
+        val cartTotal = items.filter { qty.containsKey(it.id) }.sumOf { it.price * (qty[it.id] ?: 0) }
         SaveOrderDialog(
             initialName = vm.savedCustomerName,
             initialPhone = vm.savedCustomerPhone,
@@ -551,8 +555,26 @@ fun CustomerCatalogScreen(
             onConfirm = { name, phone, address ->
                 showSaveDialog = false
                 pendingOrderSubmit = PendingOrderSubmit(name, phone, address, orderNote.trim(), orderAttachments.toList())
-                showDeliveryPointDialog = true
                 orderNote = ""; orderAttachments.clear()
+                if (prefs.shopUpiId.isNotBlank() && cartTotal > 0.0) {
+                    showPaymentDialog = true
+                } else {
+                    showDeliveryPointDialog = true
+                }
+            }
+        )
+    }
+    if (showPaymentDialog) {
+        val cartTotal = items.filter { qty.containsKey(it.id) }.sumOf { it.price * (qty[it.id] ?: 0) }
+        PaymentDialog(
+            amount = cartTotal,
+            upiVpa = prefs.shopUpiId,
+            upiName = prefs.shopUpiName.ifBlank { shopName },
+            onDismiss = { showPaymentDialog = false; pendingOrderSubmit = null },
+            onChoose = { status ->
+                showPaymentDialog = false
+                pendingOrderSubmit = pendingOrderSubmit?.copy(paymentStatus = status)
+                showDeliveryPointDialog = true
             }
         )
     }
@@ -610,12 +632,28 @@ fun CustomerCatalogScreen(
         NotificationsDialog(
             notifications = notifications,
             replying = replying,
+            currentShopCode = prefs.shopCode,
+            shopUpiAvailable = prefs.shopUpiId.isNotBlank(),
             isShopMuted = { shop -> vm.isShopMuted(shop) },
             onDismiss = { showNotifications = false },
             onDelete = { n -> vm.deleteNotification(n) },
             onClearAll = { vm.clearAllNotifications(); showNotifications = false },
             onReply = { n, text -> vm.replyToNotification(n, text) },
-            onMuteShop = { shop, muted -> vm.setShopMuted(shop, muted) }
+            onMuteShop = { shop, muted -> vm.setShopMuted(shop, muted) },
+            onPayNotification = { n -> payingNotification = n }
+        )
+    }
+    payingNotification?.let { n ->
+        PaymentDialog(
+            amount = n.amount,
+            upiVpa = prefs.shopUpiId,
+            upiName = prefs.shopUpiName.ifBlank { shopName },
+            declineLabel = "Not now",
+            onDismiss = { payingNotification = null },
+            onChoose = { status ->
+                payingNotification = null
+                if (status == "UPI") vm.markNotificationPaid(n)
+            }
         )
     }
     technicalError?.let { detail ->
@@ -724,12 +762,15 @@ private fun TechnicalErrorDialog(
 private fun NotificationsDialog(
     notifications: List<CustomerNotification>,
     replying: Boolean,
+    currentShopCode: String,
+    shopUpiAvailable: Boolean,
     isShopMuted: (String) -> Boolean,
     onDismiss: () -> Unit,
     onDelete: (CustomerNotification) -> Unit,
     onClearAll: () -> Unit,
     onReply: (CustomerNotification, String) -> Unit,
-    onMuteShop: (shop: String, muted: Boolean) -> Unit
+    onMuteShop: (shop: String, muted: Boolean) -> Unit,
+    onPayNotification: (CustomerNotification) -> Unit
 ) {
     var replyTargetId by remember { mutableStateOf<Long?>(null) }
     var replyText by rememberSaveable { mutableStateOf("") }
@@ -762,6 +803,19 @@ private fun NotificationsDialog(
                                     }
                                     if (n.message.isNotBlank()) {
                                         Text(n.message, style = MaterialTheme.typography.bodySmall)
+                                    }
+                                    if (n.amount > 0.0) {
+                                        Text(
+                                            "Amount: " + com.billing.pos.util.Format.rupee(n.amount),
+                                            fontWeight = FontWeight.Bold,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            modifier = Modifier.padding(top = 2.dp)
+                                        )
+                                        if (n.shop == currentShopCode && shopUpiAvailable) {
+                                            TextButton(onClick = { onPayNotification(n) }, modifier = Modifier.padding(top = 2.dp)) {
+                                                Text("Pay via UPI now")
+                                            }
+                                        }
                                     }
                                     Text(
                                         SimpleDateFormat("dd MMM, HH:mm", Locale.getDefault()).format(Date(n.receivedAt)),
@@ -863,6 +917,79 @@ private fun SaveOrderDialog(
                 enabled = name.isNotBlank() && phone.isNotBlank()
             ) { Text("Save order") }
         },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
+/**
+ * Shown right after "Your details", only when the shop has a UPI ID set (see
+ * [AppPrefs.shopUpiId]) — lets the customer pay for this order right now instead of Cash on
+ * delivery. "Pay via UPI" launches the shop's UPI link through [ActivityResultContracts.StartActivityForResult]
+ * (not a plain open-and-forget intent) so a well-behaved UPI app (GPay, PhonePe, etc.) can hand
+ * back its own transaction status per the standard UPI Linking response — Android returns here
+ * automatically once the customer finishes or cancels in that app, no manual "did you pay?"
+ * question needed. [onChoose] gets "UPI" only on a reported SUCCESS; anything else (failure,
+ * cancelled, no UPI app installed) falls back to Cash on delivery without blocking the order.
+ */
+@Composable
+private fun PaymentDialog(
+    amount: Double, upiVpa: String, upiName: String,
+    declineLabel: String = "Cash on delivery",
+    onDismiss: () -> Unit, onChoose: (String) -> Unit
+) {
+    val context = LocalContext.current
+    var payError by remember { mutableStateOf<String?>(null) }
+    var waiting by remember { mutableStateOf(false) }
+    val upiLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        waiting = false
+        val response = result.data?.getStringExtra("response") ?: ""
+        val status = Regex("Status=([A-Za-z]+)").find(response)?.groupValues?.get(1)
+            ?: Regex("\"Status\"\\s*:\\s*\"([A-Za-z]+)\"").find(response)?.groupValues?.get(1)
+        if (status.equals("SUCCESS", ignoreCase = true)) {
+            onChoose("UPI")
+        } else {
+            payError = "Payment wasn't completed — try again, or choose Cash on delivery."
+        }
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("How would you like to pay?") },
+        text = {
+            Column {
+                Text(
+                    "Order total: " + com.billing.pos.util.Format.rupee(amount),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                OutlinedButton(
+                    onClick = {
+                        payError = null
+                        val link = com.billing.pos.util.UpiQr.link(upiVpa, upiName, amount, "Order")
+                        val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(link))
+                        waiting = true
+                        runCatching { upiLauncher.launch(intent) }
+                            .onFailure { waiting = false; payError = "No UPI app found on this phone." }
+                    },
+                    enabled = !waiting,
+                    modifier = Modifier.fillMaxWidth().padding(top = 14.dp)
+                ) { Text(if (waiting) "Waiting for payment…" else "Pay via UPI now") }
+                if (payError != null) {
+                    Text(
+                        payError!!,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                }
+                Text(
+                    "We can't verify this automatically — the shop will confirm it in their own UPI app before dispatching.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.outline,
+                    modifier = Modifier.padding(top = 10.dp)
+                )
+            }
+        },
+        confirmButton = { TextButton(onClick = { onChoose("") }) { Text(declineLabel) } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
 }

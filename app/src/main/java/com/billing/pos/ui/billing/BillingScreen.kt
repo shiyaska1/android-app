@@ -186,7 +186,7 @@ fun BillingScreen(
     LaunchedEffect(items) {
         if (OrderToBillLink.hasData) {
             val taken = OrderToBillLink.take()
-            vm.loadFromOrders(taken.customerId, taken.customerName, taken.lines, taken.sourceKind, taken.sourceIds)
+            vm.loadFromOrders(taken.customerId, taken.customerName, taken.lines, taken.sourceKind, taken.sourceIds, taken.paymentModeHint)
         }
     }
 

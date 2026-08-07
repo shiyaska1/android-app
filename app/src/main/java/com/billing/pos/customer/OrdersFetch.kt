@@ -98,7 +98,8 @@ object OrdersFetch {
                         location = o.optString("location"),
                         customerAddress = o.optString("customerAddress"),
                         note = o.optString("note"),
-                        attachmentImages = OnlineOrder.packAttachments(attachments)
+                        attachmentImages = OnlineOrder.packAttachments(attachments),
+                        paymentStatus = o.optString("paymentStatus")
                     )
                 )
                 saved++

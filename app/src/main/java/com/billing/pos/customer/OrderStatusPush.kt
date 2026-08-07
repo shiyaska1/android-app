@@ -26,7 +26,8 @@ object OrderStatusPush {
         orderId: String,
         status: String? = null,
         message: String? = null,
-        customerName: String = ""
+        customerName: String = "",
+        amount: Double = 0.0
     ): Boolean = withContext(Dispatchers.IO) {
         if (customerPhone.isBlank()) return@withContext false
         val prefs = AppPrefs(context)
@@ -40,6 +41,7 @@ object OrderStatusPush {
             if (orderId.isNotBlank()) put("orderId", orderId)
             if (!status.isNullOrBlank()) put("status", status)
             if (!message.isNullOrBlank()) put("message", message)
+            if (amount > 0.0) put("amount", amount)
         }
         val sep = if (base.contains("?")) "&" else "?"
         val url = "$base${sep}do=status"
@@ -61,8 +63,13 @@ object OrderStatusPush {
             false
         }
 
-        val text = message?.takeIf { it.isNotBlank() }
+        val baseText = message?.takeIf { it.isNotBlank() }
             ?: com.billing.pos.data.OnlineOrderStatus.entries.find { it.name == status }?.label
+        // ShopMessage has no dedicated amount column — folded into the stored text instead, same
+        // as how it's shown to the customer (see NotificationsFetch/NotificationsDialog).
+        val text = if (amount > 0.0) {
+            (baseText?.plus("\n\n") ?: "") + "Bill amount: " + com.billing.pos.util.Format.rupee(amount)
+        } else baseText
         if (!text.isNullOrBlank()) {
             AppDatabase.get(context).shopMessageDao().insert(
                 ShopMessage(

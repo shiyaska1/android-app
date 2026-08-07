@@ -323,6 +323,17 @@ class AppPrefs(context: Context) {
     var shopDisplayAddress: String
         get() = (p.getString("shop_display_address", "") ?: "").trim()
         set(v) { p.edit().putString("shop_display_address", v.trim()).apply() }
+    /** Customer install: the shop's own UPI ID (VPA), carried in the catalog fetch response —
+     *  lets the customer pay for an order online, straight to the shop, at order time. Blank
+     *  when the shop owner hasn't set one in their own Settings > UPI ID. */
+    var shopUpiId: String
+        get() = (p.getString("shop_upi_id", "") ?: "").trim()
+        set(v) { p.edit().putString("shop_upi_id", v.trim()).apply() }
+    /** Customer install: the payee name to show in the customer's UPI app, carried in the
+     *  catalog fetch response. */
+    var shopUpiName: String
+        get() = (p.getString("shop_upi_name", "") ?: "").trim()
+        set(v) { p.edit().putString("shop_upi_name", v.trim()).apply() }
     /** Customer install: every shop this device has ever connected to (current one included) —
      *  see com.billing.pos.customer.ShopSwitch.rememberKnown/known. Unlike
      *  [customerRecentShops] (capped at 5, excludes the current shop, only for quick "switch

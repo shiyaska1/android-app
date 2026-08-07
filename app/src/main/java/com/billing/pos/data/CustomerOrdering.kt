@@ -90,7 +90,11 @@ data class OnlineOrder(
     /** Premium-shop only: compressed base64 data URIs the customer attached (e.g. prescription
      *  photos), packed the same way [itemsJson] packs order lines. Empty for a non-premium shop
      *  or when the customer didn't attach anything. */
-    val attachmentImages: String = ""
+    val attachmentImages: String = "",
+    /** "UPI" when the customer paid at order time (self-reported by their UPI app's own
+     *  response — see [com.billing.pos.customer.OrderSubmit]); blank means Cash on
+     *  delivery/unpaid. */
+    val paymentStatus: String = ""
 ) {
     data class Line(val name: String, val qty: Int, val price: Double)
 
@@ -139,6 +143,13 @@ interface OnlineOrderDao {
     @Query("UPDATE online_orders SET status = :status WHERE id = :id")
     suspend fun updateStatus(id: Long, status: String)
 
+    /** Flips a still-pending order's payment status once the customer reports paying via UPI
+     *  (see [com.billing.pos.customer.ShopMessagesFetch]) — a no-op if this order was already
+     *  Accepted/converted (and so no longer in this table) or deleted; that's fine, the shop owner
+     *  will have already seen the "paid" chat message either way. */
+    @Query("UPDATE online_orders SET paymentStatus = :status WHERE serverId = :serverId")
+    suspend fun updatePaymentStatus(serverId: String, status: String)
+
     @Delete
     suspend fun delete(order: OnlineOrder)
 }
@@ -160,7 +171,9 @@ data class CustomerOrderHistory(
      *  saved before the server started returning one. */
     val serverId: String = "",
     /** What the customer typed (and/or OCR'd) instead of — or alongside — picking catalog items. */
-    val note: String = ""
+    val note: String = "",
+    /** "UPI" when this order was paid at order time (self-reported); blank for Cash on delivery. */
+    val paymentStatus: String = ""
 ) {
     /** [serverId] is the catalog item's id, so Re-order can find it again even if its name changed. */
     data class Line(val serverId: String, val name: String, val qty: Int, val price: Double)
@@ -192,6 +205,12 @@ interface CustomerOrderHistoryDao {
 
     @Insert
     suspend fun insert(order: CustomerOrderHistory): Long
+
+    /** Flips this device's own record of an order to paid, once a "Pay via UPI now" (from a
+     *  shop's billed-amount notification) reports success — a no-op if this order isn't in
+     *  history at all (e.g. history was cleared), which is fine, it's just local record-keeping. */
+    @Query("UPDATE customer_order_history SET paymentStatus = 'UPI' WHERE serverId = :serverId")
+    suspend fun markPaid(serverId: String)
 }
 
 /**
@@ -216,7 +235,11 @@ data class CustomerNotification(
     val shop: String = "",
     val shopName: String = "",
     val receivedAt: Long,
-    val read: Boolean = false
+    val read: Boolean = false,
+    /** A bill amount the shop is asking to be paid (e.g. after quoting a note/prescription order
+     *  that had no fixed price at order time) — see [com.billing.pos.customer.OrderStatusPush].
+     *  0.0 (the default) means no amount attached, so no "Pay via UPI now" button shows. */
+    val amount: Double = 0.0
 )
 
 @Dao

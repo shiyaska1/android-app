@@ -28,7 +28,17 @@ data class CustOrder(
     val longitude: Double = 0.0,
     val grandTotal: Double,
     /** [License.deviceId] of the phone the order was created on, so reports can attribute it to a salesman. */
-    val deviceId: String = ""
+    val deviceId: String = "",
+    /** "UPI" when an online order was paid at order time (see [com.billing.pos.data.OnlineOrder]);
+     *  blank for a plain order or Cash on delivery. Only meaningful when [isOnlineOrder] is true —
+     *  carried through to the sale bill created from this order, see
+     *  [com.billing.pos.ui.billing.OrderToBillLink]. */
+    val paymentStatus: String = "",
+    /** True only for an order created by accepting an online order (see
+     *  [com.billing.pos.ui.online.OnlineOrdersViewModel]) — lets "Convert to Sale" tell those
+     *  apart from a plain order entered directly here, so [paymentStatus] only auto-fills the
+     *  bill's payment method for orders it's actually meaningful for. */
+    val isOnlineOrder: Boolean = false
 )
 
 /** Delivery status of one order line. Stored as [name] in the DB; [PENDING] is the default for anything not yet touched. */

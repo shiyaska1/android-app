@@ -138,6 +138,27 @@ class CustomerCatalogViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** A "Pay via UPI now" on a billed notification (see [PaymentDialog] in
+     *  CustomerCatalogScreen) reported success — flips this device's own order-history record and
+     *  tells the shop, the same "customer message + paymentStatus flag" mechanism
+     *  [com.billing.pos.customer.ShopMessagesFetch] reads to flip the shop's Online Orders list. */
+    fun markNotificationPaid(notification: CustomerNotification) {
+        viewModelScope.launch {
+            val app: Application = getApplication()
+            if (notification.orderId.isNotBlank()) historyDao.markPaid(notification.orderId)
+            val target = com.billing.pos.customer.ShopSwitch.known(app).find { it.shop == notification.shop }
+            com.billing.pos.customer.CustomerMessageSend.send(
+                app,
+                message = "Paid " + com.billing.pos.util.Format.rupee(notification.amount) + " via UPI" +
+                    (if (notification.orderId.isNotBlank()) " for order #${notification.orderId}" else ""),
+                orderId = notification.orderId,
+                targetUrl = target?.url.orEmpty(), targetShop = target?.shop ?: notification.shop,
+                paymentStatus = "UPI"
+            )
+            _message.value = "Payment recorded — the shop has been notified"
+        }
+    }
+
     fun refresh() {
         if (_refreshing.value) return
         viewModelScope.launch {
@@ -197,7 +218,8 @@ class CustomerCatalogViewModel(app: Application) : AndroidViewModel(app) {
         address: String = "",
         note: String = "",
         attachments: List<String> = emptyList(),
-        manualLocationLink: String? = null
+        manualLocationLink: String? = null,
+        paymentStatus: String = ""
     ) {
         val selection = _qty.value.mapNotNull { (id, count) ->
             items.value.find { it.id == id }?.let { it to count }
@@ -224,7 +246,7 @@ class CustomerCatalogViewModel(app: Application) : AndroidViewModel(app) {
                 _saving.value = false
                 return@launch
             }
-            when (val result = OrderSubmit.submit(app, selection, name, phone, locationLink, address, note, attachments)) {
+            when (val result = OrderSubmit.submit(app, selection, name, phone, locationLink, address, note, attachments, paymentStatus)) {
                 is OrderSubmit.Result.Ok -> {
                     _message.value = "Order saved — the shop will contact you"
                     val total = selection.sumOf { (item, qty) -> item.price * qty }
@@ -238,7 +260,8 @@ class CustomerCatalogViewModel(app: Application) : AndroidViewModel(app) {
                             placedAt = System.currentTimeMillis(),
                             location = locationLink,
                             serverId = result.orderId,
-                            note = note
+                            note = note,
+                            paymentStatus = paymentStatus
                         )
                     )
                     clearSelection()

@@ -22,7 +22,8 @@ object CustomerMessageSend {
         message: String,
         orderId: String = "",
         targetUrl: String = "",
-        targetShop: String = ""
+        targetShop: String = "",
+        paymentStatus: String = ""
     ): Boolean = withContext(Dispatchers.IO) {
         if (message.isBlank()) return@withContext false
         val prefs = AppPrefs(context)
@@ -36,6 +37,7 @@ object CustomerMessageSend {
             put("customerName", prefs.customerName)
             if (orderId.isNotBlank()) put("orderId", orderId)
             put("message", message)
+            if (paymentStatus.isNotBlank()) put("paymentStatus", paymentStatus)
         }
         val sep = if (base.contains("?")) "&" else "?"
         val url = "$base${sep}do=message"

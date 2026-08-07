@@ -84,7 +84,8 @@ object NotificationsFetch {
                     message = o.optString("message"),
                     shop = shop,
                     shopName = target.name.ifBlank { shop },
-                    receivedAt = System.currentTimeMillis()
+                    receivedAt = System.currentTimeMillis(),
+                    amount = o.optDouble("amount", 0.0)
                 )
                 dao.insert(notification)
                 fresh += notification
