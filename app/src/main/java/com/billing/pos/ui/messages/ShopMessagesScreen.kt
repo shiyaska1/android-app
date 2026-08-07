@@ -495,7 +495,7 @@ private fun RequestPaymentDialog(sending: Boolean, onSend: (note: String, amount
         text = {
             Column {
                 Text(
-                    "Sends a message with a \"Pay via UPI now\" button for this amount — not tied to any particular order.",
+                    "Sends a message with a \"Pay via UPI\" button for this amount — not tied to any particular order.",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline
                 )
                 OutlinedTextField(

@@ -614,7 +614,7 @@ private fun MessageDialog(
                 )
                 Text(
                     "Set this for a note/prescription order that had no fixed price — the " +
-                        "customer gets a \"Pay via UPI now\" button for this amount.",
+                        "customer gets a \"Pay via UPI\" button for this amount.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.outline,
                     modifier = Modifier.padding(top = 4.dp)

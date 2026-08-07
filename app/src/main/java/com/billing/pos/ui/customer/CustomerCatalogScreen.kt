@@ -946,7 +946,7 @@ private fun NotificationsDialog(
                                         )
                                         if (shopUpi(n.shop) != null) {
                                             TextButton(onClick = { onPayNotification(n) }, modifier = Modifier.padding(top = 2.dp)) {
-                                                Text("Pay via UPI now")
+                                                Text("Pay via UPI")
                                             }
                                         }
                                     }
@@ -1065,19 +1065,18 @@ private fun SaveOrderDialog(
 
 /**
  * Shown right after "Your details", only when the shop has a UPI ID set (see
- * [AppPrefs.shopUpiId]) — lets the customer pay for this order right now instead of Cash on
- * delivery. "Pay via UPI" saves the order immediately (exactly like Cash on delivery) and only
- * then opens the shop's UPI link with a plain open-and-forget intent — it does not wait for the
- * UPI app to hand back a result. Earlier this waited on an activity result before saving the
- * order, but several UPI apps never reliably return control to a third-party caller (security
- * checks, the customer leaving via Home instead of the app's own back control, etc.), which left
- * the order stuck unsaved. Payment isn't verified automatically either way: the shop owner
- * checks their own UPI app before dispatching, and can flip a false "Paid via UPI" claim back to
- * unpaid from Online Orders (see [OnlineOrdersViewModel.disputePayment]) if it never arrives. The
- * QR-code fallback below works the same way, via its own "I've paid via QR" button — except that
- * path has no automatic success signal at all, so (unlike direct-pay) it requires a payment
- * screenshot to be attached first, either picked manually or captured automatically when the
- * UPI app's own "Share" hands one straight to this app.
+ * [AppPrefs.shopUpiId]) — lets the customer pay for this order right now via a UPI QR code,
+ * instead of Cash on delivery. Direct intent-launched payment ("Pay via UPI now", opening the
+ * UPI app straight from this app) used to be offered first, with the QR code as a fallback, but
+ * enough UPI apps flag/decline or otherwise mishandle a payment intent launched by a third-party
+ * app that it was pulled entirely — scanning a QR is the standard flow every merchant uses and
+ * isn't affected by that, since payment starts from inside the UPI app's own scanner. The QR path
+ * has no automatic success signal at all, so "I've paid via QR" requires a payment screenshot to
+ * be attached first, either picked manually or captured automatically when the UPI app's own
+ * "Share" hands one straight to this app. Payment isn't verified automatically either way: the
+ * shop owner checks their own UPI app before dispatching, and can flip a false "Paid via UPI"
+ * claim back to unpaid from Online Orders (see [OnlineOrdersViewModel.disputePayment]) if it
+ * never arrives.
  */
 @Composable
 private fun PaymentDialog(
@@ -1089,7 +1088,6 @@ private fun PaymentDialog(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var showPayQr by remember { mutableStateOf(false) }
     var proofDataUri by remember { mutableStateOf<String?>(null) }
     var compressingProof by remember { mutableStateOf(false) }
     suspend fun compressProof(uri: android.net.Uri): String? = withContext(Dispatchers.IO) {
@@ -1110,17 +1108,15 @@ private fun PaymentDialog(
             if (dataUri != null) proofDataUri = dataUri
         }
     }
-    // While the QR fallback is showing, claim any file shared straight into this app (e.g. a UPI
-    // app's own "Share" on its payment-success screen) as this order's payment proof, instead of
-    // letting it fall through to the diary's generic "new entry with this attachment" handling.
-    LaunchedEffect(showPayQr) {
-        com.billing.pos.auth.PendingSharedMedia.awaitingPaymentProof = showPayQr
-    }
+    // Claim any file shared straight into this app (e.g. a UPI app's own "Share" on its
+    // payment-success screen) as this order's payment proof, instead of letting it fall through
+    // to the diary's generic "new entry with this attachment" handling.
     DisposableEffect(Unit) {
+        com.billing.pos.auth.PendingSharedMedia.awaitingPaymentProof = true
         onDispose { com.billing.pos.auth.PendingSharedMedia.awaitingPaymentProof = false }
     }
     LaunchedEffect(com.billing.pos.auth.PendingSharedMedia.generation) {
-        if (showPayQr && com.billing.pos.auth.PendingSharedMedia.hasItems) {
+        if (com.billing.pos.auth.PendingSharedMedia.hasItems) {
             val uri = com.billing.pos.auth.PendingSharedMedia.consume().firstOrNull() ?: return@LaunchedEffect
             compressingProof = true
             val dataUri = compressProof(uri)
@@ -1128,9 +1124,46 @@ private fun PaymentDialog(
             if (dataUri != null) proofDataUri = dataUri
         }
     }
+    val qr = remember(upiVpa, upiName, amount, reference) {
+        com.billing.pos.util.UpiQr.bitmap(com.billing.pos.util.UpiQr.link(upiVpa, upiName, amount, "Order", reference))
+    }
+    // Some UPI apps (PhonePe in particular) don't accept a QR handed to them via the share sheet
+    // below — this saves the same PNG straight into the phone's own Downloads/gallery, so it can
+    // be opened directly from that UPI app's own "scan from gallery" option instead of relying on
+    // a share-target hand-off.
+    fun downloadQr(bmp: android.graphics.Bitmap) {
+        scope.launch {
+            val ok = withContext(Dispatchers.IO) {
+                runCatching {
+                    val file = File.createTempFile("upi_qr_", ".png", context.cacheDir)
+                    FileOutputStream(file).use { bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+                    val saved = DownloadSaver.save(context, file, "upi_qr_" + System.currentTimeMillis() + ".png", "image/png")
+                    file.delete()
+                    saved
+                }.getOrDefault(false)
+            }
+            android.widget.Toast.makeText(
+                context,
+                if (ok) "QR saved to Downloads" else "Could not save QR",
+                android.widget.Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+    var pendingQrDownload by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
+    val storagePermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        val bmp = pendingQrDownload; pendingQrDownload = null
+        if (granted && bmp != null) downloadQr(bmp)
+        else if (!granted) android.widget.Toast.makeText(context, "Storage permission denied", android.widget.Toast.LENGTH_SHORT).show()
+    }
+    fun requestQrDownload(bmp: android.graphics.Bitmap) {
+        if (DownloadSaver.needsLegacyPermission() &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_EXTERNAL_STORAGE) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) { pendingQrDownload = bmp; storagePermission.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE) }
+        else downloadQr(bmp)
+    }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("How would you like to pay?") },
+        title = { Text("Pay via UPI") },
         text = {
             Column {
                 Text(
@@ -1138,145 +1171,81 @@ private fun PaymentDialog(
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
-                OutlinedButton(
-                    onClick = {
-                        // Save the order right away, exactly like Cash on delivery — the shop
-                        // owner verifies the payment on their own UPI app (and can dispute it
-                        // from Online Orders if it never arrives), so there's nothing to gain by
-                        // making the customer sit on this screen waiting for the UPI app to hand
-                        // control back, which some UPI apps never do reliably anyway.
-                        onChoose("UPI", null)
-                        val link = com.billing.pos.util.UpiQr.link(upiVpa, upiName, amount, "Order", reference)
-                        val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(link))
-                        runCatching { context.startActivity(intent) }
-                    },
-                    modifier = Modifier.fillMaxWidth().padding(top = 14.dp)
-                ) { Text("Pay via UPI now") }
-                // Fallback for when "Pay via UPI now" (an intent launched by this app) gets
-                // refused by the UPI app's own security checks (some UPI apps flag/decline
-                // payment intents from third-party apps that aren't a registered PSP/merchant —
-                // see PaymentDialog's doc comment). Scanning a QR is the standard flow every
-                // merchant uses and isn't affected by that: the payment is started from inside
-                // the UPI app's own scanner, not by this app launching anything.
-                TextButton(
-                    onClick = { showPayQr = !showPayQr },
-                    modifier = Modifier.fillMaxWidth().padding(top = 6.dp)
-                ) { Text(if (showPayQr) "Hide QR code" else "UPI app won't let you pay? Show a QR code instead") }
-                if (showPayQr) {
-                    val qr = remember(upiVpa, upiName, amount, reference) {
-                        com.billing.pos.util.UpiQr.bitmap(com.billing.pos.util.UpiQr.link(upiVpa, upiName, amount, "Order", reference))
-                    }
-                    // Some UPI apps (PhonePe in particular) don't accept a QR handed to them via
-                    // the share sheet above — this saves the same PNG straight into the phone's
-                    // own Downloads/gallery, so it can be opened directly from that UPI app's own
-                    // "scan from gallery" option instead of relying on a share-target hand-off.
-                    fun downloadQr(bmp: android.graphics.Bitmap) {
-                        scope.launch {
-                            val ok = withContext(Dispatchers.IO) {
-                                runCatching {
-                                    val file = File.createTempFile("upi_qr_", ".png", context.cacheDir)
-                                    FileOutputStream(file).use { bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
-                                    val saved = DownloadSaver.save(context, file, "upi_qr_" + System.currentTimeMillis() + ".png", "image/png")
-                                    file.delete()
-                                    saved
-                                }.getOrDefault(false)
-                            }
-                            android.widget.Toast.makeText(
-                                context,
-                                if (ok) "QR saved to Downloads" else "Could not save QR",
-                                android.widget.Toast.LENGTH_SHORT
-                            ).show()
-                        }
-                    }
-                    var pendingQrDownload by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
-                    val storagePermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-                        val bmp = pendingQrDownload; pendingQrDownload = null
-                        if (granted && bmp != null) downloadQr(bmp)
-                        else if (!granted) android.widget.Toast.makeText(context, "Storage permission denied", android.widget.Toast.LENGTH_SHORT).show()
-                    }
-                    fun requestQrDownload(bmp: android.graphics.Bitmap) {
-                        if (DownloadSaver.needsLegacyPermission() &&
-                            ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_EXTERNAL_STORAGE) != android.content.pm.PackageManager.PERMISSION_GRANTED
-                        ) { pendingQrDownload = bmp; storagePermission.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE) }
-                        else downloadQr(bmp)
-                    }
-                    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                        if (qr != null) {
-                            Image(
-                                bitmap = qr.asImageBitmap(),
-                                contentDescription = "UPI QR",
-                                modifier = Modifier.size(200.dp).padding(top = 8.dp)
-                            )
-                            // Lets the QR reach another phone — share sheet covers both "save to
-                            // this device" (Files/gallery, most launchers offer it there) and
-                            // sending it straight to someone else (WhatsApp etc.) to scan there.
-                            TextButton(onClick = {
-                                runCatching {
-                                    val dir = File(context.cacheDir, "shared").apply { mkdirs() }
-                                    val file = File(dir, "upi_qr_" + System.currentTimeMillis() + ".png")
-                                    FileOutputStream(file).use { qr.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
-                                    val uri = FileProvider.getUriForFile(context, context.packageName + ".provider", file)
-                                    val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
-                                        type = "image/png"
-                                        putExtra(android.content.Intent.EXTRA_STREAM, uri)
-                                        addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                    }
-                                    context.startActivity(android.content.Intent.createChooser(send, "Save or share QR code"))
-                                }
-                            }) { Text("Save / share this QR") }
-                            TextButton(onClick = { requestQrDownload(qr) }) { Text("Download to storage") }
-                        } else {
-                            Text("Could not make the QR", color = MaterialTheme.colorScheme.error)
-                        }
-                        Text(
-                            "Scan this with any UPI app (on this phone or another) to pay $upiVpa.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.outline,
-                            modifier = Modifier.padding(top = 6.dp)
+                Column(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    if (qr != null) {
+                        Image(
+                            bitmap = qr.asImageBitmap(),
+                            contentDescription = "UPI QR",
+                            modifier = Modifier.size(200.dp).padding(top = 8.dp)
                         )
-                        // The QR path has no automatic success signal (unlike the direct-pay
-                        // button's StartActivityForResult) — a bare "I paid" claim here would be
-                        // unverifiable, so a payment screenshot is required before this can be
-                        // tapped. Attaching it manually or sharing it straight from the UPI app's
-                        // own "Share" button (see the PendingSharedMedia effect above) both work;
-                        // either way the button stays disabled/waiting until one lands.
-                        val proofUri = proofDataUri
-                        Button(
-                            onClick = { onChoose("UPI", proofUri) },
-                            enabled = !compressingProof && proofUri != null,
-                            modifier = Modifier.fillMaxWidth().padding(top = 10.dp)
-                        ) {
-                            Text(
-                                when {
-                                    compressingProof -> "Attaching…"
-                                    proofUri == null -> "Attach the payment screenshot below to confirm"
-                                    else -> "I've paid via QR"
+                        // Lets the QR reach another phone — share sheet covers both "save to
+                        // this device" (Files/gallery, most launchers offer it there) and
+                        // sending it straight to someone else (WhatsApp etc.) to scan there.
+                        TextButton(onClick = {
+                            runCatching {
+                                val dir = File(context.cacheDir, "shared").apply { mkdirs() }
+                                val file = File(dir, "upi_qr_" + System.currentTimeMillis() + ".png")
+                                FileOutputStream(file).use { qr.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+                                val uri = FileProvider.getUriForFile(context, context.packageName + ".provider", file)
+                                val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                    type = "image/png"
+                                    putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                                    addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
                                 }
-                            )
-                        }
-                        if (proofUri != null) {
-                            val proofBmp = remember(proofUri) { decodeDataUriBitmap(proofUri) }
-                            Box(Modifier.padding(top = 10.dp), contentAlignment = Alignment.TopEnd) {
-                                if (proofBmp != null) {
-                                    Image(
-                                        bitmap = proofBmp,
-                                        contentDescription = "Payment screenshot",
-                                        contentScale = ContentScale.Crop,
-                                        modifier = Modifier.size(120.dp)
-                                    )
-                                }
-                                OutlinedIconButton(
-                                    onClick = { proofDataUri = null },
-                                    modifier = Modifier.size(24.dp),
-                                    colors = IconButtonDefaults.outlinedIconButtonColors(containerColor = MaterialTheme.colorScheme.surface)
-                                ) { Icon(Icons.Filled.Close, contentDescription = "Remove", modifier = Modifier.size(14.dp)) }
+                                context.startActivity(android.content.Intent.createChooser(send, "Save or share QR code"))
                             }
-                        }
-                        TextButton(
-                            onClick = { proofPicker.launch("image/*") },
-                            enabled = !compressingProof
-                        ) { Text(if (compressingProof) "Attaching…" else if (proofUri != null) "Change payment screenshot" else "Attach payment screenshot") }
+                        }) { Text("Save / share this QR") }
+                        TextButton(onClick = { requestQrDownload(qr) }) { Text("Download to storage") }
+                    } else {
+                        Text("Could not make the QR", color = MaterialTheme.colorScheme.error)
                     }
+                    Text(
+                        "Scan this with any UPI app (on this phone or another) to pay $upiVpa.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.outline,
+                        modifier = Modifier.padding(top = 6.dp)
+                    )
+                    // The QR path has no automatic success signal — a bare "I paid" claim here
+                    // would be unverifiable, so a payment screenshot is required before this can
+                    // be tapped. Attaching it manually or sharing it straight from the UPI app's
+                    // own "Share" button (see the PendingSharedMedia effect above) both work;
+                    // either way the button stays disabled/waiting until one lands.
+                    val proofUri = proofDataUri
+                    Button(
+                        onClick = { onChoose("UPI", proofUri) },
+                        enabled = !compressingProof && proofUri != null,
+                        modifier = Modifier.fillMaxWidth().padding(top = 10.dp)
+                    ) {
+                        Text(
+                            when {
+                                compressingProof -> "Attaching…"
+                                proofUri == null -> "Attach the payment screenshot below to confirm"
+                                else -> "I've paid via QR"
+                            }
+                        )
+                    }
+                    if (proofUri != null) {
+                        val proofBmp = remember(proofUri) { decodeDataUriBitmap(proofUri) }
+                        Box(Modifier.padding(top = 10.dp), contentAlignment = Alignment.TopEnd) {
+                            if (proofBmp != null) {
+                                Image(
+                                    bitmap = proofBmp,
+                                    contentDescription = "Payment screenshot",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.size(120.dp)
+                                )
+                            }
+                            OutlinedIconButton(
+                                onClick = { proofDataUri = null },
+                                modifier = Modifier.size(24.dp),
+                                colors = IconButtonDefaults.outlinedIconButtonColors(containerColor = MaterialTheme.colorScheme.surface)
+                            ) { Icon(Icons.Filled.Close, contentDescription = "Remove", modifier = Modifier.size(14.dp)) }
+                        }
+                    }
+                    TextButton(
+                        onClick = { proofPicker.launch("image/*") },
+                        enabled = !compressingProof
+                    ) { Text(if (compressingProof) "Attaching…" else if (proofUri != null) "Change payment screenshot" else "Attach payment screenshot") }
                 }
                 Text(
                     "We can't verify this automatically — the shop will confirm it in their own UPI app before dispatching.",

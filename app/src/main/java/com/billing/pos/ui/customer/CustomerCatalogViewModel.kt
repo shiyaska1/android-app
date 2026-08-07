@@ -138,14 +138,10 @@ class CustomerCatalogViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** A "Pay via UPI now" on a billed notification (see [PaymentDialog] in
-     *  CustomerCatalogScreen) reported success — flips this device's own order-history record and
-     *  tells the shop, the same "customer message + paymentStatus flag" mechanism
-     *  [com.billing.pos.customer.ShopMessagesFetch] reads to flip the shop's Online Orders list. */
     /** The correct UPI payee for a bill from [shop] — critical to get right for a customer
      *  connected to more than one shop (see ShopSwitch): a notification can arrive from a shop
      *  that is NOT the currently active one, and that shop's own VPA (not whichever shop happens
-     *  to be active right now) must be what "Pay via UPI now" pays. Returns null when that shop
+     *  to be active right now) must be what the QR code pays. Returns null when that shop
      *  has no UPI ID set, which must hide the pay button entirely — never fall back to some other
      *  shop's UPI ID. */
     fun upiFor(shop: String): Pair<String, String>? {
@@ -157,11 +153,10 @@ class CustomerCatalogViewModel(app: Application) : AndroidViewModel(app) {
         return known?.upi?.takeIf { it.isNotBlank() }?.let { it to known.upiName }
     }
 
-    /** [proofAttachment] — a payment-success screenshot, e.g. after paying via the QR-code
-     *  fallback (which, unlike the direct "Pay via UPI now" button, has no automatic success
-     *  callback the app can detect on its own) — travels to the shop as proof, same data-URI
-     *  convention as every other attachment in this app. Null/blank when there's nothing to
-     *  attach (the direct-pay flow, which already got a real SUCCESS response). */
+    /** [proofAttachment] — a payment-success screenshot, required before "I've paid via QR" can
+     *  even be tapped (the QR flow has no automatic success callback the app can detect on its
+     *  own) — travels to the shop as proof, same data-URI convention as every other attachment
+     *  in this app. */
     fun markNotificationPaid(notification: CustomerNotification, proofAttachment: String? = null) {
         viewModelScope.launch {
             val app: Application = getApplication()
