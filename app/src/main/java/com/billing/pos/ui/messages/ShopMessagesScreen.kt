@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -346,8 +348,11 @@ private fun ThreadScreen(
             )
         },
         bottomBar = {
+            // navigationBarsPadding lifts this clear of the phone's gesture bar (it was sitting
+            // right under it — see the report screenshot); the extra 16dp on top of that keeps a
+            // visible gap so it doesn't hug the edge even on 3-button-nav phones.
             Row(
-                Modifier.fillMaxWidth().padding(8.dp),
+                Modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(8.dp).padding(bottom = 16.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {

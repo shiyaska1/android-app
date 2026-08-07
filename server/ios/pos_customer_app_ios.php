@@ -295,7 +295,7 @@ $html = <<<'APPHTML'
   <main>
     <div class="updated" id="updatedAt"></div>
     <img id="shopBannerImg" class="shopBanner" alt="">
-    <div class="banner" id="a2hsBanner"><span id="a2hsText"></span><button class="pill primary" onclick="openA2hsModal()">How?</button><button class="icon-btn" onclick="dismissA2hsBanner()" title="Dismiss">&times;</button></div>
+    <div class="banner" id="a2hsBanner"><span id="a2hsText"></span><button class="pill primary" id="a2hsActionBtn" onclick="a2hsBannerAction()">How?</button><button class="icon-btn" onclick="dismissA2hsBanner()" title="Dismiss">&times;</button></div>
     <div class="banner" id="pushBanner"><span>Get notified about your order right on this phone, even with the app closed.</span><button class="pill primary" onclick="enablePush()">Enable</button><button class="icon-btn" onclick="dismissPushBanner()" title="Dismiss">&times;</button></div>
     <input type="text" class="search" id="search" placeholder="Search items…" oninput="render()">
     <div class="chips" id="chips"></div>
@@ -352,7 +352,8 @@ $html = <<<'APPHTML'
   <div class="hint">Two quick taps — then you'll get order updates even with this page closed.</div>
   <ol class="a2hs-steps" id="a2hsSteps"></ol>
   <div class="sheet-actions">
-    <button class="pill primary" style="flex:none;width:100%;" onclick="closeOverlay('a2hsOverlay')">Got it</button>
+    <button class="pill primary" style="display:none;" id="a2hsModalInstallBtn" onclick="doInstallPrompt()">Install</button>
+    <button class="pill outline" onclick="closeOverlay('a2hsOverlay')">Got it</button>
   </div>
 </div></div>
 
@@ -376,6 +377,9 @@ $html = <<<'APPHTML'
 
 <div class="overlay" id="notifOverlay"><div class="sheet">
   <h2>Messages</h2>
+  <div id="notifPushRow" style="display:none;margin-bottom:10px;">
+    <button class="pill primary" style="width:100%;" onclick="enablePush()">Enable notifications</button>
+  </div>
   <div id="notifList"></div>
   <div class="chat-reply">
     <textarea id="chatReplyInput" rows="2" placeholder="Message the shop…"></textarea>
@@ -407,14 +411,40 @@ function ns(){ return 'posc_' + cfg.shop + '_'; }
 function isIOS(){ return /iphone|ipad|ipod/i.test(navigator.userAgent); }
 function isStandalone(){ return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true; }
 
+// Chrome/Edge on Android offer a real native install dialog via this event — captured here so
+// our own "Install" button can trigger it directly with ONE tap, instead of sending the customer
+// hunting through the browser's three-dot menu for "Add to Home Screen" themselves. Safari (iOS)
+// never fires this event, so those customers always get the manual step-by-step guide below
+// instead — there's no native prompt to trigger there.
+var deferredInstallPrompt = null;
+window.addEventListener('beforeinstallprompt', function(e){
+  e.preventDefault();
+  deferredInstallPrompt = e;
+  updateA2hsBanner();
+});
+window.addEventListener('appinstalled', function(){
+  deferredInstallPrompt = null;
+  saveJSON('posc_a2hsDismissed', true);
+  var el = document.getElementById('a2hsBanner');
+  if(el) el.style.display = 'none';
+});
+function doInstallPrompt(){
+  if(!deferredInstallPrompt) return;
+  var p = deferredInstallPrompt;
+  deferredInstallPrompt = null;
+  p.prompt();
+  p.userChoice.finally(function(){ updateA2hsBanner(); closeOverlay('a2hsOverlay'); });
+}
+
 function updateA2hsBanner(){
   var el = document.getElementById('a2hsBanner');
   if(isStandalone() || loadJSON('posc_a2hsDismissed', false)){ el.style.display='none'; return; }
-  var text = document.getElementById('a2hsText');
-  text.innerHTML = isIOS()
-    ? 'Add this to your Home Screen for order alerts even with the app closed.'
-    : 'Add this to your Home Screen for order alerts even with the app closed.';
+  document.getElementById('a2hsText').textContent = 'Add this to your Home Screen for order alerts even with the app closed.';
+  document.getElementById('a2hsActionBtn').textContent = deferredInstallPrompt ? 'Install' : 'How?';
   el.style.display = 'flex';
+}
+function a2hsBannerAction(){
+  if(deferredInstallPrompt) doInstallPrompt(); else openA2hsModal();
 }
 function dismissA2hsBanner(){
   saveJSON('posc_a2hsDismissed', true);
@@ -426,7 +456,7 @@ function dismissA2hsBanner(){
 // automatically once per browser (not just left as a passive banner) so most customers see it
 // without having to notice and tap anything first; posc_a2hsAutoShown makes sure it only
 // self-triggers the one time even if they close it without acting — the small banner (and the
-// "How?" button on it) stays available afterward for anyone who wants to see it again.
+// "How?"/"Install" button on it) stays available afterward for anyone who wants to see it again.
 function a2hsStepsHtml(){
   if(isIOS()){
     return '<li><span class="glyph">&#9081;</span><span>Tap the <b>Share</b> button in Safari’s toolbar (a square with an arrow pointing up).</span></li>' +
@@ -438,13 +468,24 @@ function a2hsStepsHtml(){
     '<li><span class="num">3</span><span>Confirm — that’s it.</span></li>';
 }
 function openA2hsModal(){
-  document.getElementById('a2hsSteps').innerHTML = a2hsStepsHtml();
+  var installBtn = document.getElementById('a2hsModalInstallBtn');
+  if(deferredInstallPrompt){
+    document.getElementById('a2hsSteps').innerHTML =
+      '<li><span class="glyph">&#8681;</span><span>Tap <b>Install</b> below — your browser adds the icon for you, no menus to dig through.</span></li>';
+    installBtn.style.display = '';
+  } else {
+    document.getElementById('a2hsSteps').innerHTML = a2hsStepsHtml();
+    installBtn.style.display = 'none';
+  }
   openOverlay('a2hsOverlay');
 }
 function maybeAutoShowA2hsModal(){
   if(isStandalone() || loadJSON('posc_a2hsAutoShown', false)) return;
   saveJSON('posc_a2hsAutoShown', true);
-  setTimeout(function(){ openA2hsModal(); }, 1200);
+  // beforeinstallprompt can fire slightly after load, so wait a beat longer than the modal's own
+  // delay to give Chrome a chance to hand us the real install prompt before we decide which
+  // version (one-tap Install vs manual steps) to show.
+  setTimeout(function(){ openA2hsModal(); }, 1500);
 }
 
 function pushApiSupported(){
@@ -462,6 +503,14 @@ function updatePushBanner(){
   var el = document.getElementById('pushBanner');
   if(!el) return;
   el.style.display = (canOfferPushNow() && !loadJSON(ns()+'pushDismissed', false)) ? 'flex' : 'none';
+}
+// A second, always-reachable way to turn notifications on, inside the bell icon's own sheet —
+// the top banner only appears once (right after the first order) and is easy to dismiss/miss
+// entirely, so someone who wants push later has nowhere else to find the option otherwise.
+function updateNotifPushRow(){
+  var el = document.getElementById('notifPushRow');
+  if(!el) return;
+  el.style.display = canOfferPushNow() ? 'block' : 'none';
 }
 function dismissPushBanner(){
   saveJSON(ns()+'pushDismissed', true);
@@ -485,6 +534,7 @@ function enablePush(){
     }).then(function(){
       toast('Notifications enabled');
       updatePushBanner();
+      updateNotifPushRow();
     }).catch(function(){ toast('Could not enable notifications'); });
   });
 }
@@ -886,6 +936,7 @@ function openNotifications(){
 }
 var STATUS_LABELS = { PENDING:'Pending', ACCEPTED:'Accepted', REJECTED:'Rejected', OUT_FOR_DELIVERY:'Out for delivery', DELIVERED:'Delivered', CANCELLED:'Cancelled' };
 function renderNotifications(){
+  updateNotifPushRow();
   var list = loadJSON(ns()+'notifications', []);
   var el = document.getElementById('notifList');
   if(list.length===0){ el.innerHTML = '<div class="empty">No messages yet.</div>'; }
