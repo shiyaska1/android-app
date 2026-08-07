@@ -234,7 +234,7 @@ private fun OnlineItemCard(
                     label = { Text("Product / catalog links (optional)") },
                     supportingText = { Text("One or more links, comma-separated — Google Drive, your own website, etc. A direct image link (.jpg/.png/...) shows the customer a photo they can open full-screen and zoom; anything else shows as a plain link they open in their browser") },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, top = 4.dp)
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp).padding(top = 4.dp)
                 )
             }
         }
