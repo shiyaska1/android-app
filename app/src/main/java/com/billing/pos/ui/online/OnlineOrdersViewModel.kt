@@ -23,6 +23,20 @@ import kotlinx.coroutines.launch
 class OnlineOrdersViewModel(app: Application) : AndroidViewModel(app) {
     private val dao = AppDatabase.get(app).onlineOrderDao()
     private val repo = Repository(app)
+    private val prefs = com.billing.pos.data.AppPrefs(app)
+    val deviceId: String get() = License.deviceId(getApplication())
+
+    private val _showProLimitDialog = MutableStateFlow(false)
+    val showProLimitDialog: StateFlow<Boolean> = _showProLimitDialog
+    fun dismissProLimitDialog() { _showProLimitDialog.value = false }
+
+    /** Validates [key] against this device's id and, if it matches, unlocks unlimited online
+     *  items AND unlimited daily notifications for good (same key gates both). */
+    fun activatePro(key: String): Boolean {
+        val valid = License.isOnlineCatalogProValid(deviceId, key)
+        if (valid) prefs.onlineCatalogPro = true
+        return valid
+    }
 
     init {
         // Best-effort background poll for new orders, as a fallback for whenever a push doesn't
@@ -63,8 +77,13 @@ class OnlineOrdersViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setStatus(order: OnlineOrder, status: String) {
         viewModelScope.launch {
-            // Best-effort — the local status change stands even if the customer isn't notified.
-            OrderStatusPush.push(getApplication(), order.customerPhone, order.serverId, status = status)
+            // Best-effort — the local status change stands even if the customer isn't notified,
+            // whether that's a network failure or the free-plan daily notification cap.
+            if (License.reserveNotificationSend(getApplication())) {
+                OrderStatusPush.push(getApplication(), order.customerPhone, order.serverId, status = status)
+            } else {
+                _showProLimitDialog.value = true
+            }
             if (status == OnlineOrderStatus.ACCEPTED.name) {
                 convertToOrderAndRemove(order)
             } else {
@@ -77,7 +96,11 @@ class OnlineOrdersViewModel(app: Application) : AndroidViewModel(app) {
     fun sendMessage(order: OnlineOrder, message: String) {
         if (message.isBlank()) return
         viewModelScope.launch {
-            OrderStatusPush.push(getApplication(), order.customerPhone, order.serverId, message = message)
+            if (License.reserveNotificationSend(getApplication())) {
+                OrderStatusPush.push(getApplication(), order.customerPhone, order.serverId, message = message)
+            } else {
+                _showProLimitDialog.value = true
+            }
         }
     }
 

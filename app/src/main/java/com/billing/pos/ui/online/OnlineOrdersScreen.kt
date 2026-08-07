@@ -71,11 +71,24 @@ fun OnlineOrdersScreen(onBack: () -> Unit, vm: OnlineOrdersViewModel = viewModel
     val orders by vm.orders.collectAsStateSafe()
     val fetching by vm.fetching.collectAsStateSafe()
     val message by vm.message.collectAsStateSafe()
+    val showProLimitDialog by vm.showProLimitDialog.collectAsStateSafe()
     val snackbar = remember { SnackbarHostState() }
     var messageTarget by remember { mutableStateOf<OnlineOrder?>(null) }
     var selectedFilter by rememberSaveable { mutableStateOf("All") } // "All" or an OnlineOrderStatus name
     val shown = remember(orders, selectedFilter) {
         if (selectedFilter == "All") orders else orders.filter { it.status == selectedFilter }
+    }
+
+    if (showProLimitDialog) {
+        com.billing.pos.ui.common.ProLimitDialog(
+            title = "${com.billing.pos.data.License.NOTIFICATION_FREE_LIMIT_PER_DAY}-notification daily limit reached",
+            message = "The free plan sends up to ${com.billing.pos.data.License.NOTIFICATION_FREE_LIMIT_PER_DAY} customer " +
+                "notifications a day (order updates, chat, offers) to keep your server running smoothly. " +
+                "Call or WhatsApp ${com.billing.pos.data.License.SUPPORT_PHONE} with your Device ID below for a Pro key — unlimited notifications, no daily reset.",
+            deviceId = vm.deviceId,
+            onDismiss = { vm.dismissProLimitDialog() },
+            onActivated = { vm.dismissProLimitDialog() }
+        ) { key -> vm.activatePro(key) }
     }
 
     // Without this, "new order"/"new message" alerts are silently dropped on Android 13+

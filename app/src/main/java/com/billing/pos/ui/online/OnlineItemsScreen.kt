@@ -44,6 +44,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.billing.pos.data.License
 import com.billing.pos.ui.billing.collectAsStateSafe
 import com.billing.pos.ui.common.rememberThumbnail
 import com.billing.pos.util.Format
@@ -60,12 +61,24 @@ fun OnlineItemsScreen(onBack: () -> Unit, vm: OnlineItemsViewModel = viewModel()
     val rows by vm.rows.collectAsStateSafe()
     val uploading by vm.uploading.collectAsStateSafe()
     val message by vm.message.collectAsStateSafe()
+    val showProLimitDialog by vm.showProLimitDialog.collectAsStateSafe()
     val snackbar = remember { SnackbarHostState() }
     var searchQuery by rememberSaveable { mutableStateOf("") }
     var selectedCategory by rememberSaveable { mutableStateOf("All") }
 
     LaunchedEffect(message) {
         message?.let { snackbar.showSnackbar(it); vm.messageShown() }
+    }
+
+    if (showProLimitDialog) {
+        com.billing.pos.ui.common.ProLimitDialog(
+            title = "${License.ONLINE_CATALOG_FREE_LIMIT}-item free limit reached",
+            message = "The free plan lists up to ${License.ONLINE_CATALOG_FREE_LIMIT} distinct items online at once. " +
+                "Call or WhatsApp ${License.SUPPORT_PHONE} with your Device ID below to get a Pro key for unlimited items.",
+            deviceId = vm.deviceId,
+            onDismiss = { vm.dismissProLimitDialog() },
+            onActivated = { vm.dismissProLimitDialog() }
+        ) { key -> vm.activatePro(key) }
     }
 
     val onlineCount = rows.count { it.item.isOnline }

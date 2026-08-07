@@ -79,6 +79,20 @@ data class ChatThread(
 
 class ShopMessagesViewModel(app: Application) : AndroidViewModel(app) {
     private val dao = AppDatabase.get(app).shopMessageDao()
+    private val prefs = com.billing.pos.data.AppPrefs(app)
+    val deviceId: String get() = com.billing.pos.data.License.deviceId(getApplication())
+
+    private val _showProLimitDialog = MutableStateFlow(false)
+    val showProLimitDialog: StateFlow<Boolean> = _showProLimitDialog
+    fun dismissProLimitDialog() { _showProLimitDialog.value = false }
+
+    /** Validates [key] against this device's id and, if it matches, unlocks unlimited online
+     *  items AND unlimited daily notifications for good (same key gates both). */
+    fun activatePro(key: String): Boolean {
+        val valid = com.billing.pos.data.License.isOnlineCatalogProValid(deviceId, key)
+        if (valid) prefs.onlineCatalogPro = true
+        return valid
+    }
 
     val messages: StateFlow<List<ShopMessage>> =
         dao.observeAll().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -101,6 +115,10 @@ class ShopMessagesViewModel(app: Application) : AndroidViewModel(app) {
      *  sales offer, a new-stock announcement, etc. See [BroadcastPromotion]. */
     fun sendPromotion(text: String) {
         if (text.isBlank() || _broadcasting.value) return
+        if (!com.billing.pos.data.License.reserveNotificationSend(getApplication())) {
+            _showProLimitDialog.value = true
+            return
+        }
         viewModelScope.launch {
             _broadcasting.value = true
             _broadcastResult.value = when (val result = BroadcastPromotion.send(getApplication(), text)) {
@@ -152,7 +170,11 @@ class ShopMessagesViewModel(app: Application) : AndroidViewModel(app) {
         if (text.isBlank() || _sending.value) return
         viewModelScope.launch {
             _sending.value = true
-            OrderStatusPush.push(getApplication(), customerPhone = phone, orderId = "", message = text, customerName = name)
+            if (com.billing.pos.data.License.reserveNotificationSend(getApplication())) {
+                OrderStatusPush.push(getApplication(), customerPhone = phone, orderId = "", message = text, customerName = name)
+            } else {
+                _showProLimitDialog.value = true
+            }
             _sending.value = false
         }
     }
@@ -173,9 +195,22 @@ fun ShopMessagesScreen(
     val refreshing by vm.refreshing.collectAsStateSafe()
     val broadcasting by vm.broadcasting.collectAsStateSafe()
     val broadcastResult by vm.broadcastResult.collectAsStateSafe()
+    val showProLimitDialog by vm.showProLimitDialog.collectAsStateSafe()
     var selectedPhone by rememberSaveable { mutableStateOf(initialPhone) }
     var showPromotionDialog by rememberSaveable { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
+
+    if (showProLimitDialog) {
+        com.billing.pos.ui.common.ProLimitDialog(
+            title = "${com.billing.pos.data.License.NOTIFICATION_FREE_LIMIT_PER_DAY}-notification daily limit reached",
+            message = "The free plan sends up to ${com.billing.pos.data.License.NOTIFICATION_FREE_LIMIT_PER_DAY} customer " +
+                "notifications a day (order updates, chat, offers) to keep your server running smoothly. " +
+                "Call or WhatsApp ${com.billing.pos.data.License.SUPPORT_PHONE} with your Device ID below for a Pro key — unlimited notifications, no daily reset.",
+            deviceId = vm.deviceId,
+            onDismiss = { vm.dismissProLimitDialog() },
+            onActivated = { vm.dismissProLimitDialog() }
+        ) { key -> vm.activatePro(key) }
+    }
 
     LaunchedEffect(Unit) { vm.refresh() }
     LaunchedEffect(broadcastResult) {

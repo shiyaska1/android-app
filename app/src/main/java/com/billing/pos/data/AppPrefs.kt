@@ -489,6 +489,22 @@ class AppPrefs(context: Context) {
         get() = p.getBoolean("licensed", false)
         set(v) { p.edit().putBoolean("licensed", v).apply() }
 
+    /** Unlocks unlimited items in the online catalog upload AND unlimited daily notifications
+     *  (see License.ONLINE_CATALOG_FREE_LIMIT / License.NOTIFICATION_FREE_LIMIT_PER_DAY), once a
+     *  valid pro key has been entered — the same one-time key lifts both caps. */
+    var onlineCatalogPro: Boolean
+        get() = p.getBoolean("online_catalog_pro", false)
+        set(v) { p.edit().putBoolean("online_catalog_pro", v).apply() }
+
+    /** Rolling 24h window for the free-plan notification cap — see [License.reserveNotificationSend]. */
+    var notifWindowStart: Long
+        get() = p.getLong("notif_window_start", 0L)
+        set(v) { p.edit().putLong("notif_window_start", v).apply() }
+
+    var notifWindowCount: Int
+        get() = p.getInt("notif_window_count", 0)
+        set(v) { p.edit().putInt("notif_window_count", v).apply() }
+
     // ---- thermal printer ----
     /** Bluetooth MAC address of the chosen thermal printer ("" = auto-pick). */
     var printerAddress: String

@@ -60,16 +60,32 @@
 
 <div class="container">
     <h2>Token Generator</h2>
-    
+
     <label for="secret">Secret Key:</label>
     <input type="text" id="secret" value="POSB-change-this-secret-2024">
 
     <label for="deviceId">Device ID:</label>
     <input type="text" id="deviceId" value="PASTE_DEVICE_ID">
 
-    <button onclick="generateToken()">Generate Token</button>
+    <button onclick="generateToken()">Generate Activation Token</button>
 
     <div class="result" id="output">Click generate to see result</div>
+</div>
+
+<div class="container" style="margin-top:20px;">
+    <h2>Pro Key (unlimited online items + notifications)</h2>
+    <p style="margin-top:0;color:#555;font-size:14px;">
+        For a shop that's hit the 100-item online catalog limit or the 100/day notification limit
+        and wants to go unlimited. Uses the same Secret Key above and the same Device ID — one key
+        unlocks both caps for that device, for good.
+    </p>
+
+    <label for="proDeviceId">Device ID:</label>
+    <input type="text" id="proDeviceId" value="PASTE_DEVICE_ID">
+
+    <button onclick="generateProToken()">Generate Pro Key</button>
+
+    <div class="result" id="proOutput">Click generate to see result</div>
 </div>
 
 <script>
@@ -80,37 +96,57 @@ function bufToHex(buffer) {
         .join('');
 }
 
+async function hmacHex16(secretStr, messageStr) {
+    const encoder = new TextEncoder();
+    const keyData = encoder.encode(secretStr);
+    const messageData = encoder.encode(messageStr);
+
+    // Import the raw secret key into the Web Crypto API framework
+    const cryptoKey = await crypto.subtle.importKey(
+        "raw",
+        keyData,
+        { name: "HMAC", hash: "SHA-256" },
+        false,
+        ["sign"]
+    );
+
+    // Compute the HMAC signature
+    const signatureBuffer = await crypto.subtle.sign(
+        "HMAC",
+        cryptoKey,
+        messageData
+    );
+
+    // Replicate Kotlin logic: hex format -> first 16 characters -> uppercase
+    const fullHex = bufToHex(signatureBuffer);
+    return fullHex.substring(0, 16).toUpperCase();
+}
+
 async function generateToken() {
     const secretStr = document.getElementById('secret').value;
     const deviceIdStr = document.getElementById('deviceId').value;
     const outputDiv = document.getElementById('output');
 
     try {
-        const encoder = new TextEncoder();
-        const keyData = encoder.encode(secretStr);
-        const messageData = encoder.encode(deviceIdStr);
+        outputDiv.innerText = await hmacHex16(secretStr, deviceIdStr.trim().toUpperCase());
+        outputDiv.style.color = "#000";
+    } catch (error) {
+        outputDiv.innerText = "Error generating token";
+        outputDiv.style.color = "red";
+        console.error(error);
+    }
+}
 
-        // Import the raw secret key into the Web Crypto API framework
-        const cryptoKey = await crypto.subtle.importKey(
-            "raw",
-            keyData,
-            { name: "HMAC", hash: "SHA-256" },
-            false,
-            ["sign"]
-        );
+async function generateProToken() {
+    const secretStr = document.getElementById('secret').value;
+    const deviceIdStr = document.getElementById('proDeviceId').value;
+    const outputDiv = document.getElementById('proOutput');
 
-        // Compute the HMAC signature
-        const signatureBuffer = await crypto.subtle.sign(
-            "HMAC",
-            cryptoKey,
-            messageData
-        );
-
-        // Replicate Python logic: hex format -> first 16 characters -> uppercase
-        const fullHex = bufToHex(signatureBuffer);
-        const finalToken = fullHex.substring(0, 16).toUpperCase();
-
-        outputDiv.innerText = finalToken;
+    try {
+        // Same HMAC scheme as the activation token, but the message is deviceId + "PRO" — see
+        // License.onlineCatalogProKey in the app — so it can never collide with an activation key.
+        const hex = await hmacHex16(secretStr, deviceIdStr.trim().toUpperCase() + "PRO");
+        outputDiv.innerText = hex.match(/.{1,4}/g).join('-');
         outputDiv.style.color = "#000";
     } catch (error) {
         outputDiv.innerText = "Error generating token";
