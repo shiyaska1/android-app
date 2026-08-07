@@ -737,8 +737,7 @@ fun CustomerCatalogScreen(
         NotificationsDialog(
             notifications = notifications,
             replying = replying,
-            currentShopCode = prefs.shopCode,
-            shopUpiAvailable = prefs.shopUpiId.isNotBlank(),
+            shopUpi = { shop -> vm.upiFor(shop) },
             playingVoiceNote = playingVoiceNote,
             isShopMuted = { shop -> vm.isShopMuted(shop) },
             onDismiss = { showNotifications = false },
@@ -752,17 +751,26 @@ fun CustomerCatalogScreen(
         )
     }
     payingNotification?.let { n ->
-        PaymentDialog(
-            amount = n.amount,
-            upiVpa = prefs.shopUpiId,
-            upiName = prefs.shopUpiName.ifBlank { shopName },
-            declineLabel = "Not now",
-            onDismiss = { payingNotification = null },
-            onChoose = { status ->
-                payingNotification = null
-                if (status == "UPI") vm.markNotificationPaid(n)
-            }
-        )
+        // Always resolve UPI details for the shop that actually sent this notification (n.shop),
+        // never the blanket "currently active shop" prefs fields — a customer connected to
+        // several shops (ShopSwitch) can receive a bill from one that isn't the one on screen.
+        val payUpi = vm.upiFor(n.shop)
+        if (payUpi != null) {
+            PaymentDialog(
+                amount = n.amount,
+                upiVpa = payUpi.first,
+                upiName = payUpi.second.ifBlank { n.shopName.ifBlank { shopName } },
+                declineLabel = "Not now",
+                onDismiss = { payingNotification = null },
+                onChoose = { status ->
+                    payingNotification = null
+                    if (status == "UPI") vm.markNotificationPaid(n)
+                }
+            )
+        }
+        // else: that shop has no UPI ID (or was never known) — nothing to pay with, so no dialog.
+        // Can't happen via the button itself (it's gated by the same shopUpi() lookup), only if
+        // reached some other way; silently not showing a dialog is the safe outcome here.
     }
     technicalError?.let { detail ->
         TechnicalErrorDialog(
@@ -870,8 +878,10 @@ private fun TechnicalErrorDialog(
 private fun NotificationsDialog(
     notifications: List<CustomerNotification>,
     replying: Boolean,
-    currentShopCode: String,
-    shopUpiAvailable: Boolean,
+    /** Resolves a shop code to its own (payee-VPA, payee-name) UPI details, or null if that shop
+     *  has none set — always looked up per-notification (see ShopSwitch), never assumed to be
+     *  whichever shop is currently active. */
+    shopUpi: (String) -> Pair<String, String>?,
     playingVoiceNote: String?,
     isShopMuted: (String) -> Boolean,
     onDismiss: () -> Unit,
@@ -922,7 +932,7 @@ private fun NotificationsDialog(
                                             style = MaterialTheme.typography.bodyMedium,
                                             modifier = Modifier.padding(top = 2.dp)
                                         )
-                                        if (n.shop == currentShopCode && shopUpiAvailable) {
+                                        if (shopUpi(n.shop) != null) {
                                             TextButton(onClick = { onPayNotification(n) }, modifier = Modifier.padding(top = 2.dp)) {
                                                 Text("Pay via UPI now")
                                             }

@@ -109,7 +109,9 @@ object ShopCatalogSync {
                     address = prefs.shopDisplayAddress,
                     phone = prefs.shopContactPhone,
                     bannerImage = prefs.shopBannerImage,
-                    lastFetchedAt = prefs.catalogLastFetchedAt
+                    lastFetchedAt = prefs.catalogLastFetchedAt,
+                    upi = prefs.shopUpiId,
+                    upiName = prefs.shopUpiName
                 )
             )
             Result.Ok(items.size)

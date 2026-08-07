@@ -33,7 +33,14 @@ object ShopSwitch {
         /** When this shop's catalog was last fetched (ms since epoch), 0 if never. Lets
          *  [switchTo] show a switched-to shop's cached snapshot instantly, and the UI show
          *  "Updated ..." per shop instead of forcing a refetch on every switch. */
-        val lastFetchedAt: Long = 0
+        val lastFetchedAt: Long = 0,
+        /** This shop's own UPI ID/payee name (carried in its catalog fetch response) — kept per
+         *  shop, not just in the single "current shop" AppPrefs field, so paying a bill from a
+         *  notification a *different* known shop sent (see NotificationsDialog's "Pay via UPI
+         *  now") always uses that shop's own VPA, never whichever shop happens to be active right
+         *  now. Blank when that shop has no UPI ID set. */
+        val upi: String = "",
+        val upiName: String = ""
     )
 
     /** Accepts either a full Play Store link (extracts its `referrer` param) or a bare
@@ -67,7 +74,8 @@ object ShopSwitch {
             shop = prefs.shopCode, url = prefs.onlineCatalogUrl,
             type = prefs.customerBusinessType, premium = prefs.customerPremiumShop,
             name = prefs.shopDisplayName, category = prefs.shopDisplayCategory, address = prefs.shopDisplayAddress,
-            phone = prefs.shopContactPhone, bannerImage = prefs.shopBannerImage, lastFetchedAt = prefs.catalogLastFetchedAt
+            phone = prefs.shopContactPhone, bannerImage = prefs.shopBannerImage, lastFetchedAt = prefs.catalogLastFetchedAt,
+            upi = prefs.shopUpiId, upiName = prefs.shopUpiName
         )
         if (previous.shop.isNotBlank()) {
             // Keep the outgoing shop's directory entry current before leaving it, so switching
@@ -93,6 +101,8 @@ object ShopSwitch {
         prefs.shopDisplayCategory = (cached?.category ?: target.category).ifBlank { target.type }
         prefs.shopDisplayAddress = cached?.address ?: target.address
         prefs.catalogLastFetchedAt = cached?.lastFetchedAt ?: 0L
+        prefs.shopUpiId = cached?.upi.orEmpty()
+        prefs.shopUpiName = cached?.upiName.orEmpty()
     }
 
     fun recent(context: Context): List<Shop> = unpack(AppPrefs(context).customerRecentShops)
@@ -120,6 +130,7 @@ object ShopSwitch {
                 put("category", shop.category); put("address", shop.address)
                 put("phone", shop.phone); put("bannerImage", shop.bannerImage)
                 put("lastFetchedAt", shop.lastFetchedAt)
+                put("upi", shop.upi); put("upiName", shop.upiName)
             })
         }
     }.toString()
@@ -133,7 +144,8 @@ object ShopSwitch {
                 type = o.optString("type"), premium = o.optBoolean("premium"), name = o.optString("name"),
                 category = o.optString("category"), address = o.optString("address"),
                 phone = o.optString("phone"), bannerImage = o.optString("bannerImage"),
-                lastFetchedAt = o.optLong("lastFetchedAt", 0L)
+                lastFetchedAt = o.optLong("lastFetchedAt", 0L),
+                upi = o.optString("upi"), upiName = o.optString("upiName")
             ).takeIf { it.shop.isNotBlank() && it.url.isNotBlank() }
         }
     }

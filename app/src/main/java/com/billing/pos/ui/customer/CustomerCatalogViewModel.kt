@@ -142,6 +142,21 @@ class CustomerCatalogViewModel(app: Application) : AndroidViewModel(app) {
      *  CustomerCatalogScreen) reported success — flips this device's own order-history record and
      *  tells the shop, the same "customer message + paymentStatus flag" mechanism
      *  [com.billing.pos.customer.ShopMessagesFetch] reads to flip the shop's Online Orders list. */
+    /** The correct UPI payee for a bill from [shop] — critical to get right for a customer
+     *  connected to more than one shop (see ShopSwitch): a notification can arrive from a shop
+     *  that is NOT the currently active one, and that shop's own VPA (not whichever shop happens
+     *  to be active right now) must be what "Pay via UPI now" pays. Returns null when that shop
+     *  has no UPI ID set, which must hide the pay button entirely — never fall back to some other
+     *  shop's UPI ID. */
+    fun upiFor(shop: String): Pair<String, String>? {
+        if (shop.isBlank()) return null
+        if (shop == prefs.shopCode) {
+            return prefs.shopUpiId.takeIf { it.isNotBlank() }?.let { it to prefs.shopUpiName }
+        }
+        val known = com.billing.pos.customer.ShopSwitch.known(getApplication<Application>()).find { it.shop == shop }
+        return known?.upi?.takeIf { it.isNotBlank() }?.let { it to known.upiName }
+    }
+
     fun markNotificationPaid(notification: CustomerNotification) {
         viewModelScope.launch {
             val app: Application = getApplication()
