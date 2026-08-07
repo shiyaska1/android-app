@@ -16,7 +16,9 @@ Customer-facing material for introducing and demoing the app, in both Malayalam 
 5. **Online ordering & the customer app** — catalog upload, customer ordering (app or QR-linked web page), live push notifications, shop↔customer chat, nearby-shop directory, referral links
 6. **Other features worth mentioning** — GST/VAT, printing, WhatsApp, backup, OCR, users, stock
 7. **How to run a demo** — a step-by-step demo script, each step with a line to say out loud
-8. **Frequently asked questions** — the questions shop owners usually ask
+8. **Pricing** — free 1-month trial, then a one-time licence key (₹3,000 under 100 items, ₹6,000
+   for 100+) for the shop owner's app only; a customer ordering from a shop never needs a key
+9. **Frequently asked questions** — the questions shop owners usually ask
 
 ## Regenerating the PDF
 

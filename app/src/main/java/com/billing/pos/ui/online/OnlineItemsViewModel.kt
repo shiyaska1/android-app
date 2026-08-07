@@ -50,6 +50,10 @@ class OnlineItemsViewModel(app: Application) : AndroidViewModel(app) {
      *  free-plan [License.ONLINE_CATALOG_FREE_LIMIT] cap on distinct online items entirely. */
     val isPro: Boolean get() = prefs.onlineCatalogPro
 
+    /** The item cap that currently applies — 50 during the free trial, 100 once activated,
+     *  ignored entirely once Pro is unlocked (see [License.onlineCatalogItemLimit]). */
+    val itemLimit: Int get() = License.onlineCatalogItemLimit(getApplication())
+
     /** Validates [key] against this device's id and, if it matches, unlocks unlimited online
      *  items for good. Returns whether it was accepted. */
     fun activatePro(key: String): Boolean {
@@ -59,10 +63,10 @@ class OnlineItemsViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun setOnline(item: Item, online: Boolean) {
-        // Only the free-plan cap on going FROM offline TO online is gated — turning an item back
-        // off, or re-syncing/uploading whatever is already marked, is never blocked, so a shop
-        // that had more than the limit online from before this cap existed is never locked out.
-        if (online && !isPro && rows.value.count { it.item.isOnline } >= License.ONLINE_CATALOG_FREE_LIMIT) {
+        // Only the cap on going FROM offline TO online is gated — turning an item back off, or
+        // re-syncing/uploading whatever is already marked, is never blocked, so a shop that had
+        // more than the limit online from before this cap existed is never locked out.
+        if (online && !isPro && rows.value.count { it.item.isOnline } >= itemLimit) {
             _showProLimitDialog.value = true
             return
         }

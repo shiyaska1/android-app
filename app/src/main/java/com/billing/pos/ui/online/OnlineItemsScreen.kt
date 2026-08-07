@@ -72,8 +72,8 @@ fun OnlineItemsScreen(onBack: () -> Unit, vm: OnlineItemsViewModel = viewModel()
 
     if (showProLimitDialog) {
         com.billing.pos.ui.common.ProLimitDialog(
-            title = "${License.ONLINE_CATALOG_FREE_LIMIT}-item free limit reached",
-            message = "The free plan lists up to ${License.ONLINE_CATALOG_FREE_LIMIT} distinct items online at once. " +
+            title = "${vm.itemLimit}-item limit reached",
+            message = "Up to ${vm.itemLimit} distinct items can be listed online at once right now. " +
                 "Call or WhatsApp ${License.SUPPORT_PHONE} with your Device ID below to get a Pro key for unlimited items.",
             deviceId = vm.deviceId,
             onDismiss = { vm.dismissProLimitDialog() },

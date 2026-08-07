@@ -30,6 +30,10 @@ class OnlineOrdersViewModel(app: Application) : AndroidViewModel(app) {
     val showProLimitDialog: StateFlow<Boolean> = _showProLimitDialog
     fun dismissProLimitDialog() { _showProLimitDialog.value = false }
 
+    /** The notification cap that currently applies — 50/day during the free trial, 100/day once
+     *  activated, ignored entirely once Pro is unlocked (see [License.notificationDailyLimit]). */
+    val notificationLimit: Int get() = License.notificationDailyLimit(getApplication())
+
     /** Validates [key] against this device's id and, if it matches, unlocks unlimited online
      *  items AND unlimited daily notifications for good (same key gates both). */
     fun activatePro(key: String): Boolean {

@@ -86,6 +86,10 @@ class ShopMessagesViewModel(app: Application) : AndroidViewModel(app) {
     val showProLimitDialog: StateFlow<Boolean> = _showProLimitDialog
     fun dismissProLimitDialog() { _showProLimitDialog.value = false }
 
+    /** The notification cap that currently applies — 50/day during the free trial, 100/day once
+     *  activated, ignored entirely once Pro is unlocked (see [com.billing.pos.data.License.notificationDailyLimit]). */
+    val notificationLimit: Int get() = com.billing.pos.data.License.notificationDailyLimit(getApplication())
+
     /** Validates [key] against this device's id and, if it matches, unlocks unlimited online
      *  items AND unlimited daily notifications for good (same key gates both). */
     fun activatePro(key: String): Boolean {
@@ -202,9 +206,9 @@ fun ShopMessagesScreen(
 
     if (showProLimitDialog) {
         com.billing.pos.ui.common.ProLimitDialog(
-            title = "${com.billing.pos.data.License.NOTIFICATION_FREE_LIMIT_PER_DAY}-notification daily limit reached",
-            message = "The free plan sends up to ${com.billing.pos.data.License.NOTIFICATION_FREE_LIMIT_PER_DAY} customer " +
-                "notifications a day (order updates, chat, offers) to keep your server running smoothly. " +
+            title = "${vm.notificationLimit}-notification daily limit reached",
+            message = "Up to ${vm.notificationLimit} customer notifications a day (order updates, chat, offers) can be " +
+                "sent right now, to keep your server running smoothly. " +
                 "Call or WhatsApp ${com.billing.pos.data.License.SUPPORT_PHONE} with your Device ID below for a Pro key — unlimited notifications, no daily reset.",
             deviceId = vm.deviceId,
             onDismiss = { vm.dismissProLimitDialog() },
