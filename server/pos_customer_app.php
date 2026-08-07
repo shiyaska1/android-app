@@ -30,9 +30,6 @@
  * updates while the page is open (on load and on manual refresh), unlike the Android app's
  * background AlarmManager poll. Good enough to see status changes when the customer reopens the
  * app; not a substitute for a true push notification if that's needed later.
- *
- * iPhone customers wanting real push notifications should use pos_customer_app_ios.php instead —
- * a separate file built specifically for that (this one stays exactly as-is either way).
  */
 
 // ---- icon bytes, base64 (this keeps the whole app to one uploaded file) ----
