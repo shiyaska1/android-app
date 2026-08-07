@@ -3,6 +3,7 @@ package com.billing.pos.ui.customer
 import android.Manifest
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -1081,6 +1082,7 @@ private fun PaymentDialog(
     val context = LocalContext.current
     var payError by remember { mutableStateOf<String?>(null) }
     var waiting by remember { mutableStateOf(false) }
+    var showPayQr by remember { mutableStateOf(false) }
     val upiLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         waiting = false
         val response = result.data?.getStringExtra("response") ?: ""
@@ -1143,6 +1145,38 @@ private fun PaymentDialog(
                         color = MaterialTheme.colorScheme.error,
                         modifier = Modifier.padding(top = 8.dp)
                     )
+                }
+                // Fallback for when "Pay via UPI now" (an intent launched by this app) gets
+                // refused by the UPI app's own security checks (some UPI apps flag/decline
+                // payment intents from third-party apps that aren't a registered PSP/merchant —
+                // see PaymentDialog's doc comment). Scanning a QR is the standard flow every
+                // merchant uses and isn't affected by that: the payment is started from inside
+                // the UPI app's own scanner, not by this app launching anything.
+                TextButton(
+                    onClick = { showPayQr = !showPayQr },
+                    modifier = Modifier.fillMaxWidth().padding(top = 6.dp)
+                ) { Text(if (showPayQr) "Hide QR code" else "UPI app won't let you pay? Show a QR code instead") }
+                if (showPayQr) {
+                    val qr = remember(upiVpa, upiName, amount, reference) {
+                        com.billing.pos.util.UpiQr.bitmap(com.billing.pos.util.UpiQr.link(upiVpa, upiName, amount, "Order", reference))
+                    }
+                    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                        if (qr != null) {
+                            Image(
+                                bitmap = qr.asImageBitmap(),
+                                contentDescription = "UPI QR",
+                                modifier = Modifier.size(200.dp).padding(top = 8.dp)
+                            )
+                        } else {
+                            Text("Could not make the QR", color = MaterialTheme.colorScheme.error)
+                        }
+                        Text(
+                            "Scan this with any UPI app (on this phone or another) to pay $upiVpa.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.outline,
+                            modifier = Modifier.padding(top = 6.dp)
+                        )
+                    }
                 }
                 Text(
                     "We can't verify this automatically — the shop will confirm it in their own UPI app before dispatching.",

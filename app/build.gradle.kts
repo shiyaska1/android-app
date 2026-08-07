@@ -16,8 +16,8 @@ android {
         targetSdk = 36
         // CI sets VERSION_CODE per build (see .github/workflows/build.yml and release.yml) so every
         // APK/AAB gets a unique, always-increasing code without hand-editing this file each time.
-        versionCode = System.getenv("VERSION_CODE")?.toIntOrNull() ?: 307
-        versionName = "2.22.23"
+        versionCode = System.getenv("VERSION_CODE")?.toIntOrNull() ?: 308
+        versionName = "2.22.24"
         vectorDrawables { useSupportLibrary = true }
 
         // Real Android phones are arm. The x86/x86_64 native libs are emulator-only
