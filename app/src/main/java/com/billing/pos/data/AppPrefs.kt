@@ -273,6 +273,13 @@ class AppPrefs(context: Context) {
     var fetchOrdersUrl: String
         get() = (p.getString("fetch_orders_url", "") ?: "").trim()
         set(v) { p.edit().putString("fetch_orders_url", v.trim()).apply() }
+    /** Shop owner: where they hosted server/ios/pos_customer_app_ios.php (the standalone iPhone
+     *  web app — see its own doc comment for hosting instructions), e.g.
+     *  "https://yourdomain.com/pos_customer_app_ios.php". Blank until set; needed to generate an
+     *  iOS install QR/link, separate from the Android Play Store one (see ReferralLink). */
+    var iosCustomerAppUrl: String
+        get() = (p.getString("ios_customer_app_url", "") ?: "").trim()
+        set(v) { p.edit().putString("ios_customer_app_url", v.trim()).apply() }
     /** When the catalog was last successfully fetched (customer install), for an offline banner. */
     var catalogLastFetchedAt: Long
         get() = p.getLong("catalog_last_fetched_at", 0L)

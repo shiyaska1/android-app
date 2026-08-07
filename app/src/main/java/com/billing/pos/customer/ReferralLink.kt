@@ -55,4 +55,26 @@ object ReferralLink {
         val sep = if (PLAY_STORE_URL.contains("?")) "&" else "?"
         return PLAY_STORE_URL + sep + "referrer=" + Uri.encode(referrer)
     }
+
+    /**
+     * The iPhone equivalent of [buildForOwner] — a plain link straight to wherever the shop owner
+     * hosted server/ios/pos_customer_app_ios.php (see [AppPrefs.iosCustomerAppUrl]), not a Play
+     * Store install link: an iPhone customer just opens it in Safari, no app store involved.
+     * Same shop/url/type query params as the standalone server/ios/customer-link-builder-ios.html
+     * tool builds, appended directly (not wrapped in a "referrer=" param — that's an Android/Play
+     * Store-only mechanism). Never adds "premium=1" for the same reason as [buildForOwner].
+     */
+    fun buildForOwnerIos(prefs: AppPrefs, shop: String): String? {
+        val base = prefs.iosCustomerAppUrl
+        val url = prefs.onlineCatalogUrl
+        if (base.isBlank() || shop.isBlank() || url.isBlank()) return null
+        val parts = mutableListOf(
+            "shop=" + Uri.encode(shop),
+            "url=" + Uri.encode(url)
+        )
+        val type = prefs.businessType
+        if (type.isNotBlank()) parts += "type=" + Uri.encode(type)
+        val sep = if (base.contains("?")) "&" else "?"
+        return base + sep + parts.joinToString("&")
+    }
 }

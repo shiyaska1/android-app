@@ -1076,10 +1076,52 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
             ) {
                 Icon(Icons.Filled.QrCode2, contentDescription = null, modifier = Modifier.size(18.dp))
-                Text("  QR / link for customers")
+                Text("  QR / link for customers (Android)")
             }
             if (showShopQr) {
-                ShopQrDialog(prefs = prefs, shopCode = shopCode, onlineCatalogUrl = onlineCatalogUrl, onDismiss = { showShopQr = false })
+                val androidLink = remember(shopCode, onlineCatalogUrl, prefs.businessType) {
+                    com.billing.pos.customer.ReferralLink.buildForOwner(prefs, shopCode)
+                }
+                ShopQrDialog(
+                    link = androidLink,
+                    emptyMessage = "Set the shop code and online catalog URL above first.",
+                    shareMessage = { "Order from us on the POS Billing app — install here: $it" },
+                    onDismiss = { showShopQr = false }
+                )
+            }
+            var iosCustomerAppUrl by remember { mutableStateOf(prefs.iosCustomerAppUrl) }
+            OutlinedTextField(
+                value = iosCustomerAppUrl,
+                onValueChange = { iosCustomerAppUrl = it; prefs.iosCustomerAppUrl = it },
+                label = { Text("iPhone customer web app URL (optional)") }, singleLine = true,
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+            )
+            Text(
+                "Only needed if you've also hosted the iPhone web app (server/ios/pos_customer_app_ios.php) " +
+                    "on your own web server — iPhone customers can't use the Play Store app. Paste the " +
+                    "address you uploaded it to here, then use the button below for an iPhone QR/link.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline,
+                modifier = Modifier.padding(top = 4.dp)
+            )
+            var showShopQrIos by remember { mutableStateOf(false) }
+            OutlinedButton(
+                onClick = { showShopQrIos = true },
+                enabled = shopCode.isNotBlank() && onlineCatalogUrl.isNotBlank() && iosCustomerAppUrl.isNotBlank(),
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+            ) {
+                Icon(Icons.Filled.QrCode2, contentDescription = null, modifier = Modifier.size(18.dp))
+                Text("  QR / link for customers (iPhone)")
+            }
+            if (showShopQrIos) {
+                val iosLink = remember(shopCode, onlineCatalogUrl, iosCustomerAppUrl, prefs.businessType) {
+                    com.billing.pos.customer.ReferralLink.buildForOwnerIos(prefs, shopCode)
+                }
+                ShopQrDialog(
+                    link = iosLink,
+                    emptyMessage = "Set the shop code, online catalog URL, and iPhone web app URL above first.",
+                    shareMessage = { "Order from us — open this on your iPhone: $it" },
+                    onDismiss = { showShopQrIos = false }
+                )
             }
             var fetchOrdersUrl by remember { mutableStateOf(prefs.fetchOrdersUrl) }
             OutlinedTextField(
@@ -1386,27 +1428,28 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
 }
 
 /**
- * A free, self-serve install QR/link for this shop, built from whatever's already in Settings
- * (shop code, catalog URL, business type) — see [ReferralLink.buildForOwner]. Print it, display
- * it at the counter, or share the link directly with a walk-in customer. Deliberately has no
- * "premium" option: that stays a paid, developer-issued QR (server/customer-link-builder.html).
+ * A free, self-serve install/open QR/link for this shop, built from whatever's already in
+ * Settings (shop code, catalog URL, business type) — see [ReferralLink.buildForOwner] for the
+ * Android/Play Store variant and [ReferralLink.buildForOwnerIos] for the iPhone web-app variant.
+ * The caller builds [link] so this one dialog serves both. Print it, display it at the counter,
+ * or share the link directly with a walk-in customer. Deliberately has no "premium" option: that
+ * stays a paid, developer-issued QR (server/customer-link-builder.html).
  */
 @Composable
-private fun ShopQrDialog(prefs: AppPrefs, shopCode: String, onlineCatalogUrl: String, onDismiss: () -> Unit) {
+private fun ShopQrDialog(
+    link: String?,
+    emptyMessage: String,
+    shareMessage: (String) -> String,
+    onDismiss: () -> Unit
+) {
     val context = LocalContext.current
-    val link = remember(shopCode, onlineCatalogUrl, prefs.businessType) {
-        com.billing.pos.customer.ReferralLink.buildForOwner(prefs, shopCode)
-    }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("QR / link for customers") },
         text = {
             Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                 if (link == null) {
-                    Text(
-                        "Set the shop code and online catalog URL above first.",
-                        style = MaterialTheme.typography.bodyMedium
-                    )
+                    Text(emptyMessage, style = MaterialTheme.typography.bodyMedium)
                 } else {
                     val qr = remember(link) { com.billing.pos.util.UpiQr.bitmap(link) }
                     if (qr != null) {
@@ -1419,8 +1462,8 @@ private fun ShopQrDialog(prefs: AppPrefs, shopCode: String, onlineCatalogUrl: St
                         Text("Could not make the QR", color = MaterialTheme.colorScheme.error)
                     }
                     Text(
-                        "A new customer scans this (or opens the link) to install the app and land " +
-                            "straight in your catalog — no key, no sign-up.",
+                        "A new customer scans this (or opens the link) to land straight in your " +
+                            "catalog — no key, no sign-up.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.outline,
                         modifier = Modifier.padding(top = 10.dp)
@@ -1429,9 +1472,9 @@ private fun ShopQrDialog(prefs: AppPrefs, shopCode: String, onlineCatalogUrl: St
                         onClick = {
                             val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
                                 type = "text/plain"
-                                putExtra(android.content.Intent.EXTRA_TEXT, "Order from us on the POS Billing app — install here: $link")
+                                putExtra(android.content.Intent.EXTRA_TEXT, shareMessage(link))
                             }
-                            runCatching { context.startActivity(android.content.Intent.createChooser(intent, "Share install link")) }
+                            runCatching { context.startActivity(android.content.Intent.createChooser(intent, "Share link")) }
                         },
                         modifier = Modifier.fillMaxWidth().padding(top = 12.dp)
                     ) { Text("Share link") }
