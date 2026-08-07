@@ -102,6 +102,8 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
+import java.io.File
+import java.io.FileOutputStream
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.billing.pos.customer.NearbyShops
 import com.billing.pos.customer.ReferralLink
@@ -681,9 +683,11 @@ fun CustomerCatalogScreen(
             upiName = prefs.shopUpiName.ifBlank { shopName },
             reference = paymentReference,
             onDismiss = { showPaymentDialog = false; pendingOrderSubmit = null },
-            onChoose = { status ->
+            onChoose = { status, proof ->
                 showPaymentDialog = false
-                pendingOrderSubmit = pendingOrderSubmit?.copy(paymentStatus = status)
+                pendingOrderSubmit = pendingOrderSubmit?.let { p ->
+                    p.copy(paymentStatus = status, attachments = if (proof != null) p.attachments + proof else p.attachments)
+                }
                 showDeliveryPointDialog = true
             }
         )
@@ -772,9 +776,9 @@ fun CustomerCatalogScreen(
                 declineLabel = "Not now",
                 reference = n.orderId.ifBlank { "PAY" + System.currentTimeMillis() },
                 onDismiss = { payingNotification = null },
-                onChoose = { status ->
+                onChoose = { status, proof ->
                     payingNotification = null
-                    if (status == "UPI") vm.markNotificationPaid(n)
+                    if (status == "UPI") vm.markNotificationPaid(n, proof)
                 }
             )
         }
@@ -1068,8 +1072,11 @@ private fun SaveOrderDialog(
  * (not a plain open-and-forget intent) so a well-behaved UPI app (GPay, PhonePe, etc.) can hand
  * back its own transaction status per the standard UPI Linking response — Android returns here
  * automatically once the customer finishes or cancels in that app, no manual "did you pay?"
- * question needed. [onChoose] gets "UPI" only on a reported SUCCESS; anything else (failure,
- * cancelled, no UPI app installed) falls back to Cash on delivery without blocking the order.
+ * question needed. [onChoose] gets "UPI" only on a reported SUCCESS (direct-pay path, proof
+ * always null there) or when the customer explicitly confirms "I've paid" after the QR-code
+ * fallback (optionally with a payment-screenshot proof, since that path has no automatic
+ * success callback); anything else (failure, cancelled, no UPI app installed) falls back to
+ * Cash on delivery without blocking the order.
  */
 @Composable
 private fun PaymentDialog(
@@ -1077,19 +1084,39 @@ private fun PaymentDialog(
     declineLabel: String = "Cash on delivery",
     // A unique transaction reference (order id when known, else a fresh one) — see [UpiQr.link].
     reference: String = "",
-    onDismiss: () -> Unit, onChoose: (String) -> Unit
+    onDismiss: () -> Unit, onChoose: (status: String, proofAttachment: String?) -> Unit
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var payError by remember { mutableStateOf<String?>(null) }
     var waiting by remember { mutableStateOf(false) }
     var showPayQr by remember { mutableStateOf(false) }
+    var proofDataUri by remember { mutableStateOf<String?>(null) }
+    var compressingProof by remember { mutableStateOf(false) }
+    val proofPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        compressingProof = true
+        scope.launch {
+            val dataUri = withContext(Dispatchers.IO) {
+                runCatching {
+                    val tempFile = File.createTempFile("proof_", ".jpg", context.cacheDir)
+                    context.contentResolver.openInputStream(uri)?.use { input -> tempFile.outputStream().use { output -> input.copyTo(output) } }
+                    val bytes = ThumbnailCompressor.compress(tempFile.absolutePath, maxBytes = 300 * 1024, maxDim = 1024)
+                    tempFile.delete()
+                    bytes?.let { "data:image/jpeg;base64," + android.util.Base64.encodeToString(it, android.util.Base64.NO_WRAP) }
+                }.getOrNull()
+            }
+            compressingProof = false
+            if (dataUri != null) proofDataUri = dataUri
+        }
+    }
     val upiLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         waiting = false
         val response = result.data?.getStringExtra("response") ?: ""
         val status = Regex("Status=([A-Za-z]+)").find(response)?.groupValues?.get(1)
             ?: Regex("\"Status\"\\s*:\\s*\"([A-Za-z]+)\"").find(response)?.groupValues?.get(1)
         if (status.equals("SUCCESS", ignoreCase = true)) {
-            onChoose("UPI")
+            onChoose("UPI", null)
         } else {
             payError = "Payment wasn't completed — try again, or choose Cash on delivery."
         }
@@ -1167,6 +1194,23 @@ private fun PaymentDialog(
                                 contentDescription = "UPI QR",
                                 modifier = Modifier.size(200.dp).padding(top = 8.dp)
                             )
+                            // Lets the QR reach another phone — share sheet covers both "save to
+                            // this device" (Files/gallery, most launchers offer it there) and
+                            // sending it straight to someone else (WhatsApp etc.) to scan there.
+                            TextButton(onClick = {
+                                runCatching {
+                                    val dir = File(context.cacheDir, "shared").apply { mkdirs() }
+                                    val file = File(dir, "upi_qr_" + System.currentTimeMillis() + ".png")
+                                    FileOutputStream(file).use { qr.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+                                    val uri = FileProvider.getUriForFile(context, context.packageName + ".provider", file)
+                                    val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                        type = "image/png"
+                                        putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                                        addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                    }
+                                    context.startActivity(android.content.Intent.createChooser(send, "Save or share QR code"))
+                                }
+                            }) { Text("Save / share this QR") }
                         } else {
                             Text("Could not make the QR", color = MaterialTheme.colorScheme.error)
                         }
@@ -1176,6 +1220,38 @@ private fun PaymentDialog(
                             color = MaterialTheme.colorScheme.outline,
                             modifier = Modifier.padding(top = 6.dp)
                         )
+                        // The QR path has no automatic success signal (unlike the direct-pay
+                        // button's StartActivityForResult), so the customer confirms manually —
+                        // attaching a payment-success screenshot as proof is optional but gives
+                        // the shop owner something to actually check, not just a bare claim.
+                        val proofUri = proofDataUri
+                        if (proofUri != null) {
+                            val proofBmp = remember(proofUri) { decodeDataUriBitmap(proofUri) }
+                            Box(Modifier.padding(top = 10.dp), contentAlignment = Alignment.TopEnd) {
+                                if (proofBmp != null) {
+                                    Image(
+                                        bitmap = proofBmp,
+                                        contentDescription = "Payment screenshot",
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.size(120.dp)
+                                    )
+                                }
+                                OutlinedIconButton(
+                                    onClick = { proofDataUri = null },
+                                    modifier = Modifier.size(24.dp),
+                                    colors = IconButtonDefaults.outlinedIconButtonColors(containerColor = MaterialTheme.colorScheme.surface)
+                                ) { Icon(Icons.Filled.Close, contentDescription = "Remove", modifier = Modifier.size(14.dp)) }
+                            }
+                        }
+                        TextButton(
+                            onClick = { proofPicker.launch("image/*") },
+                            enabled = !compressingProof
+                        ) { Text(if (compressingProof) "Attaching…" else if (proofUri != null) "Change payment screenshot" else "Attach payment screenshot (optional)") }
+                        Button(
+                            onClick = { onChoose("UPI", proofUri) },
+                            enabled = !compressingProof,
+                            modifier = Modifier.fillMaxWidth().padding(top = 6.dp)
+                        ) { Text("I've paid via QR") }
                     }
                 }
                 Text(
@@ -1186,7 +1262,7 @@ private fun PaymentDialog(
                 )
             }
         },
-        confirmButton = { TextButton(onClick = { onChoose("") }) { Text(declineLabel) } },
+        confirmButton = { TextButton(onClick = { onChoose("", null) }) { Text(declineLabel) } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
 }

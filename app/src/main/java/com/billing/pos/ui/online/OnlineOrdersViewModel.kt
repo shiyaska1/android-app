@@ -118,6 +118,22 @@ class OnlineOrdersViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { dao.delete(order) }
     }
 
+    /** A customer's "Paid via UPI" is self-reported (see PaymentDialog) — there's no bank/gateway
+     *  webhook confirming it, so if the shop owner checks their own UPI app and the money never
+     *  actually arrived (or a screenshot proof looks wrong/faked), this flips it back to unpaid
+     *  and tells the customer, instead of leaving a false "paid" flag standing forever. */
+    fun disputePayment(order: OnlineOrder) {
+        viewModelScope.launch {
+            dao.updatePaymentStatus(order.serverId, "")
+            if (License.reserveNotificationSend(getApplication())) {
+                OrderStatusPush.push(
+                    getApplication(), order.customerPhone, order.serverId,
+                    message = "We couldn't confirm your UPI payment for this order — please check and try again, or contact us."
+                )
+            }
+        }
+    }
+
     /** Accepting an order hands it off to the app's regular Orders (Masters > Orders), where
      *  "select orders > Convert to Sale" already exists — this only needs to create the order
      *  and remove it from this list, not rebuild that whole workflow here. */

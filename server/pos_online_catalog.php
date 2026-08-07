@@ -79,9 +79,13 @@
  *     { "shop": "<DeviceID>", "customerPhone": "...", "customerName": "..." (optional),
  *       "orderId": "..." (optional), "message": "...",
  *       "paymentStatus": "UPI" (optional — the customer just paid for orderId above via their own
- *           UPI app; the shop owner's app flips that order's local payment status on receiving it) }
+ *           UPI app; the shop owner's app flips that order's local payment status on receiving it),
+ *       "attachments": [ "data:image/jpeg;base64,..." ] (optional — a payment-success screenshot
+ *           attached as proof, e.g. after paying via the QR-code fallback, which has no automatic
+ *           success callback the app can detect on its own) }
  *   Appended to pos_online_catalog/<DeviceID>/messages_from_customers.json — trimmed by
- *   the fetch below, same as orders/notifications.
+ *   the fetch below, same as orders/notifications. Any attachment still sitting here (not yet
+ *   fetched by the shop owner) older than 7 days is cleared, same as orders/notifications.
  *
  * FETCH CUSTOMER MESSAGES (from the shop owner's app, the Messages screen):
  *   GET this URL with ?do=customerMessages&shop=<DeviceID> — returns every message
@@ -585,6 +589,11 @@ if (($method === 'POST' || $method === 'PUT') && $do === 'message') {
         // its local Online Orders list automatically, not just show the text. Blank for a plain
         // reply, same as before this field existed.
         'paymentStatus' => isset($body['paymentStatus']) ? (string) $body['paymentStatus'] : '',
+        // A payment-success screenshot the customer attached as proof — e.g. after paying via the
+        // QR-code fallback, which (unlike the direct "Pay via UPI now" button) has no automatic
+        // success callback the app can detect on its own. Same data-URI-array convention as an
+        // order's own attachments.
+        'attachments' => isset($body['attachments']) && is_array($body['attachments']) ? array_values($body['attachments']) : array(),
         'sentAt' => date('c')
     );
     $path = $folder . '/messages_from_customers.json';
@@ -597,6 +606,20 @@ if (($method === 'POST' || $method === 'PUT') && $do === 'message') {
     if (!is_array($existing)) {
         $existing = array();
     }
+    // Same "server never keeps a file longer than it has to" rule as orders/notifications: an
+    // attachment sitting here more than 7 days (the shop owner hasn't fetched it yet) is dropped —
+    // the rest of the message is kept. The normal path is much faster: do=customerMessages below
+    // deletes it the instant it's actually delivered.
+    $attachmentCutoff = time() - 7 * 24 * 60 * 60;
+    foreach ($existing as &$old) {
+        if (!empty($old['attachments']) && !empty($old['sentAt'])) {
+            $sentTs = strtotime($old['sentAt']);
+            if ($sentTs !== false && $sentTs < $attachmentCutoff) {
+                $old['attachments'] = array();
+            }
+        }
+    }
+    unset($old);
     $existing[] = $message;
     ftruncate($fh, 0);
     rewind($fh);

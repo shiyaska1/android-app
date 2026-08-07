@@ -1,6 +1,7 @@
 package com.billing.pos.ui.messages
 
 import android.app.Application
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -48,6 +50,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -68,6 +71,39 @@ import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+
+/** Decodes a base64 data URI attachment to a small preview bitmap for the chat bubble — e.g. a
+ *  customer's UPI payment-success screenshot attached as proof after paying via the QR-code
+ *  fallback (see CustomerCatalogScreen's PaymentDialog). */
+private fun decodeAttachmentBitmap(dataUri: String): androidx.compose.ui.graphics.ImageBitmap? {
+    if (!dataUri.startsWith("data:image")) return null
+    val comma = dataUri.indexOf(',')
+    if (comma < 0) return null
+    return runCatching {
+        val bytes = android.util.Base64.decode(dataUri.substring(comma + 1), android.util.Base64.DEFAULT)
+        android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+    }.getOrNull()
+}
+
+/** Opens an attachment in the device's default image viewer — same pattern as
+ *  OnlineOrdersScreen's openAttachment, for a message bubble's photo. */
+private fun openMessageAttachment(context: android.content.Context, dataUri: String) {
+    if (!dataUri.startsWith("data:image")) return
+    val comma = dataUri.indexOf(',')
+    if (comma < 0) return
+    runCatching {
+        val bytes = android.util.Base64.decode(dataUri.substring(comma + 1), android.util.Base64.DEFAULT)
+        val sharedDir = java.io.File(context.cacheDir, "shared").apply { mkdirs() }
+        val file = java.io.File(sharedDir, "msg_attach_${System.nanoTime()}.jpg")
+        file.writeBytes(bytes)
+        val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
+        val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, "image/jpeg")
+            addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        context.startActivity(intent)
+    }
+}
 
 /** One row in the "Messages" list — every message with this customer collapsed to its latest,
  *  plus how many incoming ones are still unread. */
@@ -380,6 +416,7 @@ private fun ThreadScreen(
         ) {
             items(messages, key = { it.id }) { m ->
                 val fromShop = m.direction == "OUT"
+                val context = LocalContext.current
                 Row(
                     Modifier.fillMaxWidth().padding(vertical = 4.dp),
                     horizontalArrangement = if (fromShop) Arrangement.End else Arrangement.Start
@@ -390,6 +427,27 @@ private fun ThreadScreen(
                     ) {
                         Column {
                             Text(m.text, modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp))
+                            // A customer's UPI payment-success screenshot, attached as proof after
+                            // paying via the QR-code fallback (no automatic success signal there,
+                            // unlike the direct-pay button) — check it against your own bank/UPI
+                            // app before trusting it; tap to open full-size.
+                            if (m.attachmentList.isNotEmpty()) {
+                                Row(Modifier.padding(horizontal = 10.dp, vertical = 4.dp)) {
+                                    m.attachmentList.forEach { uri ->
+                                        val bmp = remember(uri) { decodeAttachmentBitmap(uri) }
+                                        if (bmp != null) {
+                                            Image(
+                                                bitmap = bmp,
+                                                contentDescription = "Payment screenshot",
+                                                modifier = Modifier
+                                                    .size(120.dp)
+                                                    .padding(end = 6.dp)
+                                                    .clickable { openMessageAttachment(context, uri) }
+                                            )
+                                        }
+                                    }
+                                }
+                            }
                             Text(
                                 SimpleDateFormat("dd MMM, HH:mm", Locale.getDefault()).format(Date(m.sentAt)),
                                 style = MaterialTheme.typography.labelSmall,

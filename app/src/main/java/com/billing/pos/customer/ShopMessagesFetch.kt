@@ -58,6 +58,10 @@ object ShopMessagesFetch {
                 val text = o.optString("message")
                 if (phone.isBlank() || text.isBlank()) continue
                 val orderId = o.optString("orderId")
+                val attachmentsArr = o.optJSONArray("attachments")
+                val attachments = if (attachmentsArr != null) {
+                    (0 until attachmentsArr.length()).map { attachmentsArr.optString(it) }.filter { it.isNotBlank() }
+                } else emptyList()
                 val message = ShopMessage(
                     customerPhone = phone,
                     customerName = o.optString("customerName"),
@@ -65,7 +69,8 @@ object ShopMessagesFetch {
                     direction = "IN",
                     text = text,
                     sentAt = System.currentTimeMillis(),
-                    read = false
+                    read = false,
+                    attachments = ShopMessage.packAttachments(attachments)
                 )
                 dao.insert(message)
                 fresh += message

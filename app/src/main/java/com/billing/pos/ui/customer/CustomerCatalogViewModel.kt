@@ -157,7 +157,12 @@ class CustomerCatalogViewModel(app: Application) : AndroidViewModel(app) {
         return known?.upi?.takeIf { it.isNotBlank() }?.let { it to known.upiName }
     }
 
-    fun markNotificationPaid(notification: CustomerNotification) {
+    /** [proofAttachment] — a payment-success screenshot, e.g. after paying via the QR-code
+     *  fallback (which, unlike the direct "Pay via UPI now" button, has no automatic success
+     *  callback the app can detect on its own) — travels to the shop as proof, same data-URI
+     *  convention as every other attachment in this app. Null/blank when there's nothing to
+     *  attach (the direct-pay flow, which already got a real SUCCESS response). */
+    fun markNotificationPaid(notification: CustomerNotification, proofAttachment: String? = null) {
         viewModelScope.launch {
             val app: Application = getApplication()
             if (notification.orderId.isNotBlank()) historyDao.markPaid(notification.orderId)
@@ -168,7 +173,8 @@ class CustomerCatalogViewModel(app: Application) : AndroidViewModel(app) {
                     (if (notification.orderId.isNotBlank()) " for order #${notification.orderId}" else ""),
                 orderId = notification.orderId,
                 targetUrl = target?.url.orEmpty(), targetShop = target?.shop ?: notification.shop,
-                paymentStatus = "UPI"
+                paymentStatus = "UPI",
+                attachments = proofAttachment?.takeIf { it.isNotBlank() }?.let { listOf(it) } ?: emptyList()
             )
             _message.value = "Payment recorded — the shop has been notified"
         }

@@ -123,6 +123,7 @@ fun OnlineOrdersScreen(onBack: () -> Unit, vm: OnlineOrdersViewModel = viewModel
     val usingLiveShopLocation = !shopPrefs.shopLocationCaptured && liveShopLatLng != null
     var messageTarget by remember { mutableStateOf<OnlineOrder?>(null) }
     var deleteTarget by remember { mutableStateOf<OnlineOrder?>(null) }
+    var disputeTarget by remember { mutableStateOf<OnlineOrder?>(null) }
     // One shared player for every order card's voice-note attachments (see OrderCard) — a
     // customer's premium-only voice note travels the same base64-data-URI attachment channel as
     // a photo, so it needs decoding to a temp file before it can play; the temp file is cleaned
@@ -309,6 +310,7 @@ fun OnlineOrdersScreen(onBack: () -> Unit, vm: OnlineOrdersViewModel = viewModel
                         },
                         onMessage = { messageTarget = order },
                         onDelete = { deleteTarget = order },
+                        onDisputePayment = { disputeTarget = order },
                         onShareToSalesman = {
                             val text = buildString {
                                 append(order.customerName)
@@ -353,6 +355,28 @@ fun OnlineOrdersScreen(onBack: () -> Unit, vm: OnlineOrdersViewModel = viewModel
                 TextButton(onClick = { vm.deleteOrder(order); deleteTarget = null }) { Text("Delete") }
             },
             dismissButton = { TextButton(onClick = { deleteTarget = null }) { Text("Cancel") } }
+        )
+    }
+
+    // The customer's "Paid via UPI" is self-reported — there's no bank/gateway confirming it (see
+    // PaymentDialog). If checking your own UPI app shows the money never actually arrived, or a
+    // screenshot proof looks wrong, this flips it back to unpaid instead of leaving a false claim
+    // standing forever.
+    disputeTarget?.let { order ->
+        AlertDialog(
+            onDismissRequest = { disputeTarget = null },
+            title = { Text("Payment not received?") },
+            text = {
+                Text(
+                    "${order.customerName} — ₹${Format.money(order.total)}. This marks the order back as unpaid " +
+                        "(Cash on delivery) and lets the customer know their payment couldn't be confirmed. " +
+                        "Only do this after checking your own UPI app/bank statement."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { vm.disputePayment(order); disputeTarget = null }) { Text("Mark as not received") }
+            },
+            dismissButton = { TextButton(onClick = { disputeTarget = null }) { Text("Cancel") } }
         )
     }
 }
@@ -642,6 +666,7 @@ private fun OrderCard(
     onLocation: () -> Unit,
     onMessage: () -> Unit,
     onDelete: () -> Unit,
+    onDisputePayment: () -> Unit,
     onShareToSalesman: () -> Unit,
     onTogglePlayAttachment: (String) -> Unit
 ) {
@@ -736,10 +761,11 @@ private fun OrderCard(
                 Text("Total: ₹${Format.money(order.total)}", fontWeight = FontWeight.Bold)
                 if (order.paymentStatus == "UPI") {
                     Text(
-                        "✓ Paid via UPI",
+                        "✓ Paid via UPI — tap if not received",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.Bold
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.clickable(onClick = onDisputePayment)
                     )
                 } else {
                     Text(

@@ -27,8 +27,22 @@ data class ShopMessage(
     val sentAt: Long,
     /** Only meaningful for "IN" — an outgoing message is implicitly already read (the owner
      *  just sent it). Drives the unread red-dot on the Messages entry point / thread rows. */
-    val read: Boolean = false
-)
+    val read: Boolean = false,
+    /** Photo(s) attached to this message — e.g. a customer's UPI payment-success screenshot as
+     *  proof after paying via the QR-code fallback (see CustomerCatalogScreen's PaymentDialog),
+     *  since that path has no automatic success callback the app can detect on its own. Packed
+     *  the same way CustomerNotification.attachments packs its list. Empty when none. */
+    val attachments: String = ""
+) {
+    val attachmentList: List<String> get() = runCatching {
+        val arr = org.json.JSONArray(attachments)
+        (0 until arr.length()).map { arr.getString(it) }
+    }.getOrDefault(emptyList())
+
+    companion object {
+        fun packAttachments(dataUris: List<String>) = org.json.JSONArray(dataUris).toString()
+    }
+}
 
 @Dao
 interface ShopMessageDao {
