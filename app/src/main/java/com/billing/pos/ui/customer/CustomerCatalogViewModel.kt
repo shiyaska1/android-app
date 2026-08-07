@@ -66,16 +66,10 @@ class CustomerCatalogViewModel(app: Application) : AndroidViewModel(app) {
     private val _saving = MutableStateFlow(false)
     val saving: StateFlow<Boolean> = _saving
 
-    // Set on a successful order that was placed via the Share button — the UI observes this
-    // once to launch the WhatsApp intent, then calls shareTextConsumed().
-    private val _shareText = MutableStateFlow<String?>(null)
-    val shareText: StateFlow<String?> = _shareText
-
     val savedCustomerName: String get() = prefs.customerName
     val savedCustomerPhone: String get() = prefs.customerPhone
     val savedCustomerAddress: String get() = prefs.customerAddress
     val isPremiumShop: Boolean get() = prefs.customerPremiumShop
-    val isRegistered: Boolean get() = prefs.customerName.isNotBlank() && prefs.customerPhone.isNotBlank()
 
     init {
         // First open after install: the cache is empty, so fetch immediately without
@@ -191,22 +185,19 @@ class CustomerCatalogViewModel(app: Application) : AndroidViewModel(app) {
 
     fun clearSelection() { _qty.value = emptyMap() }
 
-    fun shareTextConsumed() { _shareText.value = null }
-
     /** POSTs the current selection to the shop's server. Remembers name/phone/address for next
      *  time, and — on success — files a local [CustomerOrderHistory] record for Order
-     *  History/Re-order. Location is compulsory: the shop needs to know where to deliver, so a
-     *  missing/failed location fix fails the whole order rather than silently going through
-     *  without one. The caller (the Save/Share buttons) is responsible for having already
-     *  obtained location permission before calling this. [alsoShare] additionally opens WhatsApp
-     *  with the order text once the save succeeds — see [shareText]. */
+     *  History/Re-order. Location is compulsory: the shop needs to know where to deliver.
+     *  [manualLocationLink], when set (the customer said they're not at the delivery point right
+     *  now), is used as-is instead of reading the phone's own GPS — the caller is responsible for
+     *  having already obtained location permission before calling this without one. */
     fun saveOrder(
         name: String,
         phone: String,
         address: String = "",
         note: String = "",
         attachments: List<String> = emptyList(),
-        alsoShare: Boolean = false
+        manualLocationLink: String? = null
     ) {
         val selection = _qty.value.mapNotNull { (id, count) ->
             items.value.find { it.id == id }?.let { it to count }
@@ -226,7 +217,8 @@ class CustomerCatalogViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             _saving.value = true
             val app: Application = getApplication()
-            val locationLink = runCatching { LocationHelper.currentLocationLink(app) }.getOrNull()
+            val locationLink = if (!manualLocationLink.isNullOrBlank()) manualLocationLink
+                else runCatching { LocationHelper.currentLocationLink(app) }.getOrNull()
             if (locationLink.isNullOrBlank()) {
                 _message.value = "Could not get your location — turn on Location and try again"
                 _saving.value = false
@@ -249,7 +241,6 @@ class CustomerCatalogViewModel(app: Application) : AndroidViewModel(app) {
                             note = note
                         )
                     )
-                    if (alsoShare) _shareText.value = buildOrderText(selection, total)
                     clearSelection()
                 }
                 is OrderSubmit.Result.Failed -> _technicalError.value = result.message
@@ -265,16 +256,5 @@ class CustomerCatalogViewModel(app: Application) : AndroidViewModel(app) {
         val restored = order.items.mapNotNull { line -> byServerId[line.serverId]?.let { it.id to line.qty } }
         if (restored.isEmpty()) { _message.value = "Those items are no longer available"; return }
         _qty.value = restored.toMap()
-    }
-
-    private fun buildOrderText(selection: List<Pair<ShopCatalogItem, Int>>, total: Double): String {
-        val lines = selection.map { (item, count) ->
-            "- ${item.name} x$count = ₹${com.billing.pos.util.Format.money(item.price * count)}"
-        }
-        return buildString {
-            append("Order from POS Billing app:\n")
-            append(lines.joinToString("\n"))
-            append("\nTotal: ₹${com.billing.pos.util.Format.money(total)}")
-        }
     }
 }

@@ -124,14 +124,14 @@ import java.util.Locale
 /**
  * The entire app, for a customer install: the shop's item catalog, grouped by category, with a
  * manual refresh. Cached offline (see [CustomerCatalogViewModel]) so it still opens with data
- * after the first successful fetch. Picking a quantity on any item reveals two ways to place an
- * order — Save, or Share (Save, then also open WhatsApp with the order text) — both go through
- * the same pipeline: register (name/phone, asked once) if not already, then a location fix
- * (compulsory — the shop needs to know where to deliver), then POST to the server.
+ * after the first successful fetch. Picking a quantity on any item reveals the Order button —
+ * register (name/phone, asked once) if not already, then "Are you at the delivery location right
+ * now?" — Yes captures the phone's current GPS fix; No asks for a Google Maps link instead
+ * (compulsory either way, the shop needs to know where to deliver) — then POST to the server.
  */
 private data class PendingOrderSubmit(
     val name: String, val phone: String, val address: String,
-    val note: String, val attachments: List<String>, val alsoShare: Boolean
+    val note: String, val attachments: List<String>
 )
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -157,7 +157,8 @@ fun CustomerCatalogScreen(
     val snackbar = remember { SnackbarHostState() }
     var selectedCategory by rememberSaveable { mutableStateOf("All") }
     var showSaveDialog by rememberSaveable { mutableStateOf(false) }
-    var saveDialogAction by rememberSaveable { mutableStateOf("save") } // "save" or "share"
+    var showDeliveryPointDialog by rememberSaveable { mutableStateOf(false) }
+    var showManualLocationDialog by rememberSaveable { mutableStateOf(false) }
     var pendingOrderSubmit by remember { mutableStateOf<PendingOrderSubmit?>(null) }
     var showSwitchShop by rememberSaveable { mutableStateOf(false) }
     var showDirectory by rememberSaveable { mutableStateOf(false) }
@@ -167,7 +168,6 @@ fun CustomerCatalogScreen(
     val notifications by vm.notifications.collectAsStateSafe()
     val unreadNotifications by vm.unreadNotifications.collectAsStateSafe()
     val replying by vm.replying.collectAsStateSafe()
-    val shareText by vm.shareText.collectAsStateSafe()
     val scope = rememberCoroutineScope()
 
     // Note + attachments live here, on the main screen, instead of inside the "Your details"
@@ -270,51 +270,41 @@ fun CustomerCatalogScreen(
         val pending = pendingOrderSubmit
         pendingOrderSubmit = null
         if (granted && pending != null) {
-            vm.saveOrder(pending.name, pending.phone, pending.address, pending.note, pending.attachments, pending.alsoShare)
+            vm.saveOrder(pending.name, pending.phone, pending.address, pending.note, pending.attachments)
         } else if (!granted) {
             scope.launch { snackbar.showSnackbar("Location permission is required to place an order") }
         }
     }
-    fun submitOrder(pending: PendingOrderSubmit) {
+    // "Yes, I'm at the delivery point" path — captures the phone's current GPS fix. Only clears
+    // pendingOrderSubmit on the immediate-submit branch; the permission-request branch hands that
+    // job to the locationPermission callback above, once the async permission result comes back.
+    fun submitOrderAtCurrentLocation(pending: PendingOrderSubmit) {
         val hasLocation = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED ||
             ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED
         if (hasLocation) {
-            vm.saveOrder(pending.name, pending.phone, pending.address, pending.note, pending.attachments, pending.alsoShare)
+            vm.saveOrder(pending.name, pending.phone, pending.address, pending.note, pending.attachments)
+            pendingOrderSubmit = null
         } else {
             pendingOrderSubmit = pending
             locationPermission.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
         }
+    }
+    // "No, I'm not there" path — a pasted Google Maps link stands in for GPS; no location
+    // permission needed at all since the phone's own position is never read.
+    fun submitOrderWithManualLocation(pending: PendingOrderSubmit, mapsLink: String) {
+        vm.saveOrder(pending.name, pending.phone, pending.address, pending.note, pending.attachments, manualLocationLink = mapsLink)
     }
 
     // Re-read after every fetch (a plain remember would freeze these at first composition).
     val shopName = prefs.shopDisplayName
     val shopPhone = prefs.shopContactPhone
 
-    LaunchedEffect(shareText) {
-        shareText?.let { text ->
-            val digits = shopPhone.filter { it.isDigit() }
-            val target = if (digits.isNotBlank()) "https://wa.me/$digits" else "https://wa.me/"
-            val intent = android.content.Intent(
-                android.content.Intent.ACTION_VIEW,
-                android.net.Uri.parse("$target?text=${android.net.Uri.encode(text)}")
-            )
-            runCatching { context.startActivity(intent) }
-            vm.shareTextConsumed()
-        }
-    }
     val catalogLabel = remember {
         when (prefs.customerBusinessType) {
             "Medical store" -> "Medicines"
             "Medical lab" -> "Home Collection"
             "Restaurant" -> "Order"
             else -> "Order"
-        }
-    }
-    val shareLabel = remember {
-        when (prefs.customerBusinessType) {
-            "Medical store" -> "Send order"
-            "Medical lab" -> "Book collection"
-            else -> "Share order"
         }
     }
 
@@ -420,32 +410,12 @@ fun CustomerCatalogScreen(
                             }
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedButton(
-                                onClick = {
-                                    saveDialogAction = "share"
-                                    if (vm.isRegistered) {
-                                        submitOrder(
-                                            PendingOrderSubmit(
-                                                vm.savedCustomerName, vm.savedCustomerPhone, vm.savedCustomerAddress,
-                                                note = orderNote.trim(), attachments = orderAttachments.toList(), alsoShare = true
-                                            )
-                                        )
-                                        orderNote = ""; orderAttachments.clear()
-                                    } else {
-                                        showSaveDialog = true
-                                    }
-                                },
-                                enabled = !saving
-                            ) {
-                                Icon(Icons.Default.Chat, contentDescription = null, modifier = Modifier.size(18.dp))
-                                Text("  $shareLabel")
-                            }
-                            Button(onClick = { saveDialogAction = "save"; showSaveDialog = true }, enabled = !saving) {
+                            Button(onClick = { showSaveDialog = true }, enabled = !saving) {
                                 if (saving) {
                                     CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
                                 } else {
                                     Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(18.dp))
-                                    Text("  Save")
+                                    Text("  Order")
                                 }
                             }
                         }
@@ -580,8 +550,32 @@ fun CustomerCatalogScreen(
             onDismiss = { showSaveDialog = false },
             onConfirm = { name, phone, address ->
                 showSaveDialog = false
-                submitOrder(PendingOrderSubmit(name, phone, address, orderNote.trim(), orderAttachments.toList(), saveDialogAction == "share"))
+                pendingOrderSubmit = PendingOrderSubmit(name, phone, address, orderNote.trim(), orderAttachments.toList())
+                showDeliveryPointDialog = true
                 orderNote = ""; orderAttachments.clear()
+            }
+        )
+    }
+    if (showDeliveryPointDialog) {
+        DeliveryPointDialog(
+            onDismiss = { showDeliveryPointDialog = false; pendingOrderSubmit = null },
+            onAtLocation = {
+                showDeliveryPointDialog = false
+                pendingOrderSubmit?.let { submitOrderAtCurrentLocation(it) }
+            },
+            onNotAtLocation = {
+                showDeliveryPointDialog = false
+                showManualLocationDialog = true
+            }
+        )
+    }
+    if (showManualLocationDialog) {
+        ManualLocationDialog(
+            onDismiss = { showManualLocationDialog = false; pendingOrderSubmit = null },
+            onConfirm = { link ->
+                showManualLocationDialog = false
+                pendingOrderSubmit?.let { submitOrderWithManualLocation(it, link) }
+                pendingOrderSubmit = null
             }
         )
     }
@@ -868,6 +862,57 @@ private fun SaveOrderDialog(
                 onClick = { onConfirm(name.trim(), phone.trim(), address.trim()) },
                 enabled = name.isNotBlank() && phone.isNotBlank()
             ) { Text("Save order") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
+/** Shown right after "Your details" — decides whether the order location comes from GPS (the
+ *  customer is standing at the delivery point right now) or a pasted Google Maps link (they're
+ *  ordering ahead, from somewhere else, e.g. for their home while still at work). */
+@Composable
+private fun DeliveryPointDialog(onDismiss: () -> Unit, onAtLocation: () -> Unit, onNotAtLocation: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Are you at the delivery point?") },
+        text = {
+            Text(
+                "If you're at the delivery address right now, we'll use this phone's current location. " +
+                    "Otherwise, you'll paste a Google Maps location link for where to deliver.",
+                style = MaterialTheme.typography.bodyMedium
+            )
+        },
+        confirmButton = { TextButton(onClick = onAtLocation) { Text("Yes, I'm here") } },
+        dismissButton = { TextButton(onClick = onNotAtLocation) { Text("No") } }
+    )
+}
+
+/** Delivery location is compulsory — the shop needs to know where to deliver — so [onConfirm] is
+ *  disabled until something's pasted in. No format validation beyond non-blank: a shop owner
+ *  reading a garbled link back is still better than blocking the order outright over it. */
+@Composable
+private fun ManualLocationDialog(onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
+    var link by rememberSaveable { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Delivery location") },
+        text = {
+            Column {
+                Text(
+                    "Open Google Maps, drop a pin on the delivery address, and share/paste the link here. This is required.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.outline,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+                OutlinedTextField(
+                    value = link, onValueChange = { link = it },
+                    label = { Text("Google Maps link") }, singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(link.trim()) }, enabled = link.isNotBlank()) { Text("Place order") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )

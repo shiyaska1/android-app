@@ -61,6 +61,7 @@ import com.billing.pos.data.OnlineOrderStatus
 import com.billing.pos.ui.billing.collectAsStateSafe
 import com.billing.pos.util.Format
 import java.util.Calendar
+import kotlin.math.roundToInt
 
 /**
  * Shop owner's view of orders customers have placed and saved — see [OrdersFetch] for how they
@@ -76,6 +77,7 @@ fun OnlineOrdersScreen(onBack: () -> Unit, vm: OnlineOrdersViewModel = viewModel
     val fetching by vm.fetching.collectAsStateSafe()
     val message by vm.message.collectAsStateSafe()
     val showProLimitDialog by vm.showProLimitDialog.collectAsStateSafe()
+    val shopPrefs = remember { com.billing.pos.data.AppPrefs(context) }
     val snackbar = remember { SnackbarHostState() }
     var messageTarget by remember { mutableStateOf<OnlineOrder?>(null) }
     var deleteTarget by remember { mutableStateOf<OnlineOrder?>(null) }
@@ -185,6 +187,7 @@ fun OnlineOrdersScreen(onBack: () -> Unit, vm: OnlineOrdersViewModel = viewModel
                 items(shown, key = { it.id }) { order ->
                     OrderCard(
                         order = order,
+                        distanceLabel = distanceLabel(shopPrefs, order),
                         onStatusChange = { status -> vm.setStatus(order, status) },
                         onCall = {
                             val digits = order.customerPhone.filter { it.isDigit() }
@@ -289,6 +292,26 @@ private fun pickDate(context: android.content.Context, current: Long, onPicked: 
     ).show()
 }
 
+/** (lat, lng) out of an order's `https://maps.google.com/?q=lat,lng` location link, or null if
+ *  there's no location at all (a customer who could give neither a GPS fix nor a maps link). */
+private fun parseOrderLatLng(location: String): Pair<Double, Double>? {
+    val q = runCatching { android.net.Uri.parse(location).getQueryParameter("q") }.getOrNull() ?: return null
+    val parts = q.split(",")
+    val lat = parts.getOrNull(0)?.toDoubleOrNull() ?: return null
+    val lng = parts.getOrNull(1)?.toDoubleOrNull() ?: return null
+    return lat to lng
+}
+
+/** How far this order is from the shop — the order's location is either a GPS fix or a pasted
+ *  Google Maps link depending on what the customer gave when ordering, so this works either way.
+ *  Lets the owner spot a delivery worth an extra charge at a glance. */
+private fun distanceLabel(shopPrefs: com.billing.pos.data.AppPrefs, order: OnlineOrder): String {
+    if (!shopPrefs.shopLocationCaptured) return "Distance: unknown (set your shop location in Settings)"
+    val (lat, lng) = parseOrderLatLng(order.location) ?: return "Distance: unknown"
+    val km = com.billing.pos.customer.NearbyShops.haversineKm(shopPrefs.shopLatitude, shopPrefs.shopLongitude, lat, lng)
+    return if (km < 1.0) "Distance: ${(km * 1000).roundToInt()} m" else "Distance: ${Format.money(km)} km"
+}
+
 @Composable
 private fun MessageDialog(onDismiss: () -> Unit, onSend: (String) -> Unit) {
     var text by rememberSaveable { mutableStateOf("") }
@@ -335,6 +358,7 @@ private fun openAttachment(context: android.content.Context, dataUri: String) {
 @Composable
 private fun OrderCard(
     order: OnlineOrder,
+    distanceLabel: String,
     onStatusChange: (String) -> Unit,
     onCall: () -> Unit,
     onWhatsApp: () -> Unit,
@@ -355,6 +379,7 @@ private fun OrderCard(
                 if (order.customerAddress.isNotBlank()) {
                     Text(order.customerAddress, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
                 }
+                Text(distanceLabel, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
             }
             // Its own full-width row, not squeezed next to the name — five icons plus a long
             // name overlapped badly on narrower phones.

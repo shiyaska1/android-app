@@ -79,7 +79,9 @@ object NearbyShops {
         }
     }
 
-    private fun haversineKm(lat1: Double, lng1: Double, lat2: Double, lng2: Double): Double {
+    /** Great-circle distance in km — also used by [com.billing.pos.ui.online.OnlineOrdersScreen]
+     *  to show the shop-to-customer delivery distance on each order. */
+    fun haversineKm(lat1: Double, lng1: Double, lat2: Double, lng2: Double): Double {
         val r = 6371.0
         val dLat = Math.toRadians(lat2 - lat1)
         val dLng = Math.toRadians(lng2 - lng1)
