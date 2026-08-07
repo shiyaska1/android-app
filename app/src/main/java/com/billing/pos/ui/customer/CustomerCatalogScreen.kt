@@ -1074,7 +1074,10 @@ private fun SaveOrderDialog(
  * the order stuck unsaved. Payment isn't verified automatically either way: the shop owner
  * checks their own UPI app before dispatching, and can flip a false "Paid via UPI" claim back to
  * unpaid from Online Orders (see [OnlineOrdersViewModel.disputePayment]) if it never arrives. The
- * QR-code fallback below works the same way, via its own "I've paid via QR" button.
+ * QR-code fallback below works the same way, via its own "I've paid via QR" button — except that
+ * path has no automatic success signal at all, so (unlike direct-pay) it requires a payment
+ * screenshot to be attached first, either picked manually or captured automatically when the
+ * UPI app's own "Share" hands one straight to this app.
  */
 @Composable
 private fun PaymentDialog(
@@ -1231,20 +1234,26 @@ private fun PaymentDialog(
                             color = MaterialTheme.colorScheme.outline,
                             modifier = Modifier.padding(top = 6.dp)
                         )
-                        // Always reachable right after the QR, above the (optional) attach
-                        // section below — the QR path has no automatic success signal (unlike the
-                        // direct-pay button's StartActivityForResult), so this is how the customer
-                        // confirms manually, whether or not they also attach a screenshot.
+                        // The QR path has no automatic success signal (unlike the direct-pay
+                        // button's StartActivityForResult) — a bare "I paid" claim here would be
+                        // unverifiable, so a payment screenshot is required before this can be
+                        // tapped. Attaching it manually or sharing it straight from the UPI app's
+                        // own "Share" button (see the PendingSharedMedia effect above) both work;
+                        // either way the button stays disabled/waiting until one lands.
                         val proofUri = proofDataUri
                         Button(
                             onClick = { onChoose("UPI", proofUri) },
-                            enabled = !compressingProof,
+                            enabled = !compressingProof && proofUri != null,
                             modifier = Modifier.fillMaxWidth().padding(top = 10.dp)
-                        ) { Text("I've paid via QR") }
-                        // Optional proof — gives the shop owner something to actually check
-                        // instead of a bare claim. A screenshot shared straight from a UPI app
-                        // (its own "Share" button after a payment) lands here automatically too,
-                        // see the PendingSharedMedia effect above.
+                        ) {
+                            Text(
+                                when {
+                                    compressingProof -> "Attaching…"
+                                    proofUri == null -> "Attach the payment screenshot below to confirm"
+                                    else -> "I've paid via QR"
+                                }
+                            )
+                        }
                         if (proofUri != null) {
                             val proofBmp = remember(proofUri) { decodeDataUriBitmap(proofUri) }
                             Box(Modifier.padding(top = 10.dp), contentAlignment = Alignment.TopEnd) {
@@ -1266,7 +1275,7 @@ private fun PaymentDialog(
                         TextButton(
                             onClick = { proofPicker.launch("image/*") },
                             enabled = !compressingProof
-                        ) { Text(if (compressingProof) "Attaching…" else if (proofUri != null) "Change payment screenshot" else "Attach payment screenshot (optional)") }
+                        ) { Text(if (compressingProof) "Attaching…" else if (proofUri != null) "Change payment screenshot" else "Attach payment screenshot") }
                     }
                 }
                 Text(
