@@ -24,7 +24,9 @@ import java.net.URL
  *   "shopAddress": "..." (the shop owner's Company address),
  *   "bannerImage": "data:image/jpeg;base64,..." (optional, shown atop the customer catalog),
  *   "items": [{ "id": "SKU1", "name": "Chicken Biryani", "category": "Main Course",
- *               "price": 180.0, "unit": "plate", "imageUrl": "", "description": "" }, ...] }
+ *               "price": 180.0, "unit": "plate", "imageUrl": "", "description": "",
+ *               "driveLink": "" (optional — e.g. a Google Drive link to a photo/catalog,
+ *               shown to the customer as its own clickable link) }, ...] }
  * ```
  * Only "id", "name" and "price" are required per item; the rest default to blank/zero.
  * "shopName"/"shopPhone" are optional and only read when the root is an object, not a bare array.
@@ -82,7 +84,8 @@ object ShopCatalogSync {
                     price = o.optDouble("price", 0.0),
                     unit = o.optString("unit", ""),
                     imageUrl = o.optString("imageUrl", ""),
-                    description = o.optString("description", "")
+                    description = o.optString("description", ""),
+                    driveLink = o.optString("driveLink", "")
                 )
             }
 

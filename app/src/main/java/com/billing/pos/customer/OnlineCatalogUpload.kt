@@ -78,6 +78,7 @@ object OnlineCatalogUpload {
                             val base64 = Base64.encodeToString(thumb, Base64.NO_WRAP)
                             put("imageUrl", "data:image/jpeg;base64,$base64")
                         }
+                        if (item.driveLink.isNotBlank()) put("driveLink", item.driveLink)
                     })
                 }
             })

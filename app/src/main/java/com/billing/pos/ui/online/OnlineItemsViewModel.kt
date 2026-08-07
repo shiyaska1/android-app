@@ -46,6 +46,10 @@ class OnlineItemsViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { repo.updateItem(item.copy(onlineOfferPrice = price)) }
     }
 
+    fun setDriveLink(item: Item, link: String) {
+        viewModelScope.launch { repo.updateItem(item.copy(driveLink = link)) }
+    }
+
     fun upload() {
         val online = rows.value.map { it.item }.filter { it.isOnline }
         if (online.isEmpty()) { _message.value = "Mark at least one item online first"; return }

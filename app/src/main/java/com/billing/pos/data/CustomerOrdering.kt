@@ -28,7 +28,10 @@ data class ShopCatalogItem(
     val price: Double,
     val unit: String = "",
     val imageUrl: String = "",
-    val description: String = ""
+    val description: String = "",
+    /** Optional link (e.g. Google Drive) to a photo/catalog for this item, shown to the customer
+     *  as a separate clickable link — the shop owner's alternative to uploading a photo here. */
+    val driveLink: String = ""
 )
 
 @Dao

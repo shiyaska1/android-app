@@ -51,7 +51,11 @@ data class Item(
     /** Included in the next "Upload" to the online catalog (customer ordering). */
     val isOnline: Boolean = false,
     /** Price shown to online customers when set (> 0); falls back to [price] when 0. */
-    val onlineOfferPrice: Double = 0.0
+    val onlineOfferPrice: Double = 0.0,
+    /** Optional Google Drive (or any) link to a photo/catalog for this item — shown to online
+     *  customers as a separate clickable link, an alternative to uploading a photo to this
+     *  server's own storage. */
+    val driveLink: String = ""
 )
 
 /**

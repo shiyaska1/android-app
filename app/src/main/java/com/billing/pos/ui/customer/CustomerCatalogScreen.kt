@@ -84,8 +84,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -1310,6 +1312,7 @@ private fun decodeDataUriBitmap(dataUri: String): androidx.compose.ui.graphics.I
 
 @Composable
 private fun CatalogItemRow(item: ShopCatalogItem, qty: Int, onQtyChange: (Int) -> Unit, modifier: Modifier = Modifier) {
+    val uriHandler = LocalUriHandler.current
     Card(modifier.fillMaxWidth()) {
         Row(
             Modifier.fillMaxWidth().padding(14.dp),
@@ -1335,6 +1338,14 @@ private fun CatalogItemRow(item: ShopCatalogItem, qty: Int, onQtyChange: (Int) -
                     )
                 }
                 Text("₹" + Format.money(item.price) + if (item.unit.isNotBlank()) " / ${item.unit}" else "", fontWeight = FontWeight.Bold)
+                if (item.driveLink.isNotBlank()) {
+                    Text(
+                        "View photos / catalog",
+                        style = MaterialTheme.typography.bodySmall.copy(textDecoration = TextDecoration.Underline),
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.clickable { runCatching { uriHandler.openUri(item.driveLink) } }
+                    )
+                }
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 OutlinedIconButton(onClick = { if (qty > 0) onQtyChange(qty - 1) }, enabled = qty > 0) {

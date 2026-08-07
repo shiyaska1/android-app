@@ -147,7 +147,8 @@ fun OnlineItemsScreen(onBack: () -> Unit, vm: OnlineItemsViewModel = viewModel()
                             OnlineItemCard(
                                 row = row,
                                 onToggle = { on -> vm.setOnline(row.item, on) },
-                                onOfferPrice = { price -> vm.setOfferPrice(row.item, price) }
+                                onOfferPrice = { price -> vm.setOfferPrice(row.item, price) },
+                                onDriveLink = { link -> vm.setDriveLink(row.item, link) }
                             )
                         }
                     }
@@ -158,51 +159,69 @@ fun OnlineItemsScreen(onBack: () -> Unit, vm: OnlineItemsViewModel = viewModel()
 }
 
 @Composable
-private fun OnlineItemCard(row: OnlineItemRow, onToggle: (Boolean) -> Unit, onOfferPrice: (Double) -> Unit) {
+private fun OnlineItemCard(
+    row: OnlineItemRow,
+    onToggle: (Boolean) -> Unit,
+    onOfferPrice: (Double) -> Unit,
+    onDriveLink: (String) -> Unit
+) {
     val item = row.item
     Card(Modifier.fillMaxWidth()) {
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Checkbox(checked = item.isOnline, onCheckedChange = onToggle)
-            val thumb = row.photoPath?.let { rememberThumbnail(it, 200) }
-            if (thumb != null) {
-                androidx.compose.foundation.Image(
-                    thumb,
-                    contentDescription = item.name,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.size(44.dp).padding(end = 8.dp)
-                )
-            }
-            Column(Modifier.weight(1f)) {
-                Text(item.name, fontWeight = FontWeight.SemiBold)
-                Text(
-                    "MRP ₹" + Format.money(item.price) + if (item.category.isNotBlank()) " · ${item.category}" else "",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.outline
-                )
-                Text(
-                    "Stock: ${Format.qty(row.stock)} ${item.unit}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.outline
-                )
-            }
-            if (item.isOnline) {
-                var text by remember(item.id) {
-                    androidx.compose.runtime.mutableStateOf(
-                        if (item.onlineOfferPrice > 0.0) Format.money(item.onlineOfferPrice) else ""
+        Column(Modifier.padding(vertical = 4.dp)) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Checkbox(checked = item.isOnline, onCheckedChange = onToggle)
+                val thumb = row.photoPath?.let { rememberThumbnail(it, 200) }
+                if (thumb != null) {
+                    androidx.compose.foundation.Image(
+                        thumb,
+                        contentDescription = item.name,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.size(44.dp).padding(end = 8.dp)
                     )
                 }
+                Column(Modifier.weight(1f)) {
+                    Text(item.name, fontWeight = FontWeight.SemiBold)
+                    Text(
+                        "MRP ₹" + Format.money(item.price) + if (item.category.isNotBlank()) " · ${item.category}" else "",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.outline
+                    )
+                    Text(
+                        "Stock: ${Format.qty(row.stock)} ${item.unit}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.outline
+                    )
+                }
+                if (item.isOnline) {
+                    var text by remember(item.id) {
+                        androidx.compose.runtime.mutableStateOf(
+                            if (item.onlineOfferPrice > 0.0) Format.money(item.onlineOfferPrice) else ""
+                        )
+                    }
+                    OutlinedTextField(
+                        value = text,
+                        onValueChange = { v ->
+                            text = v
+                            onOfferPrice(v.toDoubleOrNull() ?: 0.0)
+                        },
+                        label = { Text("Offer ₹") },
+                        singleLine = true,
+                        modifier = Modifier.width(110.dp)
+                    )
+                }
+            }
+            if (item.isOnline) {
+                var link by remember(item.id) { androidx.compose.runtime.mutableStateOf(item.driveLink) }
                 OutlinedTextField(
-                    value = text,
-                    onValueChange = { v ->
-                        text = v
-                        onOfferPrice(v.toDoubleOrNull() ?: 0.0)
-                    },
-                    label = { Text("Offer ₹") },
+                    value = link,
+                    onValueChange = { v -> link = v; onDriveLink(v) },
+                    label = { Text("Google Drive link (optional)") },
+                    supportingText = { Text("Shown to customers as its own clickable link — e.g. a photo or catalog, instead of uploading one here") },
                     singleLine = true,
-                    modifier = Modifier.width(110.dp)
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, top = 4.dp)
                 )
             }
         }

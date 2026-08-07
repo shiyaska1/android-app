@@ -117,7 +117,10 @@ import androidx.room.TypeConverters
     // now that one customer can be connected to several shops (see ShopSwitch).
     // v97 online_orders.attachmentImages — multiple photo attachments per order (packed JSON),
     // replacing the old single attachmentImage column.
-    version = 97,
+    // v98 items.driveLink / shop_catalog_items.driveLink — an optional Google Drive (or any) link
+    // to a photo/catalog for an item, shown to online customers as its own clickable link instead
+    // of uploading a photo to this server's own storage.
+    version = 98,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -970,6 +973,16 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** An item can carry an optional link (e.g. Google Drive) to its photo/catalog instead of
+         *  uploading a photo to this server's own storage — shown to online customers as its own
+         *  clickable link. */
+        private val MIGRATION_97_98 = object : androidx.room.migration.Migration(97, 98) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE items ADD COLUMN driveLink TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE shop_catalog_items ADD COLUMN driveLink TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         fun get(context: Context): AppDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -977,7 +990,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "pos_billing.db"
                 )
-                    .addMigrations(MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45, MIGRATION_45_46, MIGRATION_46_47, MIGRATION_47_48, MIGRATION_48_49, MIGRATION_49_50, MIGRATION_50_51, MIGRATION_51_52, MIGRATION_52_53, MIGRATION_53_54, MIGRATION_54_55, MIGRATION_55_56, MIGRATION_56_57, MIGRATION_57_58, MIGRATION_58_59, MIGRATION_59_60, MIGRATION_60_61, MIGRATION_61_62, MIGRATION_62_63, MIGRATION_63_64, MIGRATION_64_65, MIGRATION_65_66, MIGRATION_66_67, MIGRATION_67_68, MIGRATION_68_69, MIGRATION_69_70, MIGRATION_70_71, MIGRATION_71_72, MIGRATION_72_73, MIGRATION_73_74, MIGRATION_74_75, MIGRATION_75_76, MIGRATION_76_77, MIGRATION_77_78, MIGRATION_78_79, MIGRATION_79_80, MIGRATION_80_81, MIGRATION_81_82, MIGRATION_82_83, MIGRATION_83_84, MIGRATION_84_85, MIGRATION_85_86, MIGRATION_86_87, MIGRATION_87_88, MIGRATION_88_89, MIGRATION_89_90, MIGRATION_90_91, MIGRATION_91_92, MIGRATION_92_93, MIGRATION_93_94, MIGRATION_94_95, MIGRATION_95_96, MIGRATION_96_97)
+                    .addMigrations(MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45, MIGRATION_45_46, MIGRATION_46_47, MIGRATION_47_48, MIGRATION_48_49, MIGRATION_49_50, MIGRATION_50_51, MIGRATION_51_52, MIGRATION_52_53, MIGRATION_53_54, MIGRATION_54_55, MIGRATION_55_56, MIGRATION_56_57, MIGRATION_57_58, MIGRATION_58_59, MIGRATION_59_60, MIGRATION_60_61, MIGRATION_61_62, MIGRATION_62_63, MIGRATION_63_64, MIGRATION_64_65, MIGRATION_65_66, MIGRATION_66_67, MIGRATION_67_68, MIGRATION_68_69, MIGRATION_69_70, MIGRATION_70_71, MIGRATION_71_72, MIGRATION_72_73, MIGRATION_73_74, MIGRATION_74_75, MIGRATION_75_76, MIGRATION_76_77, MIGRATION_77_78, MIGRATION_78_79, MIGRATION_79_80, MIGRATION_80_81, MIGRATION_81_82, MIGRATION_82_83, MIGRATION_83_84, MIGRATION_84_85, MIGRATION_85_86, MIGRATION_86_87, MIGRATION_87_88, MIGRATION_88_89, MIGRATION_89_90, MIGRATION_90_91, MIGRATION_91_92, MIGRATION_92_93, MIGRATION_93_94, MIGRATION_94_95, MIGRATION_95_96, MIGRATION_96_97, MIGRATION_97_98)
                     .fallbackToDestructiveMigration()
                     .build()
                     .also { INSTANCE = it }
