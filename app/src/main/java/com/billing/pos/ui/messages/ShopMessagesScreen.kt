@@ -23,6 +23,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Campaign
+import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
@@ -208,12 +209,12 @@ class ShopMessagesViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { dao.markReadForCustomer(phone) }
     }
 
-    fun send(phone: String, name: String, text: String) {
-        if (text.isBlank() || _sending.value) return
+    fun send(phone: String, name: String, text: String, amount: Double = 0.0) {
+        if ((text.isBlank() && amount <= 0.0) || _sending.value) return
         viewModelScope.launch {
             _sending.value = true
             if (com.billing.pos.data.License.reserveNotificationSend(getApplication())) {
-                OrderStatusPush.push(getApplication(), customerPhone = phone, orderId = "", message = text, customerName = name)
+                OrderStatusPush.push(getApplication(), customerPhone = phone, orderId = "", message = text, customerName = name, amount = amount)
             } else {
                 _showProLimitDialog.value = true
             }
@@ -368,6 +369,7 @@ private fun ThreadScreen(
 ) {
     val sending by vm.sending.collectAsStateSafe()
     var text by rememberSaveable { mutableStateOf("") }
+    var showRequestPayment by rememberSaveable { mutableStateOf(false) }
     val name = messages.firstOrNull { it.customerName.isNotBlank() }?.customerName?.ifBlank { phone } ?: phone
     val listState = rememberLazyListState()
 
@@ -392,6 +394,9 @@ private fun ThreadScreen(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
+                IconButton(onClick = { showRequestPayment = true }) {
+                    Icon(Icons.Filled.Payments, contentDescription = "Request payment")
+                }
                 OutlinedTextField(
                     value = text, onValueChange = { text = it },
                     placeholder = { Text("Message") },
@@ -460,4 +465,60 @@ private fun ThreadScreen(
             }
         }
     }
+
+    if (showRequestPayment) {
+        RequestPaymentDialog(
+            sending = sending,
+            onSend = { note, amount -> vm.send(phone, name, note, amount); showRequestPayment = false },
+            onDismiss = { showRequestPayment = false }
+        )
+    }
+}
+
+/** A chat-only way to ask a customer to pay, for anything that isn't a specific placed order (a
+ *  custom service, an advance, a general due) — the same "amount" mechanism [OrderStatusPush]
+ *  already sends for a per-order bill (see [com.billing.pos.ui.online.OnlineOrdersScreen]'s
+ *  message dialog), just without an orderId attached. The customer's Notifications bell shows a
+ *  "Pay via UPI now" button for it exactly the same way, including the QR fallback and payment
+ *  screenshot proof; the only difference is there's no specific order to mark paid afterwards —
+ *  [CustomerCatalogViewModel.markNotificationPaid] already handles a blank orderId by simply not
+ *  touching order history, so this needs nothing extra there. */
+@Composable
+private fun RequestPaymentDialog(sending: Boolean, onSend: (note: String, amount: Double) -> Unit, onDismiss: () -> Unit) {
+    var amountText by rememberSaveable { mutableStateOf("") }
+    var note by rememberSaveable { mutableStateOf("") }
+    val amount = amountText.toDoubleOrNull() ?: 0.0
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Filled.Payments, contentDescription = null) },
+        title = { Text("Request payment") },
+        text = {
+            Column {
+                Text(
+                    "Sends a message with a \"Pay via UPI now\" button for this amount — not tied to any particular order.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline
+                )
+                OutlinedTextField(
+                    value = amountText, onValueChange = { amountText = it },
+                    label = { Text("Amount") },
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().padding(top = 10.dp)
+                )
+                OutlinedTextField(
+                    value = note, onValueChange = { note = it },
+                    label = { Text("Note (optional)") },
+                    placeholder = { Text("e.g. Home delivery charge") },
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onSend(note.trim(), amount) }, enabled = amount > 0.0 && !sending) {
+                if (sending) CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                else Text("Send")
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss, enabled = !sending) { Text("Cancel") } }
+    )
 }
