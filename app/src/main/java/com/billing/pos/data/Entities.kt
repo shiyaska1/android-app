@@ -52,9 +52,11 @@ data class Item(
     val isOnline: Boolean = false,
     /** Price shown to online customers when set (> 0); falls back to [price] when 0. */
     val onlineOfferPrice: Double = 0.0,
-    /** Optional Google Drive (or any) link to a photo/catalog for this item — shown to online
-     *  customers as a separate clickable link, an alternative to uploading a photo to this
-     *  server's own storage. */
+    /** Optional link(s) to a photo/catalog for this item — any URL (Google Drive, the shop's own
+     *  website, etc.), several allowed, comma-separated. A direct image link is downloaded and
+     *  shown to online customers as its own thumbnail (tap for a full-screen, zoomable, swipeable
+     *  gallery); anything else shows as a plain clickable link. An alternative to uploading a
+     *  photo to this server's own storage. */
     val driveLink: String = ""
 )
 

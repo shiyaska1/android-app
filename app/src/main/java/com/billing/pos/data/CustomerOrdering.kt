@@ -29,8 +29,8 @@ data class ShopCatalogItem(
     val unit: String = "",
     val imageUrl: String = "",
     val description: String = "",
-    /** Optional link (e.g. Google Drive) to a photo/catalog for this item, shown to the customer
-     *  as a separate clickable link — the shop owner's alternative to uploading a photo here. */
+    /** Optional link(s) to a photo/catalog for this item — see [Item.driveLink]; same
+     *  comma-separated format, carried through as-is from the server's catalog JSON. */
     val driveLink: String = ""
 )
 

@@ -117,9 +117,9 @@ import androidx.room.TypeConverters
     // now that one customer can be connected to several shops (see ShopSwitch).
     // v97 online_orders.attachmentImages — multiple photo attachments per order (packed JSON),
     // replacing the old single attachmentImage column.
-    // v98 items.driveLink / shop_catalog_items.driveLink — an optional Google Drive (or any) link
-    // to a photo/catalog for an item, shown to online customers as its own clickable link instead
-    // of uploading a photo to this server's own storage.
+    // v98 items.driveLink / shop_catalog_items.driveLink — one or more links (comma-separated) to
+    // a photo/catalog for an item; direct image links become a tap-to-zoom gallery for online
+    // customers, others a plain clickable link — an alternative to uploading a photo here.
     version = 98,
     exportSchema = false
 )
@@ -973,9 +973,9 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
-        /** An item can carry an optional link (e.g. Google Drive) to its photo/catalog instead of
-         *  uploading a photo to this server's own storage — shown to online customers as its own
-         *  clickable link. */
+        /** An item can carry one or more optional links (comma-separated) to its photo/catalog
+         *  instead of uploading a photo to this server's own storage — direct image links become
+         *  a tap-to-zoom gallery for online customers, others a plain clickable link. */
         private val MIGRATION_97_98 = object : androidx.room.migration.Migration(97, 98) {
             override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE items ADD COLUMN driveLink TEXT NOT NULL DEFAULT ''")

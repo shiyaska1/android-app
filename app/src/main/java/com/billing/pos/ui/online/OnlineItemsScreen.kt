@@ -218,8 +218,8 @@ private fun OnlineItemCard(
                 OutlinedTextField(
                     value = link,
                     onValueChange = { v -> link = v; onDriveLink(v) },
-                    label = { Text("Product / catalog link (optional)") },
-                    supportingText = { Text("Any link — Google Drive, your own website, etc. Shown to customers as its own clickable link, instead of uploading a photo here") },
+                    label = { Text("Product / catalog links (optional)") },
+                    supportingText = { Text("One or more links, comma-separated — Google Drive, your own website, etc. A direct image link (.jpg/.png/...) shows the customer a photo they can open full-screen and zoom; anything else shows as a plain link they open in their browser") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, top = 4.dp)
                 )

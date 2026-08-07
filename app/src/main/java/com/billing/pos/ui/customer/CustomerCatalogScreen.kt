@@ -96,9 +96,11 @@ import androidx.core.content.FileProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.billing.pos.customer.NearbyShops
 import com.billing.pos.customer.ReferralLink
+import com.billing.pos.customer.RemoteImageCache
 import com.billing.pos.customer.ShopSwitch
 import com.billing.pos.customer.TechnicalSupport
 import com.billing.pos.customer.ThumbnailCompressor
+import com.billing.pos.ui.common.rememberThumbnail
 import com.billing.pos.data.AppPrefs
 import com.billing.pos.data.CustomerNotification
 import com.billing.pos.data.CustomerOrderHistory
@@ -109,6 +111,9 @@ import com.billing.pos.util.Format
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
@@ -1310,9 +1315,38 @@ private fun decodeDataUriBitmap(dataUri: String): androidx.compose.ui.graphics.I
     }.getOrNull()
 }
 
+/** True for a URL that points directly at an image file (by extension) — as opposed to a page
+ *  the customer just needs to open in a browser (a product page, a Drive folder listing, etc.). */
+private fun isDirectImageUrl(url: String): Boolean {
+    val clean = url.substringBefore('?').substringBefore('#').trim().lowercase()
+    return listOf(".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp").any { clean.endsWith(it) }
+}
+
 @Composable
 private fun CatalogItemRow(item: ShopCatalogItem, qty: Int, onQtyChange: (Int) -> Unit, modifier: Modifier = Modifier) {
     val uriHandler = LocalUriHandler.current
+    val context = LocalContext.current
+
+    // item.driveLink is one or more links, comma-separated — image links are downloaded/cached
+    // and shown as a thumbnail + full-screen swipeable gallery; anything else (a product page, a
+    // Drive folder) stays a plain clickable link the customer opens in their browser.
+    val links = remember(item.driveLink) {
+        item.driveLink.split(",").map { it.trim() }.filter { it.isNotBlank() }
+    }
+    val imageLinks = remember(links) { links.filter { isDirectImageUrl(it) } }
+    val textLinks = remember(links) { links.filterNot { isDirectImageUrl(it) } }
+
+    var galleryPaths by remember(item.driveLink) { mutableStateOf<List<String>>(emptyList()) }
+    LaunchedEffect(item.driveLink) {
+        if (imageLinks.isNotEmpty()) {
+            galleryPaths = coroutineScope {
+                imageLinks.map { url -> async { RemoteImageCache.fetch(context, url)?.absolutePath } }.awaitAll()
+            }.filterNotNull()
+        }
+    }
+    val galleryThumb = galleryPaths.firstOrNull()?.let { rememberThumbnail(it, 200) }
+    var viewingGallery by remember { mutableStateOf(false) }
+
     Card(modifier.fillMaxWidth()) {
         Row(
             Modifier.fillMaxWidth().padding(14.dp),
@@ -1328,6 +1362,32 @@ private fun CatalogItemRow(item: ShopCatalogItem, qty: Int, onQtyChange: (Int) -
                     modifier = Modifier.size(52.dp).padding(end = 12.dp)
                 )
             }
+            if (galleryThumb != null) {
+                Box(Modifier.size(52.dp).padding(end = 12.dp)) {
+                    androidx.compose.foundation.Image(
+                        galleryThumb,
+                        contentDescription = item.name,
+                        contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                            .clip(androidx.compose.foundation.shape.RoundedCornerShape(6.dp))
+                            .clickable { viewingGallery = true }
+                    )
+                    if (galleryPaths.size > 1) {
+                        Text(
+                            "+${galleryPaths.size - 1}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = androidx.compose.ui.graphics.Color.White,
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .background(
+                                    androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.6f),
+                                    androidx.compose.foundation.shape.RoundedCornerShape(topStart = 4.dp)
+                                )
+                                .padding(horizontal = 4.dp, vertical = 1.dp)
+                        )
+                    }
+                }
+            }
             Column(Modifier.weight(1f)) {
                 Text(item.name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                 if (item.description.isNotBlank()) {
@@ -1338,12 +1398,12 @@ private fun CatalogItemRow(item: ShopCatalogItem, qty: Int, onQtyChange: (Int) -
                     )
                 }
                 Text("₹" + Format.money(item.price) + if (item.unit.isNotBlank()) " / ${item.unit}" else "", fontWeight = FontWeight.Bold)
-                if (item.driveLink.isNotBlank()) {
+                textLinks.forEachIndexed { idx, link ->
                     Text(
-                        "View photos / catalog",
+                        if (textLinks.size > 1) "View catalog ${idx + 1}" else "View photos / catalog",
                         style = MaterialTheme.typography.bodySmall.copy(textDecoration = TextDecoration.Underline),
                         color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.clickable { runCatching { uriHandler.openUri(item.driveLink) } }
+                        modifier = Modifier.clickable { runCatching { uriHandler.openUri(link) } }
                     )
                 }
             }
@@ -1361,5 +1421,8 @@ private fun CatalogItemRow(item: ShopCatalogItem, qty: Int, onQtyChange: (Int) -
                 }
             }
         }
+    }
+    if (viewingGallery && galleryPaths.isNotEmpty()) {
+        com.billing.pos.ui.common.ImageViewerDialog(paths = galleryPaths, onDismiss = { viewingGallery = false })
     }
 }
