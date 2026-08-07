@@ -248,6 +248,11 @@ $html = <<<'APPHTML'
   .hist-row .line { font-size:13px; }
   .status-label { font-weight:600; font-size:13px; }
   .msg { font-size:13px; margin-top:2px; }
+  .notif-row.mine { text-align:right; }
+  .notif-row.mine .msg { color:var(--brand); }
+  .notif-row.mine .who, .notif-row .who { font-size:11px; font-weight:600; color:var(--outline); }
+  .chat-reply { display:flex; gap:8px; margin-top:12px; padding-top:12px; border-top:1px solid #eee; }
+  .chat-reply textarea { flex:1; resize:none; }
   .recent-btn { display:block; width:100%; text-align:left; background:none; border:none; padding:10px 4px; font-size:14px; color:var(--brand); border-bottom:1px solid #eee; cursor:pointer; }
   .err { color:var(--err); font-size:12px; margin-top:6px; }
   .toast { position:fixed; left:50%; bottom:100px; transform:translateX(-50%); background:#333; color:#fff; padding:10px 16px; border-radius:8px; font-size:13px; z-index:99; display:none; max-width:80%; text-align:center; }
@@ -336,9 +341,14 @@ $html = <<<'APPHTML'
 </div></div>
 
 <div class="overlay" id="notifOverlay"><div class="sheet">
-  <h2>Notifications</h2>
+  <h2>Messages</h2>
   <div id="notifList"></div>
-  <div class="sheet-actions"><button class="pill primary" style="flex:none;width:100%;" onclick="closeOverlay('notifOverlay')">Close</button></div>
+  <div class="chat-reply">
+    <textarea id="chatReplyInput" rows="2" placeholder="Message the shop…"></textarea>
+    <button class="pill primary" onclick="sendChatMessage()" id="chatReplyBtn">Send</button>
+  </div>
+  <div class="err" id="chatReplyErr"></div>
+  <div class="sheet-actions"><button class="pill outline" style="flex:none;width:100%;" onclick="closeOverlay('notifOverlay')">Close</button></div>
 </div></div>
 
 <div class="toast" id="toast"></div>
@@ -817,11 +827,15 @@ var STATUS_LABELS = { PENDING:'Pending', ACCEPTED:'Accepted', REJECTED:'Rejected
 function renderNotifications(){
   var list = loadJSON(ns()+'notifications', []);
   var el = document.getElementById('notifList');
-  if(list.length===0){ el.innerHTML = '<div class="empty">No notifications yet.</div>'; }
+  if(list.length===0){ el.innerHTML = '<div class="empty">No messages yet.</div>'; }
   else {
-    el.innerHTML = list.map(function(n){
+    // Oldest-first here, like a chat thread — the list itself stays newest-first everywhere
+    // else (badge counting, trimming to 100), only the rendered order is reversed.
+    el.innerHTML = list.slice().reverse().map(function(n){
+      var mine = !!n.fromCustomer;
       var label = STATUS_LABELS[n.status] || '';
-      return '<div class="notif-row">' + (label?'<div class="status-label">'+label+'</div>':'') +
+      return '<div class="notif-row'+(mine?' mine':'')+'">' +
+        (mine ? '<div class="who">You</div>' : (label?'<div class="status-label">'+label+'</div>':'')) +
         (n.message?'<div class="msg">'+esc(n.message)+'</div>':'') +
         '<div class="date">'+new Date(n.receivedAt).toLocaleString()+'</div></div>';
     }).join('');
@@ -830,6 +844,36 @@ function renderNotifications(){
   }
   updateNotifBadge();
   openOverlay('notifOverlay');
+}
+
+function sendChatMessage(){
+  var input = document.getElementById('chatReplyInput');
+  var errEl = document.getElementById('chatReplyErr');
+  var text = input.value.trim();
+  errEl.textContent = '';
+  if(!text) return;
+  var customer = loadJSON(ns()+'customer', {});
+  if(!customer.phone){
+    errEl.textContent = 'Place an order first so the shop knows who you are — then you can message them.';
+    return;
+  }
+  var btn = document.getElementById('chatReplyBtn');
+  btn.disabled = true;
+  fetch(cfg.url + sepFor(cfg.url) + 'do=message', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ shop: cfg.shop, customerPhone: customer.phone, customerName: customer.name||'', message: text })
+  }).then(function(res){
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    var list = loadJSON(ns()+'notifications', []);
+    list.unshift({ orderId:'', status:'', message:text, receivedAt:Date.now(), read:true, fromCustomer:true });
+    saveJSON(ns()+'notifications', list.slice(0,100));
+    input.value = '';
+    renderNotifications();
+  }).catch(function(){
+    errEl.textContent = 'Could not send — check your connection and try again.';
+  }).finally(function(){
+    btn.disabled = false;
+  });
 }
 
 function doRefresh(){
