@@ -1,14 +1,14 @@
 <?php
 /**
- * Real config for pos_online_catalog.php — copy this file to pos_config.php (same folder,
- * remove the .example), fill in your values, and upload ONLY pos_config.php to your server.
+ * Real config for pos_online_catalog.php AND pos_customer_app_ios.php (both read this same
+ * file if present) — copy this to pos_config.php (same folder, remove the .example), fill in
+ * your values, and upload ONLY pos_config.php to your server.
  *
- * pos_online_catalog.php loads this file automatically if it's present, and this file is never
- * touched by a future re-upload of pos_online_catalog.php (e.g. when a bug fix ships) — so your
- * key and service-account path survive every future update instead of silently resetting to
- * blank.
+ * Both PHP files load this file automatically if it's present, and neither ever writes to or
+ * overwrites it — so your values survive every future re-upload of those files (e.g. a bug fix)
+ * instead of silently resetting to blank.
  *
- * pos_config.php itself should NEVER be committed to git — it's your real credential.
+ * pos_config.php itself should NEVER be committed to git — it's your real credentials.
  */
 
 // Same secret you set for pos_backup_sync.php (or a different one). Leave blank to disable
@@ -22,3 +22,16 @@ $API_KEY = '';
 // service-account.json, upload it next to pos_online_catalog.php, and it's auto-detected
 // (and auto-protected with a .htaccess rule) with no path needed here.
 $SERVICE_ACCOUNT_PATH = '';
+
+// ---- iPhone customer push notifications (pos_customer_app_ios.php only) — optional, blank =
+// that app still works, its push-related buttons/banners just never show. Same Firebase project
+// as above, registered for Web too:
+//   1. Firebase Console > Project settings > General > "Your apps" > Add app > Web (</>) > any
+//      nickname > Register. Copy apiKey / projectId / messagingSenderId / appId from what it shows.
+//   2. Firebase Console > Project settings > Cloud Messaging tab > Web configuration section >
+//      Generate key pair (if none exists yet) — copy that string as the VAPID key below.
+$FIREBASE_WEB_API_KEY = '';
+$FIREBASE_WEB_PROJECT_ID = '';
+$FIREBASE_WEB_MESSAGING_SENDER_ID = '';
+$FIREBASE_WEB_APP_ID = '';
+$FIREBASE_WEB_VAPID_KEY = '';

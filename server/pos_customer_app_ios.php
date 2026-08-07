@@ -1,44 +1,69 @@
 <?php
 /**
- * POS Billing — customer ordering web app (PHP), for shops whose customers can't use the
- * Android app / Play Store — works in any mobile browser (Android, iPhone, desktop), and can be
- * "installed" as a home-screen icon on both platforms (iPhone: Share > Add to Home Screen;
- * Android: browser menu > Install app / Add to Home Screen).
+ * POS Billing — customer ordering web app for iPhone customers, WITH real push notifications.
  *
- * Talks to the SAME server/pos_online_catalog.php endpoint the Android customer app uses — same
- * catalog fetch, same do=order, do=status, do=notifications. No separate backend needed.
+ * This is a separate, standalone file from pos_customer_app.php (the plain web-ordering page) and
+ * from pos_online_catalog.php (the Android app's backend) — neither of those is touched by or
+ * required to change for this file to work. Give this link only to iPhone customers; Android
+ * customers should keep using the native app or pos_customer_app.php.
+ *
+ * Same ordering/catalog/chat/history functionality as pos_customer_app.php, talking to the SAME
+ * server/pos_online_catalog.php endpoints (do=order, do=status, do=notifications, etc. — no
+ * changes needed there). The one difference: a customer who adds this page to their Home Screen
+ * can get a real, WhatsApp-style push notification even with the page closed, the same do=
+ * registerToken / FCM pipeline the Android app already uses (a web-registered token is just
+ * another token to FCM — pos_online_catalog.php doesn't know or care which kind it is).
  *
  * Single file, like pos_online_catalog.php and pos_backup_sync.php: this one PHP file serves the
  * app page, its manifest, its service worker, and its icons (embedded as base64 below) — nothing
- * else to upload.
+ * else to upload except the small pos_config.php values below.
  *
  * --- Install ---
  * 1. Upload this file next to pos_online_catalog.php on your server, e.g.:
- *      https://yourdomain.com/pos_customer_app.php
- * 2. Hand each customer a link (or QR code — the Customer Link Builder tool generates this too)
- *    shaped like:
- *      https://yourdomain.com/pos_customer_app.php?shop=<DeviceID>&url=https://yourdomain.com/pos_online_catalog.php?key=YOUR_KEY&type=Restaurant
- *    (shop/url/type/premium mean exactly what they mean in the Android app's referrer link —
- *    shop = your Device ID, url = your pos_online_catalog.php address, type is optional wording
- *    only, premium=1 optionally unlocks the photo-attachment field.)
- * 3. Opening that link works immediately in the browser — no install required. The customer can
- *    also tap "Add to Home Screen" (iPhone) or "Install app" (Android Chrome) to get an icon like
- *    a native app, launching straight back into their shop.
+ *      https://yourdomain.com/pos_customer_app_ios.php
+ * 2. Hand each iPhone customer a link (or QR code) shaped like:
+ *      https://yourdomain.com/pos_customer_app_ios.php?shop=<DeviceID>&url=https://yourdomain.com/pos_online_catalog.php?key=YOUR_KEY&type=Restaurant
+ *    (shop/url/type/premium mean exactly what they mean everywhere else in this app — shop = your
+ *    Device ID, url = your pos_online_catalog.php address, type is optional wording only,
+ *    premium=1 optionally unlocks the photo-attachment field.)
+ * 3. Opening that link works immediately — no install required, ordering works right away. Push
+ *    notifications specifically need the two Firebase steps below AND the customer adding the
+ *    page to their Home Screen (Share > Add to Home Screen) — Apple only allows push for a page
+ *    opened that way, never a plain Safari tab. The app shows a banner explaining this until they
+ *    do it.
  *
- * --- Notifications ---
- * There's no push server behind this (no FCM/APNs) — the notification bell only checks for
- * updates while the page is open (on load and on manual refresh), unlike the Android app's
- * background AlarmManager poll. Good enough to see status changes when the customer reopens the
- * app; not a substitute for a true push notification if that's needed later.
- *
- * iPhone customers wanting real push notifications should use pos_customer_app_ios.php instead —
- * a separate file built specifically for that (this one stays exactly as-is either way).
+ * --- Push notification setup (optional — ordering works without it, just no real push) ---
+ * Uses the SAME Firebase project as the Android app's push (see pos_online_catalog.php's
+ * SERVICE_ACCOUNT_PATH), just registered for Web too:
+ *   1. Firebase Console > (your existing project) > gear icon > Project settings > General >
+ *      scroll to "Your apps" > Add app > choose Web (</>) > any nickname > Register. It shows a
+ *      firebaseConfig object — copy apiKey, projectId, messagingSenderId, appId from it.
+ *   2. Firebase Console > Project settings > Cloud Messaging tab > Web configuration section >
+ *      "Generate key pair" (if none exists yet) — copy that string.
+ *   3. Put all five values in pos_config.php (same file pos_online_catalog.php reads, same
+ *      folder), as FIREBASE_WEB_API_KEY / FIREBASE_WEB_PROJECT_ID /
+ *      FIREBASE_WEB_MESSAGING_SENDER_ID / FIREBASE_WEB_APP_ID / FIREBASE_WEB_VAPID_KEY. Blank (the
+ *      default) just means the push-related buttons/banners never show — ordering itself is
+ *      unaffected either way.
  */
 
 // ---- icon bytes, base64 (this keeps the whole app to one uploaded file) ----
 const ICON_180_B64 = 'iVBORw0KGgoAAAANSUhEUgAAALQAAAC0CAYAAAA9zQYyAAADFklEQVR4nO3dXW7aQBhAUai6zHQB6YK6gS6UPiFVtAEbj3+4nPOaKB6Zqw9jrMn59PlxOUHEt70XACMJmhRBkyJoUgRNiqBJETQpgiZF0KQImhRBkyJoUgRNiqBJETQpgiZF0KQImhRBkyJoUgRNiqBJETQpgiZF0KQImhRBkyJoUgRNiqBJETQpgiZF0KQImhRBkyJoUgRNiqBJETQpgibl+94LKLr8+j3p984/f6y8kvdz9p9kl5sa8CMCX07QC4wK+ZawnyfoJ6wV8i1hz+dD4Uxbxbz1sSpM6In2jsu0nkbQE8yNeWp8a/3ddyboB7a6BedW3xiCvmNKZKMD2+OYJT4ULrBGWGJdxoT+wr1JuVV0R1jDqzGh/+MoId071t53XY5K0KQI+sZRpvOUY5rS/xL0RHtes7penk7QpAj6L6/4Fv6Ka16ToCc4wlv+EdbwCgRNiqBJ8U0hKSY0KYImRdCkCJoUQZMiaFIETYqgSRE0KYImJbedrscp56k9xZd6lkPMz6uEnbnkEPMylfOXCLryYuytcB4TQcOVoEkRNCmCJkXQpAiaFEGTImhSBE2KoEkRNCmCJkXQpAiaFEGTImhSBE2KoEkRNCmCJkXQpAiaFEGTImhSBE2KoEkRNCm57XSP5KsdPQt7yB2VoFfwaGva68+FPZ5LjsHm7LNc2ZP5SAQ90DOBinosQQ+yJExRjyNoUgQ9wIgJa0qPIWhSBE2KoEkRNCmCHmDEN36+NRxD0KQIepAlE9Z0HkfQAz0TppjHEvRgcwIV83geH13BNVTPQ29P0CsS7vZccpAiaFIETYqgSRE0KYImRdCkCJoUQZMiaFIETYqgSRE0KYImRdCkCJoUQZMiaFIETYqgSUkEbW/lMQrnMRE0XGWCLkyXPVXO3/n0+XHZexEj2QtjnkrIV7mgeW+ZSw44nQRNjKBJETQpgiZF0KQImhRBkyJoUgRNiqBJETQpgiZF0KQImhRBkyJoUgRNiqBJETQpgiZF0KQImhRBkyJoUgRNiqBJETQpgiZF0KQImhRBkyJoUgRNyh8Q/5Qk/E8qoQAAAABJRU5ErkJggg==';
 const ICON_192_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAMAAAADACAYAAABS3GwHAAADZklEQVR4nO3dUXKaUBiAUex0mekC0gV1A12offKhnamicoHc75zXZMKN+T8ginJZPj+uC0R9O3oBcCQBkCYA0gRAmgBIEwBpAiBNAKQJgDQBkCYA0gRAmgBIEwBpAiBNAKQJgDQBkCYA0gRAmgBIEwBpAiBNAKQJgDQBkCYA0gRAmgBIEwBpAiBNAKQJgDQBkCYA0gRAmgBIEwBpAiBNAKQJgDQBkCYA0r4fvYCS66/fq77v8vPH4JVwc1k+P65HL2JWawf+EUGMI4CNbTX0/yOGbQlgI6MH/19C2IZ/gjew9/Aftc0ZOQK84SxD6GjwOgG86JXhXzuoI382fxPAC54Z0HcHc89tFQngSUc9l+81hDEE8IQ1Qzh6AM+whpl4JXgjew3dbTtn+Qf8q/M06Er3Bu6IPe69bYpjPQGscLbhX7NtEawjANIE8MBZ9/5r1uAo8JgAXnSG4b8501q+GgGQJoA7ZjiFmOF3GEkALzjjKccZ1/QVCIA0AZAmANJcDEeaIwBpAiBNAKQJgDQBkCYA0gRAmgBIEwBpAiBt+o9FcT38+2a+1Hraa4EM/vZmDGHKUyDDP8aMj+uUAcBa0wUw417qTGZ7fKcLAJ4hANIEQJoASBMAaQIgTQCkCYA0AZAmANIEQJoASBMAaQIgTQCkCYA0AZAmANIEQJoASBMAaQIgTQCkCYA0AZAmANIEQJoASJv+Bhln9L/P2Z/tg2e/AgHs6NENJm5fF8J+nALt5Jm7q8x4J5azEsAOXhloEexDAIO9M8giGE8ApAlgoC324I4CYwmANAGQJgDSBECaAEgTwEBbXNLgsoixBECaAAZ7Zw9u7z+eAHbwyiAb/n0IYCfPDLTh34/3A+zoNtjeEHMeAjiAQT8Pp0CkCYA0AZAmANIEQJoASBMAaQIgTQCkCYA0AZAmANIEQJoASBMAaQIgTQCkCYA0AZAmANIEQJoASJsuALcUGmu2x3e6ABhntuFflkkDmPEPdbRZH9PL8vlxPXoRI/kUtvfNOvzLEggA7pnyFAjWEgBpAiBNAKQJgDQBkCYA0gRAmgBIEwBpAiBNAKQJgDQBkCYA0gRAmgBIEwBpAiBNAKQJgDQBkCYA0gRAmgBIEwBpAiBNAKQJgDQBkCYA0gRAmgBIEwBpAiBNAKT9AZO8nT5X4VLhAAAAAElFTkSuQmCC';
 const ICON_512_B64 = 'iVBORw0KGgoAAAANSUhEUgAAAgAAAAIACAYAAAD0eNT6AAALY0lEQVR4nO3dXVbbyBpAUdyLYcIAYEBMgIG6H7qzbi7pENnWT5XO3s+JKYrI31HJSS5Pby/XJwAg5a+jFwAA7E8AAECQAACAIAEAAEECAACCBAAABAkAAAgSAAAQJAAAIEgAAECQAACAIAEAAEECAACCBAAABAkAAAgSAAAQJAAAIEgAAECQAACAIAEAAEECAACCBAAABAkAAAgSAAAQJAAAIEgAAECQAACAIAEAAEECAACCBAAABAkAAAgSAAAQJAAAIEgAAECQAACAIAEAAEECAACCBAAABAkAAAgSAAAQJAAAIEgAAECQAACAIAEAAEECAACCBAAABAkAAAgSAAAQJAAAIEgAAECQAACAIAEAAEECAACCBAAABAkAAAgSAAAQJAAAIEgAAECQAACAIAEAAEECAACCBAAABAkAAAgSAAAQJAAAIEgAAECQAACAIAEAAEECAACCBAAABAkAAAgSAAAQJAAAIEgAAECQAACAIAEAAEECAACCBAAABAkAAAgSAAAQJAAAIEgAAECQAACAIAEAAEECAACCBAAABAkAAAgSAAAQJAAAIEgAAECQAACAIAEAAEECAACCBAAABAkAAAgSAAAQJAAAIEgAAECQAACAIAEAAEECAACCBAAABAkAAAgSAAAQJAAAIEgAAECQAACAIAEAAEECAACCBAAABAkAAAgSAAAQJAAAIEgAAECQAACAIAEAAEECAACCno9eALCN68fnKq9zeX9d5XWAsVye3l6uRy8CuN9ag/5WwgDmJgBgMkcN/D8RBDAXAQCDG3Xg/4kggLEJABjUrIP/KyEAYxIAMJCzDP3fEQMwDgEAAzj74P9KCMDxBAAcqDb4vxICcBwBAAeoD/6vhADsTwDAjgz+7wkB2I8AgB0Y/LcRArA9/xcAbMzwv509g+05AYCNGGLrcBoA23ACABsw/NdjL2EbAgBWZmCtz57C+jwCgJUYUvvwSADW4QQAVmD478dewzqcAMCDRh5Ij94tn/l7gzoBAA8YaUDuNRCL3zOckQCAOx09CEcZfvYB5iQA4A5HDb3Rh519gXkIALjREUNutgFnj2B8AgBusOdgO8tAs2cwJgEAC+01yM46xOwfjMW/AwALGF6PK/4tBRjZ89ELAM49+H/24/s0pOF4HgHAH2w5rCqD/3fsLRzHIwD4hgG1rS33wCkDfE8AwG8Y/vsQAXAMAQA7M/x/ZU9gfz4DAP9hiztHQ24Zew/7cAIAOzCAlrNXsA8BAF94bnw+fqbwKwEAG3NHezt7BtsTAPCTte8UDbL7rb13TgHg/wkA2Ijh/zh7CNsRAPCvNe8QDa71rLmXTgHgfwQAAAQJAHhy9z86pwCwPgEAKzL8t2NvYV0CAACCBAB5ax0Ju0Pd3lp77DEACAAASBIAsAJ3//ux17AOAUCao+AuP3vqBAAABAkAeJAj6f3Zc3icAACAIAEAAEECgCwfAsOfAcoEADzAs+jj2Ht4jAAAgCABAABBAgAAggQAAAQJAAAIujy9vVyPXgQAsC8nAAAQJAAAIEgAAECQAACAIAEAAEECAACCBAAABAkAAAgSAAAQJAAAIEgAAECQAACAIAEAAEECAACCBAAABAkAAAgSAAAQJAAAIEgAAECQAACAIAEAAEECAACCBAAABAkAAAgSAAAQJAAAIEgAAECQAACAIAEAAEECAACCno9eAOd0/fg8eglwKpf316OXwMlcnt5erkcvgnMw9GEfYoA1CAAeZvDDMYQAj/AZAB5i+MNxXH88QgBwN28+cDzXIfcSANzFmw6Mw/XIPQQAN/NmA+NxXXIrAcBNvMnAuFyf3EIAAECQAGAxdxcwPtcpSwkAAAgSAAAQJABYxLEizMP1yhICAACCBAAABAkAAAgSAAAQJAAAIEgAAECQAACAIAEAAEECAACCBAAABAkAAAgSAAAQJAAAIEgAAECQAACAIAEAAEECAACCBAAABAkAAAgSAAAQJAAAIEgAAECQAACAIAEAAEECAACCBAAABAkAAAgSAAAQJAAAIEgAAECQAACAIAEAAEECAACCBAAABAkAAAgSAAAQJAAAIEgAAECQAACAIAEAAEECAACCBAAABAkAAAgSAAAQJAAAIEgAAECQAACAIAEAAEECAACCBAAABAkAAAgSAAAQJAAAIEgAAECQAACAIAEAAEECAACCBAAABAkAAAgSAAAQJAAAIEgAAECQAACAIAEAAEECAACCBAAABAkAAAgSAAAQJAAAIEgAAECQAACAIAEAAEECAACCBAAABAkAAAgSAAAQ9Hz0AoB9XN5fF/2668fnxisBRiAA4MSWDv3f/R4xAOclAOBk7hn6S15LDMC5+AwAnMiaw3/P1wb25wQATmCv4fzj6zgNgPk5AYDJHXFn7jQA5icAYGJHDmIRAHMTADCpEQbwCGsA7iMAYEIjDd6R1gIsJwBgMiMO3BHXBHxPAMBERh60I68N+JUAgEnMMGBnWCPwDwEAAEECACYw0531TGuFMgEAAEECAAY34x31jGuGGgEAAEECAACCBAAABAkAGNjMz9JnXjsUCAAACBIAABAkAAAgSAAAQJAAAIAgAQAAQQIAAIIEAAAECQAY2PXj8+gl3G3mtUOBAACAIAEAAEECAACCBAAMbsZn6TOuGWoEAAAECQCYwEx31DOtFcoEAAAECQCYxAx31jOsEfiHAICJjDxgR14b8CsBAJMZcdCOuCbgewIAJjTSwB1pLcByAgAmNcLgHWENwH0EAEzsyAFs+MPcBABM7ohBbPjD/J6PXgDwuB8D+fL+usvXAebnBABOZMsBbfjDuTgBgJP5eVA/eiJg6MN5CQA4sXtiwNCHBgEAEQY78DOfAQCAIAEAAEECAACCBAAABAkAAAgSAAAQJAAAIEgAAECQAACAIAEAAEECAACCBAAABAkAAAgSAAAQJAAAIEgAAECQAACAIAEAAEECAACCBAAABAkAAAgSAAAQJAAAIEgAAECQAACAIAEAAEECAACCBAAABAkAAAgSAAAQJAAAIEgAAECQAACAIAEAAEECAACCBAAABAkAAAgSAAAQJAAAIEgAAECQAACAIAEAAEECAACCBAAABAkAAAgSAAAQJAAAIEgAAECQAACAIAEAAEECAACCBAAABAkAAAgSAAAQJAAAIEgAAECQAACAIAHAIpf316OXACzkemUJAQAAQQIAAIIEAIs5VoTxuU5ZSgAAnIThzy0EADfxBgNwDgKAm4kAGI/rklsJAO7izQbG4XrkHgKAu3nTgeO5DrnX5ent5Xr0Ipjb9ePz6CVAjsHPowQAqxECsA/DnzUIADYhBmBdhj5rEwAAEORDgAAQJAAAIEgAAECQAACAIAEAAEECAACCBAAABAkAAAgSAAAQJAAAIEgAAECQAACAIAEAAEECAACCBAAABAkAAAgSAAAQJAAAIEgAAECQAACAIAEAAEECAACCBAAABAkAAAgSAAAQJAAAIEgAAECQAACAIAEAAEECAACCBAAABAkAAAgSAAAQJAAAIEgAAECQAACAIAEAAEECAACCBAAABAkAAAgSAAAQJAAAIEgAAECQAACAIAEAAEECAACCBAAABAkAAAgSAAAQJAAAIEgAAECQAACAIAEAAEECAACCBAAABAkAAAgSAAAQJAAAIEgAAECQAACAIAEAAEECAACCBAAABAkAAAgSAAAQJAAAIEgAAECQAACAIAEAAEECAACCBAAABAkAAAgSAAAQJAAAIEgAAECQAACAIAEAAEECAACCBAAABAkAAAgSAAAQJAAAIEgAAECQAACAIAEAAEECAACCBAAABAkAAAgSAAAQJAAAIEgAAECQAACAIAEAAEECAACCBAAABAkAAAgSAAAQJAAAIEgAAECQAACAoL8BFdWKPQW0r1oAAAAASUVORK5CYII=';
+
+// ---- configuration — optional; only needed for Web Push (see the top comment). Put real values
+// in pos_config.php, next to this file — same file pos_online_catalog.php reads. ----
+$FIREBASE_WEB_API_KEY = '';
+$FIREBASE_WEB_PROJECT_ID = '';
+$FIREBASE_WEB_MESSAGING_SENDER_ID = '';
+$FIREBASE_WEB_APP_ID = '';
+$FIREBASE_WEB_VAPID_KEY = '';
+if (is_readable(__DIR__ . '/pos_config.php')) {
+    require __DIR__ . '/pos_config.php';
+}
+$firebaseWebConfigured = $FIREBASE_WEB_API_KEY !== '' && $FIREBASE_WEB_PROJECT_ID !== '' &&
+    $FIREBASE_WEB_MESSAGING_SENDER_ID !== '' && $FIREBASE_WEB_APP_ID !== '' && $FIREBASE_WEB_VAPID_KEY !== '';
 
 $app = isset($_GET['app']) ? (string) $_GET['app'] : '';
 
@@ -108,15 +133,59 @@ self.addEventListener('fetch', (event) => {
   );
 });
 
+// ---- Push notifications ----
+// This script is registered with its Firebase config appended to the URL as query params (see
+// enablePush() in the page itself) — a static/cached service worker script has no other way to
+// see the shop owner's pos_config.php values, since those live server-side.
+var swParams = new URLSearchParams(self.location.search);
+var fbApiKey = swParams.get('apiKey');
+if (fbApiKey) {
+  importScripts('https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js');
+  importScripts('https://www.gstatic.com/firebasejs/10.13.0/firebase-messaging-compat.js');
+  firebase.initializeApp({
+    apiKey: fbApiKey,
+    projectId: swParams.get('projectId'),
+    messagingSenderId: swParams.get('messagingSenderId'),
+    appId: swParams.get('appId')
+  });
+  var messaging = firebase.messaging();
+  // Every push is just a "go check now" signal, same as the Android app — no order/status text
+  // travels in the push itself, so there's nothing here that goes stale or leaks order details
+  // into a notification tray. Opening it takes the customer to the app, which fetches the real
+  // content the same way the in-app refresh already does.
+  messaging.onBackgroundMessage(function () {
+    self.registration.showNotification('Shop Order', {
+      body: 'You have an update on your order — tap to open',
+      icon: '?app=icon&size=192',
+      badge: '?app=icon&size=192',
+      tag: 'pos-order-update',
+      renotify: true
+    });
+  });
+}
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+      for (var i = 0; i < list.length; i++) {
+        if ('focus' in list[i]) return list[i].focus();
+      }
+      if (clients.openWindow) return clients.openWindow(self.registration.scope);
+    })
+  );
+});
+
 SWJS;
     exit;
 }
 
 header('Content-Type: text/html; charset=utf-8');
-echo <<<'APPHTML'
+$html = <<<'APPHTML'
 <!doctype html>
 <html lang="en">
 <head>
+<!--FIREBASE_HEAD-->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Shop Order</title>
@@ -184,6 +253,11 @@ echo <<<'APPHTML'
   .onboard p { color:var(--outline); font-size:14px; }
   .divider { border:none; border-top:1px solid #eee; margin:14px 0; }
   .attach-btn { width:100%; padding:10px; border-radius:8px; border:1px solid var(--brand); background:#fff; color:var(--brand); font-size:14px; margin-top:10px; cursor:pointer; }
+  .banner { display:none; align-items:center; gap:8px; background:#FFF3E0; color:#4A3B00; border-radius:10px; padding:10px 12px; margin-bottom:10px; font-size:13px; line-height:1.4; }
+  .banner b { font-weight:700; }
+  .banner span { flex:1; }
+  .banner .pill { flex:none; padding:6px 12px; font-size:12px; }
+  .banner .icon-btn { color:#4A3B00; font-size:16px; padding:2px 4px; flex:none; }
 </style>
 </head>
 <body>
@@ -207,6 +281,8 @@ echo <<<'APPHTML'
   </header>
   <main>
     <div class="updated" id="updatedAt"></div>
+    <div class="banner" id="a2hsBanner"><span id="a2hsText"></span><button class="icon-btn" onclick="dismissA2hsBanner()" title="Dismiss">&times;</button></div>
+    <div class="banner" id="pushBanner"><span>Get notified about your order right on this phone, even with the app closed.</span><button class="pill primary" onclick="enablePush()">Enable</button><button class="icon-btn" onclick="dismissPushBanner()" title="Dismiss">&times;</button></div>
     <input type="text" class="search" id="search" placeholder="Search items…" oninput="render()">
     <div class="chips" id="chips"></div>
     <div id="itemList"></div>
@@ -279,6 +355,66 @@ function esc(s){ var d=document.createElement('div'); d.textContent = s==null?''
 function loadJSON(key, fallback){ try{ var v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; }catch(e){ return fallback; } }
 function saveJSON(key, val){ try{ localStorage.setItem(key, JSON.stringify(val)); }catch(e){} }
 function ns(){ return 'posc_' + cfg.shop + '_'; }
+
+// ---- Push notifications (Web Push via Firebase — optional, see top-of-file comment) ----
+function isIOS(){ return /iphone|ipad|ipod/i.test(navigator.userAgent); }
+function isStandalone(){ return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true; }
+
+function updateA2hsBanner(){
+  var el = document.getElementById('a2hsBanner');
+  if(isStandalone() || loadJSON('posc_a2hsDismissed', false)){ el.style.display='none'; return; }
+  var text = document.getElementById('a2hsText');
+  text.innerHTML = isIOS()
+    ? 'Add this to your Home Screen for order alerts even with the app closed: tap <b>Share</b>, then <b>Add to Home Screen</b>.'
+    : 'Add this to your Home Screen for order alerts even with the app closed — open your browser menu and tap <b>Install app</b> / <b>Add to Home Screen</b>.';
+  el.style.display = 'flex';
+}
+function dismissA2hsBanner(){
+  saveJSON('posc_a2hsDismissed', true);
+  document.getElementById('a2hsBanner').style.display = 'none';
+}
+
+function pushApiSupported(){
+  return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window &&
+    !!(window.FIREBASE_CFG && window.FIREBASE_CFG.apiKey);
+}
+function canOfferPushNow(){
+  if(!pushApiSupported()) return false;
+  if(isIOS() && !isStandalone()) return false; // Safari refuses the permission prompt outside standalone
+  if(Notification.permission === 'granted') return false;
+  var customer = loadJSON(ns()+'customer', {});
+  return !!customer.phone; // needs a phone number to register the token against
+}
+function updatePushBanner(){
+  var el = document.getElementById('pushBanner');
+  if(!el) return;
+  el.style.display = (canOfferPushNow() && !loadJSON(ns()+'pushDismissed', false)) ? 'flex' : 'none';
+}
+function dismissPushBanner(){
+  saveJSON(ns()+'pushDismissed', true);
+  document.getElementById('pushBanner').style.display = 'none';
+}
+function enablePush(){
+  if(!pushApiSupported()){ toast('Notifications are not available here'); return; }
+  Notification.requestPermission().then(function(perm){
+    if(perm !== 'granted'){ toast('Notification permission not granted'); return; }
+    var qs = new URLSearchParams(window.FIREBASE_CFG).toString();
+    navigator.serviceWorker.register('?app=sw&'+qs).then(function(reg){
+      firebase.initializeApp(window.FIREBASE_CFG);
+      return firebase.messaging().getToken({ vapidKey: window.FIREBASE_CFG.vapidKey, serviceWorkerRegistration: reg });
+    }).then(function(token){
+      if(!token) throw new Error('no token');
+      var customer = loadJSON(ns()+'customer', {});
+      return fetch(cfg.url + sepFor(cfg.url) + 'do=registerToken', {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ shop: cfg.shop, role:'customer', phone: customer.phone||'', token: token })
+      });
+    }).then(function(){
+      toast('Notifications enabled');
+      updatePushBanner();
+    }).catch(function(){ toast('Could not enable notifications'); });
+  });
+}
 
 function paramsFromSearch(search){
   var p = new URLSearchParams(search);
@@ -560,6 +696,7 @@ function confirmSave(){
   var errEl = document.getElementById('saveErr');
   if(!name || !phone){ errEl.textContent = 'Name and mobile number are required.'; return; }
   saveJSON(ns()+'customer', {name:name, phone:phone, address:address});
+  updatePushBanner();
   doSubmitOrder({name:name, phone:phone, address:address}, note, pendingAttachment, true);
 }
 
@@ -732,6 +869,8 @@ function boot(){
   if('serviceWorker' in navigator){
     navigator.serviceWorker.register('?app=sw').catch(function(){});
   }
+  updateA2hsBanner();
+  updatePushBanner();
 }
 boot();
 </script>
@@ -739,3 +878,18 @@ boot();
 </html>
 
 APPHTML;
+
+$firebaseHead = '';
+if ($firebaseWebConfigured) {
+    $firebaseHead = '<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js" defer></script>' . "\n" .
+        '<script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-messaging-compat.js" defer></script>' . "\n" .
+        '<script>window.FIREBASE_CFG = ' . json_encode(array(
+            'apiKey' => $FIREBASE_WEB_API_KEY,
+            'projectId' => $FIREBASE_WEB_PROJECT_ID,
+            'messagingSenderId' => $FIREBASE_WEB_MESSAGING_SENDER_ID,
+            'appId' => $FIREBASE_WEB_APP_ID,
+            'vapidKey' => $FIREBASE_WEB_VAPID_KEY
+        )) . ';</script>';
+}
+$html = str_replace('<!--FIREBASE_HEAD-->', $firebaseHead, $html);
+echo $html;
