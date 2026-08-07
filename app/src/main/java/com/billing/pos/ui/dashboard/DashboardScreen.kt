@@ -436,6 +436,11 @@ fun DashboardScreen(
                         val p = com.billing.pos.data.AppPrefs(context)
                         p.shopCode = p.shopCode.ifBlank { com.billing.pos.data.License.deviceId(context) }
                         p.customerBusinessType = p.businessType
+                        // Preview is the owner testing their own setup, not a real customer being
+                        // granted anything — always show every premium-gated feature (voice notes,
+                        // photo attachments) here so there's nothing left untestable without a
+                        // second "premium" customer link to scan first.
+                        p.customerPremiumShop = true
                         onPreviewCustomerApp()
                     }) {
                         Icon(Icons.Filled.Storefront, contentDescription = "Preview customer app")

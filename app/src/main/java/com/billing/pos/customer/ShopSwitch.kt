@@ -89,12 +89,16 @@ object ShopSwitch {
         prefs.shopCode = target.shop
         prefs.onlineCatalogUrl = target.url
         prefs.customerBusinessType = target.type
-        prefs.customerPremiumShop = target.premium
 
         // Restore this shop's own cached snapshot (if any) instead of blanking to "" — the item
         // cache itself is untouched by a switch (see ShopCatalogDao.replaceForShop), so a shop
         // visited before shows its items and details instantly, no network round trip needed.
         val cached = unpack(prefs.customerKnownShops).find { it.shop == target.shop }
+        // A shop reached via "Browse shops"/recent (not a fresh QR/referral scan) carries no real
+        // premium info of its own — target.premium is just false there by construction — so never
+        // let that silently downgrade a premium status this shop already earned from an earlier
+        // scan. Either source saying premium is enough; only a genuine never-premium shop stays false.
+        prefs.customerPremiumShop = target.premium || (cached?.premium ?: false)
         prefs.shopDisplayName = cached?.name ?: target.name
         prefs.shopContactPhone = cached?.phone.orEmpty()
         prefs.shopBannerImage = cached?.bannerImage.orEmpty()
