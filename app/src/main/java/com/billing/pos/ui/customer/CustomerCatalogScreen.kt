@@ -90,10 +90,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.LocalUriHandler
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextDecoration
@@ -115,6 +112,7 @@ import com.billing.pos.ui.common.rememberThumbnail
 import com.billing.pos.data.AppPrefs
 import com.billing.pos.data.CustomerNotification
 import com.billing.pos.data.CustomerOrderHistory
+import com.billing.pos.data.DownloadSaver
 import com.billing.pos.data.OnlineOrderStatus
 import com.billing.pos.data.ShopCatalogItem
 import com.billing.pos.ui.billing.collectAsStateSafe
@@ -1068,15 +1066,15 @@ private fun SaveOrderDialog(
 /**
  * Shown right after "Your details", only when the shop has a UPI ID set (see
  * [AppPrefs.shopUpiId]) — lets the customer pay for this order right now instead of Cash on
- * delivery. "Pay via UPI" launches the shop's UPI link through [ActivityResultContracts.StartActivityForResult]
- * (not a plain open-and-forget intent) so a well-behaved UPI app (GPay, PhonePe, etc.) can hand
- * back its own transaction status per the standard UPI Linking response — Android returns here
- * automatically once the customer finishes or cancels in that app, no manual "did you pay?"
- * question needed. [onChoose] gets "UPI" only on a reported SUCCESS (direct-pay path, proof
- * always null there) or when the customer explicitly confirms "I've paid" after the QR-code
- * fallback (optionally with a payment-screenshot proof, since that path has no automatic
- * success callback); anything else (failure, cancelled, no UPI app installed) falls back to
- * Cash on delivery without blocking the order.
+ * delivery. "Pay via UPI" saves the order immediately (exactly like Cash on delivery) and only
+ * then opens the shop's UPI link with a plain open-and-forget intent — it does not wait for the
+ * UPI app to hand back a result. Earlier this waited on an activity result before saving the
+ * order, but several UPI apps never reliably return control to a third-party caller (security
+ * checks, the customer leaving via Home instead of the app's own back control, etc.), which left
+ * the order stuck unsaved. Payment isn't verified automatically either way: the shop owner
+ * checks their own UPI app before dispatching, and can flip a false "Paid via UPI" claim back to
+ * unpaid from Online Orders (see [OnlineOrdersViewModel.disputePayment]) if it never arrives. The
+ * QR-code fallback below works the same way, via its own "I've paid via QR" button.
  */
 @Composable
 private fun PaymentDialog(
@@ -1088,8 +1086,6 @@ private fun PaymentDialog(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var payError by remember { mutableStateOf<String?>(null) }
-    var waiting by remember { mutableStateOf(false) }
     var showPayQr by remember { mutableStateOf(false) }
     var proofDataUri by remember { mutableStateOf<String?>(null) }
     var compressingProof by remember { mutableStateOf(false) }
@@ -1115,10 +1111,10 @@ private fun PaymentDialog(
     // app's own "Share" on its payment-success screen) as this order's payment proof, instead of
     // letting it fall through to the diary's generic "new entry with this attachment" handling.
     LaunchedEffect(showPayQr) {
-        com.billing.pos.auth.PendingSharedMedia.setAwaitingPaymentProof(showPayQr)
+        com.billing.pos.auth.PendingSharedMedia.awaitingPaymentProof = showPayQr
     }
     DisposableEffect(Unit) {
-        onDispose { com.billing.pos.auth.PendingSharedMedia.setAwaitingPaymentProof(false) }
+        onDispose { com.billing.pos.auth.PendingSharedMedia.awaitingPaymentProof = false }
     }
     LaunchedEffect(com.billing.pos.auth.PendingSharedMedia.generation) {
         if (showPayQr && com.billing.pos.auth.PendingSharedMedia.hasItems) {
@@ -1128,39 +1124,6 @@ private fun PaymentDialog(
             compressingProof = false
             if (dataUri != null) proofDataUri = dataUri
         }
-    }
-    val upiLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        waiting = false
-        val response = result.data?.getStringExtra("response") ?: ""
-        val status = Regex("Status=([A-Za-z]+)").find(response)?.groupValues?.get(1)
-            ?: Regex("\"Status\"\\s*:\\s*\"([A-Za-z]+)\"").find(response)?.groupValues?.get(1)
-        if (status.equals("SUCCESS", ignoreCase = true)) {
-            onChoose("UPI", null)
-        } else {
-            payError = "Payment wasn't completed — try again, or choose Cash on delivery."
-        }
-    }
-    // Safety net for a UPI app that never hands control back cleanly (e.g. the customer leaves it
-    // via the phone's Home button/app-switcher instead of its own back/Dismiss control) — normally
-    // Android delivers the activity result (clearing [waiting] above) before this screen resumes,
-    // so this only fires when that never happened, instead of leaving "Waiting for payment…" stuck
-    // forever with no way forward.
-    val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner) {
-        var pausedWhileWaiting = false
-        val observer = LifecycleEventObserver { _, event ->
-            when (event) {
-                Lifecycle.Event.ON_PAUSE -> if (waiting) pausedWhileWaiting = true
-                Lifecycle.Event.ON_RESUME -> if (waiting && pausedWhileWaiting) {
-                    waiting = false
-                    pausedWhileWaiting = false
-                    payError = "Didn't hear back from the UPI app. If you completed the payment, it's fine — otherwise try again or choose Cash on delivery."
-                }
-                else -> {}
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1174,24 +1137,18 @@ private fun PaymentDialog(
                 )
                 OutlinedButton(
                     onClick = {
-                        payError = null
+                        // Save the order right away, exactly like Cash on delivery — the shop
+                        // owner verifies the payment on their own UPI app (and can dispute it
+                        // from Online Orders if it never arrives), so there's nothing to gain by
+                        // making the customer sit on this screen waiting for the UPI app to hand
+                        // control back, which some UPI apps never do reliably anyway.
+                        onChoose("UPI", null)
                         val link = com.billing.pos.util.UpiQr.link(upiVpa, upiName, amount, "Order", reference)
                         val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(link))
-                        waiting = true
-                        runCatching { upiLauncher.launch(intent) }
-                            .onFailure { waiting = false; payError = "No UPI app found on this phone." }
+                        runCatching { context.startActivity(intent) }
                     },
-                    enabled = !waiting,
                     modifier = Modifier.fillMaxWidth().padding(top = 14.dp)
-                ) { Text(if (waiting) "Waiting for payment…" else "Pay via UPI now") }
-                if (payError != null) {
-                    Text(
-                        payError!!,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.padding(top = 8.dp)
-                    )
-                }
+                ) { Text("Pay via UPI now") }
                 // Fallback for when "Pay via UPI now" (an intent launched by this app) gets
                 // refused by the UPI app's own security checks (some UPI apps flag/decline
                 // payment intents from third-party apps that aren't a registered PSP/merchant —
@@ -1205,6 +1162,40 @@ private fun PaymentDialog(
                 if (showPayQr) {
                     val qr = remember(upiVpa, upiName, amount, reference) {
                         com.billing.pos.util.UpiQr.bitmap(com.billing.pos.util.UpiQr.link(upiVpa, upiName, amount, "Order", reference))
+                    }
+                    // Some UPI apps (PhonePe in particular) don't accept a QR handed to them via
+                    // the share sheet above — this saves the same PNG straight into the phone's
+                    // own Downloads/gallery, so it can be opened directly from that UPI app's own
+                    // "scan from gallery" option instead of relying on a share-target hand-off.
+                    fun downloadQr(bmp: android.graphics.Bitmap) {
+                        scope.launch {
+                            val ok = withContext(Dispatchers.IO) {
+                                runCatching {
+                                    val file = File.createTempFile("upi_qr_", ".png", context.cacheDir)
+                                    FileOutputStream(file).use { bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+                                    val saved = DownloadSaver.save(context, file, "upi_qr_" + System.currentTimeMillis() + ".png", "image/png")
+                                    file.delete()
+                                    saved
+                                }.getOrDefault(false)
+                            }
+                            android.widget.Toast.makeText(
+                                context,
+                                if (ok) "QR saved to Downloads" else "Could not save QR",
+                                android.widget.Toast.LENGTH_SHORT
+                            ).show()
+                        }
+                    }
+                    var pendingQrDownload by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
+                    val storagePermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+                        val bmp = pendingQrDownload; pendingQrDownload = null
+                        if (granted && bmp != null) downloadQr(bmp)
+                        else if (!granted) android.widget.Toast.makeText(context, "Storage permission denied", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                    fun requestQrDownload(bmp: android.graphics.Bitmap) {
+                        if (DownloadSaver.needsLegacyPermission() &&
+                            ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_EXTERNAL_STORAGE) != android.content.pm.PackageManager.PERMISSION_GRANTED
+                        ) { pendingQrDownload = bmp; storagePermission.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE) }
+                        else downloadQr(bmp)
                     }
                     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                         if (qr != null) {
@@ -1230,6 +1221,7 @@ private fun PaymentDialog(
                                     context.startActivity(android.content.Intent.createChooser(send, "Save or share QR code"))
                                 }
                             }) { Text("Save / share this QR") }
+                            TextButton(onClick = { requestQrDownload(qr) }) { Text("Download to storage") }
                         } else {
                             Text("Could not make the QR", color = MaterialTheme.colorScheme.error)
                         }

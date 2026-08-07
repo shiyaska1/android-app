@@ -28,7 +28,11 @@ object ShopNotifications {
         if (mgr.getNotificationChannel(CHANNEL_ID) == null) {
             mgr.createNotificationChannel(
                 NotificationChannel(CHANNEL_ID, "New online orders", NotificationManager.IMPORTANCE_HIGH)
-                    .apply { description = "A customer placed a new online order" }
+                    .apply {
+                        description = "A customer placed a new online order"
+                        enableVibration(true)
+                        setShowBadge(true)
+                    }
             )
         }
     }
@@ -49,6 +53,12 @@ object ShopNotifications {
             .setContentText(text)
             .setAutoCancel(true)
             .setContentIntent(open)
+            // Explicit priority/vibrate on top of the channel's IMPORTANCE_HIGH — some OEM
+            // notification stacks (MIUI, ColorOS, One UI) only pop up a heads-up banner when
+            // the notification itself also asks for attention, not just the channel.
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_EVENT)
+            .setVibrate(longArrayOf(0, 250, 250, 250))
             .build()
 
         val allowed = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
@@ -79,6 +89,9 @@ object ShopNotifications {
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setAutoCancel(true)
             .setContentIntent(open)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+            .setVibrate(longArrayOf(0, 250, 250, 250))
             .build()
 
         val allowed = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||

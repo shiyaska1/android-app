@@ -35,9 +35,6 @@ object PendingSharedMedia {
      *  through to the diary's generic "new entry with this attachment" handling below. Checked
      *  before [awaitingDiary] routing fires. */
     var awaitingPaymentProof by mutableStateOf(false)
-        private set
-
-    fun setAwaitingPaymentProof(active: Boolean) { awaitingPaymentProof = active }
 
     /** Bumps on every share, so an already-open screen can react and pick up extra files. */
     var generation by mutableStateOf(0)
