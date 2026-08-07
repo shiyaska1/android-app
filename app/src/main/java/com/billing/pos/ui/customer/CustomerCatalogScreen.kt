@@ -667,10 +667,15 @@ fun CustomerCatalogScreen(
     }
     if (showPaymentDialog) {
         val cartTotal = items.filter { qty.containsKey(it.id) }.sumOf { it.price * (qty[it.id] ?: 0) }
+        // No order id exists yet at this point (the order is only created after this choice) —
+        // a fresh reference per dialog instance is enough; it only needs to be unique, not
+        // correlated to anything server-side.
+        val paymentReference = remember(showPaymentDialog) { "ORD" + System.currentTimeMillis() }
         PaymentDialog(
             amount = cartTotal,
             upiVpa = prefs.shopUpiId,
             upiName = prefs.shopUpiName.ifBlank { shopName },
+            reference = paymentReference,
             onDismiss = { showPaymentDialog = false; pendingOrderSubmit = null },
             onChoose = { status ->
                 showPaymentDialog = false
@@ -761,6 +766,7 @@ fun CustomerCatalogScreen(
                 upiVpa = payUpi.first,
                 upiName = payUpi.second.ifBlank { n.shopName.ifBlank { shopName } },
                 declineLabel = "Not now",
+                reference = n.orderId.ifBlank { "PAY" + System.currentTimeMillis() },
                 onDismiss = { payingNotification = null },
                 onChoose = { status ->
                     payingNotification = null
@@ -1065,6 +1071,8 @@ private fun SaveOrderDialog(
 private fun PaymentDialog(
     amount: Double, upiVpa: String, upiName: String,
     declineLabel: String = "Cash on delivery",
+    // A unique transaction reference (order id when known, else a fresh one) — see [UpiQr.link].
+    reference: String = "",
     onDismiss: () -> Unit, onChoose: (String) -> Unit
 ) {
     val context = LocalContext.current
@@ -1094,7 +1102,7 @@ private fun PaymentDialog(
                 OutlinedButton(
                     onClick = {
                         payError = null
-                        val link = com.billing.pos.util.UpiQr.link(upiVpa, upiName, amount, "Order")
+                        val link = com.billing.pos.util.UpiQr.link(upiVpa, upiName, amount, "Order", reference)
                         val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(link))
                         waiting = true
                         runCatching { upiLauncher.launch(intent) }

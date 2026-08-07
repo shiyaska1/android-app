@@ -17,13 +17,17 @@ import java.util.Locale
  */
 object UpiQr {
 
-    /** The upi:// link for a fixed amount. */
-    fun link(vpa: String, name: String, amount: Double, note: String = ""): String {
+    /** The upi:// link for a fixed amount. [tr] is a unique transaction reference (order id, bill
+     *  number, or similar) — optional per the UPI spec, but including one is standard practice and
+     *  makes a payer's UPI app (GPay etc.) less likely to flag an intent-based payment from a
+     *  third-party app as suspicious, especially for repeated small amounts to the same payee. */
+    fun link(vpa: String, name: String, amount: Double, note: String = "", tr: String = ""): String {
         val am = String.format(Locale.US, "%.2f", amount)
         val sb = StringBuilder("upi://pay?pa=").append(Uri.encode(vpa.trim()))
         if (name.isNotBlank()) sb.append("&pn=").append(Uri.encode(name.trim()))
         sb.append("&am=").append(am).append("&cu=INR")
         if (note.isNotBlank()) sb.append("&tn=").append(Uri.encode(note.trim()))
+        if (tr.isNotBlank()) sb.append("&tr=").append(Uri.encode(tr.trim()))
         return sb.toString()
     }
 
