@@ -27,7 +27,8 @@ object OrderStatusPush {
         status: String? = null,
         message: String? = null,
         customerName: String = "",
-        amount: Double = 0.0
+        amount: Double = 0.0,
+        attachments: List<String> = emptyList()
     ): Boolean = withContext(Dispatchers.IO) {
         if (customerPhone.isBlank()) return@withContext false
         val prefs = AppPrefs(context)
@@ -42,6 +43,7 @@ object OrderStatusPush {
             if (!status.isNullOrBlank()) put("status", status)
             if (!message.isNullOrBlank()) put("message", message)
             if (amount > 0.0) put("amount", amount)
+            if (attachments.isNotEmpty()) put("attachments", org.json.JSONArray(attachments))
         }
         val sep = if (base.contains("?")) "&" else "?"
         val url = "$base${sep}do=status"
@@ -67,9 +69,13 @@ object OrderStatusPush {
             ?: com.billing.pos.data.OnlineOrderStatus.entries.find { it.name == status }?.label
         // ShopMessage has no dedicated amount column — folded into the stored text instead, same
         // as how it's shown to the customer (see NotificationsFetch/NotificationsDialog).
-        val text = if (amount > 0.0) {
+        var text = if (amount > 0.0) {
             (baseText?.plus("\n\n") ?: "") + "Bill amount: " + com.billing.pos.util.Format.rupee(amount)
         } else baseText
+        if (attachments.isNotEmpty()) {
+            val kind = if (attachments.any { com.billing.pos.util.VoiceAttachment.isAudio(it) }) "attachment/voice note" else "attachment(s)"
+            text = (text?.plus("\n\n") ?: "") + "[Sent ${attachments.size} $kind]"
+        }
         if (!text.isNullOrBlank()) {
             AppDatabase.get(context).shopMessageDao().insert(
                 ShopMessage(

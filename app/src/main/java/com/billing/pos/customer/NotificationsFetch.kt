@@ -74,21 +74,36 @@ object NotificationsFetch {
             val array = runCatching { JSONArray(body.trim()) }.getOrNull()
                 ?: return@withContext Result.Failed("Unrecognised response from server")
 
-            val dao = AppDatabase.get(context).customerNotificationDao()
+            val db = AppDatabase.get(context)
+            val dao = db.customerNotificationDao()
+            val historyDao = db.customerOrderHistoryDao()
             val fresh = mutableListOf<CustomerNotification>()
             for (i in 0 until array.length()) {
                 val o = array.optJSONObject(i) ?: continue
+                val attachmentsArr = o.optJSONArray("attachments")
+                val attachments = if (attachmentsArr != null) {
+                    (0 until attachmentsArr.length()).map { attachmentsArr.optString(it) }.filter { it.isNotBlank() }
+                } else emptyList()
+                val orderId = o.optString("orderId")
+                val message = o.optString("message")
                 val notification = CustomerNotification(
-                    orderId = o.optString("orderId"),
+                    orderId = orderId,
                     status = o.optString("status"),
-                    message = o.optString("message"),
+                    message = message,
                     shop = shop,
                     shopName = target.name.ifBlank { shop },
                     receivedAt = System.currentTimeMillis(),
-                    amount = o.optDouble("amount", 0.0)
+                    amount = o.optDouble("amount", 0.0),
+                    attachments = CustomerNotification.packAttachments(attachments)
                 )
                 dao.insert(notification)
                 fresh += notification
+                // Order History is the durable per-order archive (survives "Clear all" on the
+                // bell) — mirror this reply there too whenever it's actually about an order and
+                // has something worth keeping. A no-op if that order isn't in history at all.
+                if (orderId.isNotBlank() && (message.isNotBlank() || attachments.isNotEmpty())) {
+                    historyDao.setReply(orderId, message, CustomerNotification.packAttachments(attachments))
+                }
             }
             Result.Ok(fresh)
         } catch (e: Exception) {

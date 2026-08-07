@@ -99,12 +99,13 @@ class OnlineOrdersViewModel(app: Application) : AndroidViewModel(app) {
     /** A free-text message to the customer about this order, not tied to a status change —
      *  [amount], when set, bills them for this order (e.g. after quoting a note/prescription
      *  order that had no fixed price at order time); the customer gets a "Pay via UPI now"
-     *  button on the notification for it. */
-    fun sendMessage(order: OnlineOrder, message: String, amount: Double = 0.0) {
-        if (message.isBlank() && amount <= 0.0) return
+     *  button on the notification for it. [attachments] (a photo, e.g. the bill itself, and/or one
+     *  voice note) travel the same way. */
+    fun sendMessage(order: OnlineOrder, message: String, amount: Double = 0.0, attachments: List<String> = emptyList()) {
+        if (message.isBlank() && amount <= 0.0 && attachments.isEmpty()) return
         viewModelScope.launch {
             if (License.reserveNotificationSend(getApplication())) {
-                OrderStatusPush.push(getApplication(), order.customerPhone, order.serverId, message = message, amount = amount)
+                OrderStatusPush.push(getApplication(), order.customerPhone, order.serverId, message = message, amount = amount, attachments = attachments)
             } else {
                 _showProLimitDialog.value = true
             }

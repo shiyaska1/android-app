@@ -3,9 +3,11 @@ package com.billing.pos.ui.online
 import android.Manifest
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -18,14 +20,20 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.AddAPhoto
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Call
+import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Chat
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Message
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Place
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
@@ -33,8 +41,10 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedIconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -43,8 +53,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -52,8 +64,12 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -64,7 +80,9 @@ import com.billing.pos.ui.billing.collectAsStateSafe
 import com.billing.pos.util.Format
 import java.util.Calendar
 import kotlin.math.roundToInt
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Shop owner's view of orders customers have placed and saved — see [OrdersFetch] for how they
@@ -105,6 +123,50 @@ fun OnlineOrdersScreen(onBack: () -> Unit, vm: OnlineOrdersViewModel = viewModel
     val usingLiveShopLocation = !shopPrefs.shopLocationCaptured && liveShopLatLng != null
     var messageTarget by remember { mutableStateOf<OnlineOrder?>(null) }
     var deleteTarget by remember { mutableStateOf<OnlineOrder?>(null) }
+    // One shared player for every order card's voice-note attachments (see OrderCard) — a
+    // customer's premium-only voice note travels the same base64-data-URI attachment channel as
+    // a photo, so it needs decoding to a temp file before it can play; the temp file is cleaned
+    // up as soon as playback stops/finishes, same lifetime as the image-viewer temp file already
+    // used for photo attachments (see openAttachment below).
+    var playingAttachment by remember { mutableStateOf<String?>(null) }
+    val voicePlayer = remember { android.media.MediaPlayer() }
+    var playingVoiceFile by remember { mutableStateOf<java.io.File?>(null) }
+    DisposableEffect(Unit) {
+        onDispose {
+            runCatching { voicePlayer.stop() }
+            runCatching { voicePlayer.release() }
+            playingVoiceFile?.delete()
+        }
+    }
+    fun toggleAttachmentPlayback(dataUri: String) {
+        if (playingAttachment == dataUri) {
+            runCatching { voicePlayer.stop(); voicePlayer.reset() }
+            playingVoiceFile?.delete()
+            playingVoiceFile = null
+            playingAttachment = null
+            return
+        }
+        runCatching {
+            val comma = dataUri.indexOf(',')
+            if (comma < 0) return
+            val bytes = android.util.Base64.decode(dataUri.substring(comma + 1), android.util.Base64.DEFAULT)
+            val sharedDir = java.io.File(context.cacheDir, "shared").apply { mkdirs() }
+            val file = java.io.File(sharedDir, "order_voice_play_${System.nanoTime()}.m4a")
+            file.writeBytes(bytes)
+            playingVoiceFile?.delete()
+            playingVoiceFile = file
+            voicePlayer.reset()
+            voicePlayer.setDataSource(file.absolutePath)
+            voicePlayer.setOnCompletionListener {
+                playingAttachment = null
+                file.delete()
+                if (playingVoiceFile == file) playingVoiceFile = null
+            }
+            voicePlayer.prepare()
+            voicePlayer.start()
+            playingAttachment = dataUri
+        }.onFailure { scope.launch { snackbar.showSnackbar("Could not play voice note") } }
+    }
     var selectedFilter by rememberSaveable { mutableStateOf("All") } // "All" or an OnlineOrderStatus name
     // Defaults to the last 7 days — without a cap this list only ever grows, since every fetched
     // order stays local forever (see OrdersFetch). The owner can widen or narrow it from here.
@@ -213,6 +275,8 @@ fun OnlineOrdersScreen(onBack: () -> Unit, vm: OnlineOrdersViewModel = viewModel
                         order = order,
                         shopLatLng = shopLatLng,
                         usingLiveShopLocation = usingLiveShopLocation,
+                        playingAttachment = playingAttachment,
+                        onTogglePlayAttachment = { uri -> toggleAttachmentPlayback(uri) },
                         onStatusChange = { status -> vm.setStatus(order, status) },
                         onCall = {
                             val digits = order.customerPhone.filter { it.isDigit() }
@@ -273,8 +337,10 @@ fun OnlineOrdersScreen(onBack: () -> Unit, vm: OnlineOrdersViewModel = viewModel
 
     messageTarget?.let { order ->
         MessageDialog(
+            playingAttachment = playingAttachment,
+            onTogglePlayAttachment = { uri -> toggleAttachmentPlayback(uri) },
             onDismiss = { messageTarget = null },
-            onSend = { text, amount -> vm.sendMessage(order, text, amount); messageTarget = null }
+            onSend = { text, amount, attachments -> vm.sendMessage(order, text, amount, attachments); messageTarget = null }
         )
     }
 
@@ -330,13 +396,111 @@ private fun distanceLabel(shopLatLng: Pair<Double, Double>?, orderLatLng: Pair<D
 
 /** [onSend]'s amount is 0.0 when left blank — e.g. after a note/prescription order with no fixed
  *  price at order time, set it to bill the customer; they get a "Pay via UPI now" button on the
- *  notification. Either the message or the amount alone is enough to send — a bill can be just a
- *  number with no extra text. */
+ *  notification. A photo (e.g. the bill itself) and/or one voice note can go along with it too —
+ *  same attach mechanism as a customer's own order form. Any one of message/amount/attachment
+ *  alone is enough to send. [playingAttachment]/[onTogglePlayAttachment] share the screen-level
+ *  player (see OnlineOrdersScreen) so previewing here and listening to an order's own voice note
+ *  never talk over each other. */
 @Composable
-private fun MessageDialog(onDismiss: () -> Unit, onSend: (String, Double) -> Unit) {
+private fun MessageDialog(
+    playingAttachment: String?,
+    onTogglePlayAttachment: (String) -> Unit,
+    onDismiss: () -> Unit,
+    onSend: (String, Double, List<String>) -> Unit
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var text by rememberSaveable { mutableStateOf("") }
     var amountText by rememberSaveable { mutableStateOf("") }
     val amount = amountText.toDoubleOrNull() ?: 0.0
+    val attachments = remember { mutableStateListOf<String>() }
+    var compressing by remember { mutableStateOf(false) }
+
+    suspend fun compressToDataUri(sourcePath: String): String? = withContext(Dispatchers.IO) {
+        runCatching {
+            val bytes = com.billing.pos.customer.ThumbnailCompressor.compress(sourcePath, maxBytes = 300 * 1024, maxDim = 1024) ?: return@runCatching null
+            "data:image/jpeg;base64," + android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+        }.getOrNull()
+    }
+    val galleryPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        compressing = true
+        scope.launch {
+            val dataUri = withContext(Dispatchers.IO) {
+                val tempFile = java.io.File.createTempFile("reply_", ".jpg", context.cacheDir)
+                runCatching { context.contentResolver.openInputStream(uri)?.use { input -> tempFile.outputStream().use { output -> input.copyTo(output) } } }
+                val result = compressToDataUri(tempFile.absolutePath)
+                tempFile.delete()
+                result
+            }
+            if (dataUri != null) attachments.add(dataUri)
+            compressing = false
+        }
+    }
+    var pendingCameraFile by remember { mutableStateOf<java.io.File?>(null) }
+    val cameraCapture = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
+        val f = pendingCameraFile
+        pendingCameraFile = null
+        if (ok && f != null) {
+            compressing = true
+            scope.launch {
+                val dataUri = compressToDataUri(f.absolutePath)
+                f.delete()
+                if (dataUri != null) attachments.add(dataUri)
+                compressing = false
+            }
+        } else {
+            f?.delete()
+        }
+    }
+    fun launchCamera() {
+        val sharedDir = java.io.File(context.cacheDir, "shared").apply { mkdirs() }
+        val file = java.io.File.createTempFile("reply_cam_", ".jpg", sharedDir)
+        pendingCameraFile = file
+        val uri = FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
+        runCatching { cameraCapture.launch(uri) }
+            .onFailure { pendingCameraFile?.delete(); pendingCameraFile = null }
+    }
+    val cameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted -> if (granted) launchCamera() }
+    fun requestCameraAndLaunch() {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == android.content.pm.PackageManager.PERMISSION_GRANTED) launchCamera()
+        else cameraPermission.launch(Manifest.permission.CAMERA)
+    }
+
+    var isRecording by remember { mutableStateOf(false) }
+    var voiceRecorder by remember { mutableStateOf<com.billing.pos.audio.VoiceRecorder?>(null) }
+    var recordingFile by remember { mutableStateOf<java.io.File?>(null) }
+    fun startRecording() {
+        val sharedDir = java.io.File(context.cacheDir, "shared").apply { mkdirs() }
+        val file = java.io.File(sharedDir, "reply_voice_${System.nanoTime()}.m4a")
+        runCatching {
+            voiceRecorder = com.billing.pos.audio.VoiceRecorder(file.absolutePath).also { it.start() }
+            recordingFile = file
+            isRecording = true
+        }.onFailure { voiceRecorder = null; file.delete() }
+    }
+    fun stopRecording() {
+        val rec = voiceRecorder ?: return
+        val file = recordingFile
+        isRecording = false
+        voiceRecorder = null
+        recordingFile = null
+        scope.launch {
+            withContext(Dispatchers.IO) { rec.stop() }
+            if (file != null && file.exists() && file.length() > 0) {
+                attachments.add(withContext(Dispatchers.IO) { com.billing.pos.util.VoiceAttachment.encode(file) })
+                file.delete()
+            } else {
+                file?.delete()
+            }
+        }
+    }
+    val micPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted -> if (granted) startRecording() }
+    fun requestMicAndRecord() {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED) startRecording()
+        else micPermission.launch(Manifest.permission.RECORD_AUDIO)
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Message customer") },
@@ -345,8 +509,78 @@ private fun MessageDialog(onDismiss: () -> Unit, onSend: (String, Double) -> Uni
                 OutlinedTextField(
                     value = text, onValueChange = { text = it },
                     label = { Text("Message") },
+                    trailingIcon = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(onClick = { requestCameraAndLaunch() }, enabled = !compressing && !isRecording) {
+                                Icon(Icons.Default.CameraAlt, contentDescription = "Attach a photo from camera")
+                            }
+                            IconButton(onClick = { galleryPicker.launch("image/*") }, enabled = !compressing && !isRecording) {
+                                Icon(Icons.Default.AddAPhoto, contentDescription = "Attach a photo from gallery")
+                            }
+                            IconButton(onClick = if (isRecording) { { stopRecording() } } else { { requestMicAndRecord() } }, enabled = !compressing) {
+                                Icon(
+                                    if (isRecording) Icons.Default.Stop else Icons.Default.Mic,
+                                    contentDescription = if (isRecording) "Stop recording" else "Record a voice note",
+                                    tint = if (isRecording) MaterialTheme.colorScheme.error else androidx.compose.material3.LocalContentColor.current
+                                )
+                            }
+                        }
+                    },
                     modifier = Modifier.fillMaxWidth()
                 )
+                if (compressing) {
+                    Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                        Text("  Adding attachment…", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline, modifier = Modifier.padding(start = 6.dp))
+                    }
+                }
+                if (isRecording) {
+                    Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Mic, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
+                        Text("  Recording… tap the mic again to stop", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+                    }
+                }
+                if (attachments.isNotEmpty()) {
+                    LazyRow(contentPadding = PaddingValues(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(attachments) { uri ->
+                            Box(Modifier.size(64.dp)) {
+                                if (com.billing.pos.util.VoiceAttachment.isAudio(uri)) {
+                                    Box(
+                                        Modifier.fillMaxSize()
+                                            .clip(androidx.compose.foundation.shape.RoundedCornerShape(6.dp))
+                                            .background(MaterialTheme.colorScheme.secondaryContainer)
+                                            .clickable { onTogglePlayAttachment(uri) },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(if (playingAttachment == uri) Icons.Default.Stop else Icons.Default.PlayArrow, contentDescription = "Voice note")
+                                    }
+                                } else {
+                                    val comma = uri.indexOf(',')
+                                    val bmp = remember(uri) {
+                                        if (comma < 0) null else runCatching {
+                                            val bytes = android.util.Base64.decode(uri.substring(comma + 1), android.util.Base64.DEFAULT)
+                                            android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+                                        }.getOrNull()
+                                    }
+                                    if (bmp != null) {
+                                        androidx.compose.foundation.Image(
+                                            bmp, contentDescription = "Attachment",
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier.fillMaxSize().clip(androidx.compose.foundation.shape.RoundedCornerShape(6.dp))
+                                        )
+                                    }
+                                }
+                                OutlinedIconButton(
+                                    onClick = { attachments.remove(uri) },
+                                    modifier = Modifier.size(20.dp).align(Alignment.TopEnd),
+                                    colors = IconButtonDefaults.outlinedIconButtonColors(containerColor = MaterialTheme.colorScheme.surface)
+                                ) {
+                                    Icon(Icons.Default.Close, contentDescription = "Remove attachment", modifier = Modifier.size(12.dp))
+                                }
+                            }
+                        }
+                    }
+                }
                 OutlinedTextField(
                     value = amountText, onValueChange = { amountText = it },
                     label = { Text("Bill amount (optional)") },
@@ -364,7 +598,10 @@ private fun MessageDialog(onDismiss: () -> Unit, onSend: (String, Double) -> Uni
             }
         },
         confirmButton = {
-            TextButton(onClick = { onSend(text.trim(), amount) }, enabled = text.isNotBlank() || amount > 0.0) { Text("Send") }
+            TextButton(
+                onClick = { onSend(text.trim(), amount, attachments.toList()) },
+                enabled = (text.isNotBlank() || amount > 0.0 || attachments.isNotEmpty()) && !compressing && !isRecording
+            ) { Text("Send") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
     )
@@ -398,13 +635,15 @@ private fun OrderCard(
     order: OnlineOrder,
     shopLatLng: Pair<Double, Double>?,
     usingLiveShopLocation: Boolean,
+    playingAttachment: String?,
     onStatusChange: (String) -> Unit,
     onCall: () -> Unit,
     onWhatsApp: () -> Unit,
     onLocation: () -> Unit,
     onMessage: () -> Unit,
     onDelete: () -> Unit,
-    onShareToSalesman: () -> Unit
+    onShareToSalesman: () -> Unit,
+    onTogglePlayAttachment: (String) -> Unit
 ) {
     val context = LocalContext.current
     // Parses instantly for a plain link (this app's own GPS capture, or most pasted Maps links);
@@ -463,13 +702,19 @@ private fun OrderCard(
             if (order.attachments.isNotEmpty()) {
                 Column(Modifier.padding(top = 6.dp)) {
                     order.attachments.forEachIndexed { i, dataUri ->
+                        val isAudio = com.billing.pos.util.VoiceAttachment.isAudio(dataUri)
                         Row(
-                            Modifier.fillMaxWidth().clickable { openAttachment(context, dataUri) }.padding(vertical = 3.dp),
+                            Modifier.fillMaxWidth()
+                                .clickable { if (isAudio) onTogglePlayAttachment(dataUri) else openAttachment(context, dataUri) }
+                                .padding(vertical = 3.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(Icons.Default.AttachFile, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
+                            Icon(
+                                if (isAudio) (if (playingAttachment == dataUri) Icons.Default.Stop else Icons.Default.PlayArrow) else Icons.Default.AttachFile,
+                                contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp)
+                            )
                             Text(
-                                "  Attachment ${i + 1} — tap to open or save",
+                                "  " + if (isAudio) "Voice note ${i + 1} — tap to listen" else "Attachment ${i + 1} — tap to open or save",
                                 color = MaterialTheme.colorScheme.primary,
                                 style = MaterialTheme.typography.bodySmall,
                                 textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline

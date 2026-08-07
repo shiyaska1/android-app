@@ -35,14 +35,17 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material.icons.filled.SupportAgent
 import androidx.compose.material.icons.filled.SwapHoriz
@@ -71,6 +74,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -247,6 +251,99 @@ fun CustomerCatalogScreen(
             launchCamera()
         } else {
             cameraPermission.launch(Manifest.permission.CAMERA)
+        }
+    }
+
+    // A voice note travels the exact same premium-only attachment channel as a photo (see
+    // OrderNoteCard) — same VoiceRecorder used for dictation elsewhere in the app.
+    var isRecordingVoice by remember { mutableStateOf(false) }
+    var voiceRecorder by remember { mutableStateOf<com.billing.pos.audio.VoiceRecorder?>(null) }
+    var recordingFile by remember { mutableStateOf<java.io.File?>(null) }
+    fun startVoiceRecording() {
+        val sharedDir = java.io.File(context.cacheDir, "shared").apply { mkdirs() }
+        val file = java.io.File(sharedDir, "voice_${System.nanoTime()}.m4a")
+        runCatching {
+            voiceRecorder = com.billing.pos.audio.VoiceRecorder(file.absolutePath).also { it.start() }
+            recordingFile = file
+            isRecordingVoice = true
+        }.onFailure {
+            voiceRecorder = null
+            file.delete()
+            scope.launch { snackbar.showSnackbar("Could not start recording") }
+        }
+    }
+    fun stopVoiceRecording() {
+        val rec = voiceRecorder ?: return
+        val file = recordingFile
+        isRecordingVoice = false
+        voiceRecorder = null
+        recordingFile = null
+        scope.launch {
+            withContext(Dispatchers.IO) { rec.stop() }
+            if (file != null && file.exists() && file.length() > 0) {
+                orderAttachments.add(withContext(Dispatchers.IO) { com.billing.pos.util.VoiceAttachment.encode(file) })
+                file.delete()
+            } else {
+                file?.delete()
+                snackbar.showSnackbar("No voice detected — try again, speaking closer to the phone")
+            }
+        }
+    }
+    val micPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) startVoiceRecording() else scope.launch { snackbar.showSnackbar("Microphone permission is needed to record a voice note") }
+    }
+    fun requestMicAndRecord() {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            startVoiceRecording()
+        } else {
+            micPermission.launch(Manifest.permission.RECORD_AUDIO)
+        }
+    }
+
+    // One shared player for every voice note shown on this screen — an order's own attachment
+    // before it's sent, a shop's reply on the Notifications bell, or a past order's/reply's voice
+    // note in Order History. Decoded to a temp file just for the duration of playback, cleaned up
+    // as soon as it stops/finishes — nothing extra is kept on the phone beyond the data URI
+    // already stored in Room.
+    var playingVoiceNote by remember { mutableStateOf<String?>(null) }
+    val voicePlayer = remember { android.media.MediaPlayer() }
+    var playingVoiceFile by remember { mutableStateOf<java.io.File?>(null) }
+    DisposableEffect(Unit) {
+        onDispose {
+            runCatching { voicePlayer.stop() }
+            runCatching { voicePlayer.release() }
+            playingVoiceFile?.delete()
+        }
+    }
+    fun toggleVoicePlayback(dataUri: String) {
+        if (playingVoiceNote == dataUri) {
+            runCatching { voicePlayer.stop(); voicePlayer.reset() }
+            playingVoiceFile?.delete()
+            playingVoiceFile = null
+            playingVoiceNote = null
+            return
+        }
+        val file = com.billing.pos.util.VoiceAttachment.decodeToTempFile(context, dataUri)
+        if (file == null) {
+            scope.launch { snackbar.showSnackbar("Could not play voice note") }
+            return
+        }
+        runCatching {
+            playingVoiceFile?.delete()
+            playingVoiceFile = file
+            voicePlayer.reset()
+            voicePlayer.setDataSource(file.absolutePath)
+            voicePlayer.setOnCompletionListener {
+                playingVoiceNote = null
+                file.delete()
+                if (playingVoiceFile == file) playingVoiceFile = null
+            }
+            voicePlayer.prepare()
+            voicePlayer.start()
+            playingVoiceNote = dataUri
+        }.onFailure {
+            file.delete()
+            scope.launch { snackbar.showSnackbar("Could not play voice note") }
         }
     }
 
@@ -476,10 +573,14 @@ fun CustomerCatalogScreen(
                     attachments = orderAttachments,
                     premium = vm.isPremiumShop,
                     compressing = compressingAttachment,
+                    isRecordingVoice = isRecordingVoice,
+                    playingVoiceNote = playingVoiceNote,
                     onAddFromCamera = { requestCameraAndLaunch() },
                     onAddFromGallery = { galleryPicker.launch("image/*") },
+                    onStartVoice = { requestMicAndRecord() },
+                    onStopVoice = { stopVoiceRecording() },
                     onRemoveAttachment = { orderAttachments.remove(it) },
-                    onViewAttachment = { viewingAttachment = it }
+                    onViewAttachment = { uri -> if (com.billing.pos.util.VoiceAttachment.isAudio(uri)) toggleVoicePlayback(uri) else viewingAttachment = uri }
                 )
             }
 
@@ -623,8 +724,12 @@ fun CustomerCatalogScreen(
     if (showHistory) {
         OrderHistoryDialog(
             history = history,
+            playingVoiceNote = playingVoiceNote,
             onDismiss = { showHistory = false },
-            onReorder = { order -> vm.reorder(order); showHistory = false }
+            onReorder = { order -> vm.reorder(order); showHistory = false },
+            onDelete = { order -> vm.deleteHistoryOrder(order) },
+            onTogglePlay = { uri -> toggleVoicePlayback(uri) },
+            onViewImage = { uri -> viewingAttachment = uri }
         )
     }
     if (showNotifications) {
@@ -634,13 +739,16 @@ fun CustomerCatalogScreen(
             replying = replying,
             currentShopCode = prefs.shopCode,
             shopUpiAvailable = prefs.shopUpiId.isNotBlank(),
+            playingVoiceNote = playingVoiceNote,
             isShopMuted = { shop -> vm.isShopMuted(shop) },
             onDismiss = { showNotifications = false },
             onDelete = { n -> vm.deleteNotification(n) },
             onClearAll = { vm.clearAllNotifications(); showNotifications = false },
             onReply = { n, text -> vm.replyToNotification(n, text) },
             onMuteShop = { shop, muted -> vm.setShopMuted(shop, muted) },
-            onPayNotification = { n -> payingNotification = n }
+            onPayNotification = { n -> payingNotification = n },
+            onTogglePlay = { uri -> toggleVoicePlayback(uri) },
+            onViewImage = { uri -> viewingAttachment = uri }
         )
     }
     payingNotification?.let { n ->
@@ -764,13 +872,16 @@ private fun NotificationsDialog(
     replying: Boolean,
     currentShopCode: String,
     shopUpiAvailable: Boolean,
+    playingVoiceNote: String?,
     isShopMuted: (String) -> Boolean,
     onDismiss: () -> Unit,
     onDelete: (CustomerNotification) -> Unit,
     onClearAll: () -> Unit,
     onReply: (CustomerNotification, String) -> Unit,
     onMuteShop: (shop: String, muted: Boolean) -> Unit,
-    onPayNotification: (CustomerNotification) -> Unit
+    onPayNotification: (CustomerNotification) -> Unit,
+    onTogglePlay: (String) -> Unit,
+    onViewImage: (String) -> Unit
 ) {
     var replyTargetId by remember { mutableStateOf<Long?>(null) }
     var replyText by rememberSaveable { mutableStateOf("") }
@@ -816,6 +927,15 @@ private fun NotificationsDialog(
                                                 Text("Pay via UPI now")
                                             }
                                         }
+                                    }
+                                    if (n.attachmentList.isNotEmpty()) {
+                                        ReadOnlyAttachmentRow(
+                                            uris = n.attachmentList,
+                                            playingVoiceNote = playingVoiceNote,
+                                            onTogglePlay = onTogglePlay,
+                                            onViewImage = onViewImage,
+                                            modifier = Modifier.padding(top = 6.dp)
+                                        )
                                     }
                                     Text(
                                         SimpleDateFormat("dd MMM, HH:mm", Locale.getDefault()).format(Date(n.receivedAt)),
@@ -1056,15 +1176,19 @@ private fun OrderNoteCard(
     attachments: List<String>,
     premium: Boolean,
     compressing: Boolean,
+    isRecordingVoice: Boolean,
+    playingVoiceNote: String?,
     onAddFromCamera: () -> Unit,
     onAddFromGallery: () -> Unit,
+    onStartVoice: () -> Unit,
+    onStopVoice: () -> Unit,
     onRemoveAttachment: (String) -> Unit,
     onViewAttachment: (String) -> Unit
 ) {
     Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
         Column(Modifier.padding(14.dp)) {
             Text(
-                if (premium) "Don't want to pick items? Write what you want here instead, or attach a photo using the icons."
+                if (premium) "Don't want to pick items? Write what you want here instead, or attach a photo/voice note using the icons."
                 else "Don't want to pick items? Write what you want here instead.",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.outline
@@ -1076,11 +1200,18 @@ private fun OrderNoteCard(
                 trailingIcon = if (!premium) null else {
                     {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            IconButton(onClick = onAddFromCamera, enabled = !compressing) {
+                            IconButton(onClick = onAddFromCamera, enabled = !compressing && !isRecordingVoice) {
                                 Icon(Icons.Default.CameraAlt, contentDescription = "Attach a photo from camera")
                             }
-                            IconButton(onClick = onAddFromGallery, enabled = !compressing) {
+                            IconButton(onClick = onAddFromGallery, enabled = !compressing && !isRecordingVoice) {
                                 Icon(Icons.Default.AddAPhoto, contentDescription = "Attach a photo from gallery")
+                            }
+                            IconButton(onClick = if (isRecordingVoice) onStopVoice else onStartVoice, enabled = !compressing) {
+                                Icon(
+                                    if (isRecordingVoice) Icons.Default.Stop else Icons.Default.Mic,
+                                    contentDescription = if (isRecordingVoice) "Stop recording" else "Record a voice note",
+                                    tint = if (isRecordingVoice) MaterialTheme.colorScheme.error else LocalContentColor.current
+                                )
                             }
                         }
                     }
@@ -1094,6 +1225,12 @@ private fun OrderNoteCard(
                         Text("  Adding attachment…", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline, modifier = Modifier.padding(start = 6.dp))
                     }
                 }
+                if (isRecordingVoice) {
+                    Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Mic, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
+                        Text("  Recording… tap the mic again to stop", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+                    }
+                }
                 if (attachments.isNotEmpty()) {
                     LazyRow(
                         contentPadding = PaddingValues(top = 10.dp),
@@ -1101,15 +1238,30 @@ private fun OrderNoteCard(
                     ) {
                         items(attachments) { uri ->
                             Box(Modifier.size(72.dp)) {
-                                val bmp = remember(uri) { decodeDataUriBitmap(uri) }
-                                if (bmp != null) {
-                                    androidx.compose.foundation.Image(
-                                        bmp, contentDescription = "Attachment",
-                                        contentScale = ContentScale.Crop,
-                                        modifier = Modifier.fillMaxSize()
+                                if (com.billing.pos.util.VoiceAttachment.isAudio(uri)) {
+                                    Box(
+                                        Modifier.fillMaxSize()
                                             .clip(androidx.compose.foundation.shape.RoundedCornerShape(6.dp))
-                                            .clickable { onViewAttachment(uri) }
-                                    )
+                                            .background(MaterialTheme.colorScheme.secondaryContainer)
+                                            .clickable { onViewAttachment(uri) },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            if (playingVoiceNote == uri) Icons.Default.Stop else Icons.Default.PlayArrow,
+                                            contentDescription = if (playingVoiceNote == uri) "Stop voice note" else "Play voice note"
+                                        )
+                                    }
+                                } else {
+                                    val bmp = remember(uri) { decodeDataUriBitmap(uri) }
+                                    if (bmp != null) {
+                                        androidx.compose.foundation.Image(
+                                            bmp, contentDescription = "Attachment",
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier.fillMaxSize()
+                                                .clip(androidx.compose.foundation.shape.RoundedCornerShape(6.dp))
+                                                .clickable { onViewAttachment(uri) }
+                                        )
+                                    }
                                 }
                                 OutlinedIconButton(
                                     onClick = { onRemoveAttachment(uri) },
@@ -1447,11 +1599,19 @@ private fun ShopDirectoryDialog(
     )
 }
 
+/** Order History is the durable per-order archive: what the customer sent (photo/voice note) and
+ *  the shop's latest reply about it (see [com.billing.pos.customer.NotificationsFetch]) both live
+ *  here, surviving a "Clear all" on the Notifications bell — [onDelete] is how the customer frees
+ *  up phone space, order by order, once they no longer need one. */
 @Composable
 private fun OrderHistoryDialog(
     history: List<CustomerOrderHistory>,
+    playingVoiceNote: String?,
     onDismiss: () -> Unit,
-    onReorder: (CustomerOrderHistory) -> Unit
+    onReorder: (CustomerOrderHistory) -> Unit,
+    onDelete: (CustomerOrderHistory) -> Unit,
+    onTogglePlay: (String) -> Unit,
+    onViewImage: (String) -> Unit
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1463,16 +1623,34 @@ private fun OrderHistoryDialog(
                 Column {
                     history.forEach { order ->
                         Column(Modifier.padding(vertical = 8.dp)) {
-                            Text(
-                                SimpleDateFormat("dd MMM, HH:mm", Locale.getDefault()).format(Date(order.placedAt)),
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.outline
-                            )
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    SimpleDateFormat("dd MMM, HH:mm", Locale.getDefault()).format(Date(order.placedAt)),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.outline
+                                )
+                                IconButton(onClick = { onDelete(order) }, modifier = Modifier.size(28.dp)) {
+                                    Icon(Icons.Default.Delete, contentDescription = "Delete this order from history", modifier = Modifier.size(16.dp))
+                                }
+                            }
                             order.items.forEach { line ->
                                 Text("${line.name} x${line.qty}", style = MaterialTheme.typography.bodySmall)
                             }
                             if (order.note.isNotBlank()) {
                                 Text(order.note, style = MaterialTheme.typography.bodySmall)
+                            }
+                            if (order.attachmentList.isNotEmpty()) {
+                                ReadOnlyAttachmentRow(
+                                    uris = order.attachmentList,
+                                    playingVoiceNote = playingVoiceNote,
+                                    onTogglePlay = onTogglePlay,
+                                    onViewImage = onViewImage,
+                                    modifier = Modifier.padding(top = 4.dp)
+                                )
                             }
                             Row(
                                 Modifier.fillMaxWidth(),
@@ -1486,6 +1664,27 @@ private fun OrderHistoryDialog(
                                     Text("Written order", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
                                 }
                             }
+                            if (order.replyMessage.isNotBlank() || order.replyAttachmentList.isNotEmpty()) {
+                                Column(
+                                    Modifier.fillMaxWidth().padding(top = 6.dp)
+                                        .background(MaterialTheme.colorScheme.surfaceVariant, androidx.compose.foundation.shape.RoundedCornerShape(6.dp))
+                                        .padding(8.dp)
+                                ) {
+                                    Text("Shop's reply", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                    if (order.replyMessage.isNotBlank()) {
+                                        Text(order.replyMessage, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 2.dp))
+                                    }
+                                    if (order.replyAttachmentList.isNotEmpty()) {
+                                        ReadOnlyAttachmentRow(
+                                            uris = order.replyAttachmentList,
+                                            playingVoiceNote = playingVoiceNote,
+                                            onTogglePlay = onTogglePlay,
+                                            onViewImage = onViewImage,
+                                            modifier = Modifier.padding(top = 4.dp)
+                                        )
+                                    }
+                                }
+                            }
                             Divider(Modifier.padding(top = 4.dp))
                         }
                     }
@@ -1494,6 +1693,46 @@ private fun OrderHistoryDialog(
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } }
     )
+}
+
+/** A read-only row of photo/voice-note thumbnails — an order's own attachments, or a shop's reply
+ *  to one, shown in both [NotificationsDialog] and [OrderHistoryDialog]. Tapping a photo opens
+ *  [onViewImage]; tapping a voice note toggles playback via [onTogglePlay] (see
+ *  [CustomerCatalogScreen]'s shared player). */
+@Composable
+private fun ReadOnlyAttachmentRow(
+    uris: List<String>,
+    playingVoiceNote: String?,
+    onTogglePlay: (String) -> Unit,
+    onViewImage: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    LazyRow(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        items(uris) { uri ->
+            if (com.billing.pos.util.VoiceAttachment.isAudio(uri)) {
+                Box(
+                    Modifier.size(56.dp)
+                        .clip(androidx.compose.foundation.shape.RoundedCornerShape(6.dp))
+                        .background(MaterialTheme.colorScheme.secondaryContainer)
+                        .clickable { onTogglePlay(uri) },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(if (playingVoiceNote == uri) Icons.Default.Stop else Icons.Default.PlayArrow, contentDescription = "Voice note")
+                }
+            } else {
+                val bmp = remember(uri) { decodeDataUriBitmap(uri) }
+                if (bmp != null) {
+                    androidx.compose.foundation.Image(
+                        bmp, contentDescription = "Attachment",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.size(56.dp)
+                            .clip(androidx.compose.foundation.shape.RoundedCornerShape(6.dp))
+                            .clickable { onViewImage(uri) }
+                    )
+                }
+            }
+        }
+    }
 }
 
 /** Item photos travel as a base64 data URI in the catalog fetch itself (see ThumbnailCompressor /

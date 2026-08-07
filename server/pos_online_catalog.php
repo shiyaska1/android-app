@@ -58,7 +58,10 @@
  *       "message": "..." (optional, free text),
  *       "amount": 0.0 (optional — a bill amount for the customer to pay, e.g. after quoting a
  *           note/prescription order that had no fixed price at order time; the customer app shows
- *           a "Pay via UPI now" button when this is set) }
+ *           a "Pay via UPI now" button when this is set),
+ *       "attachments": [ "data:image/jpeg;base64,...", "data:audio/mp4;base64,..." ] (optional —
+ *           a photo (e.g. the bill itself) and/or one voice note the shop owner attached to this
+ *           reply; same data-URI-array shape as an order's own attachments) }
  *   Appended to pos_online_catalog/<DeviceID>/notifications.json — trimmed by the
  *   fetch below, same as orders.
  *
@@ -66,7 +69,9 @@
  *   GET this URL with ?do=notifications&shop=<DeviceID>&phone=<their phone> —
  *   returns every status/message sent to that phone number since the last
  *   fetch, THEN clears just those from the server (other customers' pending
- *   notifications are left untouched).
+ *   notifications are left untouched) — any attachments/voice note included
+ *   are gone from the server the instant this fetch delivers them, same as
+ *   every other file this server ever briefly holds.
  *
  * SEND MESSAGE (from a customer's app, replying to a notification — the customer->shop mirror
  *   of SEND STATUS above):
@@ -507,6 +512,9 @@ if (($method === 'POST' || $method === 'PUT') && $do === 'status') {
         // note/prescription order that had no fixed price at order time) — 0 means "no amount
         // attached", same as before this field existed.
         'amount' => isset($body['amount']) ? (float) $body['amount'] : 0.0,
+        // Photo(s) and/or a voice note the shop owner attached to this reply (e.g. a bill photo,
+        // or spoken instructions) — same data-URI-array convention as an order's own attachments.
+        'attachments' => isset($body['attachments']) && is_array($body['attachments']) ? array_values($body['attachments']) : array(),
         'sentAt' => date('c')
     );
     $path = $folder . '/notifications.json';
@@ -519,6 +527,20 @@ if (($method === 'POST' || $method === 'PUT') && $do === 'status') {
     if (!is_array($existing)) {
         $existing = array();
     }
+    // Same "server never keeps a file longer than it has to" rule as orders: a notification a
+    // customer hasn't fetched yet has its attachments cleared after 7 days regardless — the rest
+    // of the notification (message/status/amount) is kept. The normal path is much faster than
+    // this: do=notifications below deletes the attachment the moment it's actually delivered.
+    $attachmentCutoff = time() - 7 * 24 * 60 * 60;
+    foreach ($existing as &$old) {
+        if (!empty($old['attachments']) && !empty($old['sentAt'])) {
+            $sentTs = strtotime($old['sentAt']);
+            if ($sentTs !== false && $sentTs < $attachmentCutoff) {
+                $old['attachments'] = array();
+            }
+        }
+    }
+    unset($old);
     $existing[] = $notification;
     ftruncate($fh, 0);
     rewind($fh);

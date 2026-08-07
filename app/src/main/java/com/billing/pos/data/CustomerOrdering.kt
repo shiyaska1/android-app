@@ -173,7 +173,17 @@ data class CustomerOrderHistory(
     /** What the customer typed (and/or OCR'd) instead of — or alongside — picking catalog items. */
     val note: String = "",
     /** "UPI" when this order was paid at order time (self-reported); blank for Cash on delivery. */
-    val paymentStatus: String = ""
+    val paymentStatus: String = "",
+    /** Photo(s) and/or a voice note the customer attached when placing this order (premium shops
+     *  only — see OrderNoteCard), packed the same way [itemsJson] packs order lines. Kept here
+     *  (not just sent to the server and forgotten) so the customer can review/relisten later. */
+    val attachments: String = "",
+    /** The shop's latest reply about this order (see [com.billing.pos.customer.NotificationsFetch]),
+     *  mirrored here from customer_notifications so it survives even after "Clear all" on the
+     *  Notifications bell — Order History is the durable per-order archive. Blank until a reply
+     *  with a message and/or attachment arrives. */
+    val replyMessage: String = "",
+    val replyAttachments: String = ""
 ) {
     /** [serverId] is the catalog item's id, so Re-order can find it again even if its name changed. */
     data class Line(val serverId: String, val name: String, val qty: Int, val price: Double)
@@ -186,6 +196,9 @@ data class CustomerOrderHistory(
         }
     }.getOrDefault(emptyList())
 
+    val attachmentList: List<String> get() = unpackAttachments(attachments)
+    val replyAttachmentList: List<String> get() = unpackAttachments(replyAttachments)
+
     companion object {
         fun packItems(items: List<Line>) = org.json.JSONArray().apply {
             items.forEach { line ->
@@ -195,6 +208,13 @@ data class CustomerOrderHistory(
                 })
             }
         }.toString()
+
+        fun packAttachments(dataUris: List<String>) = org.json.JSONArray(dataUris).toString()
+
+        private fun unpackAttachments(json: String): List<String> = runCatching {
+            val arr = org.json.JSONArray(json)
+            (0 until arr.length()).map { arr.getString(it) }
+        }.getOrDefault(emptyList())
     }
 }
 
@@ -211,6 +231,19 @@ interface CustomerOrderHistoryDao {
      *  history at all (e.g. history was cleared), which is fine, it's just local record-keeping. */
     @Query("UPDATE customer_order_history SET paymentStatus = 'UPI' WHERE serverId = :serverId")
     suspend fun markPaid(serverId: String)
+
+    /** Mirrors the shop's latest reply (message and/or attachments) about this order in here too,
+     *  so it survives "Clear all" on the Notifications bell — see [com.billing.pos.customer.NotificationsFetch].
+     *  A no-op if this order isn't in history (e.g. a reply to an order placed before this device
+     *  ever saved history, or history was cleared). */
+    @Query("UPDATE customer_order_history SET replyMessage = :message, replyAttachments = :attachments WHERE serverId = :serverId")
+    suspend fun setReply(serverId: String, message: String, attachments: String)
+
+    /** Lets the customer free up phone space by deleting one past order's local record (and
+     *  whatever photos/voice notes it's holding onto) — purely local, the server never had this
+     *  copy for more than a moment. */
+    @Delete
+    suspend fun delete(order: CustomerOrderHistory)
 }
 
 /**
@@ -239,8 +272,21 @@ data class CustomerNotification(
     /** A bill amount the shop is asking to be paid (e.g. after quoting a note/prescription order
      *  that had no fixed price at order time) — see [com.billing.pos.customer.OrderStatusPush].
      *  0.0 (the default) means no amount attached, so no "Pay via UPI now" button shows. */
-    val amount: Double = 0.0
-)
+    val amount: Double = 0.0,
+    /** Photo(s) and/or a voice note the shop owner attached to this reply (e.g. a bill photo, or
+     *  spoken instructions), packed the same way [OnlineOrder.attachmentImages] packs an order's
+     *  attachments. Empty when the shop sent none. */
+    val attachments: String = ""
+) {
+    val attachmentList: List<String> get() = runCatching {
+        val arr = org.json.JSONArray(attachments)
+        (0 until arr.length()).map { arr.getString(it) }
+    }.getOrDefault(emptyList())
+
+    companion object {
+        fun packAttachments(dataUris: List<String>) = org.json.JSONArray(dataUris).toString()
+    }
+}
 
 @Dao
 interface CustomerNotificationDao {

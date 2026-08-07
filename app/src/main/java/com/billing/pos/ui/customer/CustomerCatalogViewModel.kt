@@ -261,7 +261,8 @@ class CustomerCatalogViewModel(app: Application) : AndroidViewModel(app) {
                             location = locationLink,
                             serverId = result.orderId,
                             note = note,
-                            paymentStatus = paymentStatus
+                            paymentStatus = paymentStatus,
+                            attachments = CustomerOrderHistory.packAttachments(attachments)
                         )
                     )
                     clearSelection()
@@ -279,5 +280,12 @@ class CustomerCatalogViewModel(app: Application) : AndroidViewModel(app) {
         val restored = order.items.mapNotNull { line -> byServerId[line.serverId]?.let { it.id to line.qty } }
         if (restored.isEmpty()) { _message.value = "Those items are no longer available"; return }
         _qty.value = restored.toMap()
+    }
+
+    /** Frees up phone space by removing one past order's local record — including whatever
+     *  photos/voice notes it (or the shop's reply to it) is holding onto. The server never had
+     *  this copy for more than a moment either way, so there's nothing else to clean up. */
+    fun deleteHistoryOrder(order: CustomerOrderHistory) {
+        viewModelScope.launch { historyDao.delete(order) }
     }
 }

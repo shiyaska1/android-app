@@ -63,10 +63,15 @@ object OrdersFetch {
 
                 val name = o.optString("customerName").ifBlank { "Online customer" }
                 val phone = o.optString("customerPhone")
+                // A brand-new customer (no existing match by phone) is tagged "Online Customer" in
+                // the shop's own Customer master, so the shop owner can tell at a glance who came
+                // in through online ordering versus a walk-in — an existing customer who happens
+                // to also order online keeps whatever type they already had (VIP, Wholesale, ...).
                 val customerId = if (phone.isNotBlank()) {
-                    customerDao.byPhone(phone)?.id ?: customerDao.insert(Customer(name = name, phone = phone))
+                    customerDao.byPhone(phone)?.id
+                        ?: customerDao.insert(Customer(name = name, phone = phone, customerType = "Online Customer"))
                 } else {
-                    customerDao.insert(Customer(name = name, phone = phone))
+                    customerDao.insert(Customer(name = name, phone = phone, customerType = "Online Customer"))
                 }
 
                 val itemsArr = o.optJSONArray("items")
