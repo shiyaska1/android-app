@@ -19,8 +19,11 @@
  * else to upload except the small pos_config.php values below.
  *
  * --- Install ---
- * 1. Upload this file next to pos_online_catalog.php on your server, e.g.:
+ * 1. This file sits in an "ios" folder here in git purely to keep it visually separate from the
+ *    Android-related files — on your actual server, upload it FLAT, directly next to
+ *    pos_online_catalog.php and pos_config.php (NOT inside an "ios" subfolder there), e.g.:
  *      https://yourdomain.com/pos_customer_app_ios.php
+ *    It reads pos_config.php from its own folder, so it needs to be right next to it.
  * 2. Hand each iPhone customer a link (or QR code) shaped like:
  *      https://yourdomain.com/pos_customer_app_ios.php?shop=<DeviceID>&url=https://yourdomain.com/pos_online_catalog.php?key=YOUR_KEY&type=Restaurant
  *    (shop/url/type/premium mean exactly what they mean everywhere else in this app — shop = your
