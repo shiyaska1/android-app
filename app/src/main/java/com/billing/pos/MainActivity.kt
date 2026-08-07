@@ -257,23 +257,9 @@ private fun AppNav() {
     val nav = rememberNavController()
     val context = LocalContext.current
 
-    // Media shared in from another app (WhatsApp etc.).
-    //
-    // Cold start is routed by boot / login / change-password below. This effect covers only a
-    // WARM start (app already open, share arriving via onNewIntent). The bootDone guard is
-    // essential: without it this also fires on a cold start, navigates to the diary, the diary
-    // consumes the files, and boot then routes to the dashboard on top of it.
-    var bootDone by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
-    val sharedGeneration = PendingSharedMedia.generation
-    androidx.compose.runtime.LaunchedEffect(sharedGeneration) {
-        // A payment dialog's QR-code fallback (Preview customer app / customerCatalog) wants this
-        // share instead — e.g. a UPI app's payment-success screenshot shared straight in, meant
-        // as that order's payment proof, not a new diary entry. Let it claim the share first.
-        if (bootDone && PendingSharedMedia.awaitingDiary && Session.isLoggedIn && !PendingSharedMedia.awaitingPaymentProof) {
-            PendingSharedMedia.markRouted()
-            nav.navigate("diary/edit/0") { launchSingleTop = true }
-        }
-    }
+    // Sharing into the app no longer auto-navigates anywhere — the diary only picks up a share
+    // while it's already open (see DiaryEditScreen), and the payment dialog's QR-code fallback
+    // claims one via [PendingSharedMedia.awaitingPaymentProof] while it's showing.
 
     // Reminder tap → once logged in, open that diary entry in edit mode.
     val pendingDiaryId = PendingDiaryOpen.id
@@ -368,13 +354,9 @@ private fun AppNav() {
         composable("boot") {
             BootScreen(onResolved = { route ->
                 val dest = when {
-                    route == "dashboard" && PendingSharedMedia.awaitingDiary -> {
-                        PendingSharedMedia.markRouted(); "diary/edit/0"
-                    }
                     route == "dashboard" && PendingImport.uri != null -> "invoices"
                     else -> route
                 }
-                bootDone = true
                 nav.navigate(dest) { popUpTo("boot") { inclusive = true } }
             })
         }
@@ -464,18 +446,8 @@ private fun AppNav() {
                 )
             }
 
-            // Catch-all for an incoming share: whatever route led here, if a shared file is
-            // still waiting, hand it to the diary. This does not depend on the boot/login
-            // handshake winning a race, so it holds even if an earlier redirect was missed.
-            androidx.compose.runtime.LaunchedEffect(PendingSharedMedia.generation) {
-                if (PendingSharedMedia.awaitingDiary) {
-                    PendingSharedMedia.markRouted()
-                    nav.navigate("diary/edit/0")
-                }
-            }
             // Sticky note on launch (once per app start).
             androidx.compose.runtime.LaunchedEffect(Unit) {
-                if (PendingSharedMedia.awaitingDiary) return@LaunchedEffect   // share wins
                 if (!com.billing.pos.ui.sticky.StickyGate.shown && com.billing.pos.data.AppPrefs(context).stickyNoteOnLaunch) {
                     com.billing.pos.ui.sticky.StickyGate.shown = true
                     nav.navigate("stickynote")
@@ -617,9 +589,6 @@ private fun AppNav() {
             LoginScreen(onLoggedIn = { mustChangePassword ->
                 val dest = when {
                     mustChangePassword -> "changepassword"
-                    PendingSharedMedia.awaitingDiary -> {
-                        PendingSharedMedia.markRouted(); "diary/edit/0"
-                    }
                     PendingImport.uri != null -> "invoices"
                     else -> "dashboard"
                 }
@@ -629,9 +598,6 @@ private fun AppNav() {
         composable("changepassword") {
             com.billing.pos.ui.auth.ChangePasswordScreen(onDone = {
                 val dest = when {
-                    PendingSharedMedia.awaitingDiary -> {
-                        PendingSharedMedia.markRouted(); "diary/edit/0"
-                    }
                     PendingImport.uri != null -> "invoices"
                     else -> "dashboard"
                 }
