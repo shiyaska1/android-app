@@ -594,6 +594,10 @@ if (($method === 'POST' || $method === 'PUT') && $do === 'message') {
         // success callback the app can detect on its own. Same data-URI-array convention as an
         // order's own attachments.
         'attachments' => isset($body['attachments']) && is_array($body['attachments']) ? array_values($body['attachments']) : array(),
+        // Whether this customer is premium for this shop — lets the shop owner's app exempt them
+        // from its own outgoing chat-cap (see ShopMessagesViewModel.send). Purely informational
+        // here; the server does not enforce any limit itself.
+        'premium' => isset($body['premium']) ? (bool) $body['premium'] : false,
         'sentAt' => date('c')
     );
     $path = $folder . '/messages_from_customers.json';

@@ -70,7 +70,8 @@ object ShopMessagesFetch {
                     text = text,
                     sentAt = System.currentTimeMillis(),
                     read = false,
-                    attachments = ShopMessage.packAttachments(attachments)
+                    attachments = ShopMessage.packAttachments(attachments),
+                    customerPremium = o.optBoolean("premium", false)
                 )
                 dao.insert(message)
                 fresh += message
