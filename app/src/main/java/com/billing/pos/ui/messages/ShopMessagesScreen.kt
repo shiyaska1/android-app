@@ -98,6 +98,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -155,11 +156,15 @@ class ShopMessagesViewModel(app: Application) : AndroidViewModel(app) {
     private val prefs = com.billing.pos.data.AppPrefs(app)
     val deviceId: String get() = com.billing.pos.data.License.deviceId(getApplication())
 
-    /** Every customer with a phone on file — the pick list for "Message selected customers"
-     *  (see SelectCustomersDialog). Unlike [sendPromotion]'s broadcast, this doesn't depend on
-     *  the customer ever having opened the online-ordering app at all. */
+    /** Customers who registered through the online-ordering app (tagged "Online Customer" — see
+     *  OrdersFetch/OnlineCustomersFetch) and have a phone on file — the pick list for "Message
+     *  selected customers" (see SelectCustomersDialog). Scoped to online customers specifically
+     *  since a message here is an app notification, which only reaches someone who's actually
+     *  opened the app; a walk-in customer added the regular way has no app install to receive it. */
     val customers: StateFlow<List<Customer>> =
-        repo.customers.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+        repo.customers
+            .map { list -> list.filter { it.phone.isNotBlank() && it.customerType == "Online Customer" } }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private val _showProLimitDialog = MutableStateFlow(false)
     val showProLimitDialog: StateFlow<Boolean> = _showProLimitDialog
@@ -360,9 +365,9 @@ fun ShopMessagesScreen(
         )
     }
     if (showSelectCustomersDialog) {
-        val allCustomers by vm.customers.collectAsStateSafe()
+        val onlineCustomers by vm.customers.collectAsStateSafe()
         SelectCustomersDialog(
-            customers = remember(allCustomers) { allCustomers.filter { it.phone.isNotBlank() } },
+            customers = onlineCustomers,
             sending = sendingToMany,
             onSend = { recipients, text ->
                 vm.sendToMany(recipients.map { it.phone to it.name }, text)
@@ -542,8 +547,9 @@ private fun SendPromotionDialog(sending: Boolean, onSend: (String) -> Unit, onDi
 /** Pick one or more customers by checkbox (or "Select all"), then write one message and send it
  *  to each of them individually — each lands in that customer's own chat thread, same as a normal
  *  reply, unlike [SendPromotionDialog]'s anonymous broadcast to everyone who's ever opened the
- *  online-ordering app. Lists every customer with a phone on file, not just ones who've messaged
- *  before or registered online, so it also reaches customers added the regular way (Masters). */
+ *  online-ordering app. [customers] is already scoped to "Online Customer"-tagged, phone-on-file
+ *  customers (see ShopMessagesViewModel.customers) — a message here is an app notification, which
+ *  only reaches someone who's actually installed and opened the online-ordering app. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SelectCustomersDialog(
@@ -567,7 +573,7 @@ private fun SelectCustomersDialog(
         Scaffold(
             topBar = {
                 TopAppBar(
-                    title = { Text(if (selected.isEmpty()) "Message customers" else "${selected.size} selected") },
+                    title = { Text(if (selected.isEmpty()) "Message online customers" else "${selected.size} selected") },
                     navigationIcon = {
                         IconButton(onClick = onDismiss) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Close") }
                     },
@@ -604,7 +610,7 @@ private fun SelectCustomersDialog(
         ) { pad ->
             if (customers.isEmpty()) {
                 Box(Modifier.fillMaxSize().padding(pad), contentAlignment = Alignment.Center) {
-                    Text("No customers with a phone number yet.", color = MaterialTheme.colorScheme.outline)
+                    Text("No online customers yet — they need to have opened your online-ordering app at least once.", color = MaterialTheme.colorScheme.outline)
                 }
             } else {
                 LazyColumn(Modifier.fillMaxSize().padding(pad)) {
