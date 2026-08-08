@@ -897,6 +897,7 @@ private data class CustomerChatThread(
     val shop: String,
     val shopName: String,
     val lastText: String,
+    val lastFromShop: Boolean,
     val lastAt: Long,
     val unreadCount: Int
 )
@@ -968,9 +969,12 @@ private fun NotificationsDialog(
                         shop = shopCode,
                         shopName = msgs.lastOrNull { it.shopName.isNotBlank() }?.shopName?.ifBlank { shopCode } ?: shopCode,
                         lastText = preview.ifBlank { "…" },
+                        lastFromShop = last.direction != "OUT",
                         lastAt = last.receivedAt,
                         unreadCount = msgs.count { it.direction == "IN" && !it.read }
                     )
+                    // Most recently active shop first, so whatever needs attention is always the
+                    // top row — no need to scan the whole list to spot it.
                 }.sortedByDescending { it.lastAt }
             }
             Scaffold(
@@ -993,11 +997,25 @@ private fun NotificationsDialog(
                 } else {
                     LazyColumn(Modifier.fillMaxSize().padding(pad)) {
                         items(threads, key = { it.shop }) { thread ->
+                            // Separates "the shop said something new" from "that's just my own
+                            // last reply" at a glance, without opening the thread — a "You: "
+                            // prefix for the customer's own last message (matching the usual chat
+                            // convention), bold + tinted when it's unread from the shop so it
+                            // stands out from an already-read/no-reply-needed row.
+                            val unread = thread.unreadCount > 0
                             ListItem(
                                 headlineContent = { Text(thread.shopName, fontWeight = FontWeight.SemiBold) },
-                                supportingContent = { Text(thread.lastText, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                supportingContent = {
+                                    Text(
+                                        (if (!thread.lastFromShop) "You: " else "") + thread.lastText,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        fontWeight = if (unread) FontWeight.Bold else FontWeight.Normal,
+                                        color = if (unread) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                },
                                 trailingContent = {
-                                    if (thread.unreadCount > 0) Badge { Text("${thread.unreadCount}") }
+                                    if (unread) Badge { Text("${thread.unreadCount}") }
                                 },
                                 modifier = Modifier.fillMaxWidth().clickable { selectedShop = thread.shop }
                             )
@@ -1101,6 +1119,10 @@ private fun ChatThreadScreen(
         }
     }
 
+    // Opens pointed straight at the last message, not the top of the conversation — an instant
+    // jump (not animated) so there's no visible scroll-from-top on entry; a later message arriving
+    // while the thread is already open still animates down to it.
+    LaunchedEffect(shop) { if (messages.isNotEmpty()) listState.scrollToItem(messages.size - 1) }
     LaunchedEffect(messages.size) { if (messages.isNotEmpty()) listState.animateScrollToItem(messages.size - 1) }
 
     Scaffold(
