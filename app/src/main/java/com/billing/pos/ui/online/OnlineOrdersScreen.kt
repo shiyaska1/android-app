@@ -14,6 +14,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -73,6 +75,8 @@ import androidx.core.content.FileProvider
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.billing.pos.data.OnlineOrder
 import com.billing.pos.data.OnlineOrderStatus
@@ -98,6 +102,7 @@ fun OnlineOrdersScreen(onBack: () -> Unit, vm: OnlineOrdersViewModel = viewModel
     val fetching by vm.fetching.collectAsStateSafe()
     val message by vm.message.collectAsStateSafe()
     val showProLimitDialog by vm.showProLimitDialog.collectAsStateSafe()
+    val sendingMessage by vm.sendingMessage.collectAsStateSafe()
     val shopPrefs = remember { com.billing.pos.data.AppPrefs(context) }
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -378,6 +383,36 @@ fun OnlineOrdersScreen(onBack: () -> Unit, vm: OnlineOrdersViewModel = viewModel
             },
             dismissButton = { TextButton(onClick = { disputeTarget = null }) { Text("Cancel") } }
         )
+    }
+
+    if (sendingMessage) {
+        // Blocking, full-screen — a photo/voice-note attachment can take a few seconds to
+        // upload, and without this the message dialog just closes on Send while the network
+        // call is still running, so the shop owner has no sign anything is happening.
+        Dialog(
+            onDismissRequest = {},
+            properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false, usePlatformDefaultWidth = false)
+        ) {
+            Box(
+                Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.6f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator(color = androidx.compose.ui.graphics.Color.White)
+                    Spacer(Modifier.height(16.dp))
+                    Text(
+                        "Sending…",
+                        color = androidx.compose.ui.graphics.Color.White,
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Text(
+                        "This can take a moment — please wait",
+                        color = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.8f),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            }
+        }
     }
 }
 

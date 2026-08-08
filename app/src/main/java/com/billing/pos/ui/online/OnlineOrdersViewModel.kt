@@ -60,6 +60,13 @@ class OnlineOrdersViewModel(app: Application) : AndroidViewModel(app) {
 
     fun messageShown() { _message.value = null }
 
+    // Drives the full-screen blocking overlay in MessageDialog's caller — a photo/voice-note
+    // attachment can take a few seconds to upload, and without this the dialog just closes
+    // instantly on Send while the network call is still running in the background, so the shop
+    // owner has no sign anything is happening and may think it silently failed.
+    private val _sendingMessage = MutableStateFlow(false)
+    val sendingMessage: StateFlow<Boolean> = _sendingMessage
+
     fun fetch() {
         if (_fetching.value) return
         viewModelScope.launch {
@@ -104,11 +111,13 @@ class OnlineOrdersViewModel(app: Application) : AndroidViewModel(app) {
     fun sendMessage(order: OnlineOrder, message: String, amount: Double = 0.0, attachments: List<String> = emptyList()) {
         if (message.isBlank() && amount <= 0.0 && attachments.isEmpty()) return
         viewModelScope.launch {
+            _sendingMessage.value = true
             if (License.reserveNotificationSend(getApplication())) {
                 OrderStatusPush.push(getApplication(), order.customerPhone, order.serverId, message = message, amount = amount, attachments = attachments)
             } else {
                 _showProLimitDialog.value = true
             }
+            _sendingMessage.value = false
         }
     }
 
