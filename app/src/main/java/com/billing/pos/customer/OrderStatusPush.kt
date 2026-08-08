@@ -69,18 +69,19 @@ object OrderStatusPush {
             ?: com.billing.pos.data.OnlineOrderStatus.entries.find { it.name == status }?.label
         // ShopMessage has no dedicated amount column — folded into the stored text instead, same
         // as how it's shown to the customer (see NotificationsFetch/NotificationsDialog).
-        var text = if (amount > 0.0) {
+        val text = if (amount > 0.0) {
             (baseText?.plus("\n\n") ?: "") + "Bill amount: " + com.billing.pos.util.Format.rupee(amount)
         } else baseText
-        if (attachments.isNotEmpty()) {
-            val kind = if (attachments.any { com.billing.pos.util.VoiceAttachment.isAudio(it) }) "attachment/voice note" else "attachment(s)"
-            text = (text?.plus("\n\n") ?: "") + "[Sent ${attachments.size} $kind]"
-        }
-        if (!text.isNullOrBlank()) {
+        // An attachment-only send (no text/status/amount) still needs a local row, or the shop's
+        // own Messages thread would show nothing at all for what it just sent — the actual photo
+        // renders from [ShopMessage.attachmentList] (see ShopMessagesScreen), same as the
+        // customer's own thread does; no placeholder caption text needed alongside it.
+        if (!text.isNullOrBlank() || attachments.isNotEmpty()) {
             AppDatabase.get(context).shopMessageDao().insert(
                 ShopMessage(
                     customerPhone = customerPhone, customerName = customerName, orderId = orderId,
-                    direction = "OUT", text = text, sentAt = System.currentTimeMillis(), read = true
+                    direction = "OUT", text = text ?: "", sentAt = System.currentTimeMillis(), read = true,
+                    attachments = ShopMessage.packAttachments(attachments)
                 )
             )
         }

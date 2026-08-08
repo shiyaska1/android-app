@@ -400,6 +400,10 @@ private fun ThreadScreen(
     var showRequestPayment by rememberSaveable { mutableStateOf(false) }
     val name = messages.firstOrNull { it.customerName.isNotBlank() }?.customerName?.ifBlank { phone } ?: phone
     val listState = rememberLazyListState()
+    // Same fix as the customer app's chat thread (see CustomerCatalogScreen.ChatThreadScreen):
+    // a fixed dp gap on top of navigationBarsPadding() wasn't reliably enough clearance above a
+    // 3-button nav bar on every OEM — 7% of screen height guarantees a visible gap regardless.
+    val extraBottomGap = (androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp * 0.07f).dp
 
     // Attach-photo / record-voice on a reply — always available here (unlike the customer app's
     // own reply, where both are premium-only): premium is a paid customer-facing perk, not
@@ -512,9 +516,10 @@ private fun ThreadScreen(
         },
         bottomBar = {
             // navigationBarsPadding lifts this clear of the phone's gesture bar (it was sitting
-            // right under it — see the report screenshot); the extra 16dp on top of that keeps a
-            // visible gap so it doesn't hug the edge even on 3-button-nav phones.
-            Column(Modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(8.dp).padding(bottom = 16.dp)) {
+            // right under it — see the report screenshot); the extra gap on top of that (7% of
+            // screen height, see extraBottomGap above) keeps a visible gap so it doesn't hug the
+            // edge even on 3-button-nav phones whose insets aren't fully trustworthy.
+            Column(Modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(8.dp).padding(bottom = extraBottomGap)) {
                 if (pendingAttachments.isNotEmpty()) {
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 6.dp)) {
                         items(pendingAttachments.toList()) { uri ->
