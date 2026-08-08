@@ -319,12 +319,4 @@ interface CustomerNotificationDao {
      *  one at a time (matching the shop owner's own chat, which has no per-message delete either). */
     @Query("DELETE FROM customer_notifications WHERE shop = :shop")
     suspend fun deleteForShop(shop: String)
-
-    /** How many messages this device has sent TO [shop] (direction='OUT') in the last 24 hours —
-     *  see [com.billing.pos.ui.customer.CustomerCatalogViewModel.replyToShop]'s free-tier cap, a
-     *  rolling window (not a fixed daily reset) so it eases as old messages age out, rather than a
-     *  separate counter/window-start pref. Ordering is a completely separate flow
-     *  ([com.billing.pos.customer.OrderSubmit]) and is never capped. */
-    @Query("SELECT COUNT(*) FROM customer_notifications WHERE shop = :shop AND direction = 'OUT' AND receivedAt >= :since")
-    suspend fun countSentToShopSince(shop: String, since: Long): Int
 }
