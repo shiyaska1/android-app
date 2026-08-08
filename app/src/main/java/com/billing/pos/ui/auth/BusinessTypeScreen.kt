@@ -12,7 +12,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.Divider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -89,11 +91,28 @@ fun BusinessTypeScreen(onChosen: () -> Unit, onCustomerLinkSimulated: () -> Unit
             fontWeight = FontWeight.Bold,
             modifier = Modifier.padding(top = 24.dp)
         )
+        // The primary, unmissable entry point for a customer — not a small link at the bottom.
+        // The Play Store install link is meant to route a customer straight past this screen
+        // entirely, but that depends on Play's install referrer actually arriving in time (see
+        // InstallReferrer.kt), which real-world testing has shown can't always be counted on.
+        // Scanning the shop's own QR/code here applies the exact same prefs the referrer would
+        // have, with no dependence on Play at all.
+        Button(
+            onClick = { startCustomerScan() },
+            modifier = Modifier.fillMaxWidth().padding(top = 16.dp)
+        ) { Text("Open order/customer app") }
         Text(
-            "How will you use the app? This sets up your home screen and can be changed later in Settings.",
+            "Got a shop's QR code or link to order from them? Tap above to scan it.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.outline,
+            modifier = Modifier.padding(top = 4.dp, bottom = 16.dp)
+        )
+        Divider()
+        Text(
+            "Or, how will you use the app as a shop? This sets up your home screen and can be changed later in Settings.",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.outline,
-            modifier = Modifier.padding(top = 6.dp, bottom = 16.dp)
+            modifier = Modifier.padding(top = 16.dp, bottom = 16.dp)
         )
         LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(BUSINESS_TYPES) { type ->
@@ -118,9 +137,6 @@ fun BusinessTypeScreen(onChosen: () -> Unit, onCustomerLinkSimulated: () -> Unit
                     }
                 }
             }
-        }
-        TextButton(onClick = { startCustomerScan() }, modifier = Modifier.padding(top = 8.dp)) {
-            Text("Already a customer? Scan your shop's code")
         }
         if (com.billing.pos.BuildConfig.DEBUG) {
             TextButton(onClick = { showSimulateLink = true }, modifier = Modifier.padding(top = 4.dp)) {
