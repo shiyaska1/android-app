@@ -1147,7 +1147,11 @@ private fun ChatThreadScreen(
             )
         },
         bottomBar = {
-            Column(Modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(8.dp)) {
+            // navigationBarsPadding alone still left this sitting right under the phone's
+            // gesture/button bar on some devices (same issue already fixed on the shop owner's
+            // Messages screen) — the extra 16dp on top keeps a visible gap so the reply box and
+            // Send button are never hidden behind it.
+            Column(Modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(8.dp).padding(bottom = 16.dp)) {
                 if (pendingAttachments.isNotEmpty()) {
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 6.dp)) {
                         items(pendingAttachments.toList()) { uri ->

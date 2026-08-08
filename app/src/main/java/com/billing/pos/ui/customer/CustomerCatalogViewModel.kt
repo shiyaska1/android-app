@@ -132,6 +132,10 @@ class CustomerCatalogViewModel(app: Application) : AndroidViewModel(app) {
     private val _replying = MutableStateFlow(false)
     val replying: StateFlow<Boolean> = _replying
 
+    /** Free (non-premium) chat is capped at this many messages per shop in any rolling 24h window
+     *  — ordering is never affected, only the live-chat reply. Premium shops have no cap. */
+    private val chatFreeLimitPerDay = 100
+
     /** Sends a message to [shop]'s live chat thread — a persistent per-shop input, not tied to
      *  any one notification/order (same as [com.billing.pos.ui.messages.ShopMessagesScreen]'s own
      *  plain chat send on the owner side). Also inserted locally as a direction="OUT" row (see
@@ -142,6 +146,14 @@ class CustomerCatalogViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             _replying.value = true
             val app: Application = getApplication()
+            if (!isPremiumForShop(shop)) {
+                val since = System.currentTimeMillis() - 24 * 60 * 60 * 1000L
+                if (notificationDao.countSentToShopSince(shop, since) >= chatFreeLimitPerDay) {
+                    _message.value = "You've sent $chatFreeLimitPerDay messages to $shopName in the last 24 hours — that's the free limit for this shop's chat. It resets as today's messages age out. Placing an order isn't affected."
+                    _replying.value = false
+                    return@launch
+                }
+            }
             // Route to whichever shop this thread is actually for, not whichever shop happens to
             // be active right now — they can differ once a customer is connected to more than one
             // shop (see ShopSwitch).
