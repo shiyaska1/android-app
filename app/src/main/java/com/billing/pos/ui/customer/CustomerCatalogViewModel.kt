@@ -161,8 +161,7 @@ class CustomerCatalogViewModel(app: Application) : AndroidViewModel(app) {
             val ok = com.billing.pos.customer.CustomerMessageSend.send(
                 app, text,
                 targetUrl = target?.url.orEmpty(), targetShop = target?.shop ?: shop,
-                attachments = attachments,
-                premium = isPremiumForShop(shop)
+                attachments = attachments
             )
             if (ok) {
                 notificationDao.insert(
@@ -213,8 +212,7 @@ class CustomerCatalogViewModel(app: Application) : AndroidViewModel(app) {
                 app, message = text, orderId = notification.orderId,
                 targetUrl = target?.url.orEmpty(), targetShop = target?.shop ?: notification.shop,
                 paymentStatus = "UPI",
-                attachments = attachments,
-                premium = isPremiumForShop(notification.shop)
+                attachments = attachments
             )
             if (ok) {
                 notificationDao.insert(

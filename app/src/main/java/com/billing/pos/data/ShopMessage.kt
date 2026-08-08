@@ -32,11 +32,7 @@ data class ShopMessage(
      *  proof after paying via the QR-code fallback (see CustomerCatalogScreen's PaymentDialog),
      *  since that path has no automatic success callback the app can detect on its own. Packed
      *  the same way CustomerNotification.attachments packs its list. Empty when none. */
-    val attachments: String = "",
-    /** Only meaningful for "IN" — whether this customer is premium for this shop, as reported by
-     *  their own app (see CustomerCatalogViewModel.isPremiumForShop / CustomerMessageSend). Drives
-     *  the shop-owner-side chat cap exemption in ShopMessagesViewModel.send. */
-    val customerPremium: Boolean = false
+    val attachments: String = ""
 ) {
     val attachmentList: List<String> get() = runCatching {
         val arr = org.json.JSONArray(attachments)
@@ -64,16 +60,4 @@ interface ShopMessageDao {
 
     @Query("UPDATE shop_messages SET read = 1 WHERE customerPhone = :phone AND direction = 'IN'")
     suspend fun markReadForCustomer(phone: String)
-
-    /** How many outgoing (shop -> customer) chat messages this shop has sent to [phone] since
-     *  [since] — drives the 100-per-24h free-chat cap in ShopMessagesViewModel.send. Never counts
-     *  order-related pushes, since those go straight through OrderStatusPush without touching
-     *  this screen's send(). */
-    @Query("SELECT COUNT(*) FROM shop_messages WHERE customerPhone = :phone AND direction = 'OUT' AND sentAt >= :since")
-    suspend fun countSentToCustomerSince(phone: String, since: Long): Int
-
-    /** The customer's most recently reported premium status for this shop, from their latest
-     *  incoming message — null if this customer has never sent one (treated as non-premium). */
-    @Query("SELECT customerPremium FROM shop_messages WHERE customerPhone = :phone AND direction = 'IN' ORDER BY sentAt DESC LIMIT 1")
-    suspend fun latestPremiumForCustomer(phone: String): Boolean?
 }

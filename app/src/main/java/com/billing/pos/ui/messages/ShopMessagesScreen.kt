@@ -50,7 +50,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedIconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
@@ -178,15 +177,6 @@ class ShopMessagesViewModel(app: Application) : AndroidViewModel(app) {
 
     fun broadcastResultShown() { _broadcastResult.value = null }
 
-    private val _chatLimitMessage = MutableStateFlow<String?>(null)
-    val chatLimitMessage: StateFlow<String?> = _chatLimitMessage
-    fun chatLimitMessageShown() { _chatLimitMessage.value = null }
-
-    /** Free (non-premium) chat cap on this Messages screen only — never on order receiving or
-     *  the per-order status-update/reply flow (see OnlineOrdersViewModel), which push via
-     *  OrderStatusPush directly and never call this function. */
-    private val chatFreeLimitPerDay = 100
-
     /** Sends [text] to every customer who has ever registered a push token for this shop — a
      *  sales offer, a new-stock announcement, etc. See [BroadcastPromotion]. */
     fun sendPromotion(text: String) {
@@ -245,13 +235,6 @@ class ShopMessagesViewModel(app: Application) : AndroidViewModel(app) {
     fun send(phone: String, name: String, text: String, amount: Double = 0.0, attachments: List<String> = emptyList()) {
         if ((text.isBlank() && amount <= 0.0 && attachments.isEmpty()) || _sending.value) return
         viewModelScope.launch {
-            if (dao.latestPremiumForCustomer(phone) != true) {
-                val since = System.currentTimeMillis() - 24 * 60 * 60 * 1000L
-                if (dao.countSentToCustomerSince(phone, since) >= chatFreeLimitPerDay) {
-                    _chatLimitMessage.value = "You've sent $chatFreeLimitPerDay messages to $name in the last 24 hours — that's the free chat limit for a non-premium customer. It resets as today's messages age out."
-                    return@launch
-                }
-            }
             _sending.value = true
             if (com.billing.pos.data.License.reserveNotificationSend(getApplication())) {
                 OrderStatusPush.push(
@@ -413,15 +396,10 @@ private fun ThreadScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val sending by vm.sending.collectAsStateSafe()
-    val chatLimitMessage by vm.chatLimitMessage.collectAsStateSafe()
     var text by rememberSaveable { mutableStateOf("") }
     var showRequestPayment by rememberSaveable { mutableStateOf(false) }
     val name = messages.firstOrNull { it.customerName.isNotBlank() }?.customerName?.ifBlank { phone } ?: phone
     val listState = rememberLazyListState()
-    val snackbar = remember { SnackbarHostState() }
-    LaunchedEffect(chatLimitMessage) {
-        chatLimitMessage?.let { snackbar.showSnackbar(it, duration = SnackbarDuration.Long); vm.chatLimitMessageShown() }
-    }
 
     // Attach-photo / record-voice on a reply — always available here (unlike the customer app's
     // own reply, where both are premium-only): premium is a paid customer-facing perk, not
@@ -532,7 +510,6 @@ private fun ThreadScreen(
                 }
             )
         },
-        snackbarHost = { SnackbarHost(snackbar) },
         bottomBar = {
             // navigationBarsPadding lifts this clear of the phone's gesture bar (it was sitting
             // right under it — see the report screenshot); the extra 16dp on top of that keeps a

@@ -24,8 +24,7 @@ object CustomerMessageSend {
         targetUrl: String = "",
         targetShop: String = "",
         paymentStatus: String = "",
-        attachments: List<String> = emptyList(),
-        premium: Boolean = false
+        attachments: List<String> = emptyList()
     ): Boolean = withContext(Dispatchers.IO) {
         if (message.isBlank()) return@withContext false
         val prefs = AppPrefs(context)
@@ -41,7 +40,6 @@ object CustomerMessageSend {
             put("message", message)
             if (paymentStatus.isNotBlank()) put("paymentStatus", paymentStatus)
             if (attachments.isNotEmpty()) put("attachments", org.json.JSONArray(attachments))
-            put("premium", premium)
         }
         val sep = if (base.contains("?")) "&" else "?"
         val url = "$base${sep}do=message"
