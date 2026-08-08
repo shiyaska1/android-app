@@ -94,6 +94,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
@@ -1062,6 +1063,12 @@ private fun ChatThreadScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
+    // A fixed dp gap plus navigationBarsPadding() wasn't reliably enough clearance on every
+    // device/OEM nav bar when this screen is hosted inside a Dialog window (insets there can be
+    // reported inconsistently even with decorFitsSystemWindows = false) — sizing the extra gap
+    // as a fraction of screen height instead guarantees visible breathing room under the reply
+    // bar regardless of what the dialog window reports for insets.
+    val extraBottomGap = (LocalConfiguration.current.screenHeightDp * 0.05f).dp
     var text by rememberSaveable(shop) { mutableStateOf("") }
     val pendingAttachments = remember(shop) { mutableStateListOf<String>() }
     var compressing by remember { mutableStateOf(false) }
@@ -1157,9 +1164,9 @@ private fun ChatThreadScreen(
         bottomBar = {
             // navigationBarsPadding alone still left this sitting right under the phone's
             // gesture/button bar on some devices (same issue already fixed on the shop owner's
-            // Messages screen) — the extra 16dp on top keeps a visible gap so the reply box and
-            // Send button are never hidden behind it.
-            Column(Modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(8.dp).padding(bottom = 16.dp)) {
+            // Messages screen) — the extra gap on top (5% of screen height, see extraBottomGap
+            // above) keeps a visible gap so the reply box and Send button are never hidden behind it.
+            Column(Modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(8.dp).padding(bottom = extraBottomGap)) {
                 if (pendingAttachments.isNotEmpty()) {
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 6.dp)) {
                         items(pendingAttachments.toList()) { uri ->
