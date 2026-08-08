@@ -1,5 +1,6 @@
 package com.billing.pos.ui.online
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -15,7 +16,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.CloudUpload
+import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
@@ -30,6 +33,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -46,6 +50,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.billing.pos.data.License
 import com.billing.pos.ui.billing.collectAsStateSafe
+import com.billing.pos.ui.common.ImageViewerDialog
 import com.billing.pos.ui.common.rememberThumbnail
 import com.billing.pos.util.Format
 
@@ -62,12 +67,23 @@ fun OnlineItemsScreen(onBack: () -> Unit, vm: OnlineItemsViewModel = viewModel()
     val uploading by vm.uploading.collectAsStateSafe()
     val message by vm.message.collectAsStateSafe()
     val showProLimitDialog by vm.showProLimitDialog.collectAsStateSafe()
+    val showClearConfirm by vm.showClearConfirm.collectAsStateSafe()
     val snackbar = remember { SnackbarHostState() }
     var searchQuery by rememberSaveable { mutableStateOf("") }
     var selectedCategory by rememberSaveable { mutableStateOf("All") }
 
     LaunchedEffect(message) {
         message?.let { snackbar.showSnackbar(it); vm.messageShown() }
+    }
+
+    if (showClearConfirm) {
+        AlertDialog(
+            onDismissRequest = { vm.dismissClearConfirm() },
+            title = { Text("Clear online store?") },
+            text = { Text("This removes every item from your live online catalog right away — customers will see an empty store until you upload again. Useful if items were deleted here but are still showing online. This doesn't touch your item master.") },
+            confirmButton = { TextButton(onClick = { vm.confirmClearAll() }) { Text("Clear") } },
+            dismissButton = { TextButton(onClick = { vm.dismissClearConfirm() }) { Text("Cancel") } }
+        )
     }
 
     if (showProLimitDialog) {
@@ -102,6 +118,11 @@ fun OnlineItemsScreen(onBack: () -> Unit, vm: OnlineItemsViewModel = viewModel()
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { vm.requestClearAll() }) {
+                        Icon(Icons.Filled.DeleteSweep, contentDescription = "Clear online store")
                     }
                 }
             )
@@ -179,6 +200,10 @@ private fun OnlineItemCard(
     onDriveLink: (String) -> Unit
 ) {
     val item = row.item
+    var showFullImage by remember(item.id) { mutableStateOf(false) }
+    if (showFullImage && row.photoPath != null) {
+        ImageViewerDialog(paths = listOf(row.photoPath), onDismiss = { showFullImage = false })
+    }
     Card(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(vertical = 4.dp)) {
             Row(
@@ -193,6 +218,7 @@ private fun OnlineItemCard(
                         contentDescription = item.name,
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.size(44.dp).padding(end = 8.dp)
+                            .clickable { showFullImage = true }
                     )
                 }
                 Column(Modifier.weight(1f)) {

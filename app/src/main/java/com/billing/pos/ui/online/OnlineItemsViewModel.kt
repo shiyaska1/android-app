@@ -46,6 +46,11 @@ class OnlineItemsViewModel(app: Application) : AndroidViewModel(app) {
     val showProLimitDialog: StateFlow<Boolean> = _showProLimitDialog
     fun dismissProLimitDialog() { _showProLimitDialog.value = false }
 
+    private val _showClearConfirm = MutableStateFlow(false)
+    val showClearConfirm: StateFlow<Boolean> = _showClearConfirm
+    fun requestClearAll() { _showClearConfirm.value = true }
+    fun dismissClearConfirm() { _showClearConfirm.value = false }
+
     /** True once a valid pro key (see [License.onlineCatalogProKey]) has been entered — lifts the
      *  free-plan [License.ONLINE_CATALOG_FREE_LIMIT] cap on distinct online items entirely. */
     val isPro: Boolean get() = prefs.onlineCatalogPro
@@ -90,6 +95,25 @@ class OnlineItemsViewModel(app: Application) : AndroidViewModel(app) {
             when (val result = OnlineCatalogUpload.upload(getApplication(), online)) {
                 is OnlineCatalogUpload.Result.Ok -> _message.value = "Uploaded ${result.count} item(s)"
                 is OnlineCatalogUpload.Result.Failed -> _message.value = "Upload failed: ${result.message}"
+            }
+            _uploading.value = false
+        }
+    }
+
+    /** Wipes the shop's live online catalog (server-side catalog.json becomes empty) and
+     *  unmarks every locally "online" item — the fix for stale listings left behind by items
+     *  that were since deleted or edited off the online catalog without a re-upload. */
+    fun confirmClearAll() {
+        _showClearConfirm.value = false
+        if (_uploading.value) return
+        viewModelScope.launch {
+            _uploading.value = true
+            when (val result = OnlineCatalogUpload.upload(getApplication(), emptyList())) {
+                is OnlineCatalogUpload.Result.Ok -> {
+                    rows.value.filter { it.item.isOnline }.forEach { repo.updateItem(it.item.copy(isOnline = false)) }
+                    _message.value = "Online store cleared"
+                }
+                is OnlineCatalogUpload.Result.Failed -> _message.value = "Could not clear: ${result.message}"
             }
             _uploading.value = false
         }
