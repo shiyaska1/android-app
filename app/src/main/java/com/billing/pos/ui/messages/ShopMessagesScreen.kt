@@ -31,6 +31,7 @@ import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Campaign
 import androidx.compose.material.icons.filled.Checklist
+import androidx.compose.material.icons.filled.Contacts
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteSweep
@@ -78,6 +79,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -87,6 +90,8 @@ import com.billing.pos.customer.OrderStatusPush
 import com.billing.pos.customer.ShopMessagesFetch
 import com.billing.pos.customer.ThumbnailCompressor
 import com.billing.pos.data.AppDatabase
+import com.billing.pos.data.Customer
+import com.billing.pos.data.Repository
 import com.billing.pos.data.ShopMessage
 import com.billing.pos.ui.billing.collectAsStateSafe
 import kotlinx.coroutines.Dispatchers
@@ -146,8 +151,15 @@ data class ChatThread(
 
 class ShopMessagesViewModel(app: Application) : AndroidViewModel(app) {
     private val dao = AppDatabase.get(app).shopMessageDao()
+    private val repo = Repository(app)
     private val prefs = com.billing.pos.data.AppPrefs(app)
     val deviceId: String get() = com.billing.pos.data.License.deviceId(getApplication())
+
+    /** Every customer with a phone on file — the pick list for "Message selected customers"
+     *  (see SelectCustomersDialog). Unlike [sendPromotion]'s broadcast, this doesn't depend on
+     *  the customer ever having opened the online-ordering app at all. */
+    val customers: StateFlow<List<Customer>> =
+        repo.customers.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private val _showProLimitDialog = MutableStateFlow(false)
     val showProLimitDialog: StateFlow<Boolean> = _showProLimitDialog
@@ -270,6 +282,28 @@ class ShopMessagesViewModel(app: Application) : AndroidViewModel(app) {
             _sending.value = false
         }
     }
+
+    /** Sends the same [text] to each of [recipients] individually (each lands in that customer's
+     *  own chat thread, same as a one-to-one reply, rather than the anonymous broadcast — see
+     *  SelectCustomersDialog). Stops partway through and surfaces the Pro dialog if the daily
+     *  notification cap is hit mid-send; whatever went out before that already sent. */
+    fun sendToMany(recipients: List<Pair<String, String>>, text: String) {
+        if (text.isBlank() || recipients.isEmpty() || _sending.value) return
+        viewModelScope.launch {
+            _sending.value = true
+            var sent = 0
+            for ((phone, name) in recipients) {
+                if (!com.billing.pos.data.License.reserveNotificationSend(getApplication())) {
+                    _showProLimitDialog.value = true
+                    break
+                }
+                OrderStatusPush.push(getApplication(), customerPhone = phone, orderId = "", message = text, customerName = name)
+                sent++
+            }
+            _broadcastResult.value = if (sent > 0) "Sent to $sent customer(s)" else null
+            _sending.value = false
+        }
+    }
 }
 
 /** Shop owner's chat inbox: every customer who has exchanged a message, grouped with the latest
@@ -286,10 +320,12 @@ fun ShopMessagesScreen(
     val messages by vm.messages.collectAsStateSafe()
     val refreshing by vm.refreshing.collectAsStateSafe()
     val broadcasting by vm.broadcasting.collectAsStateSafe()
+    val sendingToMany by vm.sending.collectAsStateSafe()
     val broadcastResult by vm.broadcastResult.collectAsStateSafe()
     val showProLimitDialog by vm.showProLimitDialog.collectAsStateSafe()
     var selectedPhone by rememberSaveable { mutableStateOf(initialPhone) }
     var showPromotionDialog by rememberSaveable { mutableStateOf(false) }
+    var showSelectCustomersDialog by rememberSaveable { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
     // "Select" mode on the thread list, to delete more than one chat at once — mirrors the
     // Invoices list's own multi-select ("selectMode"/"selectedIds"). "Clear all" stays a
@@ -321,6 +357,18 @@ fun ShopMessagesScreen(
             sending = broadcasting,
             onSend = { text -> vm.sendPromotion(text); showPromotionDialog = false },
             onDismiss = { showPromotionDialog = false }
+        )
+    }
+    if (showSelectCustomersDialog) {
+        val allCustomers by vm.customers.collectAsStateSafe()
+        SelectCustomersDialog(
+            customers = remember(allCustomers) { allCustomers.filter { it.phone.isNotBlank() } },
+            sending = sendingToMany,
+            onSend = { recipients, text ->
+                vm.sendToMany(recipients.map { it.phone to it.name }, text)
+                showSelectCustomersDialog = false
+            },
+            onDismiss = { showSelectCustomersDialog = false }
         )
     }
 
@@ -398,8 +446,11 @@ fun ShopMessagesScreen(
                                     Icon(Icons.Filled.DeleteSweep, contentDescription = "Clear all chats")
                                 }
                             }
+                            IconButton(onClick = { showSelectCustomersDialog = true }) {
+                                Icon(Icons.Filled.Contacts, contentDescription = "Message selected customers")
+                            }
                             IconButton(onClick = { showPromotionDialog = true }) {
-                                Icon(Icons.Filled.Campaign, contentDescription = "Send promotion")
+                                Icon(Icons.Filled.Campaign, contentDescription = "Send promotion to everyone")
                             }
                             IconButton(onClick = { vm.refresh() }) {
                                 if (refreshing) {
@@ -486,6 +537,97 @@ private fun SendPromotionDialog(sending: Boolean, onSend: (String) -> Unit, onDi
         },
         dismissButton = { TextButton(onClick = onDismiss, enabled = !sending) { Text("Cancel") } }
     )
+}
+
+/** Pick one or more customers by checkbox (or "Select all"), then write one message and send it
+ *  to each of them individually — each lands in that customer's own chat thread, same as a normal
+ *  reply, unlike [SendPromotionDialog]'s anonymous broadcast to everyone who's ever opened the
+ *  online-ordering app. Lists every customer with a phone on file, not just ones who've messaged
+ *  before or registered online, so it also reaches customers added the regular way (Masters). */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SelectCustomersDialog(
+    customers: List<Customer>,
+    sending: Boolean,
+    onSend: (recipients: List<Customer>, text: String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val selected = remember { mutableStateListOf<Long>() }
+    var text by rememberSaveable { mutableStateOf("") }
+    // Same dialog-window edge-to-edge fix as the chat threads (see CustomerCatalogScreen's
+    // ChatThreadScreen) — this dialog has its own bottom compose bar, so it needs the same
+    // guaranteed-visible-above-the-nav-bar treatment.
+    val extraBottomGap = (androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp * 0.12f).dp
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+    ) {
+        val allSelected = customers.isNotEmpty() && selected.size == customers.size
+        Scaffold(
+            topBar = {
+                TopAppBar(
+                    title = { Text(if (selected.isEmpty()) "Message customers" else "${selected.size} selected") },
+                    navigationIcon = {
+                        IconButton(onClick = onDismiss) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Close") }
+                    },
+                    actions = {
+                        if (customers.isNotEmpty()) {
+                            IconButton(onClick = {
+                                if (allSelected) selected.clear()
+                                else { selected.clear(); selected.addAll(customers.map { it.id }) }
+                            }) {
+                                Icon(Icons.Filled.SelectAll, contentDescription = if (allSelected) "Deselect all" else "Select all")
+                            }
+                        }
+                    }
+                )
+            },
+            bottomBar = {
+                Column(Modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(8.dp).padding(bottom = extraBottomGap)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = text, onValueChange = { text = it },
+                            placeholder = { Text("Message") },
+                            modifier = Modifier.weight(1f)
+                        )
+                        IconButton(
+                            onClick = { onSend(customers.filter { it.id in selected }, text.trim()) },
+                            enabled = !sending && text.isNotBlank() && selected.isNotEmpty()
+                        ) {
+                            if (sending) CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                            else Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send")
+                        }
+                    }
+                }
+            }
+        ) { pad ->
+            if (customers.isEmpty()) {
+                Box(Modifier.fillMaxSize().padding(pad), contentAlignment = Alignment.Center) {
+                    Text("No customers with a phone number yet.", color = MaterialTheme.colorScheme.outline)
+                }
+            } else {
+                LazyColumn(Modifier.fillMaxSize().padding(pad)) {
+                    items(customers, key = { it.id }) { c ->
+                        ListItem(
+                            leadingContent = {
+                                Checkbox(
+                                    checked = c.id in selected,
+                                    onCheckedChange = { checked -> if (checked) selected.add(c.id) else selected.remove(c.id) }
+                                )
+                            },
+                            headlineContent = { Text(c.name, fontWeight = FontWeight.SemiBold) },
+                            supportingContent = { Text(c.phone) },
+                            modifier = Modifier.fillMaxWidth().clickable {
+                                if (c.id in selected) selected.remove(c.id) else selected.add(c.id)
+                            }
+                        )
+                        Divider()
+                    }
+                }
+            }
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

@@ -2,6 +2,7 @@ package com.billing.pos.customer
 
 import android.content.Context
 import com.billing.pos.data.AppPrefs
+import com.billing.pos.data.License
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -24,8 +25,15 @@ object BroadcastPromotion {
     suspend fun send(context: Context, message: String): Result = withContext(Dispatchers.IO) {
         val prefs = AppPrefs(context)
         val base = prefs.onlineCatalogUrl
-        val shop = prefs.shopCode
-        if (base.isBlank() || shop.isBlank()) return@withContext Result.Failed("Set the online catalog URL in Settings first")
+        // Same fallback every other server call in the app uses (registerToken, catalog upload,
+        // orders fetch, ...) — prefs.shopCode alone is blank unless the shop owner has explicitly
+        // typed something into Settings > Online ordering's "Shop code" field, even though that
+        // field visually shows the device id as a placeholder default. Reading prefs.shopCode
+        // directly here (as this used to) silently broadcasts under the wrong/empty shop code —
+        // the server either 400s or, worse, queues it in a folder no customer's token was ever
+        // registered under, so nobody receives it and it looks like a silent no-op.
+        val shop = prefs.shopCode.ifBlank { License.deviceId(context) }
+        if (base.isBlank()) return@withContext Result.Failed("Set the online catalog URL in Settings first")
         if (message.isBlank()) return@withContext Result.Failed("Write a message first")
 
         val body = JSONObject().apply {
