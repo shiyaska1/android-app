@@ -15,12 +15,15 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -63,6 +66,7 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.ListItem
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -71,6 +75,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -94,6 +99,7 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -749,12 +755,13 @@ fun CustomerCatalogScreen(
             notifications = notifications,
             replying = replying,
             shopUpi = { shop -> vm.upiFor(shop) },
+            isPremiumForShop = { shop -> vm.isPremiumForShop(shop) },
             playingVoiceNote = playingVoiceNote,
             isShopMuted = { shop -> vm.isShopMuted(shop) },
             onDismiss = { showNotifications = false },
-            onDelete = { n -> vm.deleteNotification(n) },
             onClearAll = { vm.clearAllNotifications(); showNotifications = false },
-            onReply = { n, text, attachment -> vm.replyToNotification(n, text, attachment) },
+            onDeleteThread = { shop -> vm.deleteThread(shop) },
+            onReply = { shop, shopName, text, attachments -> vm.replyToShop(shop, shopName, text, attachments) },
             onMuteShop = { shop, muted -> vm.setShopMuted(shop, muted) },
             onPayNotification = { n -> payingNotification = n },
             onTogglePlay = { uri -> toggleVoicePlayback(uri) },
@@ -883,35 +890,161 @@ private fun TechnicalErrorDialog(
     )
 }
 
-/** The customer's notification list — order status changes / messages the shop sent. Each one
- *  can be deleted, and replied to right there (the customer side of a live chat with the shop —
- *  the reply is picked up by the shop owner's Messages screen, see [CustomerMessageSend]). */
+/** One conversation per shop, collapsed from the flat [CustomerNotification] list the same way
+ *  [com.billing.pos.ui.messages.ShopMessagesScreen] collapses ShopMessage rows into threads on
+ *  the owner side. */
+private data class CustomerChatThread(
+    val shop: String,
+    val shopName: String,
+    val lastText: String,
+    val lastAt: Long,
+    val unreadCount: Int
+)
+
+/** The customer's chat with every shop they're connected to — a "Chats" list grouped by shop,
+ *  each opening into a full live thread: status updates/messages the shop sent, the customer's
+ *  own replies, and a reply bar to send more — the same structure as
+ *  [com.billing.pos.ui.messages.ShopMessagesScreen] on the owner side. Individual messages aren't
+ *  deletable one at a time (the shop's own chat has no such option either); a whole thread can be
+ *  cleared instead. */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun NotificationsDialog(
     notifications: List<CustomerNotification>,
     replying: Boolean,
     /** Resolves a shop code to its own (payee-VPA, payee-name) UPI details, or null if that shop
-     *  has none set — always looked up per-notification (see ShopSwitch), never assumed to be
-     *  whichever shop is currently active. */
+     *  has none set — always looked up per-thread (see ShopSwitch), never assumed to be whichever
+     *  shop is currently active. */
     shopUpi: (String) -> Pair<String, String>?,
+    /** Whether [String] (a shop code) is on the premium tier — gates attach-photo/record-voice in
+     *  that shop's thread. Per-shop, not global: a customer can be connected to more than one
+     *  shop and premium status can differ between them. */
+    isPremiumForShop: (String) -> Boolean,
     playingVoiceNote: String?,
     isShopMuted: (String) -> Boolean,
     onDismiss: () -> Unit,
-    onDelete: (CustomerNotification) -> Unit,
     onClearAll: () -> Unit,
-    onReply: (CustomerNotification, String, String?) -> Unit,
+    onDeleteThread: (shop: String) -> Unit,
+    onReply: (shop: String, shopName: String, text: String, attachments: List<String>) -> Unit,
     onMuteShop: (shop: String, muted: Boolean) -> Unit,
+    onPayNotification: (CustomerNotification) -> Unit,
+    onTogglePlay: (String) -> Unit,
+    onViewImage: (String) -> Unit
+) {
+    var selectedShop by rememberSaveable { mutableStateOf<String?>(null) }
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        val shop = selectedShop
+        if (shop != null) {
+            val threadMessages = remember(notifications, shop) {
+                notifications.filter { it.shop == shop }.sortedBy { it.receivedAt }
+            }
+            val shopName = notifications.lastOrNull { it.shop == shop && it.shopName.isNotBlank() }?.shopName?.ifBlank { shop } ?: shop
+            ChatThreadScreen(
+                shop = shop,
+                shopName = shopName,
+                messages = threadMessages,
+                replying = replying,
+                premium = isPremiumForShop(shop),
+                canPay = shopUpi(shop) != null,
+                muted = isShopMuted(shop),
+                playingVoiceNote = playingVoiceNote,
+                onBack = { selectedShop = null },
+                onMuteToggle = { onMuteShop(shop, !isShopMuted(shop)) },
+                onDeleteThread = { onDeleteThread(shop); selectedShop = null },
+                onReply = onReply,
+                onPayNotification = onPayNotification,
+                onTogglePlay = onTogglePlay,
+                onViewImage = onViewImage
+            )
+        } else {
+            val threads = remember(notifications) {
+                notifications.filter { it.shop.isNotBlank() }.groupBy { it.shop }.map { (shopCode, msgs) ->
+                    val last = msgs.maxByOrNull { it.receivedAt }!!
+                    val statusLabel = OnlineOrderStatus.entries.find { it.name == last.status }?.label
+                    val preview = last.message.ifBlank {
+                        statusLabel ?: (if (last.amount > 0.0) "Bill amount: " + com.billing.pos.util.Format.rupee(last.amount) else "")
+                    }
+                    CustomerChatThread(
+                        shop = shopCode,
+                        shopName = msgs.lastOrNull { it.shopName.isNotBlank() }?.shopName?.ifBlank { shopCode } ?: shopCode,
+                        lastText = preview.ifBlank { "…" },
+                        lastAt = last.receivedAt,
+                        unreadCount = msgs.count { it.direction == "IN" && !it.read }
+                    )
+                }.sortedByDescending { it.lastAt }
+            }
+            Scaffold(
+                topBar = {
+                    TopAppBar(
+                        title = { Text("Chats") },
+                        navigationIcon = {
+                            IconButton(onClick = onDismiss) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Close") }
+                        },
+                        actions = {
+                            if (threads.isNotEmpty()) TextButton(onClick = onClearAll) { Text("Clear all") }
+                        }
+                    )
+                }
+            ) { pad ->
+                if (threads.isEmpty()) {
+                    Box(Modifier.fillMaxSize().padding(pad), contentAlignment = Alignment.Center) {
+                        Text("No messages yet.", color = MaterialTheme.colorScheme.outline)
+                    }
+                } else {
+                    LazyColumn(Modifier.fillMaxSize().padding(pad)) {
+                        items(threads, key = { it.shop }) { thread ->
+                            ListItem(
+                                headlineContent = { Text(thread.shopName, fontWeight = FontWeight.SemiBold) },
+                                supportingContent = { Text(thread.lastText, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                trailingContent = {
+                                    if (thread.unreadCount > 0) Badge { Text("${thread.unreadCount}") }
+                                },
+                                modifier = Modifier.fillMaxWidth().clickable { selectedShop = thread.shop }
+                            )
+                            Divider()
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** One shop's full chat thread — message bubbles (the shop's on the left, the customer's own on
+ *  the right, mirroring [com.billing.pos.ui.messages.ShopMessagesScreen]'s ThreadScreen) plus a
+ *  reply bar. Attach-photo and record-voice only show when [premium] — the shop owner's own
+ *  reply has both always on, no such gate, since premium is a paid customer-facing perk. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ChatThreadScreen(
+    shop: String,
+    shopName: String,
+    messages: List<CustomerNotification>,
+    replying: Boolean,
+    premium: Boolean,
+    canPay: Boolean,
+    muted: Boolean,
+    playingVoiceNote: String?,
+    onBack: () -> Unit,
+    onMuteToggle: () -> Unit,
+    onDeleteThread: () -> Unit,
+    onReply: (shop: String, shopName: String, text: String, attachments: List<String>) -> Unit,
     onPayNotification: (CustomerNotification) -> Unit,
     onTogglePlay: (String) -> Unit,
     onViewImage: (String) -> Unit
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var replyTargetId by remember { mutableStateOf<Long?>(null) }
-    var replyText by rememberSaveable { mutableStateOf("") }
-    var replyAttachment by remember { mutableStateOf<String?>(null) }
-    var compressingReplyAttachment by remember { mutableStateOf(false) }
-    suspend fun compressReplyAttachment(uri: android.net.Uri): String? = withContext(Dispatchers.IO) {
+    val listState = rememberLazyListState()
+    var text by rememberSaveable(shop) { mutableStateOf("") }
+    val pendingAttachments = remember(shop) { mutableStateListOf<String>() }
+    var compressing by remember { mutableStateOf(false) }
+    var isRecordingVoice by remember { mutableStateOf(false) }
+    var voiceRecorder by remember { mutableStateOf<com.billing.pos.audio.VoiceRecorder?>(null) }
+    var recordingFile by remember { mutableStateOf<File?>(null) }
+    var confirmDeleteThread by remember { mutableStateOf(false) }
+
+    suspend fun compressPicked(uri: android.net.Uri): String? = withContext(Dispatchers.IO) {
         runCatching {
             val tempFile = File.createTempFile("reply_", ".jpg", context.cacheDir)
             context.contentResolver.openInputStream(uri)?.use { input -> tempFile.outputStream().use { output -> input.copyTo(output) } }
@@ -920,148 +1053,214 @@ private fun NotificationsDialog(
             bytes?.let { "data:image/jpeg;base64," + android.util.Base64.encodeToString(it, android.util.Base64.NO_WRAP) }
         }.getOrNull()
     }
-    val replyAttachmentPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+    val galleryPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
-        compressingReplyAttachment = true
+        compressing = true
         scope.launch {
-            val dataUri = compressReplyAttachment(uri)
-            compressingReplyAttachment = false
-            if (dataUri != null) replyAttachment = dataUri
+            val dataUri = compressPicked(uri)
+            compressing = false
+            if (dataUri != null) pendingAttachments.add(dataUri)
+        }
+    }
+    fun startVoiceRecording() {
+        val dir = File(context.cacheDir, "shared").apply { mkdirs() }
+        val file = File(dir, "voice_${System.nanoTime()}.m4a")
+        runCatching {
+            voiceRecorder = com.billing.pos.audio.VoiceRecorder(file.absolutePath).also { it.start() }
+            recordingFile = file
+            isRecordingVoice = true
+        }.onFailure {
+            voiceRecorder = null
+            file.delete()
+        }
+    }
+    fun stopVoiceRecording() {
+        val rec = voiceRecorder ?: return
+        val file = recordingFile
+        isRecordingVoice = false
+        voiceRecorder = null
+        recordingFile = null
+        scope.launch {
+            withContext(Dispatchers.IO) { rec.stop() }
+            if (file != null && file.exists() && file.length() > 0) {
+                pendingAttachments.add(withContext(Dispatchers.IO) { com.billing.pos.util.VoiceAttachment.encode(file) })
+                file.delete()
+            } else {
+                file?.delete()
+            }
+        }
+    }
+    val micPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) startVoiceRecording()
+    }
+    fun requestMicAndRecord() {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            startVoiceRecording()
+        } else {
+            micPermission.launch(Manifest.permission.RECORD_AUDIO)
         }
     }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text("Notifications")
-                if (notifications.isNotEmpty()) {
-                    TextButton(onClick = onClearAll) { Text("Clear all") }
+    LaunchedEffect(messages.size) { if (messages.isNotEmpty()) listState.animateScrollToItem(messages.size - 1) }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(shopName) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
+                },
+                actions = {
+                    IconButton(onClick = onMuteToggle) {
+                        Icon(
+                            if (muted) Icons.Default.NotificationsOff else Icons.Default.Notifications,
+                            contentDescription = if (muted) "Unmute $shopName" else "Mute $shopName",
+                            tint = if (muted) MaterialTheme.colorScheme.error else LocalContentColor.current
+                        )
+                    }
+                    IconButton(onClick = { confirmDeleteThread = true }) {
+                        Icon(Icons.Default.Delete, contentDescription = "Delete this chat")
+                    }
+                }
+            )
+        },
+        bottomBar = {
+            Column(Modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(8.dp)) {
+                if (pendingAttachments.isNotEmpty()) {
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 6.dp)) {
+                        items(pendingAttachments.toList()) { uri ->
+                            Box(Modifier.size(56.dp)) {
+                                if (com.billing.pos.util.VoiceAttachment.isAudio(uri)) {
+                                    Box(
+                                        Modifier.fillMaxSize()
+                                            .clip(androidx.compose.foundation.shape.RoundedCornerShape(6.dp))
+                                            .background(MaterialTheme.colorScheme.secondaryContainer),
+                                        contentAlignment = Alignment.Center
+                                    ) { Icon(Icons.Default.Mic, contentDescription = "Voice note") }
+                                } else {
+                                    val bmp = remember(uri) { decodeDataUriBitmap(uri) }
+                                    if (bmp != null) {
+                                        Image(
+                                            bitmap = bmp, contentDescription = "Attachment",
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier.fillMaxSize().clip(androidx.compose.foundation.shape.RoundedCornerShape(6.dp))
+                                        )
+                                    }
+                                }
+                                OutlinedIconButton(
+                                    onClick = { pendingAttachments.remove(uri) },
+                                    modifier = Modifier.size(18.dp).align(Alignment.TopEnd),
+                                    colors = IconButtonDefaults.outlinedIconButtonColors(containerColor = MaterialTheme.colorScheme.surface)
+                                ) { Icon(Icons.Filled.Close, contentDescription = "Remove", modifier = Modifier.size(10.dp)) }
+                            }
+                        }
+                    }
+                }
+                if (isRecordingVoice) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 4.dp)) {
+                        Icon(Icons.Default.Mic, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
+                        Text("  Recording… tap the mic again to stop", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    OutlinedTextField(
+                        value = text, onValueChange = { text = it },
+                        placeholder = { Text("Message") },
+                        modifier = Modifier.weight(1f)
+                    )
+                    if (premium) {
+                        IconButton(onClick = { galleryPicker.launch("image/*") }, enabled = !compressing && !isRecordingVoice) {
+                            if (compressing) CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                            else Icon(Icons.Filled.AttachFile, contentDescription = "Attach a photo")
+                        }
+                        IconButton(
+                            onClick = { if (isRecordingVoice) stopVoiceRecording() else requestMicAndRecord() },
+                            enabled = !compressing
+                        ) {
+                            Icon(
+                                if (isRecordingVoice) Icons.Default.Stop else Icons.Default.Mic,
+                                contentDescription = if (isRecordingVoice) "Stop recording" else "Record a voice note",
+                                tint = if (isRecordingVoice) MaterialTheme.colorScheme.error else LocalContentColor.current
+                            )
+                        }
+                    }
+                    IconButton(
+                        onClick = {
+                            val toSend = text.trim()
+                            if (toSend.isNotBlank()) {
+                                onReply(shop, shopName, toSend, pendingAttachments.toList())
+                                text = ""; pendingAttachments.clear()
+                            }
+                        },
+                        enabled = !replying && !compressing && !isRecordingVoice && text.isNotBlank()
+                    ) { Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send") }
                 }
             }
-        },
-        text = {
-            if (notifications.isEmpty()) {
-                Text("No notifications yet.", color = MaterialTheme.colorScheme.outline)
-            } else {
-                Column {
-                    notifications.forEach { n ->
-                        val statusLabel = OnlineOrderStatus.entries.find { it.name == n.status }?.label
-                        Column(Modifier.padding(vertical = 8.dp)) {
-                            Row(verticalAlignment = Alignment.Top) {
-                                Column(Modifier.weight(1f)) {
-                                    if (n.shopName.isNotBlank()) {
-                                        Text(n.shopName, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+        }
+    ) { pad ->
+        LazyColumn(state = listState, modifier = Modifier.fillMaxSize().padding(pad).padding(horizontal = 12.dp)) {
+            items(messages, key = { it.id }) { n ->
+                val fromCustomer = n.direction == "OUT"
+                Row(
+                    Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    horizontalArrangement = if (fromCustomer) Arrangement.End else Arrangement.Start
+                ) {
+                    Surface(
+                        color = if (fromCustomer) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                        shape = MaterialTheme.shapes.medium
+                    ) {
+                        Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
+                            val statusLabel = OnlineOrderStatus.entries.find { it.name == n.status }?.label
+                            if (statusLabel != null) {
+                                Text(statusLabel, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleSmall)
+                            }
+                            if (n.message.isNotBlank()) {
+                                Text(n.message, style = MaterialTheme.typography.bodyMedium)
+                            }
+                            if (n.amount > 0.0) {
+                                Text(
+                                    "Amount: " + com.billing.pos.util.Format.rupee(n.amount),
+                                    fontWeight = FontWeight.Bold,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    modifier = Modifier.padding(top = 2.dp)
+                                )
+                                if (!fromCustomer && canPay) {
+                                    TextButton(onClick = { onPayNotification(n) }, modifier = Modifier.padding(top = 2.dp)) {
+                                        Text("Pay via UPI")
                                     }
-                                    if (statusLabel != null) {
-                                        Text(statusLabel, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleSmall)
-                                    }
-                                    if (n.message.isNotBlank()) {
-                                        Text(n.message, style = MaterialTheme.typography.bodySmall)
-                                    }
-                                    if (n.amount > 0.0) {
-                                        Text(
-                                            "Amount: " + com.billing.pos.util.Format.rupee(n.amount),
-                                            fontWeight = FontWeight.Bold,
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            modifier = Modifier.padding(top = 2.dp)
-                                        )
-                                        if (shopUpi(n.shop) != null) {
-                                            TextButton(onClick = { onPayNotification(n) }, modifier = Modifier.padding(top = 2.dp)) {
-                                                Text("Pay via UPI")
-                                            }
-                                        }
-                                    }
-                                    if (n.attachmentList.isNotEmpty()) {
-                                        ReadOnlyAttachmentRow(
-                                            uris = n.attachmentList,
-                                            playingVoiceNote = playingVoiceNote,
-                                            onTogglePlay = onTogglePlay,
-                                            onViewImage = onViewImage,
-                                            modifier = Modifier.padding(top = 6.dp)
-                                        )
-                                    }
-                                    Text(
-                                        SimpleDateFormat("dd MMM, HH:mm", Locale.getDefault()).format(Date(n.receivedAt)),
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.outline
-                                    )
-                                }
-                                if (n.shop.isNotBlank()) {
-                                    val muted = isShopMuted(n.shop)
-                                    IconButton(onClick = { onMuteShop(n.shop, !muted) }, modifier = Modifier.size(32.dp)) {
-                                        Icon(
-                                            if (muted) Icons.Default.NotificationsOff else Icons.Default.Notifications,
-                                            contentDescription = if (muted) "Unmute ${n.shopName.ifBlank { "this shop" }}" else "Mute ${n.shopName.ifBlank { "this shop" }}",
-                                            modifier = Modifier.size(18.dp),
-                                            tint = if (muted) MaterialTheme.colorScheme.error else LocalContentColor.current
-                                        )
-                                    }
-                                }
-                                IconButton(onClick = { onDelete(n) }, modifier = Modifier.size(32.dp)) {
-                                    Icon(Icons.Default.Delete, contentDescription = "Delete", modifier = Modifier.size(18.dp))
                                 }
                             }
-                            if (replyTargetId == n.id) {
-                                Column(Modifier.padding(top = 4.dp)) {
-                                    if (replyAttachment != null) {
-                                        val bmp = remember(replyAttachment) { decodeDataUriBitmap(replyAttachment!!) }
-                                        Box(Modifier.padding(bottom = 4.dp), contentAlignment = Alignment.TopEnd) {
-                                            if (bmp != null) {
-                                                Image(
-                                                    bitmap = bmp,
-                                                    contentDescription = "Attachment",
-                                                    contentScale = ContentScale.Crop,
-                                                    modifier = Modifier.size(80.dp)
-                                                )
-                                            }
-                                            OutlinedIconButton(
-                                                onClick = { replyAttachment = null },
-                                                modifier = Modifier.size(20.dp),
-                                                colors = IconButtonDefaults.outlinedIconButtonColors(containerColor = MaterialTheme.colorScheme.surface)
-                                            ) { Icon(Icons.Filled.Close, contentDescription = "Remove attachment", modifier = Modifier.size(12.dp)) }
-                                        }
-                                    }
-                                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                                        OutlinedTextField(
-                                            value = replyText, onValueChange = { replyText = it },
-                                            placeholder = { Text("Reply to the shop") },
-                                            singleLine = true, modifier = Modifier.weight(1f)
-                                        )
-                                        IconButton(
-                                            onClick = { replyAttachmentPicker.launch("image/*") },
-                                            enabled = !compressingReplyAttachment
-                                        ) {
-                                            if (compressingReplyAttachment) CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                                            else Icon(Icons.Filled.AttachFile, contentDescription = "Attach a photo")
-                                        }
-                                        IconButton(
-                                            onClick = {
-                                                val text = replyText.trim()
-                                                if (text.isNotBlank()) {
-                                                    onReply(n, text, replyAttachment)
-                                                    replyText = ""; replyAttachment = null; replyTargetId = null
-                                                }
-                                            },
-                                            enabled = !replying && !compressingReplyAttachment && replyText.isNotBlank()
-                                        ) {
-                                            Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send reply")
-                                        }
-                                    }
-                                }
-                            } else {
-                                TextButton(onClick = { replyTargetId = n.id; replyText = ""; replyAttachment = null }, modifier = Modifier.padding(top = 2.dp)) {
-                                    Text("Reply")
-                                }
+                            if (n.attachmentList.isNotEmpty()) {
+                                ReadOnlyAttachmentRow(
+                                    uris = n.attachmentList,
+                                    playingVoiceNote = playingVoiceNote,
+                                    onTogglePlay = onTogglePlay,
+                                    onViewImage = onViewImage,
+                                    modifier = Modifier.padding(top = 6.dp)
+                                )
                             }
-                            Divider(Modifier.padding(top = 6.dp))
+                            Text(
+                                SimpleDateFormat("dd MMM, HH:mm", Locale.getDefault()).format(Date(n.receivedAt)),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.outline,
+                                modifier = Modifier.padding(top = 4.dp)
+                            )
                         }
                     }
                 }
             }
-        },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } }
-    )
+        }
+    }
+
+    if (confirmDeleteThread) {
+        AlertDialog(
+            onDismissRequest = { confirmDeleteThread = false },
+            title = { Text("Delete this chat?") },
+            text = { Text("Removes the whole conversation with $shopName from this phone. This can't be undone.") },
+            confirmButton = { TextButton(onClick = { confirmDeleteThread = false; onDeleteThread() }) { Text("Delete") } },
+            dismissButton = { TextButton(onClick = { confirmDeleteThread = false }) { Text("Cancel") } }
+        )
+    }
 }
 
 @Composable

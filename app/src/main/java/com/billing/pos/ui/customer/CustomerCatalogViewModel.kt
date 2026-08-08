@@ -105,6 +105,21 @@ class CustomerCatalogViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { notificationDao.deleteAll() }
     }
 
+    /** Clears one shop's whole chat thread — see [com.billing.pos.data.CustomerNotificationDao.deleteForShop]. */
+    fun deleteThread(shop: String) {
+        viewModelScope.launch { notificationDao.deleteForShop(shop) }
+    }
+
+    /** Whether [shop] specifically (not whichever shop is currently active) is on the premium
+     *  tier — gates the attach-photo/voice-note options in that shop's chat thread the same way
+     *  [upiFor] resolves per-shop UPI details, since a customer can be connected to more than one
+     *  shop and premium status can differ between them (see ShopSwitch). */
+    fun isPremiumForShop(shop: String): Boolean {
+        if (shop.isBlank()) return false
+        if (shop == prefs.shopCode) return prefs.customerPremiumShop
+        return com.billing.pos.customer.ShopSwitch.known(getApplication()).find { it.shop == shop }?.premium ?: false
+    }
+
     fun isShopMuted(shop: String): Boolean = com.billing.pos.customer.ShopSwitch.isMuted(getApplication(), shop)
 
     /** Stops future notifications from [shop] (e.g. one sending too many promotions) without
@@ -117,23 +132,38 @@ class CustomerCatalogViewModel(app: Application) : AndroidViewModel(app) {
     private val _replying = MutableStateFlow(false)
     val replying: StateFlow<Boolean> = _replying
 
-    /** Sends a reply to the shop about [notification] — the customer side of a live chat with
-     *  the shop, picked up on the shop owner's next Messages poll/refresh. */
-    fun replyToNotification(notification: CustomerNotification, text: String, attachment: String? = null) {
+    /** Sends a message to [shop]'s live chat thread — a persistent per-shop input, not tied to
+     *  any one notification/order (same as [com.billing.pos.ui.messages.ShopMessagesScreen]'s own
+     *  plain chat send on the owner side). Also inserted locally as a direction="OUT" row (see
+     *  [CustomerNotification.direction]) so the thread shows the customer's own message too, not
+     *  just what the shop sent. */
+    fun replyToShop(shop: String, shopName: String, text: String, attachments: List<String> = emptyList()) {
         if (text.isBlank() || _replying.value) return
         viewModelScope.launch {
             _replying.value = true
             val app: Application = getApplication()
-            // Route to whichever shop actually sent this notification, not whichever shop
-            // happens to be active right now — they can differ once a customer is connected to
-            // more than one shop (see ShopSwitch). Falls back to the current shop for
-            // pre-migration rows that never recorded which shop they came from.
-            val target = com.billing.pos.customer.ShopSwitch.known(app).find { it.shop == notification.shop }
+            // Route to whichever shop this thread is actually for, not whichever shop happens to
+            // be active right now — they can differ once a customer is connected to more than one
+            // shop (see ShopSwitch).
+            val target = com.billing.pos.customer.ShopSwitch.known(app).find { it.shop == shop }
             val ok = com.billing.pos.customer.CustomerMessageSend.send(
-                app, text, notification.orderId,
-                targetUrl = target?.url.orEmpty(), targetShop = target?.shop ?: notification.shop,
-                attachments = attachment?.takeIf { it.isNotBlank() }?.let { listOf(it) } ?: emptyList()
+                app, text,
+                targetUrl = target?.url.orEmpty(), targetShop = target?.shop ?: shop,
+                attachments = attachments
             )
+            if (ok) {
+                notificationDao.insert(
+                    CustomerNotification(
+                        message = text,
+                        shop = shop,
+                        shopName = shopName,
+                        receivedAt = System.currentTimeMillis(),
+                        read = true,
+                        attachments = if (attachments.isNotEmpty()) CustomerNotification.packAttachments(attachments) else "",
+                        direction = "OUT"
+                    )
+                )
+            }
             _message.value = if (ok) "Reply sent" else "Could not send reply — check your connection"
             _replying.value = false
         }
@@ -163,15 +193,29 @@ class CustomerCatalogViewModel(app: Application) : AndroidViewModel(app) {
             val app: Application = getApplication()
             if (notification.orderId.isNotBlank()) historyDao.markPaid(notification.orderId)
             val target = com.billing.pos.customer.ShopSwitch.known(app).find { it.shop == notification.shop }
-            com.billing.pos.customer.CustomerMessageSend.send(
-                app,
-                message = "Paid " + com.billing.pos.util.Format.rupee(notification.amount) + " via UPI" +
-                    (if (notification.orderId.isNotBlank()) " for order #${notification.orderId}" else ""),
-                orderId = notification.orderId,
+            val text = "Paid " + com.billing.pos.util.Format.rupee(notification.amount) + " via UPI" +
+                (if (notification.orderId.isNotBlank()) " for order #${notification.orderId}" else "")
+            val attachments = proofAttachment?.takeIf { it.isNotBlank() }?.let { listOf(it) } ?: emptyList()
+            val ok = com.billing.pos.customer.CustomerMessageSend.send(
+                app, message = text, orderId = notification.orderId,
                 targetUrl = target?.url.orEmpty(), targetShop = target?.shop ?: notification.shop,
                 paymentStatus = "UPI",
-                attachments = proofAttachment?.takeIf { it.isNotBlank() }?.let { listOf(it) } ?: emptyList()
+                attachments = attachments
             )
+            if (ok) {
+                notificationDao.insert(
+                    CustomerNotification(
+                        orderId = notification.orderId,
+                        message = text,
+                        shop = notification.shop,
+                        shopName = notification.shopName,
+                        receivedAt = System.currentTimeMillis(),
+                        read = true,
+                        attachments = if (attachments.isNotEmpty()) CustomerNotification.packAttachments(attachments) else "",
+                        direction = "OUT"
+                    )
+                )
+            }
             _message.value = "Payment recorded — the shop has been notified"
         }
     }

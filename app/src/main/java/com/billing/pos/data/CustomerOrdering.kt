@@ -276,7 +276,13 @@ data class CustomerNotification(
     /** Photo(s) and/or a voice note the shop owner attached to this reply (e.g. a bill photo, or
      *  spoken instructions), packed the same way [OnlineOrder.attachmentImages] packs an order's
      *  attachments. Empty when the shop sent none. */
-    val attachments: String = ""
+    val attachments: String = "",
+    /** "IN" (default) for whatever the shop sent; "OUT" for the customer's own reply, inserted
+     *  locally right after a successful send (see
+     *  [com.billing.pos.ui.customer.CustomerCatalogViewModel.replyToShop]) — so this same
+     *  table doubles as the full two-way chat history per shop, the same role
+     *  [com.billing.pos.data.ShopMessage.direction] plays on the owner side. */
+    val direction: String = "IN"
 ) {
     val attachmentList: List<String> get() = runCatching {
         val arr = org.json.JSONArray(attachments)
@@ -293,7 +299,7 @@ interface CustomerNotificationDao {
     @Query("SELECT * FROM customer_notifications ORDER BY receivedAt DESC")
     fun observeAll(): Flow<List<CustomerNotification>>
 
-    @Query("SELECT COUNT(*) FROM customer_notifications WHERE read = 0")
+    @Query("SELECT COUNT(*) FROM customer_notifications WHERE read = 0 AND direction = 'IN'")
     fun observeUnreadCount(): Flow<Int>
 
     @Insert
@@ -307,4 +313,10 @@ interface CustomerNotificationDao {
 
     @Query("DELETE FROM customer_notifications")
     suspend fun deleteAll()
+
+    /** Clears one shop's whole chat thread (both directions) — the customer-side equivalent of
+     *  swiping away a conversation, since individual messages within a thread aren't deletable
+     *  one at a time (matching the shop owner's own chat, which has no per-message delete either). */
+    @Query("DELETE FROM customer_notifications WHERE shop = :shop")
+    suspend fun deleteForShop(shop: String)
 }

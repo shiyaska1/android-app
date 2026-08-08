@@ -1,7 +1,11 @@
 package com.billing.pos.ui.messages
 
+import android.Manifest
 import android.app.Application
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -15,16 +19,23 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Campaign
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Payments
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.CircularProgressIndicator
@@ -32,8 +43,11 @@ import androidx.compose.material3.Divider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.ListItem
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedIconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -43,32 +57,41 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.billing.pos.customer.BroadcastPromotion
 import com.billing.pos.customer.OrderStatusPush
 import com.billing.pos.customer.ShopMessagesFetch
+import com.billing.pos.customer.ThumbnailCompressor
 import com.billing.pos.data.AppDatabase
 import com.billing.pos.data.ShopMessage
 import com.billing.pos.ui.billing.collectAsStateSafe
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -209,12 +232,15 @@ class ShopMessagesViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { dao.markReadForCustomer(phone) }
     }
 
-    fun send(phone: String, name: String, text: String, amount: Double = 0.0) {
-        if ((text.isBlank() && amount <= 0.0) || _sending.value) return
+    fun send(phone: String, name: String, text: String, amount: Double = 0.0, attachments: List<String> = emptyList()) {
+        if ((text.isBlank() && amount <= 0.0 && attachments.isEmpty()) || _sending.value) return
         viewModelScope.launch {
             _sending.value = true
             if (com.billing.pos.data.License.reserveNotificationSend(getApplication())) {
-                OrderStatusPush.push(getApplication(), customerPhone = phone, orderId = "", message = text, customerName = name, amount = amount)
+                OrderStatusPush.push(
+                    getApplication(), customerPhone = phone, orderId = "", message = text,
+                    customerName = name, amount = amount, attachments = attachments
+                )
             } else {
                 _showProLimitDialog.value = true
             }
@@ -367,11 +393,110 @@ private fun ThreadScreen(
     vm: ShopMessagesViewModel,
     onBack: () -> Unit
 ) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val sending by vm.sending.collectAsStateSafe()
     var text by rememberSaveable { mutableStateOf("") }
     var showRequestPayment by rememberSaveable { mutableStateOf(false) }
     val name = messages.firstOrNull { it.customerName.isNotBlank() }?.customerName?.ifBlank { phone } ?: phone
     val listState = rememberLazyListState()
+
+    // Attach-photo / record-voice on a reply — always available here (unlike the customer app's
+    // own reply, where both are premium-only): premium is a paid customer-facing perk, not
+    // something the shop owner needs to unlock to talk to their own customers.
+    val pendingAttachments = remember(phone) { mutableStateListOf<String>() }
+    var compressing by remember { mutableStateOf(false) }
+    var isRecordingVoice by remember { mutableStateOf(false) }
+    var voiceRecorder by remember { mutableStateOf<com.billing.pos.audio.VoiceRecorder?>(null) }
+    var recordingFile by remember { mutableStateOf<File?>(null) }
+    var playingVoiceNote by remember { mutableStateOf<String?>(null) }
+    val voicePlayer = remember { android.media.MediaPlayer() }
+    var playingVoiceFile by remember { mutableStateOf<File?>(null) }
+
+    fun stopPlayback() {
+        runCatching { voicePlayer.stop(); voicePlayer.reset() }
+        playingVoiceFile?.delete()
+        playingVoiceFile = null
+        playingVoiceNote = null
+    }
+    fun togglePlayback(dataUri: String) {
+        if (playingVoiceNote == dataUri) { stopPlayback(); return }
+        val file = com.billing.pos.util.VoiceAttachment.decodeToTempFile(context, dataUri) ?: return
+        runCatching {
+            playingVoiceFile?.delete()
+            playingVoiceFile = file
+            voicePlayer.reset()
+            voicePlayer.setDataSource(file.absolutePath)
+            voicePlayer.setOnCompletionListener {
+                playingVoiceNote = null
+                file.delete()
+                if (playingVoiceFile == file) playingVoiceFile = null
+            }
+            voicePlayer.prepare()
+            voicePlayer.start()
+            playingVoiceNote = dataUri
+        }.onFailure { file.delete() }
+    }
+    DisposableEffect(Unit) {
+        onDispose { runCatching { voicePlayer.release() }; playingVoiceFile?.delete() }
+    }
+
+    suspend fun compressPicked(uri: android.net.Uri): String? = withContext(Dispatchers.IO) {
+        runCatching {
+            val tempFile = File.createTempFile("reply_", ".jpg", context.cacheDir)
+            context.contentResolver.openInputStream(uri)?.use { input -> tempFile.outputStream().use { output -> input.copyTo(output) } }
+            val bytes = ThumbnailCompressor.compress(tempFile.absolutePath, maxBytes = 300 * 1024, maxDim = 1024)
+            tempFile.delete()
+            bytes?.let { "data:image/jpeg;base64," + android.util.Base64.encodeToString(it, android.util.Base64.NO_WRAP) }
+        }.getOrNull()
+    }
+    val galleryPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        compressing = true
+        scope.launch {
+            val dataUri = compressPicked(uri)
+            compressing = false
+            if (dataUri != null) pendingAttachments.add(dataUri)
+        }
+    }
+    fun startVoiceRecording() {
+        val dir = File(context.cacheDir, "shared").apply { mkdirs() }
+        val file = File(dir, "voice_${System.nanoTime()}.m4a")
+        runCatching {
+            voiceRecorder = com.billing.pos.audio.VoiceRecorder(file.absolutePath).also { it.start() }
+            recordingFile = file
+            isRecordingVoice = true
+        }.onFailure {
+            voiceRecorder = null
+            file.delete()
+        }
+    }
+    fun stopVoiceRecording() {
+        val rec = voiceRecorder ?: return
+        val file = recordingFile
+        isRecordingVoice = false
+        voiceRecorder = null
+        recordingFile = null
+        scope.launch {
+            withContext(Dispatchers.IO) { rec.stop() }
+            if (file != null && file.exists() && file.length() > 0) {
+                pendingAttachments.add(withContext(Dispatchers.IO) { com.billing.pos.util.VoiceAttachment.encode(file) })
+                file.delete()
+            } else {
+                file?.delete()
+            }
+        }
+    }
+    val micPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) startVoiceRecording()
+    }
+    fun requestMicAndRecord() {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            startVoiceRecording()
+        } else {
+            micPermission.launch(Manifest.permission.RECORD_AUDIO)
+        }
+    }
 
     LaunchedEffect(phone) { vm.markThreadRead(phone) }
     LaunchedEffect(messages.size) { if (messages.isNotEmpty()) listState.animateScrollToItem(messages.size - 1) }
@@ -389,28 +514,78 @@ private fun ThreadScreen(
             // navigationBarsPadding lifts this clear of the phone's gesture bar (it was sitting
             // right under it — see the report screenshot); the extra 16dp on top of that keeps a
             // visible gap so it doesn't hug the edge even on 3-button-nav phones.
-            Row(
-                Modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(8.dp).padding(bottom = 16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                IconButton(onClick = { showRequestPayment = true }) {
-                    Icon(Icons.Filled.Payments, contentDescription = "Request payment")
+            Column(Modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(8.dp).padding(bottom = 16.dp)) {
+                if (pendingAttachments.isNotEmpty()) {
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 6.dp)) {
+                        items(pendingAttachments.toList()) { uri ->
+                            Box(Modifier.size(56.dp)) {
+                                if (com.billing.pos.util.VoiceAttachment.isAudio(uri)) {
+                                    Box(
+                                        Modifier.fillMaxSize()
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .background(MaterialTheme.colorScheme.secondaryContainer),
+                                        contentAlignment = Alignment.Center
+                                    ) { Icon(Icons.Filled.Mic, contentDescription = "Voice note") }
+                                } else {
+                                    val bmp = remember(uri) { decodeAttachmentBitmap(uri) }
+                                    if (bmp != null) {
+                                        Image(
+                                            bitmap = bmp, contentDescription = "Attachment",
+                                            modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(6.dp))
+                                        )
+                                    }
+                                }
+                                OutlinedIconButton(
+                                    onClick = { pendingAttachments.remove(uri) },
+                                    modifier = Modifier.size(18.dp).align(Alignment.TopEnd),
+                                    colors = IconButtonDefaults.outlinedIconButtonColors(containerColor = MaterialTheme.colorScheme.surface)
+                                ) { Icon(Icons.Filled.Close, contentDescription = "Remove", modifier = Modifier.size(10.dp)) }
+                            }
+                        }
+                    }
                 }
-                OutlinedTextField(
-                    value = text, onValueChange = { text = it },
-                    placeholder = { Text("Message") },
-                    modifier = Modifier.weight(1f)
-                )
-                IconButton(
-                    onClick = {
-                        val toSend = text.trim()
-                        if (toSend.isNotBlank()) { vm.send(phone, name, toSend); text = "" }
-                    },
-                    enabled = !sending && text.isNotBlank()
-                ) {
-                    if (sending) CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                    else Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send")
+                if (isRecordingVoice) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 4.dp)) {
+                        Icon(Icons.Filled.Mic, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
+                        Text("  Recording… tap the mic again to stop", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    IconButton(onClick = { showRequestPayment = true }) {
+                        Icon(Icons.Filled.Payments, contentDescription = "Request payment")
+                    }
+                    OutlinedTextField(
+                        value = text, onValueChange = { text = it },
+                        placeholder = { Text("Message") },
+                        modifier = Modifier.weight(1f)
+                    )
+                    IconButton(onClick = { galleryPicker.launch("image/*") }, enabled = !compressing && !isRecordingVoice) {
+                        if (compressing) CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                        else Icon(Icons.Filled.AttachFile, contentDescription = "Attach a photo")
+                    }
+                    IconButton(
+                        onClick = { if (isRecordingVoice) stopVoiceRecording() else requestMicAndRecord() },
+                        enabled = !compressing
+                    ) {
+                        Icon(
+                            if (isRecordingVoice) Icons.Filled.Stop else Icons.Filled.Mic,
+                            contentDescription = if (isRecordingVoice) "Stop recording" else "Record a voice note",
+                            tint = if (isRecordingVoice) MaterialTheme.colorScheme.error else LocalContentColor.current
+                        )
+                    }
+                    IconButton(
+                        onClick = {
+                            val toSend = text.trim()
+                            if (toSend.isNotBlank() || pendingAttachments.isNotEmpty()) {
+                                vm.send(phone, name, toSend, attachments = pendingAttachments.toList())
+                                text = ""; pendingAttachments.clear()
+                            }
+                        },
+                        enabled = !sending && !compressing && !isRecordingVoice && (text.isNotBlank() || pendingAttachments.isNotEmpty())
+                    ) {
+                        if (sending) CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                        else Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send")
+                    }
                 }
             }
         }
@@ -421,7 +596,6 @@ private fun ThreadScreen(
         ) {
             items(messages, key = { it.id }) { m ->
                 val fromShop = m.direction == "OUT"
-                val context = LocalContext.current
                 Row(
                     Modifier.fillMaxWidth().padding(vertical = 4.dp),
                     horizontalArrangement = if (fromShop) Arrangement.End else Arrangement.Start
@@ -431,24 +605,42 @@ private fun ThreadScreen(
                         shape = MaterialTheme.shapes.medium
                     ) {
                         Column {
-                            Text(m.text, modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp))
+                            if (m.text.isNotBlank()) {
+                                Text(m.text, modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp))
+                            }
                             // A customer's UPI payment-success screenshot, attached as proof after
                             // paying via the QR-code fallback (no automatic success signal there,
                             // unlike the direct-pay button) — check it against your own bank/UPI
-                            // app before trusting it; tap to open full-size.
+                            // app before trusting it; tap to open full-size. Voice notes play
+                            // in place, same as a photo opens in place.
                             if (m.attachmentList.isNotEmpty()) {
                                 Row(Modifier.padding(horizontal = 10.dp, vertical = 4.dp)) {
                                     m.attachmentList.forEach { uri ->
-                                        val bmp = remember(uri) { decodeAttachmentBitmap(uri) }
-                                        if (bmp != null) {
-                                            Image(
-                                                bitmap = bmp,
-                                                contentDescription = "Payment screenshot",
-                                                modifier = Modifier
-                                                    .size(120.dp)
-                                                    .padding(end = 6.dp)
-                                                    .clickable { openMessageAttachment(context, uri) }
-                                            )
+                                        if (com.billing.pos.util.VoiceAttachment.isAudio(uri)) {
+                                            Box(
+                                                Modifier.size(56.dp).padding(end = 6.dp)
+                                                    .clip(RoundedCornerShape(6.dp))
+                                                    .background(MaterialTheme.colorScheme.secondaryContainer)
+                                                    .clickable { togglePlayback(uri) },
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(
+                                                    if (playingVoiceNote == uri) Icons.Filled.Stop else Icons.Filled.PlayArrow,
+                                                    contentDescription = if (playingVoiceNote == uri) "Stop voice note" else "Play voice note"
+                                                )
+                                            }
+                                        } else {
+                                            val bmp = remember(uri) { decodeAttachmentBitmap(uri) }
+                                            if (bmp != null) {
+                                                Image(
+                                                    bitmap = bmp,
+                                                    contentDescription = "Attachment",
+                                                    modifier = Modifier
+                                                        .size(120.dp)
+                                                        .padding(end = 6.dp)
+                                                        .clickable { openMessageAttachment(context, uri) }
+                                                )
+                                            }
                                         }
                                     }
                                 }
