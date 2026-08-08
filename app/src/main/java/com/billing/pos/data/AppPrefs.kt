@@ -239,10 +239,19 @@ class AppPrefs(context: Context) {
     var customerMode: Boolean
         get() = p.getBoolean("customer_mode", false)
         set(v) { p.edit().putBoolean("customer_mode", v).apply() }
-    /** Set once, at first boot, so the Play Install Referrer service is only queried once. */
+    /** Set once Play has given a definitive referrer answer (even an empty one) — see
+     *  [com.billing.pos.customer.InstallReferrer.read] — so the service is only queried until
+     *  then, not forever. A timed-out attempt does NOT set this, so boot retries it instead of
+     *  wrongly settling into the shop-owner flow just because Play was slow to answer once. */
     var referrerChecked: Boolean
         get() = p.getBoolean("referrer_checked", false)
         set(v) { p.edit().putBoolean("referrer_checked", v).apply() }
+    /** How many boots in a row the referrer check has timed out — caps the retries in
+     *  [com.billing.pos.ui.auth.BootViewModel] so a device where Play never answers doesn't keep
+     *  the splash screen waiting on every single launch forever. */
+    var referrerRetryCount: Int
+        get() = p.getInt("referrer_retry_count", 0)
+        set(v) { p.edit().putInt("referrer_retry_count", v).apply() }
     /** Customer install: what kind of shop this is ("Restaurant", "Medical store", "Medical lab",
      *  ...), read from the install link's referrer — so the catalog screen can use a fitting
      *  name ("Order" vs "Medicines" vs "Home Collection") instead of one generic label. Blank

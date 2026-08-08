@@ -55,11 +55,18 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.POSBilling">
 
+        <!-- singleTask, not singleTop: this is a single-Activity app (every screen is in-app
+             Compose navigation, not a separate Activity), so singleTask's "reuse from anywhere,
+             clear nothing above it" behavior is exactly what's wanted here, with no downside —
+             singleTop only reused the existing instance when it was already the very top of its
+             own task, so sharing a payment screenshot back in (from GPay/PhonePe etc.) after the
+             task had gone to the background could launch a second copy instead of delivering to
+             the one already showing the payment dialog via onNewIntent. -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:label="@string/app_name"
-            android:launchMode="singleTop"
+            android:launchMode="singleTask"
             android:theme="@style/Theme.POSBilling"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>

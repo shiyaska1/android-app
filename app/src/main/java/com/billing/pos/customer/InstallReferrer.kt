@@ -25,21 +25,43 @@ import kotlin.coroutines.resume
  */
 object InstallReferrer {
 
-    /** Blank/absent for anything that isn't a customer link. */
-    suspend fun read(context: Context): Map<String, String> {
-        val raw = withTimeoutOrNull(4000) { fetchReferrerUrl(context) } ?: return emptyMap()
+    /** Result of asking Play for the referrer once the service actually answered — as opposed to
+     *  the call simply timing out, which [read] represents separately (see below). */
+    private sealed class FetchResult {
+        /** OK response; the raw referrer query string, blank if none was set on the install link. */
+        data class Got(val referrer: String) : FetchResult()
+        /** A non-OK response (FEATURE_NOT_SUPPORTED, SERVICE_UNAVAILABLE, ...) or an exception
+         *  reading the referrer — as definitive as a "no referrer" answer for our purposes. */
+        object Unavailable : FetchResult()
+    }
+
+    /**
+     * Null means the Play Install Referrer service didn't answer within the timeout — worth
+     * retrying on a later boot, since this is commonly just Play Store/Play Services still
+     * warming up in the first moments right after a fresh install, not a real "no referrer"
+     * answer. A non-null (possibly empty) map means Play gave a definitive answer: empty means a
+     * genuine non-customer install (or a sideloaded/debug build with no referrer service at all),
+     * safe for the caller to stop checking for good.
+     */
+    suspend fun read(context: Context): Map<String, String>? {
+        val result = withTimeoutOrNull(4000) { fetchReferrer(context) } ?: return null
+        val raw = when (result) {
+            is FetchResult.Got -> result.referrer
+            FetchResult.Unavailable -> return emptyMap()
+        }
         if (raw.isBlank()) return emptyMap()
         val uri = Uri.parse("https://x/?$raw")
         return uri.queryParameterNames.associateWith { uri.getQueryParameter(it).orEmpty() }
     }
 
-    private suspend fun fetchReferrerUrl(context: Context): String? = suspendCancellableCoroutine { cont ->
+    private suspend fun fetchReferrer(context: Context): FetchResult = suspendCancellableCoroutine { cont ->
         val client = InstallReferrerClient.newBuilder(context.applicationContext).build()
         client.startConnection(object : InstallReferrerStateListener {
             override fun onInstallReferrerSetupFinished(responseCode: Int) {
                 val result = if (responseCode == InstallReferrerClient.InstallReferrerResponse.OK) {
-                    runCatching { client.installReferrer.installReferrer }.getOrNull()
-                } else null
+                    runCatching { client.installReferrer.installReferrer.orEmpty() }.getOrNull()
+                        ?.let { FetchResult.Got(it) } ?: FetchResult.Unavailable
+                } else FetchResult.Unavailable
                 runCatching { client.endConnection() }
                 if (cont.isActive) cont.resume(result)
             }
