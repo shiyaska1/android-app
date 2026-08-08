@@ -1164,7 +1164,7 @@ private fun ChatThreadScreen(
     // reported inconsistently even with decorFitsSystemWindows = false) — sizing the extra gap
     // as a fraction of screen height instead guarantees visible breathing room under the reply
     // bar regardless of what the dialog window reports for insets.
-    val extraBottomGap = (LocalConfiguration.current.screenHeightDp * 0.07f).dp
+    val extraBottomGap = (LocalConfiguration.current.screenHeightDp * 0.12f).dp
     var text by rememberSaveable(shop) { mutableStateOf("") }
     val pendingAttachments = remember(shop) { mutableStateListOf<String>() }
     var compressing by remember { mutableStateOf(false) }
@@ -1260,7 +1260,7 @@ private fun ChatThreadScreen(
         bottomBar = {
             // navigationBarsPadding alone still left this sitting right under the phone's
             // gesture/button bar on some devices (same issue already fixed on the shop owner's
-            // Messages screen) — the extra gap on top (7% of screen height, see extraBottomGap
+            // Messages screen) — the extra gap on top (12% of screen height, see extraBottomGap
             // above) keeps a visible gap so the reply box and Send button are never hidden behind it.
             Column(Modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(8.dp).padding(bottom = extraBottomGap)) {
                 if (pendingAttachments.isNotEmpty()) {

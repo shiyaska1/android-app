@@ -506,8 +506,8 @@ private fun ThreadScreen(
     var confirmDeleteThread by remember { mutableStateOf(false) }
     // Same fix as the customer app's chat thread (see CustomerCatalogScreen.ChatThreadScreen):
     // a fixed dp gap on top of navigationBarsPadding() wasn't reliably enough clearance above a
-    // 3-button nav bar on every OEM — 7% of screen height guarantees a visible gap regardless.
-    val extraBottomGap = (androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp * 0.07f).dp
+    // 3-button nav bar on every OEM — 12% of screen height guarantees a visible gap regardless.
+    val extraBottomGap = (androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp * 0.12f).dp
 
     // Attach-photo / record-voice on a reply — always available here (unlike the customer app's
     // own reply, where both are premium-only): premium is a paid customer-facing perk, not
@@ -637,7 +637,7 @@ private fun ThreadScreen(
         },
         bottomBar = {
             // navigationBarsPadding lifts this clear of the phone's gesture bar (it was sitting
-            // right under it — see the report screenshot); the extra gap on top of that (7% of
+            // right under it — see the report screenshot); the extra gap on top of that (12% of
             // screen height, see extraBottomGap above) keeps a visible gap so it doesn't hug the
             // edge even on 3-button-nav phones whose insets aren't fully trustworthy.
             Column(Modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(8.dp).padding(bottom = extraBottomGap)) {
