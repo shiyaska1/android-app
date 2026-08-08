@@ -381,6 +381,10 @@ $html = <<<'APPHTML'
     <button class="pill primary" style="width:100%;" onclick="enablePush()">Enable notifications</button>
   </div>
   <div id="notifList"></div>
+  <div id="chatAttachWrap" style="display:none;">
+    <button class="attach-btn" onclick="document.getElementById('chatAttachInput').click()" id="chatAttachBtn">Attach a photo</button>
+    <input type="file" accept="image/*" id="chatAttachInput" style="display:none;" onchange="onChatAttachPicked(event)">
+  </div>
   <div class="chat-reply">
     <textarea id="chatReplyInput" rows="2" placeholder="Message the shop…"></textarea>
     <button class="pill primary" onclick="sendChatMessage()" id="chatReplyBtn">Send</button>
@@ -398,6 +402,7 @@ var items = [];
 var cart = {};
 var selectedCategory = 'All';
 var pendingAttachment = null;
+var pendingChatAttachment = null;
 
 function toast(msg){ var t=document.getElementById('toast'); t.textContent=msg; t.style.display='block'; clearTimeout(window.__toastT); window.__toastT=setTimeout(function(){t.style.display='none';}, 2600); }
 function money(n){ return (Math.round((n||0)*100)/100).toFixed(2); }
@@ -792,6 +797,19 @@ function onAttachPicked(e){
   });
 }
 
+// Premium-only, same as the order-time attachment above \u2014 see cfg.premium in renderNotifications().
+function onChatAttachPicked(e){
+  var file = e.target.files && e.target.files[0];
+  if(!file) return;
+  document.getElementById('chatAttachBtn').textContent = 'Compressing\u2026';
+  compressImage(file, 40*1024).then(function(dataUri){
+    pendingChatAttachment = dataUri;
+    document.getElementById('chatAttachBtn').textContent = 'Photo attached \u2014 tap to change';
+  }).catch(function(){
+    document.getElementById('chatAttachBtn').textContent = 'Could not read photo \u2014 tap to retry';
+  });
+}
+
 // Save just collects who/what; where to deliver is decided next, by deliveryOverlay \u2014 see
 // deliveryYes()/deliveryNo() below.
 var pendingOrder = null;
@@ -928,7 +946,7 @@ function openNotifications(){
   fetchNotifications().then(function(fresh){
     if(fresh && fresh.length){
       var list = loadJSON(ns()+'notifications', []);
-      fresh.forEach(function(n){ list.unshift({ orderId:n.orderId||'', status:n.status||'', message:n.message||'', receivedAt:Date.now(), read:false }); });
+      fresh.forEach(function(n){ list.unshift({ orderId:n.orderId||'', status:n.status||'', message:n.message||'', attachments:n.attachments||[], receivedAt:Date.now(), read:false }); });
       saveJSON(ns()+'notifications', list.slice(0,100));
     }
     renderNotifications();
@@ -937,6 +955,7 @@ function openNotifications(){
 var STATUS_LABELS = { PENDING:'Pending', ACCEPTED:'Accepted', REJECTED:'Rejected', OUT_FOR_DELIVERY:'Out for delivery', DELIVERED:'Delivered', CANCELLED:'Cancelled' };
 function renderNotifications(){
   updateNotifPushRow();
+  document.getElementById('chatAttachWrap').style.display = cfg.premium ? '' : 'none';
   var list = loadJSON(ns()+'notifications', []);
   var el = document.getElementById('notifList');
   if(list.length===0){ el.innerHTML = '<div class="empty">No messages yet.</div>'; }
@@ -946,9 +965,13 @@ function renderNotifications(){
     el.innerHTML = list.slice().reverse().map(function(n){
       var mine = !!n.fromCustomer;
       var label = STATUS_LABELS[n.status] || '';
+      var attachHtml = (n.attachments||[]).map(function(a){
+        return '<a href="'+a+'" target="_blank" rel="noopener"><img src="'+a+'" style="max-width:160px;max-height:160px;border-radius:8px;display:block;margin-top:6px;"></a>';
+      }).join('');
       return '<div class="notif-row'+(mine?' mine':'')+'">' +
         (mine ? '<div class="who">You</div>' : (label?'<div class="status-label">'+label+'</div>':'')) +
         (n.message?'<div class="msg">'+esc(n.message)+'</div>':'') +
+        attachHtml +
         '<div class="date">'+new Date(n.receivedAt).toLocaleString()+'</div></div>';
     }).join('');
     list.forEach(function(n){ n.read = true; });
@@ -971,15 +994,21 @@ function sendChatMessage(){
   }
   var btn = document.getElementById('chatReplyBtn');
   btn.disabled = true;
+  var attachment = pendingChatAttachment;
+  var body = { shop: cfg.shop, customerPhone: customer.phone, customerName: customer.name||'', message: text };
+  if(attachment) body.attachments = [attachment];
   fetch(cfg.url + sepFor(cfg.url) + 'do=message', {
     method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({ shop: cfg.shop, customerPhone: customer.phone, customerName: customer.name||'', message: text })
+    body: JSON.stringify(body)
   }).then(function(res){
     if(!res.ok) throw new Error('HTTP '+res.status);
     var list = loadJSON(ns()+'notifications', []);
-    list.unshift({ orderId:'', status:'', message:text, receivedAt:Date.now(), read:true, fromCustomer:true });
+    list.unshift({ orderId:'', status:'', message:text, attachments: attachment ? [attachment] : [], receivedAt:Date.now(), read:true, fromCustomer:true });
     saveJSON(ns()+'notifications', list.slice(0,100));
     input.value = '';
+    pendingChatAttachment = null;
+    document.getElementById('chatAttachInput').value = '';
+    document.getElementById('chatAttachBtn').textContent = 'Attach a photo';
     renderNotifications();
   }).catch(function(){
     errEl.textContent = 'Could not send — check your connection and try again.';
@@ -994,7 +1023,7 @@ function doRefresh(){
   fetchNotifications().then(function(fresh){
     if(fresh && fresh.length){
       var list = loadJSON(ns()+'notifications', []);
-      fresh.forEach(function(n){ list.unshift({ orderId:n.orderId||'', status:n.status||'', message:n.message||'', receivedAt:Date.now(), read:false }); });
+      fresh.forEach(function(n){ list.unshift({ orderId:n.orderId||'', status:n.status||'', message:n.message||'', attachments:n.attachments||[], receivedAt:Date.now(), read:false }); });
       saveJSON(ns()+'notifications', list.slice(0,100));
       updateNotifBadge();
     }
@@ -1019,7 +1048,7 @@ function boot(){
   fetchNotifications().then(function(fresh){
     if(fresh && fresh.length){
       var list = loadJSON(ns()+'notifications', []);
-      fresh.forEach(function(n){ list.unshift({ orderId:n.orderId||'', status:n.status||'', message:n.message||'', receivedAt:Date.now(), read:false }); });
+      fresh.forEach(function(n){ list.unshift({ orderId:n.orderId||'', status:n.status||'', message:n.message||'', attachments:n.attachments||[], receivedAt:Date.now(), read:false }); });
       saveJSON(ns()+'notifications', list.slice(0,100));
       updateNotifBadge();
     }
