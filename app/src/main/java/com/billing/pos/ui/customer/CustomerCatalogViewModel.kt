@@ -119,7 +119,7 @@ class CustomerCatalogViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Sends a reply to the shop about [notification] — the customer side of a live chat with
      *  the shop, picked up on the shop owner's next Messages poll/refresh. */
-    fun replyToNotification(notification: CustomerNotification, text: String) {
+    fun replyToNotification(notification: CustomerNotification, text: String, attachment: String? = null) {
         if (text.isBlank() || _replying.value) return
         viewModelScope.launch {
             _replying.value = true
@@ -131,7 +131,8 @@ class CustomerCatalogViewModel(app: Application) : AndroidViewModel(app) {
             val target = com.billing.pos.customer.ShopSwitch.known(app).find { it.shop == notification.shop }
             val ok = com.billing.pos.customer.CustomerMessageSend.send(
                 app, text, notification.orderId,
-                targetUrl = target?.url.orEmpty(), targetShop = target?.shop ?: notification.shop
+                targetUrl = target?.url.orEmpty(), targetShop = target?.shop ?: notification.shop,
+                attachments = attachment?.takeIf { it.isNotBlank() }?.let { listOf(it) } ?: emptyList()
             )
             _message.value = if (ok) "Reply sent" else "Could not send reply — check your connection"
             _replying.value = false

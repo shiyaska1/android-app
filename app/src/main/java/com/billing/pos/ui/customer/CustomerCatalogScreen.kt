@@ -754,7 +754,7 @@ fun CustomerCatalogScreen(
             onDismiss = { showNotifications = false },
             onDelete = { n -> vm.deleteNotification(n) },
             onClearAll = { vm.clearAllNotifications(); showNotifications = false },
-            onReply = { n, text -> vm.replyToNotification(n, text) },
+            onReply = { n, text, attachment -> vm.replyToNotification(n, text, attachment) },
             onMuteShop = { shop, muted -> vm.setShopMuted(shop, muted) },
             onPayNotification = { n -> payingNotification = n },
             onTogglePlay = { uri -> toggleVoicePlayback(uri) },
@@ -899,14 +899,36 @@ private fun NotificationsDialog(
     onDismiss: () -> Unit,
     onDelete: (CustomerNotification) -> Unit,
     onClearAll: () -> Unit,
-    onReply: (CustomerNotification, String) -> Unit,
+    onReply: (CustomerNotification, String, String?) -> Unit,
     onMuteShop: (shop: String, muted: Boolean) -> Unit,
     onPayNotification: (CustomerNotification) -> Unit,
     onTogglePlay: (String) -> Unit,
     onViewImage: (String) -> Unit
 ) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var replyTargetId by remember { mutableStateOf<Long?>(null) }
     var replyText by rememberSaveable { mutableStateOf("") }
+    var replyAttachment by remember { mutableStateOf<String?>(null) }
+    var compressingReplyAttachment by remember { mutableStateOf(false) }
+    suspend fun compressReplyAttachment(uri: android.net.Uri): String? = withContext(Dispatchers.IO) {
+        runCatching {
+            val tempFile = File.createTempFile("reply_", ".jpg", context.cacheDir)
+            context.contentResolver.openInputStream(uri)?.use { input -> tempFile.outputStream().use { output -> input.copyTo(output) } }
+            val bytes = ThumbnailCompressor.compress(tempFile.absolutePath, maxBytes = 300 * 1024, maxDim = 1024)
+            tempFile.delete()
+            bytes?.let { "data:image/jpeg;base64," + android.util.Base64.encodeToString(it, android.util.Base64.NO_WRAP) }
+        }.getOrNull()
+    }
+    val replyAttachmentPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        compressingReplyAttachment = true
+        scope.launch {
+            val dataUri = compressReplyAttachment(uri)
+            compressingReplyAttachment = false
+            if (dataUri != null) replyAttachment = dataUri
+        }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -981,24 +1003,54 @@ private fun NotificationsDialog(
                                 }
                             }
                             if (replyTargetId == n.id) {
-                                Row(Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                                    OutlinedTextField(
-                                        value = replyText, onValueChange = { replyText = it },
-                                        placeholder = { Text("Reply to the shop") },
-                                        singleLine = true, modifier = Modifier.weight(1f)
-                                    )
-                                    IconButton(
-                                        onClick = {
-                                            val text = replyText.trim()
-                                            if (text.isNotBlank()) { onReply(n, text); replyText = ""; replyTargetId = null }
-                                        },
-                                        enabled = !replying && replyText.isNotBlank()
-                                    ) {
-                                        Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send reply")
+                                Column(Modifier.padding(top = 4.dp)) {
+                                    if (replyAttachment != null) {
+                                        val bmp = remember(replyAttachment) { decodeDataUriBitmap(replyAttachment!!) }
+                                        Box(Modifier.padding(bottom = 4.dp), contentAlignment = Alignment.TopEnd) {
+                                            if (bmp != null) {
+                                                Image(
+                                                    bitmap = bmp,
+                                                    contentDescription = "Attachment",
+                                                    contentScale = ContentScale.Crop,
+                                                    modifier = Modifier.size(80.dp)
+                                                )
+                                            }
+                                            OutlinedIconButton(
+                                                onClick = { replyAttachment = null },
+                                                modifier = Modifier.size(20.dp),
+                                                colors = IconButtonDefaults.outlinedIconButtonColors(containerColor = MaterialTheme.colorScheme.surface)
+                                            ) { Icon(Icons.Filled.Close, contentDescription = "Remove attachment", modifier = Modifier.size(12.dp)) }
+                                        }
+                                    }
+                                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                        OutlinedTextField(
+                                            value = replyText, onValueChange = { replyText = it },
+                                            placeholder = { Text("Reply to the shop") },
+                                            singleLine = true, modifier = Modifier.weight(1f)
+                                        )
+                                        IconButton(
+                                            onClick = { replyAttachmentPicker.launch("image/*") },
+                                            enabled = !compressingReplyAttachment
+                                        ) {
+                                            if (compressingReplyAttachment) CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                                            else Icon(Icons.Filled.AttachFile, contentDescription = "Attach a photo")
+                                        }
+                                        IconButton(
+                                            onClick = {
+                                                val text = replyText.trim()
+                                                if (text.isNotBlank()) {
+                                                    onReply(n, text, replyAttachment)
+                                                    replyText = ""; replyAttachment = null; replyTargetId = null
+                                                }
+                                            },
+                                            enabled = !replying && !compressingReplyAttachment && replyText.isNotBlank()
+                                        ) {
+                                            Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send reply")
+                                        }
                                     }
                                 }
                             } else {
-                                TextButton(onClick = { replyTargetId = n.id; replyText = "" }, modifier = Modifier.padding(top = 2.dp)) {
+                                TextButton(onClick = { replyTargetId = n.id; replyText = ""; replyAttachment = null }, modifier = Modifier.padding(top = 2.dp)) {
                                     Text("Reply")
                                 }
                             }
