@@ -933,7 +933,15 @@ private fun NotificationsDialog(
     onViewImage: (String) -> Unit
 ) {
     var selectedShop by rememberSaveable { mutableStateOf<String?>(null) }
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+    // decorFitsSystemWindows = false lets this dialog's own window go edge-to-edge like the
+    // main Activity window — without it, navigationBarsPadding()/imePadding() inside
+    // ChatThreadScreen's reply bar see the wrong insets (the dialog window already avoids the
+    // system bars on its own), squashing the reply bar down near-invisible above 3-button nav.
+    // The shop owner's equivalent screen isn't a dialog at all, so it never hit this.
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+    ) {
         val shop = selectedShop
         if (shop != null) {
             val threadMessages = remember(notifications, shop) {
