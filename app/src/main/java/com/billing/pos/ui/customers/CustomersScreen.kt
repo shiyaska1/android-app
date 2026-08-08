@@ -25,12 +25,14 @@ import androidx.compose.material.icons.filled.Campaign
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.DriveFileMove
 import androidx.compose.material.icons.filled.GridOn
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material.icons.filled.UploadFile
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Divider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
@@ -101,6 +103,34 @@ class CustomersViewModel(app: Application) : AndroidViewModel(app) {
 
     val message = MutableStateFlow<String?>(null)
     fun consumeMessage() { message.value = null }
+
+    val sendingViaApp = MutableStateFlow(false)
+
+    /** Sends [text] to each of [recipients] through the online-ordering app's own chat/notification
+     *  system (see OrderStatusPush) instead of opening WhatsApp — lands directly in that customer's
+     *  in-app chat thread, no manual "open WhatsApp, tap send, come back" step needed. Only reaches
+     *  customers who've opened the online-ordering app before (WhatsApp has no such requirement). */
+    fun sendViaApp(recipients: List<Customer>, text: String) {
+        if (text.isBlank() || recipients.isEmpty() || sendingViaApp.value) return
+        viewModelScope.launch {
+            sendingViaApp.value = true
+            var sent = 0
+            for (c in recipients) {
+                if (c.phone.isBlank()) continue
+                if (!com.billing.pos.data.License.reserveNotificationSend(getApplication())) {
+                    message.value = "Daily notification limit reached — sent to $sent so far"
+                    sendingViaApp.value = false
+                    return@launch
+                }
+                com.billing.pos.customer.OrderStatusPush.push(
+                    getApplication(), customerPhone = c.phone, orderId = "", message = text, customerName = c.name
+                )
+                sent++
+            }
+            message.value = if (sent > 0) "Sent to $sent customer(s) in-app" else "Tick customers that have a phone number"
+            sendingViaApp.value = false
+        }
+    }
 
     private val prefs = AppPrefs(app)
     private val addedTypes = MutableStateFlow(prefs.customerTypes)
@@ -193,6 +223,7 @@ fun CustomersScreen(
     val customers by vm.customers.collectAsStateSafe()
     val balances by vm.customerBalances.collectAsStateSafe()
     val message by vm.message.collectAsStateSafe()
+    val sendingViaApp by vm.sendingViaApp.collectAsStateSafe()
 
     LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); vm.consumeMessage() } }
 
@@ -458,6 +489,22 @@ fun CustomersScreen(
                             else { sendQueue = chosen; sendIndex = 0 }
                         }
                     ) { Icon(Icons.Filled.Chat, "Send on WhatsApp"); Text("  Send") }
+                    // Straight to the customer's own in-app chat, no manual WhatsApp step —
+                    // only reaches customers who've opened the online-ordering app before,
+                    // unlike WhatsApp send above which works for anyone with the number.
+                    OutlinedButton(
+                        onClick = {
+                            val chosen = customers.filter { it.id in selected && it.phone.isNotBlank() }
+                            if (chosen.isEmpty()) vm.message.value = "Tick customers that have a phone number"
+                            else if (marketText.isBlank()) vm.message.value = "Write a message first"
+                            else vm.sendViaApp(chosen, marketText)
+                        },
+                        enabled = !sendingViaApp,
+                        modifier = Modifier.padding(start = 6.dp)
+                    ) {
+                        if (sendingViaApp) CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                        else { Icon(Icons.Filled.Notifications, "Send in app"); Text("  In-app") }
+                    }
                     Spacer(Modifier.weight(1f))
                     Text("${selected.size} selected", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
                 }
