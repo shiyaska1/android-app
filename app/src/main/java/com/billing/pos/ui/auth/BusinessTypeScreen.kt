@@ -14,8 +14,10 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Divider
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -36,7 +38,9 @@ import com.billing.pos.ui.customer.DebugSimulateLinkDialog
 import com.billing.pos.ui.settings.BUSINESS_TYPES
 import com.journeyapps.barcodescanner.ScanContract
 import com.journeyapps.barcodescanner.ScanOptions
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * One-time question on first launch: what is this app for?
@@ -68,6 +72,7 @@ fun BusinessTypeScreen(onChosen: () -> Unit, onCustomerLinkSimulated: () -> Unit
         prefs.onboarded = true
         onCustomerLinkSimulated()
     }
+    var decoding by remember { mutableStateOf(false) }
     val scanLauncher = rememberLauncherForActivityResult(ScanContract()) { result ->
         val contents = result.contents ?: return@rememberLauncherForActivityResult
         val shop = ShopSwitch.parse(contents)
@@ -81,6 +86,33 @@ fun BusinessTypeScreen(onChosen: () -> Unit, onCustomerLinkSimulated: () -> Unit
             scanLauncher.launch(ScanOptions().setPrompt("Scan your shop's code").setBeepEnabled(true))
         } else {
             cameraPermission.launch(Manifest.permission.CAMERA)
+        }
+    }
+    // Not every customer is standing at the shop with a physical code to point the camera at —
+    // the shop often just sends the QR as a picture over WhatsApp instead. Decoding it from a
+    // saved photo (same ZXing-on-a-still-image path the in-app "switch shop" dialog already
+    // uses) covers that without needing anything printed/displayed in person.
+    val galleryPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        decoding = true
+        scope.launch {
+            val shop = withContext(Dispatchers.IO) {
+                runCatching {
+                    context.contentResolver.openInputStream(uri)?.use { input ->
+                        val bytes = input.readBytes()
+                        val opt = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                        android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opt)
+                        var sample = 1
+                        while (opt.outWidth / sample > 2000 || opt.outHeight / sample > 2000) sample *= 2
+                        val bmp = android.graphics.BitmapFactory.decodeByteArray(
+                            bytes, 0, bytes.size, android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }
+                        )
+                        bmp?.let { ShopSwitch.decodeFromBitmap(it) }?.let { ShopSwitch.parse(it) }
+                    }
+                }.getOrNull()
+            }
+            decoding = false
+            if (shop != null) applyCustomerShop(shop) else scanError = true
         }
     }
 
@@ -99,10 +131,19 @@ fun BusinessTypeScreen(onChosen: () -> Unit, onCustomerLinkSimulated: () -> Unit
         // have, with no dependence on Play at all.
         Button(
             onClick = { startCustomerScan() },
+            enabled = !decoding,
             modifier = Modifier.fillMaxWidth().padding(top = 16.dp)
-        ) { Text("Open order/customer app") }
+        ) { Text("Open order/customer app — scan QR") }
+        OutlinedButton(
+            onClick = { galleryPicker.launch("image/*") },
+            enabled = !decoding,
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+        ) {
+            if (decoding) CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+            else Text("Or pick the shop's QR code from your gallery")
+        }
         Text(
-            "Got a shop's QR code or link to order from them? Tap above to scan it.",
+            "Got a shop's QR code or link to order from them — printed, on screen, or sent as a photo on WhatsApp? Use either button above.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.outline,
             modifier = Modifier.padding(top = 4.dp, bottom = 16.dp)
