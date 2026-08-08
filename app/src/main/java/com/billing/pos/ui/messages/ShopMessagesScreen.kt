@@ -30,14 +30,19 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Campaign
+import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Divider
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -232,6 +237,24 @@ class ShopMessagesViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { dao.markReadForCustomer(phone) }
     }
 
+    /** Clears one customer's whole chat thread — see [com.billing.pos.data.ShopMessageDao.deleteForCustomers]. */
+    fun deleteThread(phone: String) {
+        viewModelScope.launch { dao.deleteForCustomers(listOf(phone)) }
+    }
+
+    /** Clears several chats at once — the Messages list's "Select" / "Delete selected" bulk
+     *  action, to clear out old conversations and free up space. */
+    fun deleteThreads(phones: Set<String>) {
+        if (phones.isEmpty()) return
+        viewModelScope.launch { dao.deleteForCustomers(phones.toList()) }
+    }
+
+    /** Wipes the shop's entire local chat history, every customer — a full reset when the list
+     *  has piled up. Doesn't touch anything server-side or the Customer master. */
+    fun clearAllMessages() {
+        viewModelScope.launch { dao.deleteAll() }
+    }
+
     fun send(phone: String, name: String, text: String, amount: Double = 0.0, attachments: List<String> = emptyList()) {
         if ((text.isBlank() && amount <= 0.0 && attachments.isEmpty()) || _sending.value) return
         viewModelScope.launch {
@@ -268,6 +291,13 @@ fun ShopMessagesScreen(
     var selectedPhone by rememberSaveable { mutableStateOf(initialPhone) }
     var showPromotionDialog by rememberSaveable { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
+    // "Select" mode on the thread list, to delete more than one chat at once — mirrors the
+    // Invoices list's own multi-select ("selectMode"/"selectedIds"). "Clear all" stays a
+    // single-tap escape hatch for wiping everything without selecting each one.
+    var selectMode by rememberSaveable { mutableStateOf(false) }
+    val selectedPhones = remember { mutableStateListOf<String>() }
+    var confirmBulkDelete by remember { mutableStateOf(false) }
+    var confirmClearAll by remember { mutableStateOf(false) }
 
     if (showProLimitDialog) {
         com.billing.pos.ui.common.ProLimitDialog(
@@ -304,22 +334,79 @@ fun ShopMessagesScreen(
         )
     } else {
         val threads = remember(messages) { vm.threads(messages) }
+
+        if (confirmBulkDelete) {
+            AlertDialog(
+                onDismissRequest = { confirmBulkDelete = false },
+                title = { Text("Delete ${selectedPhones.size} chat(s)?") },
+                text = { Text("Removes these conversations from this phone only. This can't be undone.") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        vm.deleteThreads(selectedPhones.toSet())
+                        confirmBulkDelete = false; selectMode = false; selectedPhones.clear()
+                    }) { Text("Delete") }
+                },
+                dismissButton = { TextButton(onClick = { confirmBulkDelete = false }) { Text("Cancel") } }
+            )
+        }
+        if (confirmClearAll) {
+            AlertDialog(
+                onDismissRequest = { confirmClearAll = false },
+                title = { Text("Clear all chats?") },
+                text = { Text("Removes every conversation from this phone only. This can't be undone.") },
+                confirmButton = {
+                    TextButton(onClick = { vm.clearAllMessages(); confirmClearAll = false }) { Text("Clear all") }
+                },
+                dismissButton = { TextButton(onClick = { confirmClearAll = false }) { Text("Cancel") } }
+            )
+        }
+
         Scaffold(
             topBar = {
                 TopAppBar(
-                    title = { Text("Messages") },
+                    title = {
+                        if (selectMode) Text("${selectedPhones.size} selected") else Text("Messages")
+                    },
                     navigationIcon = {
-                        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
+                        IconButton(onClick = {
+                            if (selectMode) { selectMode = false; selectedPhones.clear() } else onBack()
+                        }) {
+                            Icon(
+                                if (selectMode) Icons.Filled.Close else Icons.AutoMirrored.Filled.ArrowBack,
+                                contentDescription = if (selectMode) "Cancel selection" else "Back"
+                            )
+                        }
                     },
                     actions = {
-                        IconButton(onClick = { showPromotionDialog = true }) {
-                            Icon(Icons.Filled.Campaign, contentDescription = "Send promotion")
-                        }
-                        IconButton(onClick = { vm.refresh() }) {
-                            if (refreshing) {
-                                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                            } else {
-                                Icon(Icons.Filled.Refresh, contentDescription = "Refresh")
+                        if (selectMode) {
+                            val allSelected = threads.isNotEmpty() && selectedPhones.size == threads.size
+                            IconButton(onClick = {
+                                if (allSelected) selectedPhones.clear()
+                                else { selectedPhones.clear(); selectedPhones.addAll(threads.map { it.customerPhone }) }
+                            }) {
+                                Icon(Icons.Filled.SelectAll, contentDescription = if (allSelected) "Deselect all" else "Select all")
+                            }
+                            IconButton(onClick = { if (selectedPhones.isNotEmpty()) confirmBulkDelete = true }, enabled = selectedPhones.isNotEmpty()) {
+                                Icon(Icons.Filled.Delete, contentDescription = "Delete selected")
+                            }
+                        } else {
+                            if (threads.isNotEmpty()) {
+                                IconButton(onClick = { selectMode = true }) {
+                                    Icon(Icons.Filled.Checklist, contentDescription = "Select chats")
+                                }
+                                IconButton(onClick = { confirmClearAll = true }) {
+                                    Icon(Icons.Filled.DeleteSweep, contentDescription = "Clear all chats")
+                                }
+                            }
+                            IconButton(onClick = { showPromotionDialog = true }) {
+                                Icon(Icons.Filled.Campaign, contentDescription = "Send promotion")
+                            }
+                            IconButton(onClick = { vm.refresh() }) {
+                                if (refreshing) {
+                                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                                } else {
+                                    Icon(Icons.Filled.Refresh, contentDescription = "Refresh")
+                                }
                             }
                         }
                     }
@@ -335,12 +422,28 @@ fun ShopMessagesScreen(
                 LazyColumn(Modifier.fillMaxSize().padding(pad)) {
                     items(threads, key = { it.customerPhone }) { thread ->
                         ListItem(
+                            leadingContent = {
+                                if (selectMode) {
+                                    Checkbox(
+                                        checked = thread.customerPhone in selectedPhones,
+                                        onCheckedChange = { checked ->
+                                            if (checked) selectedPhones.add(thread.customerPhone) else selectedPhones.remove(thread.customerPhone)
+                                        }
+                                    )
+                                }
+                            },
                             headlineContent = { Text(thread.customerName, fontWeight = FontWeight.SemiBold) },
                             supportingContent = { Text(thread.lastText, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                             trailingContent = {
                                 if (thread.unreadCount > 0) Badge { Text("${thread.unreadCount}") }
                             },
-                            modifier = Modifier.fillMaxWidth().clickable { selectedPhone = thread.customerPhone }
+                            modifier = Modifier.fillMaxWidth().clickable {
+                                if (selectMode) {
+                                    if (thread.customerPhone in selectedPhones) selectedPhones.remove(thread.customerPhone) else selectedPhones.add(thread.customerPhone)
+                                } else {
+                                    selectedPhone = thread.customerPhone
+                                }
+                            }
                         )
                         Divider()
                     }
@@ -400,6 +503,7 @@ private fun ThreadScreen(
     var showRequestPayment by rememberSaveable { mutableStateOf(false) }
     val name = messages.firstOrNull { it.customerName.isNotBlank() }?.customerName?.ifBlank { phone } ?: phone
     val listState = rememberLazyListState()
+    var confirmDeleteThread by remember { mutableStateOf(false) }
     // Same fix as the customer app's chat thread (see CustomerCatalogScreen.ChatThreadScreen):
     // a fixed dp gap on top of navigationBarsPadding() wasn't reliably enough clearance above a
     // 3-button nav bar on every OEM — 7% of screen height guarantees a visible gap regardless.
@@ -505,12 +609,29 @@ private fun ThreadScreen(
     LaunchedEffect(phone) { vm.markThreadRead(phone) }
     LaunchedEffect(messages.size) { if (messages.isNotEmpty()) listState.animateScrollToItem(messages.size - 1) }
 
+    if (confirmDeleteThread) {
+        AlertDialog(
+            onDismissRequest = { confirmDeleteThread = false },
+            title = { Text("Delete this chat?") },
+            text = { Text("Removes the whole conversation with $name from this phone. This can't be undone.") },
+            confirmButton = {
+                TextButton(onClick = { confirmDeleteThread = false; vm.deleteThread(phone); onBack() }) { Text("Delete") }
+            },
+            dismissButton = { TextButton(onClick = { confirmDeleteThread = false }) { Text("Cancel") } }
+        )
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text(name) },
                 navigationIcon = {
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
+                },
+                actions = {
+                    IconButton(onClick = { confirmDeleteThread = true }) {
+                        Icon(Icons.Filled.Delete, contentDescription = "Delete this chat")
+                    }
                 }
             )
         },

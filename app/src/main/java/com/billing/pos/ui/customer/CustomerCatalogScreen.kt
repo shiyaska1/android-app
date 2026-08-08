@@ -35,10 +35,12 @@ import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Call
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Chat
+import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.SelectAll
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.NotificationsActive
@@ -57,6 +59,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.BottomAppBar
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
@@ -783,6 +786,7 @@ fun CustomerCatalogScreen(
             onDismiss = { showNotifications = false },
             onClearAll = { vm.clearAllNotifications(); showNotifications = false },
             onDeleteThread = { shop -> vm.deleteThread(shop) },
+            onDeleteThreads = { shops -> vm.deleteThreads(shops) },
             onReply = { shop, shopName, text, attachments -> vm.replyToShop(shop, shopName, text, attachments) },
             onMuteShop = { shop, muted -> vm.setShopMuted(shop, muted) },
             onPayNotification = { n -> payingNotification = n },
@@ -948,6 +952,7 @@ private fun NotificationsDialog(
     onDismiss: () -> Unit,
     onClearAll: () -> Unit,
     onDeleteThread: (shop: String) -> Unit,
+    onDeleteThreads: (shops: Set<String>) -> Unit,
     onReply: (shop: String, shopName: String, text: String, attachments: List<String>) -> Unit,
     onMuteShop: (shop: String, muted: Boolean) -> Unit,
     onPayNotification: (CustomerNotification) -> Unit,
@@ -955,6 +960,12 @@ private fun NotificationsDialog(
     onViewImage: (String) -> Unit
 ) {
     var selectedShop by rememberSaveable { mutableStateOf<String?>(null) }
+    // "Select" mode on the Chats list, to delete more than one chat at once — mirrors the shop
+    // owner's own Messages list. "Clear all" stays a single-tap escape hatch for everything.
+    var selectMode by rememberSaveable { mutableStateOf(false) }
+    val selectedShops = remember { mutableStateListOf<String>() }
+    var confirmBulkDelete by remember { mutableStateOf(false) }
+    var confirmClearAll by remember { mutableStateOf(false) }
     // decorFitsSystemWindows = false lets this dialog's own window go edge-to-edge like the
     // main Activity window — without it, navigationBarsPadding()/imePadding() inside
     // ChatThreadScreen's reply bar see the wrong insets (the dialog window already avoids the
@@ -1007,15 +1018,63 @@ private fun NotificationsDialog(
                     // top row — no need to scan the whole list to spot it.
                 }.sortedByDescending { it.lastAt }
             }
+            if (confirmBulkDelete) {
+                AlertDialog(
+                    onDismissRequest = { confirmBulkDelete = false },
+                    title = { Text("Delete ${selectedShops.size} chat(s)?") },
+                    text = { Text("Removes these conversations from this phone only. This can't be undone.") },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            onDeleteThreads(selectedShops.toSet())
+                            confirmBulkDelete = false; selectMode = false; selectedShops.clear()
+                        }) { Text("Delete") }
+                    },
+                    dismissButton = { TextButton(onClick = { confirmBulkDelete = false }) { Text("Cancel") } }
+                )
+            }
+            if (confirmClearAll) {
+                AlertDialog(
+                    onDismissRequest = { confirmClearAll = false },
+                    title = { Text("Clear all chats?") },
+                    text = { Text("Removes every conversation from this phone only. This can't be undone.") },
+                    confirmButton = { TextButton(onClick = { onClearAll(); confirmClearAll = false }) { Text("Clear all") } },
+                    dismissButton = { TextButton(onClick = { confirmClearAll = false }) { Text("Cancel") } }
+                )
+            }
             Scaffold(
                 topBar = {
                     TopAppBar(
-                        title = { Text("Chats") },
+                        title = {
+                            if (selectMode) Text("${selectedShops.size} selected") else Text("Chats")
+                        },
                         navigationIcon = {
-                            IconButton(onClick = onDismiss) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Close") }
+                            IconButton(onClick = {
+                                if (selectMode) { selectMode = false; selectedShops.clear() } else onDismiss()
+                            }) {
+                                Icon(
+                                    if (selectMode) Icons.Filled.Close else Icons.AutoMirrored.Filled.ArrowBack,
+                                    contentDescription = if (selectMode) "Cancel selection" else "Close"
+                                )
+                            }
                         },
                         actions = {
-                            if (threads.isNotEmpty()) TextButton(onClick = onClearAll) { Text("Clear all") }
+                            if (selectMode) {
+                                val allSelected = threads.isNotEmpty() && selectedShops.size == threads.size
+                                IconButton(onClick = {
+                                    if (allSelected) selectedShops.clear()
+                                    else { selectedShops.clear(); selectedShops.addAll(threads.map { it.shop }) }
+                                }) {
+                                    Icon(Icons.Filled.SelectAll, contentDescription = if (allSelected) "Deselect all" else "Select all")
+                                }
+                                IconButton(onClick = { if (selectedShops.isNotEmpty()) confirmBulkDelete = true }, enabled = selectedShops.isNotEmpty()) {
+                                    Icon(Icons.Filled.Delete, contentDescription = "Delete selected")
+                                }
+                            } else if (threads.isNotEmpty()) {
+                                IconButton(onClick = { selectMode = true }) {
+                                    Icon(Icons.Filled.Checklist, contentDescription = "Select chats")
+                                }
+                                TextButton(onClick = { confirmClearAll = true }) { Text("Clear all") }
+                            }
                         }
                     )
                 }
@@ -1034,6 +1093,16 @@ private fun NotificationsDialog(
                             // stands out from an already-read/no-reply-needed row.
                             val unread = thread.unreadCount > 0
                             ListItem(
+                                leadingContent = {
+                                    if (selectMode) {
+                                        Checkbox(
+                                            checked = thread.shop in selectedShops,
+                                            onCheckedChange = { checked ->
+                                                if (checked) selectedShops.add(thread.shop) else selectedShops.remove(thread.shop)
+                                            }
+                                        )
+                                    }
+                                },
                                 headlineContent = { Text(thread.shopName, fontWeight = FontWeight.SemiBold) },
                                 supportingContent = {
                                     Text(
@@ -1047,7 +1116,13 @@ private fun NotificationsDialog(
                                 trailingContent = {
                                     if (unread) Badge { Text("${thread.unreadCount}") }
                                 },
-                                modifier = Modifier.fillMaxWidth().clickable { selectedShop = thread.shop }
+                                modifier = Modifier.fillMaxWidth().clickable {
+                                    if (selectMode) {
+                                        if (thread.shop in selectedShops) selectedShops.remove(thread.shop) else selectedShops.add(thread.shop)
+                                    } else {
+                                        selectedShop = thread.shop
+                                    }
+                                }
                             )
                             Divider()
                         }

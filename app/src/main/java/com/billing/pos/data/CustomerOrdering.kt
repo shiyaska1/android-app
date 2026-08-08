@@ -319,4 +319,9 @@ interface CustomerNotificationDao {
      *  one at a time (matching the shop owner's own chat, which has no per-message delete either). */
     @Query("DELETE FROM customer_notifications WHERE shop = :shop")
     suspend fun deleteForShop(shop: String)
+
+    /** Same as [deleteForShop], for several shops at once — the "delete selected chats" bulk
+     *  action on the Chats list. */
+    @Query("DELETE FROM customer_notifications WHERE shop IN (:shops)")
+    suspend fun deleteForShops(shops: List<String>)
 }

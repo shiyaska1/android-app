@@ -120,6 +120,13 @@ class CustomerCatalogViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { notificationDao.deleteForShop(shop) }
     }
 
+    /** Clears several chats at once — the Chats list's "Select" / "Delete selected" bulk action,
+     *  for a customer with a lot of shop threads piled up who just wants to free up space. */
+    fun deleteThreads(shops: Set<String>) {
+        if (shops.isEmpty()) return
+        viewModelScope.launch { notificationDao.deleteForShops(shops.toList()) }
+    }
+
     /** Whether [shop] specifically (not whichever shop is currently active) is on the premium
      *  tier — gates the attach-photo/voice-note options in that shop's chat thread the same way
      *  [upiFor] resolves per-shop UPI details, since a customer can be connected to more than one

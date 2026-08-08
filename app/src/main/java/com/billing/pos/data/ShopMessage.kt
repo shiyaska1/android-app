@@ -60,4 +60,12 @@ interface ShopMessageDao {
 
     @Query("UPDATE shop_messages SET read = 1 WHERE customerPhone = :phone AND direction = 'IN'")
     suspend fun markReadForCustomer(phone: String)
+
+    /** Clears one customer's whole chat thread — the shop-owner-side equivalent of
+     *  [CustomerNotificationDao.deleteForShop], to free up space / drop an old conversation. */
+    @Query("DELETE FROM shop_messages WHERE customerPhone IN (:phones)")
+    suspend fun deleteForCustomers(phones: List<String>)
+
+    @Query("DELETE FROM shop_messages")
+    suspend fun deleteAll()
 }
