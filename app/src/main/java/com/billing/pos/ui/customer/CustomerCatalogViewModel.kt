@@ -92,6 +92,16 @@ class CustomerCatalogViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { PushTokenRegistration.registerIfNeeded(app) }
     }
 
+    /** From the one-time "Register your details" prompt (see RegisterDialog) — before any order
+     *  exists. Same effect on prefs/FCM as saving an order's "Your details" (see [saveOrder]
+     *  below), just without an order attached; the server tells the shop this phone is brand new
+     *  the moment [PushTokenRegistration] sends it, and adds them to the shop's Customer master. */
+    fun registerCustomer(name: String, phone: String) {
+        prefs.customerName = name
+        prefs.customerPhone = phone
+        viewModelScope.launch { PushTokenRegistration.registerIfNeeded(getApplication()) }
+    }
+
     /** Marks every notification read — called when the customer opens the notification list. */
     fun notificationsOpened() {
         viewModelScope.launch { notificationDao.markAllRead() }

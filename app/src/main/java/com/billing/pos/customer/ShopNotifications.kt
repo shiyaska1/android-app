@@ -101,4 +101,35 @@ object ShopNotifications {
             runCatching { NotificationManagerCompat.from(context).notify("shop_message_$customerPhone", customerPhone.hashCode(), built) }
         }
     }
+
+    /** A customer registered their name/phone in the customer app for the first time, before
+     *  placing any order — see [OnlineCustomersFetch]. Opens straight into Customers so the shop
+     *  owner sees the new entry (already added to the Customer master by that point). */
+    fun showNewCustomer(context: Context, customerName: String) {
+        ensureChannel(context)
+        val open = PendingIntent.getActivity(
+            context, 0,
+            Intent(context, MainActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        val built = NotificationCompat.Builder(context, CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setContentTitle("New customer registered")
+            .setContentText("$customerName installed your online ordering app")
+            .setAutoCancel(true)
+            .setContentIntent(open)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_EVENT)
+            .setVibrate(longArrayOf(0, 250, 250, 250))
+            .build()
+
+        val allowed = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
+            PackageManager.PERMISSION_GRANTED
+        if (allowed) {
+            runCatching { NotificationManagerCompat.from(context).notify("shop_new_customer", System.currentTimeMillis().toInt(), built) }
+        }
+    }
 }

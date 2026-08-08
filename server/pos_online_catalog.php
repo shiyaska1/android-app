@@ -648,6 +648,9 @@ if (($method === 'POST' || $method === 'PUT') && $do === 'registerToken') {
     $role = isset($body['role']) ? (string) $body['role'] : '';
     $token = isset($body['token']) ? (string) $body['token'] : '';
     $phone = isset($body['phone']) ? (string) $body['phone'] : '';
+    // Only sent by the customer app, and only meaningful the first time a phone registers — see
+    // the "new customer" detection below.
+    $name = isset($body['name']) ? (string) $body['name'] : '';
     if ($token === '' || ($role !== 'shop' && $role !== 'customer')) {
         pos_catalog_fail(400, 'Missing "token" or invalid "role" (must be "shop" or "customer")');
     }
@@ -671,6 +674,9 @@ if (($method === 'POST' || $method === 'PUT') && $do === 'registerToken') {
     if (!isset($data['customers']) || !is_array($data['customers'])) {
         $data['customers'] = array();
     }
+    // Detected before this phone's token is written below — a re-registration (app reopen, token
+    // refresh) of an already-known phone is not a "new customer".
+    $isNewCustomer = $role === 'customer' && !isset($data['customers'][$phone]);
     if ($role === 'shop') {
         $data['shop_token'] = $token;
     } else {
@@ -682,6 +688,34 @@ if (($method === 'POST' || $method === 'PUT') && $do === 'registerToken') {
     fflush($fh);
     flock($fh, LOCK_UN);
     fclose($fh);
+
+    if ($isNewCustomer) {
+        // A short-lived queue the shop app drains via do=newCustomers (same read-then-clear
+        // pattern as do=orders) — lets it add this customer to its own Customer master and pop a
+        // "new customer" notification, without needing a persistent customers.json on this end.
+        $queuePath = $folder . '/new_customers.json';
+        $qfh = fopen($queuePath, 'c+');
+        if ($qfh !== false) {
+            flock($qfh, LOCK_EX);
+            $queued = json_decode(stream_get_contents($qfh), true);
+            if (!is_array($queued)) {
+                $queued = array();
+            }
+            $queued[] = array(
+                'name' => $name !== '' ? $name : 'Online customer',
+                'phone' => $phone,
+                'registeredAt' => date('c')
+            );
+            ftruncate($qfh, 0);
+            rewind($qfh);
+            fwrite($qfh, json_encode($queued));
+            fflush($qfh);
+            flock($qfh, LOCK_UN);
+            fclose($qfh);
+        }
+        pos_fcm_notify_shop($SERVICE_ACCOUNT_PATH, $STORAGE_DIR, $shop, 'new_customer');
+    }
+
     header('Content-Type: application/json');
     echo json_encode(array('ok' => true));
     exit;
@@ -785,6 +819,32 @@ if ($method === 'GET' && $do === 'notifications') {
     fclose($fh);
     header('Content-Type: application/json');
     echo json_encode($mine);
+    exit;
+}
+
+if ($method === 'GET' && $do === 'newCustomers') {
+    // Newly-registered customers since this was last polled — see the "new customer" queue
+    // written by do=registerToken above. Same read-then-clear queue pattern as do=orders below.
+    $shop = pos_catalog_shop_from_get();
+    $path = $STORAGE_DIR . '/' . $shop . '/new_customers.json';
+    if (!file_exists($path)) {
+        header('Content-Type: application/json');
+        echo '[]';
+        exit;
+    }
+    $fh = fopen($path, 'c+');
+    if ($fh === false) {
+        pos_catalog_fail(500, 'Could not open new-customers file — check folder permissions');
+    }
+    flock($fh, LOCK_EX);
+    $raw = stream_get_contents($fh);
+    ftruncate($fh, 0);
+    fflush($fh);
+    flock($fh, LOCK_UN);
+    fclose($fh);
+    $queued = json_decode($raw, true);
+    header('Content-Type: application/json');
+    echo is_array($queued) ? json_encode($queued) : '[]';
     exit;
 }
 

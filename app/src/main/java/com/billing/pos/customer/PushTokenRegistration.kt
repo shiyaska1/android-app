@@ -37,6 +37,7 @@ object PushTokenRegistration {
 
             val role = if (prefs.customerMode) "customer" else "shop"
             val phone = if (prefs.customerMode) prefs.customerPhone else ""
+            val name = if (prefs.customerMode) prefs.customerName else ""
             if (prefs.customerMode && phone.isBlank()) return@withContext // not registered as a customer yet
 
             val token = currentToken()
@@ -46,7 +47,7 @@ object PushTokenRegistration {
             val already = "$token|$identity"
             if (prefs.fcmTokenRegisteredFor == already) return@withContext // nothing changed since last time
 
-            if (send(base, shop, role, phone, token)) {
+            if (send(base, shop, role, phone, token, name)) {
                 prefs.fcmToken = token
                 prefs.fcmTokenRegisteredFor = already
             }
@@ -63,11 +64,15 @@ object PushTokenRegistration {
         }
     }
 
-    private fun send(base: String, shop: String, role: String, phone: String, token: String): Boolean {
+    private fun send(base: String, shop: String, role: String, phone: String, token: String, name: String = ""): Boolean {
         val body = JSONObject().apply {
             put("shop", shop)
             put("role", role)
             if (phone.isNotBlank()) put("phone", phone)
+            // Only meaningful for role=customer, and only on first registration for this phone —
+            // see do=registerToken server-side, which uses it to notify the shop of a brand-new
+            // customer and add them to the shop's own Customer master.
+            if (name.isNotBlank()) put("name", name)
             put("token", token)
         }
         val sep = if (base.contains("?")) "&" else "?"

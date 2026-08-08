@@ -358,6 +358,13 @@ class AppPrefs(context: Context) {
     var customerPhone: String
         get() = (p.getString("customer_own_phone", "") ?: "").trim()
         set(v) { p.edit().putString("customer_own_phone", v.trim()).apply() }
+    /** Customer install: whether the one-time "Register your details" prompt (shown right on
+     *  first catalog open, before any order — see CustomerCatalogScreen) has already been shown
+     *  or skipped, so it never nags again after that. Separate from [customerPhone] being blank,
+     *  since a customer can dismiss it once and keep browsing without registering at all. */
+    var customerRegisterPromptShown: Boolean
+        get() = p.getBoolean("customer_register_prompt_shown", false)
+        set(v) { p.edit().putBoolean("customer_register_prompt_shown", v).apply() }
     /** Customer install: optional delivery address, remembered the same way as name/phone. */
     var customerAddress: String
         get() = (p.getString("customer_own_address", "") ?: "").trim()

@@ -173,6 +173,7 @@ fun CustomerCatalogScreen(
     val snackbar = remember { SnackbarHostState() }
     var selectedCategory by rememberSaveable { mutableStateOf("All") }
     var showSaveDialog by rememberSaveable { mutableStateOf(false) }
+    var showRegisterDialog by rememberSaveable { mutableStateOf(false) }
     var showPaymentDialog by rememberSaveable { mutableStateOf(false) }
     var showDeliveryPointDialog by rememberSaveable { mutableStateOf(false) }
     var showManualLocationDialog by rememberSaveable { mutableStateOf(false) }
@@ -375,6 +376,16 @@ fun CustomerCatalogScreen(
     // owner previewing on their own phone has never fetched their own shop as a "customer" before,
     // so the list would otherwise open empty until they find the refresh icon themselves.
     LaunchedEffect(isOwnerPreview) { if (isOwnerPreview) vm.refresh() }
+
+    // One-time, dismissible — right on first open, before any order, so the shop can see and
+    // reach this customer from the moment they install (see RegisterDialog). Never shown on an
+    // owner's own preview, and never again once shown/skipped once (whether or not they filled
+    // it in) — see AppPrefs.customerRegisterPromptShown.
+    LaunchedEffect(Unit) {
+        if (!isOwnerPreview && prefs.customerPhone.isBlank() && !prefs.customerRegisterPromptShown) {
+            showRegisterDialog = true
+        }
+    }
 
     val locationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
         val granted = grants[Manifest.permission.ACCESS_FINE_LOCATION] == true || grants[Manifest.permission.ACCESS_COARSE_LOCATION] == true
@@ -657,6 +668,16 @@ fun CustomerCatalogScreen(
         }
     }
 
+    if (showRegisterDialog) {
+        RegisterDialog(
+            onDismiss = { showRegisterDialog = false; prefs.customerRegisterPromptShown = true },
+            onConfirm = { name, phone ->
+                showRegisterDialog = false
+                prefs.customerRegisterPromptShown = true
+                vm.registerCustomer(name, phone)
+            }
+        )
+    }
     if (showSaveDialog) {
         val cartTotal = items.filter { qty.containsKey(it.id) }.sumOf { it.price * (qty[it.id] ?: 0) }
         SaveOrderDialog(
@@ -1352,6 +1373,49 @@ private fun SaveOrderDialog(
             ) { Text("Save order") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
+/** One-time, dismissible prompt shown right on first catalog open — before any order — so the
+ *  shop can see and reach a customer from the moment they install, not just once they check out.
+ *  "Skip" leaves everything exactly as it was (blank name/phone, no FCM registration); it never
+ *  reappears on this device either way (see [AppPrefs.customerRegisterPromptShown]). */
+@Composable
+private fun RegisterDialog(onDismiss: () -> Unit, onConfirm: (name: String, phone: String) -> Unit) {
+    var name by rememberSaveable { mutableStateOf("") }
+    var phone by rememberSaveable { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Welcome!") },
+        text = {
+            Column {
+                Text(
+                    "Register so the shop knows you're here and can reach you with offers — you can still browse and order without this.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.outline,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+                OutlinedTextField(
+                    value = name, onValueChange = { name = it },
+                    label = { Text("Your name") }, singleLine = true,
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                )
+                OutlinedTextField(
+                    value = phone, onValueChange = { phone = it },
+                    label = { Text("Mobile number") }, singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onConfirm(name.trim(), phone.trim()) },
+                enabled = name.isNotBlank() && phone.isNotBlank()
+            ) { Text("Register") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Skip") } }
     )
 }
 

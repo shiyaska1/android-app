@@ -56,6 +56,10 @@ class ShopOrderPollReceiver : BroadcastReceiver() {
                         }
                         is ShopMessagesFetch.Result.Failed -> {}
                     }
+                    when (val result = OnlineCustomersFetch.fetch(app)) {
+                        is OnlineCustomersFetch.Result.Ok -> result.registered.forEach { ShopNotifications.showNewCustomer(app, it) }
+                        is OnlineCustomersFetch.Result.Failed -> {}
+                    }
                     ShopOrderPoll.schedule(app)
                 }
             } catch (e: Exception) {
