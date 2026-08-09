@@ -58,7 +58,6 @@ import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
-import androidx.compose.material3.BottomAppBar
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -516,43 +515,11 @@ fun CustomerCatalogScreen(
                 }
             )
         },
-        bottomBar = {
-            // Visible whenever there's something to submit — items picked, a note typed, or a
-            // photo attached — not just when items are picked, since some shops (e.g. a medical
-            // store) have no browsable catalog at all and only take a note/photo.
-            if (qty.isNotEmpty() || orderNote.isNotBlank() || orderAttachments.isNotEmpty()) {
-                val total = items.filter { qty.containsKey(it.id) }.sumOf { it.price * (qty[it.id] ?: 0) }
-                BottomAppBar {
-                    Row(
-                        Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column {
-                            if (qty.isNotEmpty()) {
-                                Text("${qty.values.sum()} item(s)", style = MaterialTheme.typography.labelMedium)
-                                Text("₹" + Format.money(total), fontWeight = FontWeight.Bold)
-                            }
-                        }
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Button(onClick = { showSaveDialog = true }, enabled = !saving) {
-                                if (saving) {
-                                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                                } else {
-                                    Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(18.dp))
-                                    Text("  Order")
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        },
         snackbarHost = { SnackbarHost(snackbar) }
     ) { padding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding),
-            contentPadding = PaddingValues(bottom = 88.dp),
+            contentPadding = PaddingValues(bottom = 24.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             item {
@@ -607,6 +574,43 @@ fun CustomerCatalogScreen(
                     onRemoveAttachment = { orderAttachments.remove(it) },
                     onViewAttachment = { uri -> if (com.billing.pos.util.VoiceAttachment.isAudio(uri)) toggleVoicePlayback(uri) else viewingAttachment = uri }
                 )
+            }
+
+            // Always here, right between the note and the item catalog — not hidden until
+            // something's picked, and not tucked away in a footer the customer has to scroll
+            // down past a long item list to find. Tapping it with nothing to submit yet just
+            // prompts for one (no server call — there's nothing worth sending).
+            item {
+                val total = items.filter { qty.containsKey(it.id) }.sumOf { it.price * (qty[it.id] ?: 0) }
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        if (qty.isNotEmpty()) {
+                            Text("${qty.values.sum()} item(s)", style = MaterialTheme.typography.labelMedium)
+                            Text("₹" + Format.money(total), fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    Button(
+                        onClick = {
+                            if (qty.isEmpty() && orderNote.isBlank() && orderAttachments.isEmpty()) {
+                                scope.launch { snackbar.showSnackbar("Please order something — add an item, write a note, or attach a photo") }
+                            } else {
+                                showSaveDialog = true
+                            }
+                        },
+                        enabled = !saving
+                    ) {
+                        if (saving) {
+                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                        } else {
+                            Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Text("  Order")
+                        }
+                    }
+                }
             }
 
             if (items.isNotEmpty()) {
