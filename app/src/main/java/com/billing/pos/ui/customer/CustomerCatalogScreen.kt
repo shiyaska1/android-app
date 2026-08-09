@@ -46,6 +46,7 @@ import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Remove
@@ -53,7 +54,6 @@ import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Storefront
-import androidx.compose.material.icons.filled.SupportAgent
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
@@ -115,7 +115,6 @@ import com.billing.pos.customer.NearbyShops
 import com.billing.pos.customer.ReferralLink
 import com.billing.pos.customer.RemoteImageCache
 import com.billing.pos.customer.ShopSwitch
-import com.billing.pos.customer.TechnicalSupport
 import com.billing.pos.customer.ThumbnailCompressor
 import com.billing.pos.ui.common.rememberThumbnail
 import com.billing.pos.data.AppPrefs
@@ -422,6 +421,7 @@ fun CustomerCatalogScreen(
     // Re-read after every fetch (a plain remember would freeze these at first composition).
     val shopName = prefs.shopDisplayName
     val shopPhone = prefs.shopContactPhone
+    val shopAddress = prefs.shopDisplayAddress
 
     val catalogLabel = remember {
         when (prefs.customerBusinessType) {
@@ -552,6 +552,36 @@ fun CustomerCatalogScreen(
                                 CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
                             } else {
                                 Icon(Icons.Default.Refresh, contentDescription = "Refresh to see new offers", modifier = Modifier.size(18.dp))
+                            }
+                        }
+                    }
+                }
+            }
+
+            // The shop's own contact number and address — set once in Settings > Company details
+            // and pushed to the server independent of the product catalog (see ShopInfoSync), so
+            // even a note/prescription-only shop with no browsable items still reaches the
+            // customer here.
+            if (shopPhone.isNotBlank() || shopAddress.isNotBlank()) {
+                item {
+                    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp)) {
+                        if (shopPhone.isNotBlank()) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.clickable {
+                                    runCatching {
+                                        context.startActivity(android.content.Intent(android.content.Intent.ACTION_DIAL, android.net.Uri.parse("tel:$shopPhone")))
+                                    }
+                                }
+                            ) {
+                                Icon(Icons.Default.Call, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.outline)
+                                Text(shopPhone, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 6.dp))
+                            }
+                        }
+                        if (shopAddress.isNotBlank()) {
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 2.dp)) {
+                                Icon(Icons.Default.Place, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.outline)
+                                Text(shopAddress, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 6.dp))
                             }
                         }
                     }
@@ -862,9 +892,9 @@ fun CustomerCatalogScreen(
 
 /** Shown when an order save or catalog fetch fails for a reason the customer can't fix
  *  themselves (server down, shop moved servers, etc.) — a snackbar would just vanish and leave
- *  them unsure whether the order went through, so this stays up until dismissed and gives two
- *  numbers to call: the shop directly, and — only here, nowhere else in the app — the developer's
- *  own technical support line for when the shop itself needs to chase it. */
+ *  them unsure whether the order went through, so this stays up until dismissed. Only ever offers
+ *  the shop's own number, if the shop owner has entered one — never the developer's own support
+ *  line, which has no business being customer-facing here. */
 @Composable
 private fun TechnicalErrorDialog(
     detail: String,
@@ -884,13 +914,16 @@ private fun TechnicalErrorDialog(
         title = { Text("Technical error") },
         text = {
             Column {
-                Text("Something went wrong reaching the shop's server. Please try again in a moment, or contact the shop directly below.")
+                Text(
+                    if (shopPhone.isNotBlank()) "Something went wrong reaching the shop's server. Please try again in a moment, or contact the shop directly below."
+                    else "Something went wrong reaching the shop's server. Please try again in a moment."
+                )
                 if (detail.isNotBlank()) {
                     Spacer(Modifier.height(8.dp))
                     Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
                 }
-                Divider(Modifier.padding(vertical = 12.dp))
                 if (shopPhone.isNotBlank()) {
+                    Divider(Modifier.padding(vertical = 12.dp))
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.fillMaxWidth().clickable { call(shopPhone) }.padding(vertical = 6.dp)
@@ -901,17 +934,6 @@ private fun TechnicalErrorDialog(
                             Text(shopName.ifBlank { "Shop" }, style = MaterialTheme.typography.bodyMedium)
                             Text(shopPhone, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
                         }
-                    }
-                }
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth().clickable { call(TechnicalSupport.PHONE) }.padding(vertical = 6.dp)
-                ) {
-                    Icon(Icons.Default.SupportAgent, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                    Spacer(Modifier.width(12.dp))
-                    Column {
-                        Text("App technical support", style = MaterialTheme.typography.bodyMedium)
-                        Text(TechnicalSupport.PHONE, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
                     }
                 }
             }

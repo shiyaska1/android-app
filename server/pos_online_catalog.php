@@ -937,6 +937,65 @@ if ($method === 'GET' && $do === 'directory') {
     exit;
 }
 
+if (($method === 'POST' || $method === 'PUT') && $do === 'updateShopInfo') {
+    // Shop name/phone/address reaching the customer app used to depend entirely on the shop
+    // owner opening Online Items and uploading at least one product — a service-by-note/
+    // prescription shop (see ShopCatalogSync.kt's 404 handling) may never do that, so its name
+    // and phone never reached any customer. This lets Settings push just the shop's own details,
+    // independent of the product catalog, and unlike the catalog-upload endpoint it merges into
+    // whatever catalog.json already exists instead of overwriting it — a shop that DOES sell
+    // products keeps its uploaded item list untouched.
+    $raw = file_get_contents('php://input');
+    if ($raw === false || $raw === '') {
+        pos_catalog_fail(400, 'Empty body');
+    }
+    $body = json_decode($raw, true);
+    if (!is_array($body)) {
+        pos_catalog_fail(400, 'Body is not valid JSON');
+    }
+    $shop = isset($body['shop']) ? (string) $body['shop'] : '';
+    if (!preg_match('/^[A-Za-z0-9_]+$/', $shop)) {
+        pos_catalog_fail(400, 'Invalid or missing "shop" in body');
+    }
+    $folder = $STORAGE_DIR . '/' . $shop;
+    if (!is_dir($folder) && !@mkdir($folder, 0755, true)) {
+        pos_catalog_fail(500, 'Could not create storage folder — check permissions on ' . $STORAGE_DIR);
+    }
+    $path = $folder . '/catalog.json';
+    $fh = fopen($path, 'c+');
+    if ($fh === false) {
+        pos_catalog_fail(500, 'Could not open catalog file — check folder permissions');
+    }
+    flock($fh, LOCK_EX);
+    $data = json_decode(stream_get_contents($fh), true);
+    if (!is_array($data)) {
+        $data = array();
+    }
+    if (!isset($data['items']) || !is_array($data['items'])) {
+        $data['items'] = array();
+    }
+    $data['shop'] = $shop;
+    foreach (array('shopName', 'shopPhone', 'shopCategory', 'shopAddress', 'shopUpi', 'shopUpiName') as $key) {
+        if (isset($body[$key])) {
+            $data[$key] = (string) $body[$key];
+        }
+    }
+    foreach (array('shopLat', 'shopLng') as $key) {
+        if (isset($body[$key])) {
+            $data[$key] = (float) $body[$key];
+        }
+    }
+    ftruncate($fh, 0);
+    rewind($fh);
+    fwrite($fh, json_encode($data));
+    fflush($fh);
+    flock($fh, LOCK_UN);
+    fclose($fh);
+    header('Content-Type: application/json');
+    echo json_encode(array('ok' => true));
+    exit;
+}
+
 // Every recognised "do" value above ends in exit; if one was given but none of those blocks
 // matched, this server doesn't know it — most likely an app newer than this file (e.g. it was
 // updated to send do=registerToken before this file got re-uploaded). Fail loudly instead of

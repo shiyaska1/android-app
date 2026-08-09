@@ -462,6 +462,9 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
                     prefs.upiId = upiId.trim()
                     prefs.upiName = upiName.trim()
                     prefs.showUpiQrOnPrint = upiQrOnPrint
+                    // Best-effort — reaches the customer app even for a shop that never uploads a
+                    // product catalog (see ShopInfoSync); a no-op if online ordering isn't set up.
+                    scope.launch { com.billing.pos.customer.ShopInfoSync.push(context) }
                     scope.launch { snackbar.showSnackbar("Settings saved") }
                 },
                 modifier = Modifier.fillMaxWidth().padding(top = 16.dp)
@@ -1394,6 +1397,9 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
                                 backupDeviceId = fields[5]
                                 backupPullUrl = fields[6]
                                 showImportSettings = false
+                                // The shop's name/phone may already be entered locally but never
+                                // reached the server if online ordering wasn't set up until now.
+                                scope.launch { com.billing.pos.customer.ShopInfoSync.push(context) }
                                 scope.launch { snackbar.showSnackbar("Settings imported") }
                             } else {
                                 scope.launch { snackbar.showSnackbar("Couldn't find a valid settings block in that text") }
