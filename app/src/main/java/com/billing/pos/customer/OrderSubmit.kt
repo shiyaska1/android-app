@@ -17,6 +17,13 @@ import java.net.URL
  */
 object OrderSubmit {
 
+    /** Sentinel [submit] "location" value for "I'll pick it up myself" — the customer skips
+     *  sharing any location at all, and the shop owner side (OnlineOrdersScreen) shows a
+     *  "Self pickup" badge instead of a delivery-location button when it sees this. Not a real
+     *  Maps link, but the server stores "location" as an opaque string either way (see
+     *  server/pos_online_catalog.php, do=order), so nothing server-side needs to know about it. */
+    const val PICKUP_LOCATION = "PICKUP"
+
     sealed class Result {
         data class Ok(val orderId: String) : Result()
         data class Failed(val message: String) : Result()

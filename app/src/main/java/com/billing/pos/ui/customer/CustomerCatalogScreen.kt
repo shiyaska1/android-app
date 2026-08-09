@@ -418,6 +418,16 @@ fun CustomerCatalogScreen(
         vm.saveOrder(pending.name, pending.phone, pending.address, pending.note, pending.attachments, manualLocationLink = mapsLink, paymentStatus = pending.paymentStatus)
     }
 
+    // "I'll pick it up myself" — skips reading any location at all, GPS or pasted link. The
+    // sentinel travels through to the shop owner's Online Orders screen as a "Self pickup" badge
+    // instead of a delivery-location button (see OrderCard).
+    fun submitOrderPickup(pending: PendingOrderSubmit) {
+        vm.saveOrder(
+            pending.name, pending.phone, pending.address, pending.note, pending.attachments,
+            manualLocationLink = com.billing.pos.customer.OrderSubmit.PICKUP_LOCATION, paymentStatus = pending.paymentStatus
+        )
+    }
+
     // Re-read after every fetch (a plain remember would freeze these at first composition).
     val shopName = prefs.shopDisplayName
     val shopPhone = prefs.shopContactPhone
@@ -765,6 +775,11 @@ fun CustomerCatalogScreen(
             onNotAtLocation = {
                 showDeliveryPointDialog = false
                 showManualLocationDialog = true
+            },
+            onPickup = {
+                showDeliveryPointDialog = false
+                pendingOrderSubmit?.let { submitOrderPickup(it) }
+                pendingOrderSubmit = null
             }
         )
     }
@@ -1726,19 +1741,36 @@ private fun PaymentDialog(
  *  customer is standing at the delivery point right now) or a pasted Google Maps link (they're
  *  ordering ahead, from somewhere else, e.g. for their home while still at work). */
 @Composable
-private fun DeliveryPointDialog(onDismiss: () -> Unit, onAtLocation: () -> Unit, onNotAtLocation: () -> Unit) {
+private fun DeliveryPointDialog(onDismiss: () -> Unit, onAtLocation: () -> Unit, onNotAtLocation: () -> Unit, onPickup: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Are you at the delivery point?") },
+        title = { Text("How should we get this to you?") },
         text = {
-            Text(
-                "If you're at the delivery address right now, we'll use this phone's current location. " +
-                    "Otherwise, you'll paste a Google Maps location link for where to deliver.",
-                style = MaterialTheme.typography.bodyMedium
-            )
+            Column {
+                Text(
+                    "If you're at the delivery address right now, we'll use this phone's current " +
+                        "location — or share a Google Maps link for somewhere else.",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Divider(Modifier.padding(vertical = 12.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth().clickable { onPickup() }.padding(vertical = 8.dp)
+                ) {
+                    Icon(Icons.Default.Storefront, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.width(12.dp))
+                    Column {
+                        Text("I'll pick it up myself", style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            "No delivery — you'll collect the order from the shop, no location needed",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline
+                        )
+                    }
+                }
+            }
         },
         confirmButton = { TextButton(onClick = onAtLocation) { Text("Yes, I'm here") } },
-        dismissButton = { TextButton(onClick = onNotAtLocation) { Text("No") } }
+        dismissButton = { TextButton(onClick = onNotAtLocation) { Text("No, share a link") } }
     )
 }
 

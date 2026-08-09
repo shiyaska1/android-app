@@ -305,7 +305,7 @@ fun OnlineOrdersScreen(onBack: () -> Unit, vm: OnlineOrdersViewModel = viewModel
                             }
                         },
                         onLocation = {
-                            if (order.location.isNotBlank()) {
+                            if (order.location.isNotBlank() && order.location != com.billing.pos.customer.OrderSubmit.PICKUP_LOCATION) {
                                 runCatching {
                                     context.startActivity(
                                         android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(order.location))
@@ -321,7 +321,11 @@ fun OnlineOrdersScreen(onBack: () -> Unit, vm: OnlineOrdersViewModel = viewModel
                                 append(order.customerName)
                                 if (order.customerPhone.isNotBlank()) append("\n").append(order.customerPhone)
                                 if (order.customerAddress.isNotBlank()) append("\n").append(order.customerAddress)
-                                if (order.location.isNotBlank()) append("\n").append(order.location)
+                                if (order.location == com.billing.pos.customer.OrderSubmit.PICKUP_LOCATION) {
+                                    append("\nSelf pickup — no delivery needed")
+                                } else if (order.location.isNotBlank()) {
+                                    append("\n").append(order.location)
+                                }
                             }
                             runCatching {
                                 context.startActivity(
@@ -711,7 +715,9 @@ private fun OrderCard(
     // needs a network round-trip to follow its redirect (see GeoLink.resolve) — hence "resolving".
     var orderLatLng by remember(order.id) { mutableStateOf<Pair<Double, Double>?>(null) }
     var resolving by remember(order.id) { mutableStateOf(false) }
+    val isPickup = order.location == com.billing.pos.customer.OrderSubmit.PICKUP_LOCATION
     LaunchedEffect(order.location) {
+        if (isPickup) return@LaunchedEffect
         orderLatLng = com.billing.pos.customer.GeoLink.parseLatLng(order.location)
         if (orderLatLng == null && com.billing.pos.customer.GeoLink.isShortLink(order.location)) {
             resolving = true
@@ -730,17 +736,24 @@ private fun OrderCard(
                 if (order.customerAddress.isNotBlank()) {
                     Text(order.customerAddress, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
                 }
-                Text(
-                    distanceLabel(shopLatLng, orderLatLng, resolving) + if (usingLiveShopLocation && shopLatLng != null) " (from your current location)" else "",
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary
-                )
+                if (isPickup) {
+                    Text(
+                        "Self pickup — customer will collect from the shop, no delivery needed",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary
+                    )
+                } else {
+                    Text(
+                        distanceLabel(shopLatLng, orderLatLng, resolving) + if (usingLiveShopLocation && shopLatLng != null) " (from your current location)" else "",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary
+                    )
+                }
             }
             // Its own full-width row, not squeezed next to the name — five icons plus a long
             // name overlapped badly on narrower phones.
             Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.End) {
                 IconButton(onClick = onMessage) { Icon(Icons.Default.Message, contentDescription = "Message customer") }
                 IconButton(onClick = onShareToSalesman) { Icon(Icons.Default.Share, contentDescription = "Share to salesman") }
-                if (order.location.isNotBlank()) {
+                if (order.location.isNotBlank() && !isPickup) {
                     IconButton(onClick = onLocation) { Icon(Icons.Default.Place, contentDescription = "Delivery location") }
                 }
                 if (order.customerPhone.isNotBlank()) {
