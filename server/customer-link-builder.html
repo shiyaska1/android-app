@@ -394,8 +394,8 @@
     <p>
       Same text the shop owner's own app produces from Settings &rarr; "Share settings", built here
       instead so it can go out together with the customer link above — paste it into
-      Settings &rarr; "Import settings" on their phone instead of typing shop code, catalog URL
-      and (if used) cloud backup fields by hand.
+      Settings &rarr; "Import settings" on their phone instead of typing shop code, catalog URL,
+      phone number and (if used) cloud backup fields by hand.
     </p>
   </header>
 
@@ -409,6 +409,11 @@
       <div class="field">
         <label for="ownerCompanyAddress">Address <span style="font-weight:400;color:var(--muted);">(optional)</span></label>
         <input type="text" id="ownerCompanyAddress">
+      </div>
+      <div class="field">
+        <label for="ownerCompanyPhone">Shop phone number <span style="font-weight:400;color:var(--muted);">(optional)</span></label>
+        <input type="text" id="ownerCompanyPhone" placeholder="Shown to customers as the shop's contact number">
+        <p class="hint">Same field as Settings &rarr; Company details &rarr; Phone. Carried over on import, unlike the name/address above (shown here only, not re-imported).</p>
       </div>
       <div class="field">
         <label for="fetchOrdersUrl">Fetch orders URL <span style="font-weight:400;color:var(--muted);">(optional)</span></label>
@@ -736,6 +741,7 @@ const els = {
   qrMeta: document.getElementById('qrMeta'),
   ownerCompanyName: document.getElementById('ownerCompanyName'),
   ownerCompanyAddress: document.getElementById('ownerCompanyAddress'),
+  ownerCompanyPhone: document.getElementById('ownerCompanyPhone'),
   fetchOrdersUrl: document.getElementById('fetchOrdersUrl'),
   showBackupFields: document.getElementById('showBackupFields'),
   backupFields: document.getElementById('backupFields'),
@@ -803,7 +809,8 @@ function renderSettings() {
   const backupPullUrl = els.backupPullUrl.value.trim();
   const companyName = els.ownerCompanyName.value.trim();
   const companyAddress = els.ownerCompanyAddress.value.trim();
-  const csv = [shop, catalogUrl, fetchOrdersUrl, backupPushUrl, backupOrgId, backupDeviceId, backupPullUrl].join(',');
+  const companyPhone = els.ownerCompanyPhone.value.trim();
+  const csv = [shop, catalogUrl, fetchOrdersUrl, backupPushUrl, backupOrgId, backupDeviceId, backupPullUrl, companyPhone].join(',');
   const text = 'POS Billing settings — ' + companyName + ', ' + companyAddress + '\n\n' + 'POSBILLING-SETTINGS:' + csv;
   els.settingsOut.textContent = text;
   els.settingsBanner.innerHTML = '<div class="banner ok">Ready — paste into Settings &rarr; "Import settings" on the shop owner’s phone.</div>';
@@ -850,7 +857,7 @@ function render() {
 
 [
   els.shopCode, els.catalogUrl, els.bizType, els.testUrl, els.premium,
-  els.ownerCompanyName, els.ownerCompanyAddress, els.fetchOrdersUrl,
+  els.ownerCompanyName, els.ownerCompanyAddress, els.ownerCompanyPhone, els.fetchOrdersUrl,
   els.backupPushUrl, els.backupPullUrl, els.backupOrgId, els.backupDeviceId
 ].forEach(function (el) {
   el.addEventListener('input', render);

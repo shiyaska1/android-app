@@ -1296,8 +1296,8 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
             HighlightText("Share / import settings", MaterialTheme.typography.titleSmall, settingAnchors, highlightedSetting, modifier = Modifier.padding(top = 20.dp))
             Text(
                 "Setting up a new phone? Share this device's shop code, catalog/order/backup URLs " +
-                    "as one text block — paste it into \"Import settings\" on the new phone instead of " +
-                    "typing each field by hand.",
+                    "and phone number as one text block — paste it into \"Import settings\" on the " +
+                    "new phone instead of typing each field by hand.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline
             )
             var showImportSettings by remember { mutableStateOf(false) }
@@ -1305,7 +1305,8 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
             fun settingsExportText(): String {
                 val csv = listOf(
                     prefs.shopCode, prefs.onlineCatalogUrl, prefs.fetchOrdersUrl,
-                    prefs.backupPushUrl, prefs.backupOrgId, prefs.backupDeviceId, prefs.backupPullUrl
+                    prefs.backupPushUrl, prefs.backupOrgId, prefs.backupDeviceId, prefs.backupPullUrl,
+                    prefs.companyPhone
                 ).joinToString(",")
                 return "POS Billing settings — ${prefs.companyName}, ${prefs.companyAddress}\n\n" +
                     "$SETTINGS_EXPORT_MARKER$csv"
@@ -1377,7 +1378,10 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
                                     .lineSequence().firstOrNull()?.trim().orEmpty()
                             } else ""
                             val fields = csv.split(",").map { it.trim() }
-                            if (fields.size == 7) {
+                            // Field 8 (phone) was added later — >= 7 so a settings block shared
+                            // from an older app version (7 fields, no phone) still imports fine,
+                            // just without a phone number to carry over.
+                            if (fields.size >= 7) {
                                 prefs.shopCode = fields[0]
                                 prefs.onlineCatalogUrl = fields[1]
                                 prefs.fetchOrdersUrl = fields[2]
@@ -1396,6 +1400,10 @@ fun SettingsScreen(onBack: () -> Unit, onOpenPrinter: () -> Unit = {}) {
                                 backupOrgId = fields[4]
                                 backupDeviceId = fields[5]
                                 backupPullUrl = fields[6]
+                                if (fields.size >= 8 && fields[7].isNotBlank()) {
+                                    prefs.companyPhone = fields[7]
+                                    phone = fields[7]
+                                }
                                 showImportSettings = false
                                 // The shop's name/phone may already be entered locally but never
                                 // reached the server if online ordering wasn't set up until now.
