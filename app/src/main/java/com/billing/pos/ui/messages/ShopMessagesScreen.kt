@@ -27,6 +27,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.Campaign
@@ -40,6 +41,7 @@ import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.SelectAll
+import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
@@ -164,6 +166,15 @@ class ShopMessagesViewModel(app: Application) : AndroidViewModel(app) {
 
     val messages: StateFlow<List<ShopMessage>> =
         dao.observeAll().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** Online Orders and Chat are two separate screens with no visual link between them — a shop
+     *  owner who opens Chat first (e.g. from a "new message" notification) has no way of knowing
+     *  an order is waiting on the other screen unless they happen to check it too. This drives a
+     *  banner at the top of the inbox pointing them there. */
+    val pendingOrdersCount: StateFlow<Int> =
+        AppDatabase.get(app).onlineOrderDao().observeAll()
+            .map { it.size }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
     private val _refreshing = MutableStateFlow(false)
     val refreshing: StateFlow<Boolean> = _refreshing
@@ -299,10 +310,12 @@ class ShopMessagesViewModel(app: Application) : AndroidViewModel(app) {
 @Composable
 fun ShopMessagesScreen(
     onBack: () -> Unit,
+    onGoToOrders: () -> Unit = {},
     initialPhone: String? = null,
     vm: ShopMessagesViewModel = viewModel()
 ) {
     val messages by vm.messages.collectAsStateSafe()
+    val pendingOrdersCount by vm.pendingOrdersCount.collectAsStateSafe()
     val refreshing by vm.refreshing.collectAsStateSafe()
     val broadcasting by vm.broadcasting.collectAsStateSafe()
     val sendingToMany by vm.sending.collectAsStateSafe()
@@ -450,12 +463,36 @@ fun ShopMessagesScreen(
             },
             snackbarHost = { SnackbarHost(snackbar) }
         ) { pad ->
-            if (threads.isEmpty()) {
-                Box(Modifier.fillMaxSize().padding(pad), contentAlignment = Alignment.Center) {
-                    Text("No messages yet.", color = MaterialTheme.colorScheme.outline)
+            Column(Modifier.fillMaxSize().padding(pad)) {
+                // Online Orders and Chat are separate screens — a shop owner who opens Chat first
+                // (e.g. from a "new message" notification) would otherwise have no way of knowing
+                // an order is waiting on the other screen.
+                if (pendingOrdersCount > 0) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        modifier = Modifier.fillMaxWidth().clickable { onGoToOrders() }
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)
+                        ) {
+                            Icon(Icons.Filled.ShoppingCart, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
+                            Text(
+                                if (pendingOrdersCount == 1) "You have 1 new order — tap to view it in Online Orders"
+                                else "You have $pendingOrdersCount new orders — tap to view them in Online Orders",
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.weight(1f).padding(horizontal = 12.dp)
+                            )
+                            Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
+                        }
+                    }
                 }
-            } else {
-                LazyColumn(Modifier.fillMaxSize().padding(pad)) {
+                if (threads.isEmpty()) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Text("No messages yet.", color = MaterialTheme.colorScheme.outline)
+                    }
+                } else {
+                    LazyColumn(Modifier.fillMaxSize()) {
                     items(threads, key = { it.customerPhone }) { thread ->
                         ListItem(
                             leadingContent = {
@@ -482,6 +519,7 @@ fun ShopMessagesScreen(
                             }
                         )
                         Divider()
+                    }
                     }
                 }
             }

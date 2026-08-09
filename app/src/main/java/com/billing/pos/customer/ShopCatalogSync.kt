@@ -56,6 +56,17 @@ object ShopCatalogSync {
             conn.connectTimeout = 15000
             conn.readTimeout = 30000
             val code = conn.responseCode
+            if (code == 404) {
+                // Not every shop sells a browsable product list — a service-by-note/prescription
+                // shop (see CustomerCatalogScreen's manual note+attachment order) may never open
+                // Online Items to upload one at all, so the server has never written a catalog.json
+                // for this shop code. That's a normal, working setup, not a failure: showing the
+                // "Technical error" dialog here would scare off a brand-new customer before they
+                // ever see the note-order option, even though nothing is actually broken.
+                conn.disconnect()
+                AppDatabase.get(context).shopCatalogDao().replaceForShop(shop, emptyList())
+                return@withContext Result.Ok(0)
+            }
             if (code !in 200..299) {
                 conn.disconnect()
                 return@withContext Result.Failed("Server returned HTTP $code")

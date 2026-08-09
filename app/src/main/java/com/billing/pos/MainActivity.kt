@@ -409,7 +409,10 @@ private fun AppNav() {
             com.billing.pos.ui.online.OnlineOrdersScreen(onBack = { nav.popBackStack() })
         }
         composable("shopMessages") {
-            com.billing.pos.ui.messages.ShopMessagesScreen(onBack = { nav.popBackStack() })
+            com.billing.pos.ui.messages.ShopMessagesScreen(
+                onBack = { nav.popBackStack() },
+                onGoToOrders = { nav.navigate("onlineOrders") }
+            )
         }
         composable(
             route = "shopMessages/{phone}",
@@ -417,6 +420,7 @@ private fun AppNav() {
         ) { entry ->
             com.billing.pos.ui.messages.ShopMessagesScreen(
                 onBack = { nav.popBackStack() },
+                onGoToOrders = { nav.navigate("onlineOrders") },
                 initialPhone = entry.arguments?.getString("phone")
             )
         }
