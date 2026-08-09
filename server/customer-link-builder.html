@@ -312,7 +312,7 @@
 
   <div class="grid">
     <div class="panel">
-      <h2>1 &middot; Link type</h2>
+      <h2>1 &middot; Customer link</h2>
       <div class="field">
         <div class="segmented" role="group" aria-label="Link type">
           <button type="button" id="modeProd" aria-pressed="true">Production (Play Store)</button>
@@ -384,6 +384,79 @@
       <div class="qr-wrap" id="qrWrap" style="display:none;">
         <canvas id="qrCanvas"></canvas>
         <span class="qr-meta" id="qrMeta"></span>
+      </div>
+    </div>
+  </div>
+
+  <header style="margin-top:32px;">
+    <p class="eyebrow">Optional</p>
+    <h1 style="font-size:1.25rem;">Shop Owner Settings</h1>
+    <p>
+      Same text the shop owner's own app produces from Settings &rarr; "Share settings", built here
+      instead so it can go out together with the customer link above — paste it into
+      Settings &rarr; "Import settings" on their phone instead of typing shop code, catalog URL
+      and (if used) cloud backup fields by hand.
+    </p>
+  </header>
+
+  <div class="grid">
+    <div class="panel">
+      <h2>3 &middot; Shop details</h2>
+      <div class="field">
+        <label for="ownerCompanyName">Shop / company name</label>
+        <input type="text" id="ownerCompanyName" placeholder="Shown at the top of the pasted text">
+      </div>
+      <div class="field">
+        <label for="ownerCompanyAddress">Address <span style="font-weight:400;color:var(--muted);">(optional)</span></label>
+        <input type="text" id="ownerCompanyAddress">
+      </div>
+      <div class="field">
+        <label for="fetchOrdersUrl">Fetch orders URL <span style="font-weight:400;color:var(--muted);">(optional)</span></label>
+        <input type="text" id="fetchOrdersUrl" placeholder="Leave blank to reuse the Catalog URL above">
+        <p class="hint">Settings &rarr; Online ordering &rarr; "Fetch orders URL". Almost always the same as the catalog URL, so this is blank unless the shop set something different.</p>
+      </div>
+      <div class="field">
+        <label style="display:flex;align-items:center;gap:8px;font-weight:600;">
+          <input type="checkbox" id="showBackupFields" style="width:auto;">
+          This shop uses cloud backup
+        </label>
+        <p class="hint">Off by default — most shops using online ordering don't. Turn on only to also fill in backup push/pull URLs and device/org IDs.</p>
+      </div>
+      <div id="backupFields" style="display:none;">
+        <div class="field">
+          <label for="backupPushUrl">Backup push URL</label>
+          <input type="text" id="backupPushUrl">
+        </div>
+        <div class="field">
+          <label for="backupPullUrl">Backup pull URL</label>
+          <input type="text" id="backupPullUrl">
+        </div>
+        <div class="field">
+          <label for="backupOrgId">Backup org ID</label>
+          <input type="text" id="backupOrgId">
+        </div>
+        <div class="field">
+          <label for="backupDeviceId">Backup device ID</label>
+          <input type="text" id="backupDeviceId">
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Result</h2>
+      <div class="output-block">
+        <div class="output-label">
+          <span>Settings text to paste into "Import settings"</span>
+          <button class="copy-btn" data-copy-target="settingsOut">Copy</button>
+        </div>
+        <div class="output-value" id="settingsOut">&mdash;</div>
+      </div>
+      <div id="settingsBanner"></div>
+      <div class="field" style="margin-top:16px;">
+        <button type="button" class="copy-btn" id="shareBothBtn" style="width:100%;padding:10px;font-size:0.875rem;">
+          Share customer link + settings on WhatsApp
+        </button>
+        <p class="hint">Opens WhatsApp with both blocks in one message — the customer link up top, the settings text below it.</p>
       </div>
     </div>
   </div>
@@ -660,7 +733,19 @@ const els = {
   qrBanner: document.getElementById('qrBanner'),
   qrWrap: document.getElementById('qrWrap'),
   qrCanvas: document.getElementById('qrCanvas'),
-  qrMeta: document.getElementById('qrMeta')
+  qrMeta: document.getElementById('qrMeta'),
+  ownerCompanyName: document.getElementById('ownerCompanyName'),
+  ownerCompanyAddress: document.getElementById('ownerCompanyAddress'),
+  fetchOrdersUrl: document.getElementById('fetchOrdersUrl'),
+  showBackupFields: document.getElementById('showBackupFields'),
+  backupFields: document.getElementById('backupFields'),
+  backupPushUrl: document.getElementById('backupPushUrl'),
+  backupPullUrl: document.getElementById('backupPullUrl'),
+  backupOrgId: document.getElementById('backupOrgId'),
+  backupDeviceId: document.getElementById('backupDeviceId'),
+  settingsOut: document.getElementById('settingsOut'),
+  settingsBanner: document.getElementById('settingsBanner'),
+  shareBothBtn: document.getElementById('shareBothBtn')
 };
 
 let mode = 'prod';
@@ -698,7 +783,34 @@ function drawQR(matrix, size) {
   }
 }
 
+/** The settings-import text block — same format the app's own Settings > "Share settings"
+ *  produces (see SettingsScreen.kt's settingsExportText()), built here instead so it can go out
+ *  in the same WhatsApp message as the customer link. Only needs the shop code and catalog URL
+ *  (already entered above) — everything else is optional and left blank if not filled in, the
+ *  same as an app that's never set up cloud backup would export it. */
+function renderSettings() {
+  const shop = els.shopCode.value.trim();
+  const catalogUrl = els.catalogUrl.value.trim();
+  if (!shop || !catalogUrl) {
+    els.settingsOut.textContent = '—';
+    els.settingsBanner.innerHTML = '<div class="banner">Fill in shop code and catalog URL above to generate this too.</div>';
+    return;
+  }
+  const fetchOrdersUrl = els.fetchOrdersUrl.value.trim();
+  const backupPushUrl = els.backupPushUrl.value.trim();
+  const backupOrgId = els.backupOrgId.value.trim();
+  const backupDeviceId = els.backupDeviceId.value.trim();
+  const backupPullUrl = els.backupPullUrl.value.trim();
+  const companyName = els.ownerCompanyName.value.trim();
+  const companyAddress = els.ownerCompanyAddress.value.trim();
+  const csv = [shop, catalogUrl, fetchOrdersUrl, backupPushUrl, backupOrgId, backupDeviceId, backupPullUrl].join(',');
+  const text = 'POS Billing settings — ' + companyName + ', ' + companyAddress + '\n\n' + 'POSBILLING-SETTINGS:' + csv;
+  els.settingsOut.textContent = text;
+  els.settingsBanner.innerHTML = '<div class="banner ok">Ready — paste into Settings &rarr; "Import settings" on the shop owner’s phone.</div>';
+}
+
 function render() {
+  renderSettings();
   const shop = els.shopCode.value.trim();
   const catalogUrl = els.catalogUrl.value.trim();
   const bizType = els.bizType.value;
@@ -736,12 +848,20 @@ function render() {
   }
 }
 
-[els.shopCode, els.catalogUrl, els.bizType, els.testUrl, els.premium].forEach(function (el) {
+[
+  els.shopCode, els.catalogUrl, els.bizType, els.testUrl, els.premium,
+  els.ownerCompanyName, els.ownerCompanyAddress, els.fetchOrdersUrl,
+  els.backupPushUrl, els.backupPullUrl, els.backupOrgId, els.backupDeviceId
+].forEach(function (el) {
   el.addEventListener('input', render);
   el.addEventListener('change', render);
 });
 
-document.querySelectorAll('.copy-btn').forEach(function (btn) {
+els.showBackupFields.addEventListener('change', function () {
+  els.backupFields.style.display = els.showBackupFields.checked ? '' : 'none';
+});
+
+document.querySelectorAll('.copy-btn:not(#shareBothBtn)').forEach(function (btn) {
   btn.addEventListener('click', function () {
     const target = document.getElementById(btn.getAttribute('data-copy-target'));
     const text = target.textContent;
@@ -752,6 +872,20 @@ document.querySelectorAll('.copy-btn').forEach(function (btn) {
       setTimeout(function () { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 1400);
     });
   });
+});
+
+// Combines the customer link and the settings text into one WhatsApp message — the whole point
+// of building both here together instead of the two separate tools (this page + the app's own
+// Settings screen) a shop owner previously had to visit one at a time.
+els.shareBothBtn.addEventListener('click', function () {
+  const linkText = els.fullLinkOut.textContent;
+  const settingsText = els.settingsOut.textContent;
+  if (!linkText || linkText === '—') { alert('Fill in the shop code and catalog URL first.'); return; }
+  let message = 'Order online here: ' + linkText;
+  if (settingsText && settingsText !== '—') {
+    message += '\n\n' + settingsText;
+  }
+  window.open('https://wa.me/?text=' + encodeURIComponent(message), '_blank');
 });
 
 setMode('prod');
