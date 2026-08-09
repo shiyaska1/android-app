@@ -21,7 +21,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.billing.pos.data.AppPrefs
 
-/** Shared naming for the OCR languages, so every screen asks the same way. */
+/** Language choices for diary voice-note transcription (Android's own SpeechRecognizer) — the
+ *  one remaining caller of this picker now that camera OCR and handwriting recognition were
+ *  simplified down to English-only. Kept as "OcrLang" to avoid renaming its call site. */
 object OcrLang {
     const val ENGLISH = AppPrefs.OCR_ENGLISH
     const val MALAYALAM = AppPrefs.OCR_MALAYALAM
@@ -35,19 +37,12 @@ object OcrLang {
         else -> "English"
     }
 
-    /** Which language the chooser should start on: the Settings default, English for Auto. */
-    fun default(context: android.content.Context): String = when (AppPrefs(context).ocrLanguage) {
-        MALAYALAM -> MALAYALAM
-        ARABIC -> ARABIC
-        else -> ENGLISH
-    }
+    /** Which language the chooser should start on. */
+    fun default(context: android.content.Context): String = ENGLISH
 }
 
 /**
- * Asks which language to read before the camera or gallery opens.
- *
- * Used by the scan flows that have no review step — they capture and fill the field
- * straight away, so the language has to be chosen up front.
+ * Asks which language to transcribe audio in, before recording/processing starts.
  */
 @Composable
 fun OcrLanguageAskDialog(onPick: (String) -> Unit, onDismiss: () -> Unit) {

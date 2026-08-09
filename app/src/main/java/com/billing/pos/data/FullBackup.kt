@@ -27,6 +27,108 @@ object FullBackup {
     private val ioGate = Mutex()
 
     /**
+     * Business-level settings carried by every backup/restore/cloud-sync round-trip, so a second
+     * device for the same business ends up configured the same way. Deliberately excludes
+     * anything device-local: login session, this device's printer/Bluetooth/logo file paths,
+     * licensing, and the sync connection settings themselves (syncing those could point a device
+     * at a different server or start a sync loop).
+     */
+    private fun settingsJson(prefs: AppPrefs) = JSONObject()
+        .put("companyName", prefs.companyName)
+        .put("companyAddress", prefs.companyAddress)
+        .put("companyPhone", prefs.companyPhone)
+        .put("companyGstin", prefs.companyGstin)
+        .put("gstEnabled", prefs.gstEnabled)
+        .put("compositionScheme", prefs.compositionScheme)
+        .put("priceIncludesTax", prefs.priceIncludesTax)
+        .put("cessEnabled", prefs.cessEnabled)
+        .put("noTaxInvoiceEnabled", prefs.noTaxInvoiceEnabled)
+        .put("noTaxInvoicePrefix", prefs.noTaxInvoicePrefix)
+        .put("upiId", prefs.upiId)
+        .put("upiName", prefs.upiName)
+        .put("showUpiQrOnPrint", prefs.showUpiQrOnPrint)
+        .put("requireItemBatch", prefs.requireItemBatch)
+        .put("fifoAutoPickBatch", prefs.fifoAutoPickBatch)
+        .put("businessType", prefs.businessType)
+        .put("expiryAlert", prefs.expiryAlert)
+        .put("expiryAlertDays", prefs.expiryAlertDays)
+        .put("smsGatewayUrl", prefs.smsGatewayUrl)
+        .put("smsGatewayMethod", prefs.smsGatewayMethod)
+        .put("smsApiKey", prefs.smsApiKey)
+        .put("smsSenderId", prefs.smsSenderId)
+        .put("smsBalanceUrl", prefs.smsBalanceUrl)
+        .put("smsChannel", prefs.smsChannel)
+        .put("smsJsonBody", prefs.smsJsonBody)
+        .put("smsBearer", prefs.smsBearer)
+        .put("gymSlots", prefs.gymSlots.joinToString("|"))
+        .put("customerTypes", prefs.customerTypes.joinToString("|"))
+        .put("itemCategories", prefs.itemCategories.joinToString("|"))
+        .put("weighScaleEnabled", prefs.weighScaleEnabled)
+        .put("weighScalePrefix", prefs.weighScalePrefix)
+        .put("weighScaleItemCodeLen", prefs.weighScaleItemCodeLen)
+        .put("weighScaleValueLen", prefs.weighScaleValueLen)
+        .put("weighScaleValueIsPrice", prefs.weighScaleValueIsPrice)
+        .put("barcodeLabelWidthMm", prefs.barcodeLabelWidthMm)
+        .put("barcodeLabelHeightMm", prefs.barcodeLabelHeightMm)
+        .put("barcodeShowPrice", prefs.barcodeShowPrice)
+        .put("barcodeShowCompanyName", prefs.barcodeShowCompanyName)
+        .put("barcodeShowSize", prefs.barcodeShowSize)
+        .put("zatcaEnabled", prefs.zatcaEnabled)
+        .put("zatcaVatNumber", prefs.zatcaVatNumber)
+        .put("uaeVatEnabled", prefs.uaeVatEnabled)
+        .put("uaeTrn", prefs.uaeTrn)
+        .put("requireLoginOnLaunch", prefs.requireLoginOnLaunch)
+
+    /** Applies a [settingsJson] object to [prefs]. Missing keys (older backups) keep the current
+     *  local value — only keys actually present overwrite. */
+    private fun applySettingsJson(prefs: AppPrefs, s: JSONObject) {
+        prefs.companyName = s.optString("companyName", prefs.companyName)
+        prefs.companyAddress = s.optString("companyAddress", prefs.companyAddress)
+        prefs.companyPhone = s.optString("companyPhone", prefs.companyPhone)
+        prefs.companyGstin = s.optString("companyGstin", prefs.companyGstin)
+        prefs.gstEnabled = s.optBoolean("gstEnabled", prefs.gstEnabled)
+        prefs.compositionScheme = s.optBoolean("compositionScheme", prefs.compositionScheme)
+        prefs.priceIncludesTax = s.optBoolean("priceIncludesTax", prefs.priceIncludesTax)
+        prefs.cessEnabled = s.optBoolean("cessEnabled", prefs.cessEnabled)
+        prefs.noTaxInvoiceEnabled = s.optBoolean("noTaxInvoiceEnabled", prefs.noTaxInvoiceEnabled)
+        prefs.noTaxInvoicePrefix = s.optString("noTaxInvoicePrefix", prefs.noTaxInvoicePrefix)
+        prefs.upiId = s.optString("upiId", prefs.upiId)
+        prefs.upiName = s.optString("upiName", prefs.upiName)
+        prefs.showUpiQrOnPrint = s.optBoolean("showUpiQrOnPrint", prefs.showUpiQrOnPrint)
+        prefs.requireItemBatch = s.optBoolean("requireItemBatch", prefs.requireItemBatch)
+        prefs.fifoAutoPickBatch = s.optBoolean("fifoAutoPickBatch", prefs.fifoAutoPickBatch)
+        prefs.businessType = s.optString("businessType", prefs.businessType)
+        prefs.expiryAlert = s.optBoolean("expiryAlert", prefs.expiryAlert)
+        prefs.expiryAlertDays = s.optInt("expiryAlertDays", prefs.expiryAlertDays)
+        prefs.smsGatewayUrl = s.optString("smsGatewayUrl", prefs.smsGatewayUrl)
+        prefs.smsGatewayMethod = s.optString("smsGatewayMethod", prefs.smsGatewayMethod)
+        prefs.smsApiKey = s.optString("smsApiKey", prefs.smsApiKey)
+        prefs.smsSenderId = s.optString("smsSenderId", prefs.smsSenderId)
+        prefs.smsBalanceUrl = s.optString("smsBalanceUrl", prefs.smsBalanceUrl)
+        prefs.smsChannel = s.optString("smsChannel", prefs.smsChannel)
+        prefs.smsJsonBody = s.optString("smsJsonBody", prefs.smsJsonBody)
+        prefs.smsBearer = s.optBoolean("smsBearer", prefs.smsBearer)
+        if (s.has("gymSlots")) prefs.gymSlots = s.optString("gymSlots", "").split("|").map { it.trim() }.filter { it.isNotBlank() }
+        if (s.has("customerTypes")) prefs.customerTypes = s.optString("customerTypes", "").split("|").map { it.trim() }.filter { it.isNotBlank() }
+        if (s.has("itemCategories")) prefs.itemCategories = s.optString("itemCategories", "").split("|").map { it.trim() }.filter { it.isNotBlank() }
+        prefs.weighScaleEnabled = s.optBoolean("weighScaleEnabled", prefs.weighScaleEnabled)
+        prefs.weighScalePrefix = s.optString("weighScalePrefix", prefs.weighScalePrefix)
+        prefs.weighScaleItemCodeLen = s.optInt("weighScaleItemCodeLen", prefs.weighScaleItemCodeLen)
+        prefs.weighScaleValueLen = s.optInt("weighScaleValueLen", prefs.weighScaleValueLen)
+        prefs.weighScaleValueIsPrice = s.optBoolean("weighScaleValueIsPrice", prefs.weighScaleValueIsPrice)
+        prefs.barcodeLabelWidthMm = s.optDouble("barcodeLabelWidthMm", prefs.barcodeLabelWidthMm)
+        prefs.barcodeLabelHeightMm = s.optDouble("barcodeLabelHeightMm", prefs.barcodeLabelHeightMm)
+        prefs.barcodeShowPrice = s.optBoolean("barcodeShowPrice", prefs.barcodeShowPrice)
+        prefs.barcodeShowCompanyName = s.optBoolean("barcodeShowCompanyName", prefs.barcodeShowCompanyName)
+        prefs.barcodeShowSize = s.optBoolean("barcodeShowSize", prefs.barcodeShowSize)
+        prefs.zatcaEnabled = s.optBoolean("zatcaEnabled", prefs.zatcaEnabled)
+        prefs.zatcaVatNumber = s.optString("zatcaVatNumber", prefs.zatcaVatNumber)
+        prefs.uaeVatEnabled = s.optBoolean("uaeVatEnabled", prefs.uaeVatEnabled)
+        prefs.uaeTrn = s.optString("uaeTrn", prefs.uaeTrn)
+        prefs.requireLoginOnLaunch = s.optBoolean("requireLoginOnLaunch", prefs.requireLoginOnLaunch)
+    }
+
+    /**
      * @param pushWindowDays When > 0, only bills/purchases/receipts/expenses/quotations/estimates/
      * journal entries created or edited in the last N days are included (and their line items,
      * to actually shrink the payload) — everything else (masters, returns, LPOs, ...) is always
@@ -41,13 +143,7 @@ object FullBackup {
         root.put("app", "pos-billing-full")
         root.put("version", 1)
         root.put("createdAt", System.currentTimeMillis())
-        root.put(
-            "settings",
-            JSONObject()
-                .put("companyName", prefs.companyName)
-                .put("companyAddress", prefs.companyAddress)
-                .put("companyPhone", prefs.companyPhone)
-        )
+        root.put("settings", settingsJson(prefs))
 
         root.put("customers", JSONArray().apply { db.customerDao().all().forEach { put(custJson(it)) } })
         root.put("items", JSONArray().apply { db.itemDao().all().forEach { put(itemJson(it)) } })
@@ -418,16 +514,20 @@ object FullBackup {
         val diaryIdByTitle = db.diaryDao().allEntries().associate { it.title to it.id }
         val noteIdByText = db.quickNoteDao().all().associate { it.text.take(60) to it.id }
 
-        val existingBillNames = db.billAttachmentDao().all().groupBy { it.billId }.mapValues { (_, l) -> l.map { it.name }.toSet() }
-        val existingPurchaseNames = db.purchaseAttachmentDao().all().groupBy { it.purchaseId }.mapValues { (_, l) -> l.map { it.name }.toSet() }
-        val existingCustomerNames = db.customerAttachmentDao().all().groupBy { it.customerId }.mapValues { (_, l) -> l.map { it.name }.toSet() }
-        val existingItemNames = db.itemAttachmentDao().all().groupBy { it.itemId }.mapValues { (_, l) -> l.map { it.name }.toSet() }
-        val existingExpenseNames = db.expenseAttachmentDao().all().groupBy { it.expenseId }.mapValues { (_, l) -> l.map { it.name }.toSet() }
-        val existingReceiptNames = db.receiptAttachmentDao().all().groupBy { it.receiptId }.mapValues { (_, l) -> l.map { it.name }.toSet() }
-        val existingOrderNames = db.custOrderDao().allAttachments().groupBy { it.orderId }.mapValues { (_, l) -> l.map { it.name }.toSet() }
-        val existingServiceNames = db.serviceDao().allAttachments().groupBy { it.cardId }.mapValues { (_, l) -> l.map { it.name }.toSet() }
-        val existingQuickNoteNames = db.quickNoteAttachmentDao().all().groupBy { it.noteId }.mapValues { (_, l) -> l.map { it.name }.toSet() }
-        val existingDiaryNames = db.diaryDao().allAttachments().groupBy { it.entryId }.mapValues { (_, l) -> l.map { it.name }.toSet() }
+        // Mutable (not .toSet()/read-only): each successful insert below adds its name into these
+        // too, so a duplicate entry within the *same* zip's manifest (e.g. an export that already
+        // had a duplicate baked in from before this dedup existed) is caught as well — a snapshot
+        // taken once before the loop only catches duplicates against what was already in the DB.
+        val existingBillNames = db.billAttachmentDao().all().groupBy { it.billId }.mapValues { (_, l) -> l.map { it.name }.toMutableSet() }.toMutableMap()
+        val existingPurchaseNames = db.purchaseAttachmentDao().all().groupBy { it.purchaseId }.mapValues { (_, l) -> l.map { it.name }.toMutableSet() }.toMutableMap()
+        val existingCustomerNames = db.customerAttachmentDao().all().groupBy { it.customerId }.mapValues { (_, l) -> l.map { it.name }.toMutableSet() }.toMutableMap()
+        val existingItemNames = db.itemAttachmentDao().all().groupBy { it.itemId }.mapValues { (_, l) -> l.map { it.name }.toMutableSet() }.toMutableMap()
+        val existingExpenseNames = db.expenseAttachmentDao().all().groupBy { it.expenseId }.mapValues { (_, l) -> l.map { it.name }.toMutableSet() }.toMutableMap()
+        val existingReceiptNames = db.receiptAttachmentDao().all().groupBy { it.receiptId }.mapValues { (_, l) -> l.map { it.name }.toMutableSet() }.toMutableMap()
+        val existingOrderNames = db.custOrderDao().allAttachments().groupBy { it.orderId }.mapValues { (_, l) -> l.map { it.name }.toMutableSet() }.toMutableMap()
+        val existingServiceNames = db.serviceDao().allAttachments().groupBy { it.cardId }.mapValues { (_, l) -> l.map { it.name }.toMutableSet() }.toMutableMap()
+        val existingQuickNoteNames = db.quickNoteAttachmentDao().all().groupBy { it.noteId }.mapValues { (_, l) -> l.map { it.name }.toMutableSet() }.toMutableMap()
+        val existingDiaryNames = db.diaryDao().allAttachments().groupBy { it.entryId }.mapValues { (_, l) -> l.map { it.name }.toMutableSet() }.toMutableMap()
 
         fun stagedFile(type: String, file: String): File? {
             if (file.isBlank()) return null
@@ -454,6 +554,7 @@ object FullBackup {
                     val dest = File(com.billing.pos.bills.BillAttachmentStore.dir(context), "restored_${System.nanoTime()}_$file")
                     staged.copyTo(dest, overwrite = true)
                     db.billAttachmentDao().insert(BillAttachment(billId = parentId, path = dest.absolutePath, name = name, mime = mime))
+                    existingBillNames.getOrPut(parentId) { mutableSetOf() }.add(name)
                     restored++
                 }
                 "purchase" -> {
@@ -464,6 +565,7 @@ object FullBackup {
                     val dest = File(com.billing.pos.purchase.PurchaseAttachmentStore.dir(context), "restored_${System.nanoTime()}_$file")
                     staged.copyTo(dest, overwrite = true)
                     db.purchaseAttachmentDao().insert(PurchaseAttachment(purchaseId = parentId, path = dest.absolutePath, name = name, mime = mime))
+                    existingPurchaseNames.getOrPut(parentId) { mutableSetOf() }.add(name)
                     restored++
                 }
                 "customer" -> {
@@ -474,6 +576,7 @@ object FullBackup {
                     val dest = File(CustomerAttachmentStore.dir(context), "restored_${System.nanoTime()}_$file")
                     staged.copyTo(dest, overwrite = true)
                     db.customerAttachmentDao().insert(CustomerAttachment(customerId = parentId, path = dest.absolutePath, name = name, mime = mime))
+                    existingCustomerNames.getOrPut(parentId) { mutableSetOf() }.add(name)
                     restored++
                 }
                 "item" -> {
@@ -484,6 +587,7 @@ object FullBackup {
                     val dest = File(com.billing.pos.items.ItemAttachmentStore.dir(context), "restored_${System.nanoTime()}_$file")
                     staged.copyTo(dest, overwrite = true)
                     db.itemAttachmentDao().insert(ItemAttachment(itemId = parentId, path = dest.absolutePath, name = name, mime = mime, kind = "PHOTO"))
+                    existingItemNames.getOrPut(parentId) { mutableSetOf() }.add(name)
                     restored++
                 }
                 "expense" -> {
@@ -494,6 +598,7 @@ object FullBackup {
                     val dest = File(com.billing.pos.expenses.ExpenseAttachmentStore.dir(context), "restored_${System.nanoTime()}_$file")
                     staged.copyTo(dest, overwrite = true)
                     db.expenseAttachmentDao().insert(ExpenseAttachment(expenseId = parentId, path = dest.absolutePath, name = name, mime = mime))
+                    existingExpenseNames.getOrPut(parentId) { mutableSetOf() }.add(name)
                     restored++
                 }
                 "receipt" -> {
@@ -504,6 +609,7 @@ object FullBackup {
                     val dest = File(ReceiptAttachmentStore.dir(context), "restored_${System.nanoTime()}_$file")
                     staged.copyTo(dest, overwrite = true)
                     db.receiptAttachmentDao().insertAll(listOf(ReceiptAttachment(receiptId = parentId, path = dest.absolutePath, name = name, mime = mime)))
+                    existingReceiptNames.getOrPut(parentId) { mutableSetOf() }.add(name)
                     restored++
                 }
                 "order" -> {
@@ -514,6 +620,7 @@ object FullBackup {
                     val dest = File(OrderAttachmentStore.dir(context), "restored_${System.nanoTime()}_$file")
                     staged.copyTo(dest, overwrite = true)
                     db.custOrderDao().insertAttachment(CustOrderAttachment(orderId = parentId, path = dest.absolutePath, name = name, mime = mime))
+                    existingOrderNames.getOrPut(parentId) { mutableSetOf() }.add(name)
                     restored++
                 }
                 "service" -> {
@@ -524,6 +631,7 @@ object FullBackup {
                     val dest = File(ServiceAttachmentStore.dir(context), "restored_${System.nanoTime()}_$file")
                     staged.copyTo(dest, overwrite = true)
                     db.serviceDao().insertAttachments(listOf(ServiceJobAttachment(cardId = parentId, path = dest.absolutePath, name = name, mime = mime)))
+                    existingServiceNames.getOrPut(parentId) { mutableSetOf() }.add(name)
                     restored++
                 }
                 "quicknote" -> {
@@ -534,6 +642,7 @@ object FullBackup {
                     val dest = File(com.billing.pos.quicknote.QuickNoteAttachmentStore.dir(context), "restored_${System.nanoTime()}_$file")
                     staged.copyTo(dest, overwrite = true)
                     db.quickNoteAttachmentDao().insert(QuickNoteAttachment(noteId = parentId, path = dest.absolutePath, name = name, mime = mime))
+                    existingQuickNoteNames.getOrPut(parentId) { mutableSetOf() }.add(name)
                     restored++
                 }
                 "diary" -> {
@@ -542,6 +651,7 @@ object FullBackup {
                     if (merge && existingDiaryNames[parentId]?.contains(name) == true) { skippedDuplicate++; continue }
                     if (loc.isNotBlank()) {
                         db.diaryDao().insertAttachment(DiaryAttachment(entryId = parentId, path = loc, name = name, mime = mime, type = AttachmentType.LOCATION))
+                        existingDiaryNames.getOrPut(parentId) { mutableSetOf() }.add(name)
                         restored++
                     } else {
                         val staged = stagedFile("diary", file) ?: continue
@@ -554,6 +664,7 @@ object FullBackup {
                             else -> AttachmentType.DOCUMENT
                         }
                         db.diaryDao().insertAttachment(DiaryAttachment(entryId = parentId, path = dest.absolutePath, name = name, mime = mime, type = kind))
+                        existingDiaryNames.getOrPut(parentId) { mutableSetOf() }.add(name)
                         restored++
                     }
                 }
@@ -622,12 +733,7 @@ object FullBackup {
 
         withContext(Dispatchers.IO) { db.clearAllTables() }
 
-        root.optJSONObject("settings")?.let { s ->
-            val prefs = AppPrefs(context)
-            prefs.companyName = s.optString("companyName", "My Shop")
-            prefs.companyAddress = s.optString("companyAddress", "")
-            prefs.companyPhone = s.optString("companyPhone", "")
-        }
+        root.optJSONObject("settings")?.let { s -> applySettingsJson(AppPrefs(context), s) }
 
         root.optJSONArray("customers")?.let { for (i in 0 until it.length()) db.customerDao().insert(readCust(it.getJSONObject(i))) }
         root.optJSONArray("items")?.let { for (i in 0 until it.length()) db.itemDao().insert(readItem(it.getJSONObject(i))) }
@@ -813,16 +919,11 @@ object FullBackup {
      */
     private suspend fun mergeInto(context: Context, db: AppDatabase, root: JSONObject): MergeReport {
         val log = MergeReportBuilder()
-        // Company settings — a merge is meant to converge every device onto the same business
-        // profile too, not just add records, so this is applied unconditionally like a replace
-        // restore does (previously this only happened on a full Replace-all, never on Merge —
-        // including every Push/Pull cloud-sync cycle, which always merges).
-        root.optJSONObject("settings")?.let { s ->
-            val prefs = AppPrefs(context)
-            prefs.companyName = s.optString("companyName", prefs.companyName)
-            prefs.companyAddress = s.optString("companyAddress", prefs.companyAddress)
-            prefs.companyPhone = s.optString("companyPhone", prefs.companyPhone)
-        }
+        // Settings — a merge is meant to converge every device onto the same business profile
+        // too, not just add records, so this is applied unconditionally like a replace restore
+        // does (previously this only happened on a full Replace-all, never on Merge — including
+        // every Push/Pull cloud-sync cycle, which always merges).
+        root.optJSONObject("settings")?.let { s -> applySettingsJson(AppPrefs(context), s) }
         // Customers
         val custByName = HashMap<String, Long>()
         db.customerDao().all().forEach { custByName[it.name.lowercase()] = it.id }
@@ -912,7 +1013,7 @@ object FullBackup {
             for (i in 0 until it.length()) {
                 val b = readBill(it.getJSONObject(i))
                 val remapped = b.copy(customerId = custMap[b.customerId] ?: b.customerId)
-                val existing = if (b.deviceId.isNotBlank()) db.billDao().byDeviceAndNo(b.deviceId, b.billNo) else null
+                val existing = if (b.deviceId.isNotBlank()) db.billDao().byDeviceAndNo(b.deviceId, b.billNo) else db.billDao().byNo(b.billNo)
                 billMap[b.id] = if (existing != null) {
                     db.billDao().updateBillHeader(remapped.copy(id = existing.id))
                     db.billDao().deleteLines(existing.id)
@@ -936,7 +1037,7 @@ object FullBackup {
             for (i in 0 until it.length()) {
                 val p = readPurchase(it.getJSONObject(i))
                 val remapped = p.copy(supplierId = suppMap[p.supplierId] ?: p.supplierId)
-                val existing = if (p.deviceId.isNotBlank()) db.purchaseDao().byDeviceAndNo(p.deviceId, p.purchaseNo) else null
+                val existing = if (p.deviceId.isNotBlank()) db.purchaseDao().byDeviceAndNo(p.deviceId, p.purchaseNo) else db.purchaseDao().byNo(p.purchaseNo)
                 purMap[p.id] = if (existing != null) {
                     db.purchaseDao().updateHeader(remapped.copy(id = existing.id))
                     db.purchaseDao().deleteLines(existing.id)
@@ -960,7 +1061,7 @@ object FullBackup {
                 val r = readReceipt(it.getJSONObject(i))
                 val nb = if (r.billId > 0) (billMap[r.billId] ?: 0L) else 0L
                 val remapped = r.copy(billId = nb)
-                val existing = if (r.deviceId.isNotBlank()) db.receiptDao().byDeviceAndNo(r.deviceId, r.receiptNo) else null
+                val existing = if (r.deviceId.isNotBlank()) db.receiptDao().byDeviceAndNo(r.deviceId, r.receiptNo) else db.receiptDao().byNo(r.receiptNo)
                 if (existing != null) db.receiptDao().update(remapped.copy(id = existing.id))
                 else db.receiptDao().insert(remapped.copy(id = 0))
             }
@@ -970,7 +1071,7 @@ object FullBackup {
                 val ex = readExpense(it.getJSONObject(i))
                 val np = if (ex.purchaseId > 0) (purMap[ex.purchaseId] ?: 0L) else 0L
                 val remapped = ex.copy(purchaseId = np)
-                val existing = if (ex.deviceId.isNotBlank()) db.expenseDao().byDeviceAndNo(ex.deviceId, ex.voucherNo) else null
+                val existing = if (ex.deviceId.isNotBlank()) db.expenseDao().byDeviceAndNo(ex.deviceId, ex.voucherNo) else db.expenseDao().byNo(ex.voucherNo)
                 expMap[ex.id] = if (existing != null) {
                     db.expenseDao().update(remapped.copy(id = existing.id)); existing.id
                 } else {
@@ -994,32 +1095,66 @@ object FullBackup {
             }
             if (lines.isNotEmpty()) db.journalDao().insertLines(lines)
         }
-        // Diary + attachments
+        // Diary + attachments — an entry has no natural number, so it's deduped by content
+        // (title + remarks + createdAt + customer), matching DataRepair's cleanup key. Between
+        // two matches, the one with the newer updatedAt wins as the keeper, same as DataRepair.
         val diaryMap = HashMap<Long, Long>()
+        fun diaryKey(e: DiaryEntry) = listOf(e.title.trim().lowercase(), e.remarks.trim().lowercase(), e.createdAt, e.customerId)
+        val diaryByKey = HashMap<List<Any?>, DiaryEntry>()
+        db.diaryDao().allEntries().forEach { diaryByKey[diaryKey(it)] = it }
         root.optJSONArray("diaryEntries")?.let {
             for (i in 0 until it.length()) {
                 val e = readEntry(it.getJSONObject(i))
-                diaryMap[e.id] = db.diaryDao()
-                    .insert(e.copy(id = 0, typeId = diaryTypeMap[e.typeId] ?: 0L))
-                    .also { nid -> log.add("diaryEntries", nid) }
+                val remapped = e.copy(typeId = diaryTypeMap[e.typeId] ?: 0L)
+                val key = diaryKey(remapped)
+                val existing = diaryByKey[key]
+                diaryMap[e.id] = if (existing != null) {
+                    if (remapped.updatedAt > existing.updatedAt) {
+                        val kept = remapped.copy(id = existing.id)
+                        db.diaryDao().update(kept)
+                        diaryByKey[key] = kept
+                    }
+                    existing.id
+                } else {
+                    db.diaryDao().insert(remapped.copy(id = 0)).also { nid ->
+                        log.add("diaryEntries", nid)
+                        diaryByKey[key] = remapped.copy(id = nid)
+                    }
+                }
             }
         }
+        val existingDiaryBlockKeys = db.diaryDao().allBlocks().groupBy { it.entryId }
+            .mapValues { (_, l) -> l.map { b -> listOf(b.type, b.text, b.path, b.name) }.toMutableSet() }.toMutableMap()
+        val existingDiaryAttNames = db.diaryDao().allAttachments().groupBy { it.entryId }
+            .mapValues { (_, l) -> l.map { it.name }.toMutableSet() }.toMutableMap()
         root.optJSONArray("diaryAttachments")?.let {
             for (i in 0 until it.length()) {
                 val a = readAtt(context, it.getJSONObject(i)); val ne = diaryMap[a.entryId] ?: continue
+                val names = existingDiaryAttNames.getOrPut(ne) { mutableSetOf() }
+                if (!names.add(a.name)) continue
                 db.diaryDao().insertAttachment(a.copy(id = 0, entryId = ne))
             }
         }
         root.optJSONArray("diaryBlocks")?.let {
             for (i in 0 until it.length()) {
                 val b = readBlock(context, it.getJSONObject(i)); val ne = diaryMap[b.entryId] ?: continue
-                db.diaryDao().insertBlock(b.copy(id = 0, entryId = ne))
+                val remapped = b.copy(id = 0, entryId = ne)
+                val key = listOf(remapped.type, remapped.text, remapped.path, remapped.name)
+                val keys = existingDiaryBlockKeys.getOrPut(ne) { mutableSetOf() }
+                if (!keys.add(key)) continue
+                db.diaryDao().insertBlock(remapped)
             }
         }
-        // Item attachments
+        // Item attachments — deduped per item by name, same as the bill/expense/customer
+        // attachment blocks above (items themselves are already deduped by name, so unlike
+        // diary entries this dedup is effective across repeated merge cycles).
+        val existingItemAttNames = db.itemAttachmentDao().all().groupBy { it.itemId }
+            .mapValues { (_, l) -> l.map { it.name }.toMutableSet() }.toMutableMap()
         root.optJSONArray("itemAttachments")?.let {
             for (i in 0 until it.length()) {
                 val a = readItemAtt(context, it.getJSONObject(i)); val ni = itemMap[a.itemId] ?: continue
+                val names = existingItemAttNames.getOrPut(ni) { mutableSetOf() }
+                if (!names.add(a.name)) continue
                 db.itemAttachmentDao().insert(a.copy(id = 0, itemId = ni))
             }
         }
@@ -1040,7 +1175,7 @@ object FullBackup {
         root.optJSONArray("quotations")?.let {
             for (i in 0 until it.length()) {
                 val q = readQuotation(it.getJSONObject(i))
-                val existing = if (q.deviceId.isNotBlank()) db.quotationDao().byDeviceAndNo(q.deviceId, q.quotationNo) else null
+                val existing = if (q.deviceId.isNotBlank()) db.quotationDao().byDeviceAndNo(q.deviceId, q.quotationNo) else db.quotationDao().byNo(q.quotationNo)
                 quoteMap[q.id] = if (existing != null) {
                     db.quotationDao().updateHeader(q.copy(id = existing.id))
                     db.quotationDao().deleteLines(existing.id)
@@ -1058,7 +1193,7 @@ object FullBackup {
         root.optJSONArray("estimates")?.let {
             for (i in 0 until it.length()) {
                 val e = readEstimate(it.getJSONObject(i))
-                val existing = if (e.deviceId.isNotBlank()) db.estimateDao().byDeviceAndNo(e.deviceId, e.estimateNo) else null
+                val existing = if (e.deviceId.isNotBlank()) db.estimateDao().byDeviceAndNo(e.deviceId, e.estimateNo) else db.estimateDao().byNo(e.estimateNo)
                 estMap[e.id] = if (existing != null) {
                     db.estimateDao().updateHeader(e.copy(id = existing.id))
                     db.estimateDao().deleteLines(existing.id)
@@ -1076,7 +1211,15 @@ object FullBackup {
         val srMap = HashMap<Long, Long>()
         root.optJSONArray("salesReturns")?.let {
             for (i in 0 until it.length()) {
-                val r = readSalesReturn(it.getJSONObject(i)); srMap[r.id] = db.salesReturnDao().insertHeader(r.copy(id = 0))
+                val r = readSalesReturn(it.getJSONObject(i))
+                val existing = db.salesReturnDao().byNo(r.returnNo)
+                srMap[r.id] = if (existing != null) {
+                    db.salesReturnDao().updateHeader(r.copy(id = existing.id))
+                    db.salesReturnDao().deleteLines(existing.id)
+                    existing.id
+                } else {
+                    db.salesReturnDao().insertHeader(r.copy(id = 0)).also { nid -> log.add("salesReturns", nid) }
+                }
             }
         }
         root.optJSONArray("salesReturnItems")?.let {
@@ -1089,7 +1232,15 @@ object FullBackup {
         val prMap = HashMap<Long, Long>()
         root.optJSONArray("purchaseReturns")?.let {
             for (i in 0 until it.length()) {
-                val r = readPurchaseReturn(it.getJSONObject(i)); prMap[r.id] = db.purchaseReturnDao().insertHeader(r.copy(id = 0))
+                val r = readPurchaseReturn(it.getJSONObject(i))
+                val existing = db.purchaseReturnDao().byNo(r.returnNo)
+                prMap[r.id] = if (existing != null) {
+                    db.purchaseReturnDao().updateHeader(r.copy(id = existing.id))
+                    db.purchaseReturnDao().deleteLines(existing.id)
+                    existing.id
+                } else {
+                    db.purchaseReturnDao().insertHeader(r.copy(id = 0)).also { nid -> log.add("purchaseReturns", nid) }
+                }
             }
         }
         root.optJSONArray("purchaseReturnItems")?.let {
@@ -1102,7 +1253,15 @@ object FullBackup {
         val lpoMap = HashMap<Long, Long>()
         root.optJSONArray("purchaseQuotations")?.let {
             for (i in 0 until it.length()) {
-                val r = readLpo(it.getJSONObject(i)); lpoMap[r.id] = db.purchaseQuotationDao().insertHeader(r.copy(id = 0))
+                val r = readLpo(it.getJSONObject(i))
+                val existing = db.purchaseQuotationDao().byNo(r.lpoNo)
+                lpoMap[r.id] = if (existing != null) {
+                    db.purchaseQuotationDao().updateHeader(r.copy(id = existing.id))
+                    db.purchaseQuotationDao().deleteLines(existing.id)
+                    existing.id
+                } else {
+                    db.purchaseQuotationDao().insertHeader(r.copy(id = 0)).also { nid -> log.add("purchaseQuotations", nid) }
+                }
             }
         }
         root.optJSONArray("purchaseQuotationItems")?.let {
@@ -1115,7 +1274,15 @@ object FullBackup {
         val hireMap = HashMap<Long, Long>()
         root.optJSONArray("hireInvoices")?.let {
             for (i in 0 until it.length()) {
-                val h = readHire(it.getJSONObject(i)); hireMap[h.id] = db.hireInvoiceDao().insertHeader(h.copy(id = 0))
+                val h = readHire(it.getJSONObject(i))
+                val existing = db.hireInvoiceDao().byNo(h.hireNo)
+                hireMap[h.id] = if (existing != null) {
+                    db.hireInvoiceDao().updateHeader(h.copy(id = existing.id))
+                    db.hireInvoiceDao().deleteLines(existing.id)
+                    existing.id
+                } else {
+                    db.hireInvoiceDao().insertHeader(h.copy(id = 0)).also { nid -> log.add("hireInvoices", nid) }
+                }
             }
         }
         root.optJSONArray("hireInvoiceItems")?.let {
@@ -1129,7 +1296,15 @@ object FullBackup {
         root.optJSONArray("hireReturns")?.let {
             for (i in 0 until it.length()) {
                 val r = readHireRet(it.getJSONObject(i))
-                hireRetMap[r.id] = db.hireReturnDao().insertHeader(r.copy(id = 0, hireId = hireMap[r.hireId] ?: r.hireId))
+                val remapped = r.copy(hireId = hireMap[r.hireId] ?: r.hireId)
+                val existing = db.hireReturnDao().byNo(r.returnNo)
+                hireRetMap[r.id] = if (existing != null) {
+                    db.hireReturnDao().updateHeader(remapped.copy(id = existing.id))
+                    db.hireReturnDao().deleteLines(existing.id)
+                    existing.id
+                } else {
+                    db.hireReturnDao().insertHeader(remapped.copy(id = 0)).also { nid -> log.add("hireReturns", nid) }
+                }
             }
         }
         root.optJSONArray("hireReturnItems")?.let {
@@ -1142,12 +1317,24 @@ object FullBackup {
         val labTestMap = HashMap<Long, Long>()
         root.optJSONArray("labTests")?.let {
             for (i in 0 until it.length()) {
-                val t = readLabTest(it.getJSONObject(i)); labTestMap[t.id] = db.labTestDao().insertTest(t.copy(id = 0))
+                val t = readLabTest(it.getJSONObject(i))
+                val existing = db.labTestDao().testByName(t.name)
+                labTestMap[t.id] = if (existing != null) {
+                    db.labTestDao().updateTest(t.copy(id = existing.id)); existing.id
+                } else {
+                    db.labTestDao().insertTest(t.copy(id = 0)).also { nid -> log.add("labTests", nid) }
+                }
             }
         }
+        val existingLabEvalKeys = db.labTestDao().allEvaluations()
+            .groupBy { it.testId }.mapValues { (_, l) -> l.map { e -> listOf(e.name, e.unit, e.normalValue, e.groupName) }.toMutableSet() }
+            .toMutableMap()
         root.optJSONArray("labEvaluations")?.let {
             for (i in 0 until it.length()) {
                 val e = readLabEval(it.getJSONObject(i)); val nt = labTestMap[e.testId] ?: continue
+                val key = listOf(e.name, e.unit, e.normalValue, e.groupName)
+                val keys = existingLabEvalKeys.getOrPut(nt) { mutableSetOf() }
+                if (!keys.add(key)) continue
                 db.labTestDao().insertEvaluations(listOf(e.copy(id = 0, testId = nt)))
             }
         }
@@ -1155,7 +1342,13 @@ object FullBackup {
         val patientMap = HashMap<Long, Long>()
         root.optJSONArray("patients")?.let {
             for (i in 0 until it.length()) {
-                val p = readPatient(it.getJSONObject(i)); patientMap[p.id] = db.patientDao().insert(p.copy(id = 0))
+                val p = readPatient(it.getJSONObject(i))
+                val existing = db.patientDao().byNameAndPhone(p.name, p.phone)
+                patientMap[p.id] = if (existing != null) {
+                    db.patientDao().update(p.copy(id = existing.id)); existing.id
+                } else {
+                    db.patientDao().insert(p.copy(id = 0)).also { nid -> log.add("patients", nid) }
+                }
             }
         }
         // Lab bills + tests + results
@@ -1163,7 +1356,16 @@ object FullBackup {
         root.optJSONArray("labBills")?.let {
             for (i in 0 until it.length()) {
                 val b = readLabBill(it.getJSONObject(i))
-                labBillMap[b.id] = db.labBillDao().insertBill(b.copy(id = 0, patientId = patientMap[b.patientId] ?: b.patientId))
+                val remapped = b.copy(patientId = patientMap[b.patientId] ?: b.patientId)
+                val existing = db.labBillDao().byNo(b.billNo)
+                labBillMap[b.id] = if (existing != null) {
+                    db.labBillDao().updateBill(remapped.copy(id = existing.id))
+                    db.labBillDao().deleteTests(existing.id)
+                    db.labBillDao().deleteResults(existing.id)
+                    existing.id
+                } else {
+                    db.labBillDao().insertBill(remapped.copy(id = 0)).also { nid -> log.add("labBills", nid) }
+                }
             }
         }
         root.optJSONArray("labBillTests")?.let {
@@ -1192,30 +1394,55 @@ object FullBackup {
         // Material out
         val matOutMap = HashMap<Long, Long>()
         root.optJSONArray("materialOuts")?.let {
-            for (i in 0 until it.length()) { val m = readMatOut(it.getJSONObject(i)); matOutMap[m.id] = db.materialOutDao().insertHeader(m.copy(id = 0)) }
+            for (i in 0 until it.length()) {
+                val m = readMatOut(it.getJSONObject(i))
+                val existing = db.materialOutDao().byNo(m.voucherNo)
+                matOutMap[m.id] = if (existing != null) {
+                    db.materialOutDao().updateHeader(m.copy(id = existing.id))
+                    db.materialOutDao().deleteLines(existing.id)
+                    existing.id
+                } else {
+                    db.materialOutDao().insertHeader(m.copy(id = 0)).also { nid -> log.add("materialOuts", nid) }
+                }
+            }
         }
         root.optJSONArray("materialOutItems")?.let {
             for (i in 0 until it.length()) { val l = readMatOutItem(it.getJSONObject(i)); val nm = matOutMap[l.outId] ?: continue; db.materialOutDao().insertLines(listOf(l.copy(id = 0, outId = nm))) }
         }
-        // Bill attachments
+        // Bill attachments — deduped per bill by name, so repeated cloud-sync pull/merge cycles
+        // (which re-send the same attachment records every time, since push never sends the
+        // files themselves) don't keep re-inserting the same attachment forever.
+        val existingBillAttNames = db.billAttachmentDao().all().groupBy { it.billId }
+            .mapValues { (_, l) -> l.map { it.name }.toMutableSet() }.toMutableMap()
         root.optJSONArray("billAttachments")?.let {
             for (i in 0 until it.length()) {
                 val a = readBillAtt(context, it.getJSONObject(i)); val nb = billMap[a.billId] ?: continue
+                val names = existingBillAttNames.getOrPut(nb) { mutableSetOf() }
+                if (!names.add(a.name)) continue
                 db.billAttachmentDao().insert(a.copy(id = 0, billId = nb))
             }
         }
-        // Payment attachments (voice / photo / file)
+        // Payment attachments (voice / photo / file) — same per-parent dedup as bill attachments.
+        val existingExpenseAttNames = db.expenseAttachmentDao().all().groupBy { it.expenseId }
+            .mapValues { (_, l) -> l.map { it.name }.toMutableSet() }.toMutableMap()
         root.optJSONArray("expenseAttachments")?.let {
             for (i in 0 until it.length()) {
                 val a = readExpenseAtt(context, it.getJSONObject(i)); val ne = expMap[a.expenseId] ?: continue
+                val names = existingExpenseAttNames.getOrPut(ne) { mutableSetOf() }
+                if (!names.add(a.name)) continue
                 db.expenseAttachmentDao().insert(a.copy(id = 0, expenseId = ne))
             }
         }
-        // Customer documents follow whichever customer row they ended up attached to.
+        // Customer documents follow whichever customer row they ended up attached to — same
+        // per-parent dedup as bill attachments.
+        val existingCustAttNames = db.customerAttachmentDao().all().groupBy { it.customerId }
+            .mapValues { (_, l) -> l.map { it.name }.toMutableSet() }.toMutableMap()
         root.optJSONArray("customerAttachments")?.let {
             for (i in 0 until it.length()) {
                 val a2 = readCustAtt(context, it.getJSONObject(i))
                 val nc = custMap[a2.customerId] ?: continue
+                val names = existingCustAttNames.getOrPut(nc) { mutableSetOf() }
+                if (!names.add(a2.name)) continue
                 db.customerAttachmentDao().insert(a2.copy(id = 0, customerId = nc))
             }
         }
@@ -1224,8 +1451,14 @@ object FullBackup {
         root.optJSONArray("purchaseQuotes")?.let {
             for (i in 0 until it.length()) {
                 val q = readPQuote(it.getJSONObject(i))
-                pQuoteMap[q.id] = db.purchaseQuoteDao().insertHeader(q.copy(id = 0))
-                    .also { nid -> log.add("purchaseQuotes", nid) }
+                val existing = db.purchaseQuoteDao().byNo(q.quoteNo)
+                pQuoteMap[q.id] = if (existing != null) {
+                    db.purchaseQuoteDao().updateHeader(q.copy(id = existing.id))
+                    db.purchaseQuoteDao().deleteLines(existing.id)
+                    existing.id
+                } else {
+                    db.purchaseQuoteDao().insertHeader(q.copy(id = 0)).also { nid -> log.add("purchaseQuotes", nid) }
+                }
             }
         }
         root.optJSONArray("purchaseQuoteItems")?.let {
@@ -1235,11 +1468,17 @@ object FullBackup {
                 db.purchaseQuoteDao().insertLines(listOf(l.copy(id = 0, quoteId = nq)))
             }
         }
-        // Saved calculator tapes — standalone, so they merge by simply being added.
+        // Saved calculator tapes — no number field to match on (unlike bills/purchases/etc.), so
+        // dedup by content instead: same date+time, amounts, total, title, customer and narration
+        // is the same tape re-inserted by a repeated merge cycle, not a coincidence.
+        fun calcKey(c: SavedCalc) = listOf(c.dateMillis, c.amounts, c.total, c.title, c.customerId, c.customerName, c.narration)
+        val existingCalcKeys = db.savedCalcDao().all().map { calcKey(it) }.toMutableSet()
         root.optJSONArray("savedCalcs")?.let {
             for (i in 0 until it.length()) {
-                db.savedCalcDao().insert(readSavedCalc(it.getJSONObject(i)).copy(id = 0))
-                    .also { nid -> log.add("savedCalcs", nid) }
+                val c = readSavedCalc(it.getJSONObject(i))
+                if (existingCalcKeys.add(calcKey(c))) {
+                    db.savedCalcDao().insert(c.copy(id = 0)).also { nid -> log.add("savedCalcs", nid) }
+                }
             }
         }
         // Customer orders, lines and attachments following the header's new id.
@@ -1247,7 +1486,7 @@ object FullBackup {
         root.optJSONArray("custOrders")?.let {
             for (i in 0 until it.length()) {
                 val o = readOrder(it.getJSONObject(i))
-                val existing = if (o.deviceId.isNotBlank()) db.custOrderDao().byDeviceAndNo(o.deviceId, o.orderNo) else null
+                val existing = if (o.deviceId.isNotBlank()) db.custOrderDao().byDeviceAndNo(o.deviceId, o.orderNo) else db.custOrderDao().byNo(o.orderNo)
                 orderMap[o.id] = if (existing != null) {
                     db.custOrderDao().updateHeader(o.copy(id = existing.id))
                     db.custOrderDao().deleteLines(existing.id)
@@ -1283,9 +1522,15 @@ object FullBackup {
         root.optJSONArray("materialReceipts")?.let {
             for (i in 0 until it.length()) {
                 val m = readMatRec(it.getJSONObject(i))
-                matRecMap[m.id] = db.materialReceiptDao()
-                    .insertHeader(m.copy(id = 0, supplierId = suppMap[m.supplierId] ?: m.supplierId))
-                    .also { nid -> log.add("materialReceipts", nid) }
+                val remapped = m.copy(supplierId = suppMap[m.supplierId] ?: m.supplierId)
+                val existing = db.materialReceiptDao().byNo(m.receiptNo)
+                matRecMap[m.id] = if (existing != null) {
+                    db.materialReceiptDao().updateHeader(remapped.copy(id = existing.id))
+                    db.materialReceiptDao().deleteLines(existing.id)
+                    existing.id
+                } else {
+                    db.materialReceiptDao().insertHeader(remapped.copy(id = 0)).also { nid -> log.add("materialReceipts", nid) }
+                }
             }
         }
         root.optJSONArray("materialReceiptItems")?.let {
@@ -1299,9 +1544,15 @@ object FullBackup {
         root.optJSONArray("productionProcedures")?.let {
             for (i in 0 until it.length()) {
                 val p = readProcedure(it.getJSONObject(i))
-                procedureMap[p.id] = db.productionDao()
-                    .insertProcedureHeader(p.copy(id = 0, producedItemId = itemMap[p.producedItemId] ?: p.producedItemId))
-                    .also { nid -> log.add("productionProcedures", nid) }
+                val remapped = p.copy(producedItemId = itemMap[p.producedItemId] ?: p.producedItemId)
+                val existing = db.productionDao().procedureByName(p.name)
+                procedureMap[p.id] = if (existing != null) {
+                    db.productionDao().updateProcedureHeader(remapped.copy(id = existing.id))
+                    db.productionDao().deleteProcedureMaterials(existing.id)
+                    existing.id
+                } else {
+                    db.productionDao().insertProcedureHeader(remapped.copy(id = 0)).also { nid -> log.add("productionProcedures", nid) }
+                }
             }
         }
         root.optJSONArray("productionProcedureMaterials")?.let {
@@ -1315,6 +1566,7 @@ object FullBackup {
         root.optJSONArray("productionRuns")?.let {
             for (i in 0 until it.length()) {
                 val r = readProductionRun(it.getJSONObject(i))
+                if (db.productionDao().runByNo(r.runNo) != null) continue
                 db.productionDao().insertRun(
                     r.copy(
                         id = 0,
@@ -1331,7 +1583,14 @@ object FullBackup {
         root.optJSONArray("itemBundles")?.let {
             for (i in 0 until it.length()) {
                 val b = readBundle(it.getJSONObject(i))
-                bundleMap[b.id] = db.itemBundleDao().insertHeader(b.copy(id = 0)).also { nid -> log.add("itemBundles", nid) }
+                val existing = db.itemBundleDao().byName(b.name)
+                bundleMap[b.id] = if (existing != null) {
+                    db.itemBundleDao().updateHeader(b.copy(id = existing.id))
+                    db.itemBundleDao().deleteComponents(existing.id)
+                    existing.id
+                } else {
+                    db.itemBundleDao().insertHeader(b.copy(id = 0)).also { nid -> log.add("itemBundles", nid) }
+                }
             }
         }
         root.optJSONArray("itemBundleComponents")?.let {
@@ -1347,6 +1606,7 @@ object FullBackup {
     // ---- serialisers ----
     private fun custJson(c: Customer) = JSONObject().put("id", c.id).put("name", c.name)
         .put("phone", c.phone).put("address", c.address).put("gstin", c.gstin).put("isDefault", c.isDefault).put("customerType", c.customerType)
+        .put("state", c.state)
 
     private fun itemJson(i: Item) = JSONObject().put("id", i.id).put("name", i.name)
         .put("price", i.price).put("taxPercent", i.taxPercent).put("barcode", i.barcode).put("hsn", i.hsn)
@@ -1358,13 +1618,13 @@ object FullBackup {
         .put("dateMillis", b.dateMillis).put("customerId", b.customerId).put("customerName", b.customerName)
         .put("paymentMethod", b.paymentMethod).put("subTotal", b.subTotal).put("taxTotal", b.taxTotal)
         .put("additionalCharge", b.additionalCharge).put("discount", b.discount)
-        .put("grandTotal", b.grandTotal).put("paidAmount", b.paidAmount)
-        .put("customerGstin", b.customerGstin).put("source", b.source).put("remarks", b.remarks)
-        .put("deviceId", b.deviceId)
+        .put("grandTotal", b.grandTotal).put("paidAmount", b.paidAmount).put("cessTotal", b.cessTotal)
+        .put("customerGstin", b.customerGstin).put("customerState", b.customerState).put("source", b.source).put("remarks", b.remarks)
+        .put("deviceId", b.deviceId).put("isNoTax", b.isNoTax)
 
     private fun lineJson(l: BillItem) = JSONObject().put("id", l.id).put("billId", l.billId)
         .put("name", l.name).put("qty", l.qty).put("price", l.price)
-        .put("taxPercent", l.taxPercent).put("lineTotal", l.lineTotal).put("batchNo", l.batchNo)
+        .put("taxPercent", l.taxPercent).put("cessPercent", l.cessPercent).put("lineTotal", l.lineTotal).put("batchNo", l.batchNo)
         .put("unit", l.unit).put("primaryQty", l.primaryQty)
 
     private fun receiptJson(r: Receipt) = JSONObject().put("id", r.id).put("receiptNo", r.receiptNo)
@@ -1401,17 +1661,20 @@ object FullBackup {
 
     private fun supplierJson(s: Supplier) = JSONObject().put("id", s.id).put("name", s.name)
         .put("phone", s.phone).put("address", s.address).put("gstin", s.gstin).put("isDefault", s.isDefault)
+        .put("state", s.state)
 
     private fun purchaseJson(p: Purchase) = JSONObject().put("id", p.id).put("purchaseNo", p.purchaseNo)
         .put("dateMillis", p.dateMillis).put("supplierId", p.supplierId).put("supplierName", p.supplierName)
         .put("paymentMethod", p.paymentMethod).put("subTotal", p.subTotal).put("taxTotal", p.taxTotal)
         .put("additionalCharge", p.additionalCharge).put("discount", p.discount).put("grandTotal", p.grandTotal)
-        .put("paidAmount", p.paidAmount).put("supplierGstin", p.supplierGstin).put("source", p.source)
+        .put("paidAmount", p.paidAmount).put("cessTotal", p.cessTotal)
+        .put("supplierGstin", p.supplierGstin).put("supplierState", p.supplierState)
+        .put("source", p.source)
         .put("deviceId", p.deviceId)
 
     private fun pLineJson(l: PurchaseItem) = JSONObject().put("id", l.id).put("purchaseId", l.purchaseId)
         .put("name", l.name).put("qty", l.qty).put("price", l.price)
-        .put("taxPercent", l.taxPercent).put("lineTotal", l.lineTotal).put("batchNo", l.batchNo)
+        .put("taxPercent", l.taxPercent).put("cessPercent", l.cessPercent).put("lineTotal", l.lineTotal).put("batchNo", l.batchNo)
         .put("unit", l.unit).put("primaryQty", l.primaryQty)
 
     private fun groupJson(g: AccountGroup) = JSONObject().put("id", g.id).put("name", g.name)
@@ -1479,7 +1742,7 @@ object FullBackup {
         .put("dateMillis", c.dateMillis).put("amounts", c.amounts)
         .put("total", c.total).put("title", c.title)
         .put("customerId", c.customerId).put("customerName", c.customerName)
-        .put("narration", c.narration)
+        .put("narration", c.narration).put("labels", c.labels)
 
     private fun readSavedCalc(o: JSONObject) = SavedCalc(
         id = o.optLong("id"), dateMillis = o.optLong("dateMillis"),
@@ -1487,7 +1750,8 @@ object FullBackup {
         title = o.optString("title"),
         customerId = o.optLong("customerId"),
         customerName = o.optString("customerName", SavedCalc.DEFAULT_CUSTOMER),
-        narration = o.optString("narration")
+        narration = o.optString("narration"),
+        labels = o.optString("labels")
     )
 
     private fun orderJson(o: CustOrder) = JSONObject().put("id", o.id).put("orderNo", o.orderNo)
@@ -1885,7 +2149,7 @@ object FullBackup {
     private fun readCust(o: JSONObject) = Customer(
         id = o.optLong("id"), name = o.optString("name"), phone = o.optString("phone"),
         address = o.optString("address"), gstin = o.optString("gstin"), isDefault = o.optBoolean("isDefault", false),
-        customerType = o.optString("customerType", "General")
+        customerType = o.optString("customerType", "General"), state = o.optString("state")
     )
 
     private fun readItem(o: JSONObject) = Item(
@@ -1906,14 +2170,18 @@ object FullBackup {
         paymentMethod = o.optString("paymentMethod"), subTotal = o.optDouble("subTotal", 0.0),
         taxTotal = o.optDouble("taxTotal", 0.0), additionalCharge = o.optDouble("additionalCharge", 0.0),
         discount = o.optDouble("discount", 0.0), grandTotal = o.optDouble("grandTotal", 0.0),
-        paidAmount = o.optDouble("paidAmount", 0.0), customerGstin = o.optString("customerGstin"),
-        source = o.optString("source"), remarks = o.optString("remarks"), deviceId = o.optString("deviceId")
+        paidAmount = o.optDouble("paidAmount", 0.0), cessTotal = o.optDouble("cessTotal", 0.0),
+        customerGstin = o.optString("customerGstin"),
+        customerState = o.optString("customerState"),
+        source = o.optString("source"), remarks = o.optString("remarks"), deviceId = o.optString("deviceId"),
+        isNoTax = o.optBoolean("isNoTax", false)
     )
 
     private fun readLine(o: JSONObject) = BillItem(
         id = o.optLong("id"), billId = o.optLong("billId"), name = o.optString("name"),
         qty = o.optDouble("qty", 0.0), price = o.optDouble("price", 0.0),
-        taxPercent = o.optDouble("taxPercent", 0.0), lineTotal = o.optDouble("lineTotal", 0.0),
+        taxPercent = o.optDouble("taxPercent", 0.0), cessPercent = o.optDouble("cessPercent", 0.0),
+        lineTotal = o.optDouble("lineTotal", 0.0),
         batchNo = o.optString("batchNo"), unit = o.optString("unit"),
         primaryQty = o.optDouble("primaryQty", 0.0)
     )
@@ -1968,7 +2236,8 @@ object FullBackup {
 
     private fun readSupplier(o: JSONObject) = Supplier(
         id = o.optLong("id"), name = o.optString("name"), phone = o.optString("phone"),
-        address = o.optString("address"), gstin = o.optString("gstin"), isDefault = o.optBoolean("isDefault", false)
+        address = o.optString("address"), gstin = o.optString("gstin"), isDefault = o.optBoolean("isDefault", false),
+        state = o.optString("state")
     )
 
     private fun readPurchase(o: JSONObject) = Purchase(
@@ -1977,14 +2246,17 @@ object FullBackup {
         paymentMethod = o.optString("paymentMethod"), subTotal = o.optDouble("subTotal", 0.0),
         taxTotal = o.optDouble("taxTotal", 0.0), additionalCharge = o.optDouble("additionalCharge", 0.0),
         discount = o.optDouble("discount", 0.0), grandTotal = o.optDouble("grandTotal", 0.0),
-        paidAmount = o.optDouble("paidAmount", 0.0), supplierGstin = o.optString("supplierGstin"),
+        paidAmount = o.optDouble("paidAmount", 0.0), cessTotal = o.optDouble("cessTotal", 0.0),
+        supplierGstin = o.optString("supplierGstin"),
+        supplierState = o.optString("supplierState"),
         source = o.optString("source"), deviceId = o.optString("deviceId")
     )
 
     private fun readPLine(o: JSONObject) = PurchaseItem(
         id = o.optLong("id"), purchaseId = o.optLong("purchaseId"), name = o.optString("name"),
         qty = o.optDouble("qty", 0.0), price = o.optDouble("price", 0.0),
-        taxPercent = o.optDouble("taxPercent", 0.0), lineTotal = o.optDouble("lineTotal", 0.0),
+        taxPercent = o.optDouble("taxPercent", 0.0), cessPercent = o.optDouble("cessPercent", 0.0),
+        lineTotal = o.optDouble("lineTotal", 0.0),
         batchNo = o.optString("batchNo"), unit = o.optString("unit"),
         primaryQty = o.optDouble("primaryQty", 0.0)
     )

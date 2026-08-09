@@ -40,6 +40,7 @@ data class ItemBundleComponent(
 @Dao
 interface ItemBundleDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertHeader(b: ItemBundle): Long
+    @Query("SELECT * FROM item_bundles WHERE name = :name COLLATE NOCASE LIMIT 1") suspend fun byName(name: String): ItemBundle?
     @Insert suspend fun insertComponents(lines: List<ItemBundleComponent>)
     @Update suspend fun updateHeader(b: ItemBundle)
     @Query("DELETE FROM item_bundle_components WHERE bundleId = :id") suspend fun deleteComponents(id: Long)

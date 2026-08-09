@@ -484,23 +484,27 @@ fun ServiceJobScreen(editId: Long?, onBack: () -> Unit, vm: ServiceJobViewModel 
                 var nameMenu by remember { mutableStateOf(false) }
                 var cardNameQuery by remember { mutableStateOf(vm.cardName) }
                 LaunchedEffect(vm.cardName) { if (!nameMenu) cardNameQuery = vm.cardName }
-                ExposedDropdownMenuBox(expanded = nameMenu, onExpandedChange = { nameMenu = it }, modifier = Modifier.weight(1f)) {
+                // Plain field + inline list, not ExposedDropdownMenuBox — that popup-based
+                // combobox fights with the keyboard on real devices (typing the first
+                // character snaps the field back to the old value and blocks further typing).
+                Column(Modifier.weight(1f)) {
                     OutlinedTextField(
                         value = cardNameQuery, onValueChange = { cardNameQuery = it; vm.cardName = it; nameMenu = true },
                         label = { Text("Job card name") }, singleLine = true,
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(nameMenu) },
-                        modifier = Modifier.menuAnchor().fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth()
                             .onFocusChanged { fs ->
                                 if (fs.isFocused) { cardNameQuery = ""; nameMenu = true }
-                                else if (!nameMenu) cardNameQuery = vm.cardName
+                                else { nameMenu = false; cardNameQuery = vm.cardName }
                             }
                     )
                     val nameSuggestions = cards.map { it.name }.filter { it.isNotBlank() }.distinct()
                         .filter { cardNameQuery.isBlank() || it.contains(cardNameQuery, true) }.take(5)
-                    if (nameSuggestions.isNotEmpty()) ExposedDropdownMenu(expanded = nameMenu, onDismissRequest = { nameMenu = false }) {
-                        nameSuggestions.forEach { n ->
-                            DropdownMenuItem(text = { Text(n) }, onClick = { vm.cardName = n; cardNameQuery = n; nameMenu = false })
-                        }
+                    if (nameMenu && nameSuggestions.isNotEmpty()) {
+                        com.billing.pos.ui.common.SearchPickList(
+                            items = nameSuggestions,
+                            itemLabel = { it },
+                            onPick = { n -> vm.cardName = n; cardNameQuery = n; nameMenu = false }
+                        )
                     }
                 }
                 OutlinedButton(onClick = { pickDate(context, vm.dateMillis) { vm.dateMillis = it } }, modifier = Modifier.align(Alignment.CenterVertically)) {
@@ -528,33 +532,32 @@ fun ServiceJobScreen(editId: Long?, onBack: () -> Unit, vm: ServiceJobViewModel 
             var modelMenu by remember { mutableStateOf(false) }
             var modelNameQuery by remember { mutableStateOf(vm.modelName) }
             LaunchedEffect(vm.modelName) { if (!modelMenu) modelNameQuery = vm.modelName }
-            ExposedDropdownMenuBox(expanded = modelMenu, onExpandedChange = { modelMenu = it }, modifier = Modifier.padding(top = 6.dp)) {
+            // Plain field + inline list, not ExposedDropdownMenuBox — that popup-based
+            // combobox fights with the keyboard on real devices (typing the first character
+            // snaps the field back to the old value and blocks further typing).
+            Column(Modifier.padding(top = 6.dp)) {
                 OutlinedTextField(
                     value = modelNameQuery,
                     onValueChange = { modelNameQuery = it; vm.modelName = it; vm.modelId = 0; modelMenu = true },
                     label = { Text("Model / Vehicle / Item") },
                     placeholder = { Text("Search or type new") },
                     singleLine = true,
-                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(modelMenu) },
-                    modifier = Modifier.menuAnchor().fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth()
                         .onFocusChanged { fs ->
                             if (fs.isFocused) { modelNameQuery = ""; modelMenu = true }
-                            else if (!modelMenu) modelNameQuery = vm.modelName
+                            else { modelMenu = false; modelNameQuery = vm.modelName }
                         }
                 )
-                val matches = models.filter { modelNameQuery.isBlank() || it.name.contains(modelNameQuery, true) }.take(5)
-                val exact = models.any { it.name.equals(modelNameQuery.trim(), true) }
-                ExposedDropdownMenu(expanded = modelMenu, onDismissRequest = { modelMenu = false }) {
-                    matches.forEach { m ->
-                        DropdownMenuItem(text = { Text(m.name) }, onClick = { vm.modelId = m.id; vm.modelName = m.name; modelNameQuery = m.name; modelMenu = false })
-                    }
-                    if (modelNameQuery.isNotBlank() && !exact) {
-                        DropdownMenuItem(
-                            text = { Text("Add \"${modelNameQuery.trim()}\"") },
-                            leadingIcon = { Icon(Icons.Filled.Add, null) },
-                            onClick = { vm.addModel(modelNameQuery); modelMenu = false }
-                        )
-                    }
+                if (modelMenu) {
+                    val matches = models.filter { modelNameQuery.isBlank() || it.name.contains(modelNameQuery, true) }.take(5)
+                    val exact = models.any { it.name.equals(modelNameQuery.trim(), true) }
+                    val options = matches.map { m -> m.name to { vm.modelId = m.id; vm.modelName = m.name; modelNameQuery = m.name; modelMenu = false } } +
+                        if (modelNameQuery.isNotBlank() && !exact) listOf("Add \"${modelNameQuery.trim()}\"" to { vm.addModel(modelNameQuery); modelMenu = false }) else emptyList()
+                    com.billing.pos.ui.common.SearchPickList(
+                        items = options,
+                        itemLabel = { it.first },
+                        onPick = { it.second() }
+                    )
                 }
             }
             Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically) {

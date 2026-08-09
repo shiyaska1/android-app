@@ -265,23 +265,24 @@ fun PurchaseScreen(
                     if (query.isBlank()) suppliers
                     else suppliers.filter { it.name.contains(query, true) || it.phone.contains(query) }
                 }
-                ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }, modifier = Modifier.weight(1.5f)) {
+                // Plain field + inline list, not ExposedDropdownMenuBox — that popup-based
+                // combobox fights with the keyboard on real devices (typing the first
+                // character snaps the field back to the old value and blocks further typing).
+                Column(Modifier.weight(1.5f)) {
                     OutlinedTextField(
                         value = query, onValueChange = { query = it; expanded = true },
                         label = { Text("Supplier") }, placeholder = { Text("Search") }, singleLine = true,
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
-                        modifier = Modifier.menuAnchor().fillMaxWidth().onFocusChanged { fs ->
-                            if (fs.isFocused) { query = ""; expanded = true } else query = vm.selectedSupplier?.name ?: ""
+                        modifier = Modifier.fillMaxWidth().onFocusChanged { fs ->
+                            if (fs.isFocused) { query = ""; expanded = true }
+                            else { expanded = false; query = vm.selectedSupplier?.name ?: "" }
                         }
                     )
-                    ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                        filtered.forEach { s ->
-                            DropdownMenuItem(
-                                text = { Text(s.name + if (s.isDefault) "  (default)" else "") },
-                                onClick = { vm.selectSupplier(s); query = s.name; expanded = false; focusManager.clearFocus() }
-                            )
-                        }
-                        if (filtered.isEmpty()) DropdownMenuItem(text = { Text("No match") }, onClick = { expanded = false })
+                    if (expanded) {
+                        com.billing.pos.ui.common.SearchPickList(
+                            items = filtered,
+                            itemLabel = { it.name + if (it.isDefault) "  (default)" else "" },
+                            onPick = { s -> vm.selectSupplier(s); query = s.name; expanded = false; focusManager.clearFocus() }
+                        )
                     }
                 }
                 IconButton(onClick = { showNewSupplier = true }) { Icon(Icons.Filled.PersonAdd, "New supplier") }

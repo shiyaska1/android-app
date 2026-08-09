@@ -291,7 +291,7 @@ class StickyNoteViewModel(app: Application) : AndroidViewModel(app) {
                     var text = ""
                     if (ready && strokes.isNotEmpty()) text = ink.recognize(strokes)
                     if (text.isBlank() && p.bg != null && w > 0 && h > 0) {
-                        text = ocrPageBitmap(ctx, p, w, h, " ", com.billing.pos.data.AppPrefs.OCR_ENGLISH)
+                        text = ocrPageBitmap(ctx, p, w, h, " ")
                     }
                     numRegex.find(text)?.value?.replace(",", ".")?.toDoubleOrNull()?.let { if (it > 0.0) out.add(com.billing.pos.ocr.ScannedItem("", it)) }
                 }
@@ -308,14 +308,11 @@ class StickyNoteViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Recognises the handwriting TEXT of every page; each page becomes one paragraph. */
-    fun ocrTextAllPages(pages: List<PageData>, w: Int, h: Int, lang: String? = null, onResult: (String) -> Unit) {
+    fun ocrTextAllPages(pages: List<PageData>, w: Int, h: Int, onResult: (String) -> Unit) {
         val ctx = getApplication<Application>()
         message.value = "Reading text…"
         viewModelScope.launch {
-            val ink = com.billing.pos.ink.InkRecognizer(
-                if (lang == com.billing.pos.data.AppPrefs.OCR_MALAYALAM) com.billing.pos.ink.InkLang.MALAYALAM
-                else com.billing.pos.ink.InkLang.ENGLISH
-            )
+            val ink = com.billing.pos.ink.InkRecognizer(com.billing.pos.ink.InkLang.ENGLISH)
             val ready = ink.ensureReady()
             val paragraphs = withContext(Dispatchers.IO) {
                 val out = ArrayList<String>()
@@ -324,7 +321,7 @@ class StickyNoteViewModel(app: Application) : AndroidViewModel(app) {
                     var text = ""
                     if (ready && strokes.isNotEmpty()) text = ink.recognize(strokes)
                     if (text.isBlank() && p.bg != null && w > 0 && h > 0) {
-                        text = ocrPageBitmap(ctx, p, w, h, "\n", lang)
+                        text = ocrPageBitmap(ctx, p, w, h, "\n")
                     }
                     if (text.isNotBlank()) out.add(text.trim())
                 }
@@ -348,7 +345,7 @@ class StickyNoteViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Renders the page, crops to the selection box (if any), OCRs it, and returns the joined text. */
-    private suspend fun ocrPageBitmap(ctx: android.content.Context, p: PageData, w: Int, h: Int, sep: String, lang: String? = null): String {
+    private suspend fun ocrPageBitmap(ctx: android.content.Context, p: PageData, w: Int, h: Int, sep: String): String {
         var bmp = renderPage(p, w, h)
         p.region?.let { r ->
             val left = r.left.toInt().coerceIn(0, w - 1)
@@ -362,7 +359,7 @@ class StickyNoteViewModel(app: Application) : AndroidViewModel(app) {
         val f = File(ctx.cacheDir, "ocr_${System.nanoTime()}.jpg")
         f.outputStream().use { bmp.compress(Bitmap.CompressFormat.JPEG, 92, it) }
         bmp.recycle()
-        val text = com.billing.pos.ocr.TextOcr.lines(ctx, android.net.Uri.fromFile(f), lang).joinToString(sep)
+        val text = com.billing.pos.ocr.TextOcr.lines(ctx, android.net.Uri.fromFile(f)).joinToString(sep)
         f.delete()
         return text
     }
@@ -687,6 +684,7 @@ fun StickyNoteScreen(onClose: () -> Unit, onOcrToSales: () -> Unit = {}, vm: Sti
         var newName by remember { mutableStateOf("") }
         var newPhone by remember { mutableStateOf("") }
         var newCType by remember { mutableStateOf("General") }
+        var narration by remember { mutableStateOf("") }
         val scope = androidx.compose.runtime.rememberCoroutineScope()
 
         fun pagesSnapshot() = pages.map { PageData(it.strokes.toList(), it.bg, null, it.texts.map { t -> t.snapshot() }) }
@@ -695,12 +693,21 @@ fun StickyNoteScreen(onClose: () -> Unit, onOcrToSales: () -> Unit = {}, vm: Sti
             val cust = picked ?: customers.firstOrNull { it.name.equals(typed.trim(), true) }
             if (cust == null) { vm.message.value = "Pick a customer, or use + to add one"; return }
             vm.attachedCustomer = cust
+            val note = narration.trim()
+            if (note.isNotBlank()) {
+                scope.launch {
+                    val addr = if (cust.address.isBlank()) note else cust.address + "\n" + note
+                    com.billing.pos.data.Repository(context).updateCustomer(cust.copy(address = addr))
+                }
+            }
             vm.attachToCustomer(
                 cust.id, pagesSnapshot(), canvasSize.width, canvasSize.height,
                 images.toList(), audios.toList(), videos.toList()
             ) { paths ->
                 if (share) {
-                    val caption = if (cust.phone.isNotBlank()) cust.name + "\n" + cust.phone else cust.name
+                    val caption = cust.name +
+                        (if (cust.phone.isNotBlank()) "\n" + cust.phone else "") +
+                        (if (note.isNotBlank()) "\n" + note else "")
                     shareNoteFiles(context, caption, paths)
                 }
             }
@@ -799,8 +806,14 @@ fun StickyNoteScreen(onClose: () -> Unit, onOcrToSales: () -> Unit = {}, vm: Sti
                             Icon(Icons.Filled.PersonAdd, "New customer", tint = MaterialTheme.colorScheme.primary)
                         }
                     }
+                    OutlinedTextField(
+                        value = narration, onValueChange = { narration = it },
+                        label = { Text("Narration (optional)") },
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                    )
                     Text(
-                        "Saves every page, photo, voice and video as attachments on the customer.",
+                        "Saves every page, photo, voice and video as attachments on the customer. " +
+                            "The narration is added to their address and to what's shared.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.outline,
                         modifier = Modifier.padding(top = 8.dp)
@@ -897,33 +910,20 @@ fun StickyNoteScreen(onClose: () -> Unit, onOcrToSales: () -> Unit = {}, vm: Sti
         )
     }
 
-    // Ask: read as numbers or text? The chips also decide which engine reads the text.
-    var ocrLang by remember { mutableStateOf(com.billing.pos.ui.common.OcrLang.default(context)) }
+    // Ask: read as numbers or text?
     if (ocrModeAsk) {
         val pageData = pages.map { PageData(it.strokes.toList(), it.bg, it.regionRect(), it.texts.map { t -> t.snapshot() }) }
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { ocrModeAsk = false },
             title = { Text("Read handwriting as") },
             text = {
-                Column {
-                    Text("Numbers — each page's amount for a sale. Text — combine all pages into editable text.")
-                    Text(
-                        "Text is read in this language (numbers are always digits):",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.outline,
-                        modifier = Modifier.padding(top = 10.dp)
-                    )
-                    com.billing.pos.ui.common.OcrLanguageChips(
-                        selected = ocrLang, onSelect = { ocrLang = it },
-                        modifier = Modifier.padding(top = 6.dp)
-                    )
-                }
+                Text("Numbers — each page's amount for a sale. Text — combine all pages into editable text.")
             },
             confirmButton = {
                 Button(onClick = { ocrModeAsk = false; vm.ocrAllPages(pageData, canvasSize.width, canvasSize.height) { items -> ocrResult = items } }) { Text("Numbers") }
             },
             dismissButton = {
-                OutlinedButton(onClick = { ocrModeAsk = false; vm.ocrTextAllPages(pageData, canvasSize.width, canvasSize.height, ocrLang) { t -> ocrText = t } }) { Text("Text") }
+                OutlinedButton(onClick = { ocrModeAsk = false; vm.ocrTextAllPages(pageData, canvasSize.width, canvasSize.height) { t -> ocrText = t } }) { Text("Text") }
             }
         )
     }
@@ -970,28 +970,43 @@ fun StickyNoteScreen(onClose: () -> Unit, onOcrToSales: () -> Unit = {}, vm: Sti
  */
 private fun shareNoteFiles(context: android.content.Context, caption: String, paths: List<String>) {
     if (paths.isEmpty()) return
-    runCatching {
+    val failed = runCatching {
         val uris = ArrayList<android.net.Uri>()
+        var allImages = true
         paths.forEach { p ->
             val f = File(p)
-            if (f.exists()) uris.add(
-                FileProvider.getUriForFile(context, "${context.packageName}.provider", f)
-            )
+            if (f.exists()) {
+                uris.add(FileProvider.getUriForFile(context, "${context.packageName}.provider", f))
+                val n = f.name.lowercase()
+                if (!(n.endsWith(".jpg") || n.endsWith(".jpeg") || n.endsWith(".png"))) allImages = false
+            }
         }
-        if (uris.isEmpty()) return
+        if (uris.isEmpty()) return@runCatching
+        // A wildcard "*/*" type sent directly to WhatsApp's package silently drops the attached
+        // media (caption still goes through) — WhatsApp needs a concrete image/* type to pick the
+        // files up. Only known-all-image sets (the common case: a rendered note page) get the
+        // direct-package attempt; anything mixed with video/audio goes straight to the system
+        // chooser, which resolves "*/*" + multiple streams correctly.
+        val mime = if (allImages) "image/*" else "*/*"
         val base = Intent(Intent.ACTION_SEND_MULTIPLE).apply {
-            type = "*/*"
+            type = mime
             putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
             putExtra(Intent.EXTRA_TEXT, caption)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
         }
-        for (pkg in listOf("com.whatsapp", "com.whatsapp.w4b")) {
-            val direct = Intent(base).setPackage(pkg)
-            if (direct.resolveActivity(context.packageManager) != null) {
-                runCatching { context.startActivity(direct) }.onSuccess { return }
+        if (allImages) {
+            for (pkg in listOf("com.whatsapp", "com.whatsapp.w4b")) {
+                val direct = Intent(base).setPackage(pkg)
+                if (direct.resolveActivity(context.packageManager) != null) {
+                    val sent = runCatching { context.startActivity(direct) }.isSuccess
+                    if (sent) return@runCatching
+                }
             }
         }
         context.startActivity(Intent.createChooser(base, "Share note").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }.isFailure
+    if (failed) {
+        android.widget.Toast.makeText(context, "Could not open share screen", android.widget.Toast.LENGTH_SHORT).show()
     }
 }
 

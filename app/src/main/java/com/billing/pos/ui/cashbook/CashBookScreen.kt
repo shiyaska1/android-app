@@ -7,10 +7,13 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -18,12 +21,12 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.GridOn
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.Divider
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -55,6 +58,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.lifecycle.AndroidViewModel
@@ -335,30 +339,43 @@ fun CashBookScreen(
             return@Scaffold
         }
 
-        Column(Modifier.fillMaxSize().padding(pad).padding(12.dp)) {
-            // Date range (optional)
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { pickDate(context, fromMillis) { fromMillis = it } }, modifier = Modifier.weight(1f)) {
-                    Text("From: " + (fromMillis?.let { Format.date(it) } ?: "any"))
-                }
-                OutlinedButton(onClick = { pickDate(context, toMillis) { toMillis = it } }, modifier = Modifier.weight(1f)) {
-                    Text("To: " + (toMillis?.let { Format.date(it) } ?: "any"))
-                }
+        val compactField = MaterialTheme.typography.bodySmall
+        val compactPad = PaddingValues(horizontal = 8.dp, vertical = 6.dp)
+        Column(Modifier.fillMaxSize().padding(pad).padding(8.dp)) {
+            // Date range + search, one row — every box shrunk (padding/font) to leave more
+            // room for the entry list below.
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                OutlinedButton(
+                    onClick = { pickDate(context, fromMillis) { fromMillis = it } },
+                    modifier = Modifier.weight(1f), contentPadding = compactPad
+                ) { Text(fromMillis?.let { Format.date(it) } ?: "From", style = compactField, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                OutlinedButton(
+                    onClick = { pickDate(context, toMillis) { toMillis = it } },
+                    modifier = Modifier.weight(1f), contentPadding = compactPad
+                ) { Text(toMillis?.let { Format.date(it) } ?: "To", style = compactField, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                OutlinedTextField(
+                    value = searchQuery, onValueChange = { searchQuery = it },
+                    placeholder = { Text("Search", style = compactField) }, singleLine = true,
+                    textStyle = compactField,
+                    modifier = Modifier.weight(1.3f).height(48.dp)
+                )
                 if (fromMillis != null || toMillis != null) {
-                    TextButton(onClick = { fromMillis = null; toMillis = null }) { Text("Clear") }
+                    IconButton(onClick = { fromMillis = null; toMillis = null }, modifier = Modifier.size(32.dp)) {
+                        Icon(Icons.Filled.Close, "Clear dates", modifier = Modifier.size(16.dp))
+                    }
                 }
             }
 
             // Payment mode + voucher type as two dropdowns on one row, so the
             // entry list below gets the space the two chip rows used to take.
-            Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 var modeMenu by remember { mutableStateOf(false) }
                 ExposedDropdownMenuBox(expanded = modeMenu, onExpandedChange = { modeMenu = !modeMenu }, modifier = Modifier.weight(1f)) {
                     OutlinedTextField(
                         readOnly = true, value = if (modeFilter == "All") "All modes" else modeFilter, onValueChange = {},
-                        singleLine = true,
+                        singleLine = true, textStyle = compactField,
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(modeMenu) },
-                        modifier = Modifier.menuAnchor().fillMaxWidth()
+                        modifier = Modifier.menuAnchor().fillMaxWidth().height(48.dp)
                     )
                     ExposedDropdownMenu(expanded = modeMenu, onDismissRequest = { modeMenu = false }) {
                         listOf("All", "Cash", "UPI", "Card", "Cheque").forEach { m ->
@@ -375,9 +392,9 @@ fun CashBookScreen(
                 ExposedDropdownMenuBox(expanded = typeMenu, onExpandedChange = { typeMenu = !typeMenu }, modifier = Modifier.weight(1f)) {
                     OutlinedTextField(
                         readOnly = true, value = if (typeFilter == "All") "All types" else typeFilter, onValueChange = {},
-                        singleLine = true,
+                        singleLine = true, textStyle = compactField,
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(typeMenu) },
-                        modifier = Modifier.menuAnchor().fillMaxWidth()
+                        modifier = Modifier.menuAnchor().fillMaxWidth().height(48.dp)
                     )
                     ExposedDropdownMenu(expanded = typeMenu, onDismissRequest = { typeMenu = false }) {
                         typeOptions.forEach { t ->
@@ -387,25 +404,16 @@ fun CashBookScreen(
                 }
             }
 
-            // Search
-            OutlinedTextField(
-                value = searchQuery, onValueChange = { searchQuery = it },
-                label = { Text("Search entries") }, singleLine = true,
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-            )
-
-            // Balances
-            Card(Modifier.fillMaxWidth().padding(top = 12.dp)) {
-                Column(Modifier.padding(16.dp)) {
-                    BalRow("Opening balance", opening)
-                    BalRow("Total in", totalIn, Color(0xFF2E7D32))
-                    BalRow("Total out", -totalOut, MaterialTheme.colorScheme.error)
-                    Divider(Modifier.padding(vertical = 8.dp))
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("Closing balance", fontWeight = FontWeight.Bold)
-                        Text(Format.rupee(closing), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
-                    }
-                }
+            // Balances — one compact row instead of a tall card, so it costs one line of
+            // height instead of four.
+            Row(
+                Modifier.fillMaxWidth().padding(top = 6.dp),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                BalCell("Open", opening)
+                BalCell("In", totalIn, Color(0xFF2E7D32))
+                BalCell("Out", -totalOut, MaterialTheme.colorScheme.error)
+                BalCell("Close", closing, fontWeight = FontWeight.Bold)
             }
 
             if (visibleRows.isEmpty()) {
@@ -414,7 +422,7 @@ fun CashBookScreen(
                     color = MaterialTheme.colorScheme.outline, modifier = Modifier.padding(top = 16.dp)
                 )
             } else {
-                LazyColumn(Modifier.fillMaxWidth().weight(1f).padding(top = 8.dp)) {
+                LazyColumn(Modifier.fillMaxWidth().weight(1f).padding(top = 4.dp)) {
                     items(visibleRows) { (t, balance) ->
                         Row(
                             Modifier
@@ -428,26 +436,26 @@ fun CashBookScreen(
                                         "JOURNAL" -> t.journal?.let { onEditJournal(it.id) }
                                     }
                                 }
-                                .padding(vertical = 8.dp),
+                                .padding(vertical = 4.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Column(Modifier.weight(1f)) {
-                                Text(t.title, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                                Text(t.title, fontWeight = FontWeight.SemiBold, maxLines = 1, style = MaterialTheme.typography.bodyMedium)
                                 Text(
                                     "${t.kind.lowercase().replaceFirstChar { it.uppercase() }} • ${t.mode} • ${Format.date(t.date)}",
-                                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline
+                                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline
                                 )
                             }
                             Text(
                                 (if (t.isIn) "+ " else "- ") + Format.money(t.amount),
                                 color = if (t.isIn) Color(0xFF2E7D32) else MaterialTheme.colorScheme.error,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall
                             )
                             Text(
                                 Format.money(balance),
-                                modifier = Modifier.padding(start = 12.dp).width(78.dp),
+                                modifier = Modifier.padding(start = 8.dp).width(70.dp),
                                 textAlign = androidx.compose.ui.text.style.TextAlign.End,
-                                style = MaterialTheme.typography.bodySmall
+                                style = MaterialTheme.typography.labelSmall
                             )
                         }
                         Divider()
@@ -456,17 +464,15 @@ fun CashBookScreen(
             }
 
             // Bottom total — reflects only the entries currently displayed.
-            Card(Modifier.fillMaxWidth().padding(top = 8.dp)) {
-                Row(
-                    Modifier.fillMaxWidth().padding(12.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    FooterCell("Shown", "${visibleRows.size}")
-                    FooterCell("In", "+ " + Format.money(visIn), Color(0xFF2E7D32))
-                    FooterCell("Out", "- " + Format.money(visOut), MaterialTheme.colorScheme.error)
-                    FooterCell("Net", Format.rupee(visNet), fontWeight = FontWeight.Bold)
-                }
+            Row(
+                Modifier.fillMaxWidth().padding(top = 4.dp).padding(vertical = 6.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                FooterCell("Shown", "${visibleRows.size}")
+                FooterCell("In", "+ " + Format.money(visIn), Color(0xFF2E7D32))
+                FooterCell("Out", "- " + Format.money(visOut), MaterialTheme.colorScheme.error)
+                FooterCell("Net", Format.rupee(visNet), fontWeight = FontWeight.Bold)
             }
         }
     }
@@ -484,10 +490,10 @@ fun CashBookScreen(
 }
 
 @Composable
-private fun BalRow(label: String, value: Double, color: Color = Color.Unspecified) {
-    Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-        Text(label)
-        Text(Format.rupee(value), color = color, fontWeight = FontWeight.SemiBold)
+private fun BalCell(label: String, value: Double, color: Color = Color.Unspecified, fontWeight: FontWeight? = FontWeight.SemiBold) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+        Text(Format.rupee(value), color = color, fontWeight = fontWeight, style = MaterialTheme.typography.bodySmall, maxLines = 1)
     }
 }
 

@@ -101,14 +101,22 @@ interface PurchaseDao {
     @Query("SELECT * FROM purchases WHERE deviceId = :deviceId AND purchaseNo = :purchaseNo LIMIT 1")
     suspend fun byDeviceAndNo(deviceId: String, purchaseNo: String): Purchase?
 
+    /** Fallback match by number alone, for records with no deviceId (older data, imports) —
+     *  without this, merge/sync re-inserts them as new duplicates every cycle. */
+    @Query("SELECT * FROM purchases WHERE purchaseNo = :purchaseNo LIMIT 1")
+    suspend fun byNo(purchaseNo: String): Purchase?
+
     @Query("SELECT * FROM purchases ORDER BY dateMillis DESC")
     fun observeAll(): Flow<List<Purchase>>
 
     @Query("SELECT * FROM purchases")
     suspend fun all(): List<Purchase>
 
+    // pi.price is tax-INCLUSIVE (matches CartLine.tax's extraction), same as bill_items — see
+    // BillDao.taxLines() for why this can't be a plain qty*price*rate/100 addition.
     @Query(
-        "SELECT (pi.qty*pi.price) AS taxable, (pi.qty*pi.price*pi.taxPercent/100.0) AS tax, " +
+        "SELECT (pi.qty*pi.price) / (1.0 + pi.taxPercent/100.0) AS taxable, " +
+            "(pi.qty*pi.price) - (pi.qty*pi.price) / (1.0 + pi.taxPercent/100.0) AS tax, " +
             "pi.taxPercent AS rate, p.dateMillis AS dateMillis " +
             "FROM purchase_items pi JOIN purchases p ON pi.purchaseId = p.id"
     )

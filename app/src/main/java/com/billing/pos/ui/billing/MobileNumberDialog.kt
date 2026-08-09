@@ -115,20 +115,67 @@ fun MobileNumberDialog(
 
     // "Save customer": the number is already known, so only the name is asked for. If this
     // number already belongs to a customer, its name is filled in and there is nothing to save.
+    // Typing a name that matches an existing customer suggests them, so a duplicate isn't
+    // accidentally created — picking one just attaches this number to them.
     saveCustomerFor?.let { num ->
         var name by remember(num) { mutableStateOf("") }
         var existing by remember(num) { mutableStateOf<com.billing.pos.data.Customer?>(null) }
+        var picked by remember(num) { mutableStateOf<com.billing.pos.data.Customer?>(null) }
         var draw by remember(num) { mutableStateOf(false) }
         var ctype by remember(num) { mutableStateOf("General") }
+        var narration by remember(num) { mutableStateOf("") }
+        var allCustomers by remember(num) { mutableStateOf<List<com.billing.pos.data.Customer>>(emptyList()) }
+        var showSuggestions by remember(num) { mutableStateOf(false) }
         LaunchedEffect(num) {
-            val c = com.billing.pos.data.Repository(context).customerByPhone(num)
+            val repo = com.billing.pos.data.Repository(context)
+            allCustomers = repo.customersAll()
+            val c = repo.customerByPhone(num)
             if (c != null) { existing = c; name = c.name }
+        }
+        val suggestions = remember(name, allCustomers, existing) {
+            if (existing != null || name.isBlank()) emptyList()
+            else allCustomers.filter { it.name.contains(name, ignoreCase = true) }.take(6)
         }
         if (draw) {
             com.billing.pos.ui.common.HandwriteTextDialog(
                 onResult = { t -> if (t.isNotBlank()) name = t; draw = false },
                 onDismiss = { draw = false }
             )
+        }
+        // Customer name + mobile number + narration, in that order — used both for the shared
+        // text and (minus the name, which needs no repeating) for what's appended to the
+        // customer's address field.
+        fun shareText(savedName: String): String =
+            savedName + "\n" + num + (narration.trim().takeIf { it.isNotBlank() }?.let { "\n$it" } ?: "")
+        fun appendNarration(currentAddress: String): String {
+            val n = narration.trim()
+            return when {
+                n.isBlank() -> currentAddress
+                currentAddress.isBlank() -> n
+                else -> "$currentAddress\n$n"
+            }
+        }
+        fun doSave(thenShare: Boolean) {
+            val typed = name.trim()
+            scope.launch {
+                val repo = com.billing.pos.data.Repository(context)
+                val savedName: String
+                when {
+                    picked != null -> {
+                        repo.updateCustomer(picked!!.copy(phone = num, address = appendNarration(picked!!.address)))
+                        savedName = picked!!.name
+                        android.widget.Toast.makeText(context, "$num attached to ${picked!!.name}", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                    typed.isNotBlank() -> {
+                        repo.addCustomer(typed, num, narration.trim(), customerType = ctype)
+                        savedName = typed
+                        android.widget.Toast.makeText(context, "$typed saved to customers", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                    else -> return@launch
+                }
+                if (thenShare) com.billing.pos.util.ShareText.share(context, shareText(savedName))
+                saveCustomerFor = null
+            }
         }
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { saveCustomerFor = null },
@@ -141,34 +188,60 @@ fun MobileNumberDialog(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.primary
                     )
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        OutlinedTextField(
-                            value = name, onValueChange = { name = it },
-                            label = { Text("Customer name") }, singleLine = true,
-                            modifier = Modifier.weight(1f).padding(top = 8.dp)
-                        )
-                        // Handwrite the name.
-                        androidx.compose.material3.IconButton(onClick = { draw = true }) {
-                            Icon(Icons.Filled.Draw, "Handwrite name")
+                    if (picked != null) Text(
+                        "This number will be attached to ${picked!!.name}.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    if (existing == null) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            OutlinedTextField(
+                                value = name,
+                                onValueChange = { name = it; picked = null; showSuggestions = true },
+                                label = { Text("Customer name") }, singleLine = true,
+                                modifier = Modifier.weight(1f).padding(top = 8.dp)
+                            )
+                            // Handwrite the name.
+                            androidx.compose.material3.IconButton(onClick = { draw = true }) {
+                                Icon(Icons.Filled.Draw, "Handwrite name")
+                            }
+                        }
+                        if (picked == null && showSuggestions && suggestions.isNotEmpty()) {
+                            com.billing.pos.ui.common.SearchPickList(
+                                items = suggestions,
+                                itemLabel = { it.name + (if (it.phone.isNotBlank()) "  •  ${it.phone}" else "") },
+                                onPick = { c -> picked = c; name = c.name; showSuggestions = false }
+                            )
                         }
                     }
-                    if (existing == null) {
+                    if (existing == null && picked == null) {
                         com.billing.pos.ui.common.CustomerTypeField(
                             value = ctype, onValue = { ctype = it },
                             modifier = Modifier.padding(top = 8.dp)
                         )
                     }
+                    OutlinedTextField(
+                        value = narration, onValueChange = { narration = it },
+                        label = { Text("Narration (optional)") },
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                    )
                 }
             },
             confirmButton = {
-                if (existing == null) androidx.compose.material3.TextButton(onClick = {
-                    val typed = name.trim()
-                    if (typed.isNotBlank()) {
-                        scope.launch { com.billing.pos.data.Repository(context).addCustomer(typed, num, "", customerType = ctype) }
-                        android.widget.Toast.makeText(context, "$typed saved to customers", android.widget.Toast.LENGTH_SHORT).show()
-                        saveCustomerFor = null
-                    }
-                }) { Text("Save") }
+                if (existing == null) Row {
+                    androidx.compose.material3.TextButton(onClick = { doSave(thenShare = false) }) { Text("Save") }
+                    androidx.compose.material3.TextButton(onClick = { doSave(thenShare = true) }) { Text("Save & Share") }
+                } else {
+                    androidx.compose.material3.TextButton(onClick = {
+                        scope.launch {
+                            if (narration.isNotBlank()) {
+                                com.billing.pos.data.Repository(context)
+                                    .updateCustomer(existing!!.copy(address = appendNarration(existing!!.address)))
+                            }
+                            com.billing.pos.util.ShareText.share(context, shareText(existing!!.name))
+                        }
+                    }) { Text("Share") }
+                }
             },
             dismissButton = {
                 androidx.compose.material3.TextButton(onClick = { saveCustomerFor = null }) {

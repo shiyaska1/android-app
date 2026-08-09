@@ -24,8 +24,21 @@ object A4InvoicePdf {
     private const val M = 36f        // margin
 
     fun invoice(context: Context, company: CompanyInfo, bill: Bill, lines: List<BillItem>, imagePaths: List<String> = emptyList(), docTitle: String? = null): Uri {
-        val actualDocTitle = docTitle ?: if (bill.taxTotal > 0.0) "TAX INVOICE" else "INVOICE"
         val prefs = AppPrefs(context)
+        // A No Tax Invoice never shows GST info, regardless of Settings — same as GST mode off.
+        val noTax = bill.isNoTax
+        val gst = !noTax && prefs.gstEnabled
+        val composition = gst && prefs.compositionScheme
+        val split = com.billing.pos.data.GstTax.split(bill.taxTotal, company.gstin, bill.customerState)
+        val actualDocTitle = docTitle ?: when {
+            noTax -> ""
+            composition -> "BILL OF SUPPLY"
+            gst -> "TAX INVOICE"
+            else -> "INVOICE"
+        }
+        // With GST mode off, tax isn't itemised at all — Sub Total is the full inclusive amount
+        // so it still reconciles with Additional/Discount/GRAND TOTAL below with nothing unexplained.
+        val displaySubTotal = if (gst) bill.subTotal else bill.subTotal + bill.taxTotal + bill.cessTotal
         val doc = PdfDocument()
 
         val black = Paint().apply { color = 0xFF000000.toInt(); isAntiAlias = true }
@@ -54,7 +67,9 @@ object A4InvoicePdf {
         var y: Float
 
         // ---- Header ----
-        if (logo != null && prefs.logoFullWidth) {
+        if (noTax) {
+            y = M + 10f
+        } else if (logo != null && prefs.logoFullWidth) {
             val w = xEnd - x0
             val h = w * logo.height / logo.width
             val cappedH = h.coerceAtMost(140f)
@@ -72,23 +87,38 @@ object A4InvoicePdf {
             var hy = M + 40f
             if (company.address.isNotBlank()) { c.drawText(company.address, textX, hy, sub); hy += 15f }
             if (company.phone.isNotBlank()) { c.drawText("Phone: ${company.phone}", textX, hy, sub); hy += 15f }
-            if (company.gstin.isNotBlank()) { c.drawText("GSTIN: ${company.gstin}", textX, hy, sub); hy += 15f }
+            if (gst && company.gstin.isNotBlank()) { c.drawText("GSTIN: ${company.gstin}", textX, hy, sub); hy += 15f }
             y = maxOf(hy, M + 78f) + 8f
         }
 
         // ---- Title bar ----
         c.drawLine(x0, y, xEnd, y, line)
         y += 20f
-        val tp = Paint(cellBold).apply { textSize = 15f; textAlign = Paint.Align.CENTER }
-        c.drawText(actualDocTitle, (x0 + xEnd) / 2f, y, tp)
-        y += 18f
+        if (!noTax) {
+            val tp = Paint(cellBold).apply { textSize = 15f; textAlign = Paint.Align.CENTER }
+            c.drawText(actualDocTitle, (x0 + xEnd) / 2f, y, tp)
+            y += 18f
+        }
 
         // ---- Bill meta ----
-        c.drawText("Invoice No: ${bill.billNo}", x0, y, sub)
-        c.drawText("Date: ${Format.date(bill.dateMillis)}", cRate - 40f, y, sub)
-        y += 15f
-        c.drawText("Bill To: ${bill.customerName}", x0, y, sub)
-        c.drawText("Payment: ${bill.paymentMethod}", cRate - 40f, y, sub)
+        if (noTax) {
+            c.drawText("Date: ${Format.date(bill.dateMillis)}", x0, y, sub)
+            c.drawText("Ref No: ${bill.billNo}", cRate - 40f, y, sub)
+            y += 15f
+        } else {
+            c.drawText("Invoice No: ${bill.billNo}", x0, y, sub)
+            c.drawText("Date: ${Format.date(bill.dateMillis)}", cRate - 40f, y, sub)
+            y += 15f
+            c.drawText("Bill To: ${bill.customerName}", x0, y, sub)
+            c.drawText("Payment: ${bill.paymentMethod}", cRate - 40f, y, sub)
+            y += 15f
+            if (gst) {
+                val supplyType = if (bill.customerGstin.isNotBlank()) "B2B" else "B2C"
+                val gstinText = if (bill.customerGstin.isNotBlank()) "GSTIN: ${bill.customerGstin}  ·  $supplyType" else supplyType
+                c.drawText(gstinText, x0, y, sub)
+                y += 15f
+            }
+        }
         y += 12f
 
         // ---- Table header ----
@@ -142,8 +172,12 @@ object A4InvoicePdf {
             c.drawText(value, valueR, y, vp)
             y += 17f
         }
-        total("Sub Total", Format.money(bill.subTotal))
-        if (bill.taxTotal != 0.0) total("Tax", Format.money(bill.taxTotal))
+        total("Sub Total", Format.money(displaySubTotal))
+        if (gst && !composition && bill.taxTotal != 0.0) {
+            if (split.interstate) total("IGST", Format.money(split.igst))
+            else { total("CGST", Format.money(split.cgst)); total("SGST", Format.money(split.sgst)) }
+        }
+        if (gst && !composition && bill.cessTotal != 0.0) total("Cess", Format.money(bill.cessTotal))
         if (bill.additionalCharge != 0.0) total("Additional", Format.money(bill.additionalCharge))
         if (bill.discount != 0.0) total("Discount", "-" + Format.money(bill.discount))
         c.drawLine(cRate, y - 2f, xEnd, y - 2f, line)

@@ -110,4 +110,7 @@ interface DiaryDao {
 
     @Query("DELETE FROM diary_blocks WHERE entryId = :entryId")
     suspend fun deleteBlocksFor(entryId: Long)
+
+    @Query("DELETE FROM diary_blocks WHERE id = :id")
+    suspend fun deleteBlock(id: Long)
 }

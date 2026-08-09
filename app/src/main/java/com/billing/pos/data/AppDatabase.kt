@@ -52,7 +52,9 @@ import androidx.room.TypeConverters
         ItemBundle::class, ItemBundleComponent::class,
         ChequeEntry::class, CostCenter::class, FixedAsset::class,
         BankReconciliation::class,
-        RecurringJournal::class, RecurringJournalLine::class
+        RecurringJournal::class, RecurringJournalLine::class,
+        ShopCatalogItem::class, OnlineOrder::class, CustomerOrderHistory::class,
+        CustomerNotification::class, ShopMessage::class
     ],
     // v25 quotations; v26 sales returns; v27 purchase returns; v28 purchase quotations (LPO);
     // v29 dual units; v30 rental; v31 medical lab; v32 lab masters + heading rows;
@@ -82,7 +84,59 @@ import androidx.room.TypeConverters
     // register, cost centers (+ tag on journal lines), fixed asset register.
     // v75 updatedAt on bills/purchases/receipts/expenses/quotations/estimates/journal entries —
     // last-edited timestamp (distinct from dateMillis), driving the cloud-sync push-window filter.
-    version = 81,
+    // v82 customer/bill state (IGST vs CGST+SGST): Customer.state, Bill.customerState.
+    // v83 supplier/purchase state (IGST vs CGST+SGST): Supplier.state, Purchase.supplierState.
+    // v84 GST Compensation Cess: cessPercent on Item/BillItem/PurchaseItem, cessTotal on Bill/Purchase.
+    // v85 No Tax Invoice: Bill.isNoTax.
+    // v86 per-entry labels on a saved calculator tape (e.g. "Fuel", "Labour"), JSON-packed
+    // index-aligned with the amounts.
+    // v87 SavedCalc.linkedBillId: the quick-due Bill a calculation created for its customer,
+    // so deleting/re-saving the calculation can keep that due in sync instead of stranding it.
+    // v88 SavedCalc.linkedAttachmentId: the customer-attachment PDF a calculation filed,
+    // so re-saving replaces it instead of leaving a stale copy on the customer.
+    // v89 Online ordering: Item.isOnline + Item.onlineOfferPrice (shop owner's catalog upload
+    // selection), and shop_catalog_items (the customer app's offline cache of a fetched catalog).
+    // v90 online_orders: the shop owner's permanent local copy of orders fetched from the server
+    // (customer name/phone deduped against Customer, packed item lines, a locally-managed status).
+    // v91 OnlineOrder.location (a Google Maps link, shop owner side), customerAddress, note and
+    // attachmentImage (premium-shop photo attachment), and customer_order_history (the customer's
+    // own local record of what they ordered, for Order History / Re-order).
+    // v92 CustomerOrderHistory.serverId (matches a notification back to the order it's about),
+    // and customer_notifications: order status changes / messages the shop sent, pulled from the
+    // server's do=notifications.
+    // v93 CustomerOrderHistory.note — a manual/OCR'd order isn't tied to any catalog items, so
+    // without this Order History would show nothing for it.
+    // v94 shop_catalog_items.shop — items are now cached per shop instead of one global list
+    // wiped on every switch, so switching back to an already-visited shop shows its catalog
+    // instantly. customerKnownShops (see ShopSwitch) also grew phone/bannerImage/lastFetchedAt,
+    // but that's packed JSON in an existing AppPrefs string field, not a schema change.
+    // v95 shop_messages: the shop owner's permanent local copy of the two-way chat with each
+    // customer (both an outgoing status/message push and an incoming customer reply insert a row
+    // here), for the Messages inbox (grouped by customer, unread red dot, per-customer thread).
+    // v96 customer_notifications.shop/shopName — which shop a notification/promotion came from,
+    // now that one customer can be connected to several shops (see ShopSwitch).
+    // v97 online_orders.attachmentImages — multiple photo attachments per order (packed JSON),
+    // replacing the old single attachmentImage column.
+    // v98 items.driveLink / shop_catalog_items.driveLink — one or more links (comma-separated) to
+    // a photo/catalog for an item; direct image links become a tap-to-zoom gallery for online
+    // customers, others a plain clickable link — an alternative to uploading a photo here.
+    // v99 online_orders.paymentStatus / customer_order_history.paymentStatus / cust_orders.paymentStatus
+    // — "UPI" when a customer paid for an online order at order time (self-reported via their UPI
+    // app's own response), carried from the online order through to the sale bill it's converted
+    // into (see OrderToBillLink); blank means Cash on delivery, same as before this field existed.
+    // v100 customer_notifications.amount — a bill amount the shop owner is asking to be paid (e.g.
+    // after quoting a note/prescription order that had no fixed price at order time); the
+    // customer app shows a "Pay via UPI now" button on that notification when this is set.
+    // v101 customer_notifications.attachments — a photo and/or voice note the shop owner attached
+    // to a reply (e.g. a bill photo, spoken instructions), packed the same way an order's own
+    // attachments are.
+    // v102 customer_order_history.attachments/replyMessage/replyAttachments — the customer's own
+    // Order History becomes the durable per-order archive for both what they sent (photo/voice
+    // note) and the shop's latest reply, surviving a "Clear all" on the Notifications bell; each
+    // row can now also be individually deleted to free phone space.
+    // v103 shop_messages.attachments — a payment-success screenshot the customer attaches as proof
+    // when marking a bill paid via the QR-code fallback (no automatic success callback there).
+    version = 104,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -146,6 +200,11 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun fixedAssetDao(): FixedAssetDao
     abstract fun bankReconciliationDao(): BankReconciliationDao
     abstract fun recurringJournalDao(): RecurringJournalDao
+    abstract fun shopCatalogDao(): ShopCatalogDao
+    abstract fun onlineOrderDao(): OnlineOrderDao
+    abstract fun customerOrderHistoryDao(): CustomerOrderHistoryDao
+    abstract fun customerNotificationDao(): CustomerNotificationDao
+    abstract fun shopMessageDao(): ShopMessageDao
 
     companion object {
         @Volatile private var INSTANCE: AppDatabase? = null
@@ -759,6 +818,250 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        /** GST interstate support: a customer's state (for IGST vs CGST+SGST), and a snapshot
+         * of it on each bill at sale time so a later edit to the customer doesn't retroactively
+         * change how an old invoice was taxed. */
+        private val MIGRATION_81_82 = object : androidx.room.migration.Migration(81, 82) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE customers ADD COLUMN state TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE bills ADD COLUMN customerState TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
+        /** Same as MIGRATION_81_82, mirrored for the buying side: lets Purchase vouchers (Tally
+         * export) tell an interstate purchase (IGST) from an intra-state one (CGST+SGST). */
+        private val MIGRATION_82_83 = object : androidx.room.migration.Migration(82, 83) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE suppliers ADD COLUMN state TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE purchases ADD COLUMN supplierState TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
+        /** GST Compensation Cess (tobacco, aerated drinks, coal, luxury vehicles, ...): a per-item
+         * rate on top of GST, and per-bill/purchase totals mirroring taxTotal. */
+        private val MIGRATION_83_84 = object : androidx.room.migration.Migration(83, 84) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE items ADD COLUMN cessPercent REAL NOT NULL DEFAULT 0.0")
+                db.execSQL("ALTER TABLE bill_items ADD COLUMN cessPercent REAL NOT NULL DEFAULT 0.0")
+                db.execSQL("ALTER TABLE bills ADD COLUMN cessTotal REAL NOT NULL DEFAULT 0.0")
+                db.execSQL("ALTER TABLE purchase_items ADD COLUMN cessPercent REAL NOT NULL DEFAULT 0.0")
+                db.execSQL("ALTER TABLE purchases ADD COLUMN cessTotal REAL NOT NULL DEFAULT 0.0")
+            }
+        }
+
+        /** No Tax Invoice: a plain, no-company-header, no-tax-shown invoice with its own numbering
+         *  series, kept out of every GST/VAT report. */
+        private val MIGRATION_84_85 = object : androidx.room.migration.Migration(84, 85) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE bills ADD COLUMN isNoTax INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        /** Per-entry labels on a saved calculator tape (Fast bill's "label mode"). */
+        private val MIGRATION_85_86 = object : androidx.room.migration.Migration(85, 86) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE saved_calcs ADD COLUMN labels TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
+        /** The quick-due Bill a saved calculation created for its customer, if any. */
+        private val MIGRATION_86_87 = object : androidx.room.migration.Migration(86, 87) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE saved_calcs ADD COLUMN linkedBillId INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        /** The customer-attachment PDF a saved calculation filed, if any. */
+        private val MIGRATION_87_88 = object : androidx.room.migration.Migration(87, 88) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE saved_calcs ADD COLUMN linkedAttachmentId INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        /** Online ordering: items the shop owner has picked for the online catalog (with an
+         *  optional offer price), and the customer app's local cache of a fetched catalog. */
+        private val MIGRATION_88_89 = object : androidx.room.migration.Migration(88, 89) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE items ADD COLUMN isOnline INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE items ADD COLUMN onlineOfferPrice REAL NOT NULL DEFAULT 0.0")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS shop_catalog_items (" +
+                        "id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "serverId TEXT NOT NULL, name TEXT NOT NULL, category TEXT NOT NULL, " +
+                        "price REAL NOT NULL, unit TEXT NOT NULL, imageUrl TEXT NOT NULL, " +
+                        "description TEXT NOT NULL)"
+                )
+            }
+        }
+
+        /** The shop owner's permanent local copy of orders fetched from the server. */
+        private val MIGRATION_89_90 = object : androidx.room.migration.Migration(89, 90) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS online_orders (" +
+                        "id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "serverId TEXT NOT NULL, customerId INTEGER NOT NULL, " +
+                        "customerName TEXT NOT NULL, customerPhone TEXT NOT NULL, " +
+                        "itemsJson TEXT NOT NULL, total REAL NOT NULL, " +
+                        "receivedAt TEXT NOT NULL, fetchedAt INTEGER NOT NULL, " +
+                        "status TEXT NOT NULL DEFAULT 'PENDING')"
+                )
+            }
+        }
+
+        /** OnlineOrder.location (Google Maps link) + the customer's own local order history. */
+        private val MIGRATION_90_91 = object : androidx.room.migration.Migration(90, 91) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE online_orders ADD COLUMN location TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE online_orders ADD COLUMN customerAddress TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE online_orders ADD COLUMN note TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE online_orders ADD COLUMN attachmentImage TEXT NOT NULL DEFAULT ''")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS customer_order_history (" +
+                        "id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "itemsJson TEXT NOT NULL, total REAL NOT NULL, " +
+                        "placedAt INTEGER NOT NULL, location TEXT NOT NULL DEFAULT '')"
+                )
+            }
+        }
+
+        /** Notification-matching serverId on customer_order_history, and the notifications table. */
+        private val MIGRATION_91_92 = object : androidx.room.migration.Migration(91, 92) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE customer_order_history ADD COLUMN serverId TEXT NOT NULL DEFAULT ''")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS customer_notifications (" +
+                        "id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "orderId TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT '', " +
+                        "message TEXT NOT NULL DEFAULT '', receivedAt INTEGER NOT NULL, " +
+                        "read INTEGER NOT NULL DEFAULT 0)"
+                )
+            }
+        }
+
+        /** A manual/OCR'd order (no catalog items picked) still needs something to show in Order History. */
+        private val MIGRATION_92_93 = object : androidx.room.migration.Migration(92, 93) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE customer_order_history ADD COLUMN note TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
+        /** Per-shop item cache: existing rows (all from whichever shop was active) can't be
+         *  attributed after the fact, so they default to shop='' and simply won't match any real
+         *  shop code — the next switch/open re-fetches once, then caches per shop from then on. */
+        private val MIGRATION_93_94 = object : androidx.room.migration.Migration(93, 94) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE shop_catalog_items ADD COLUMN shop TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
+        /** Shop owner's two-way chat thread with each customer. */
+        private val MIGRATION_94_95 = object : androidx.room.migration.Migration(94, 95) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS shop_messages (" +
+                        "id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "customerPhone TEXT NOT NULL, customerName TEXT NOT NULL DEFAULT '', " +
+                        "orderId TEXT NOT NULL DEFAULT '', direction TEXT NOT NULL, " +
+                        "text TEXT NOT NULL, sentAt INTEGER NOT NULL, read INTEGER NOT NULL DEFAULT 0)"
+                )
+            }
+        }
+
+        /** Which shop a notification came from — needed once a customer can be connected to
+         *  several shops (see ShopSwitch): without this, a promotion from a shop the customer
+         *  isn't currently viewing has no way to identify itself, and a reply to it would
+         *  wrongly go to whichever shop happens to be active instead. Existing rows default to
+         *  blank (pre-dates multi-shop notifications; harmless, they just show unlabeled). */
+        private val MIGRATION_95_96 = object : androidx.room.migration.Migration(95, 96) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE customer_notifications ADD COLUMN shop TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE customer_notifications ADD COLUMN shopName TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
+        /** A customer can now attach several photos to an order (not just one) — packed the same
+         *  way itemsJson packs order lines. The old single-attachment column stays untouched
+         *  (still readable on an order fetched before this change) but is no longer written to. */
+        private val MIGRATION_96_97 = object : androidx.room.migration.Migration(96, 97) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE online_orders ADD COLUMN attachmentImages TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
+        /** An item can carry one or more optional links (comma-separated) to its photo/catalog
+         *  instead of uploading a photo to this server's own storage — direct image links become
+         *  a tap-to-zoom gallery for online customers, others a plain clickable link. */
+        private val MIGRATION_97_98 = object : androidx.room.migration.Migration(97, 98) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE items ADD COLUMN driveLink TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE shop_catalog_items ADD COLUMN driveLink TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
+        /** A customer can now pay for an online order via UPI at order time (self-reported —
+         *  see OrderSubmit/PaymentDialog). Carried from the online order through to the sale bill
+         *  it's later converted into, so the bill's payment mode can auto-fill. */
+        private val MIGRATION_98_99 = object : androidx.room.migration.Migration(98, 99) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE online_orders ADD COLUMN paymentStatus TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE customer_order_history ADD COLUMN paymentStatus TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE cust_orders ADD COLUMN paymentStatus TEXT NOT NULL DEFAULT ''")
+                // Every existing cust_orders row predates online-order payment tracking, so
+                // isOnlineOrder defaults false for all of them — exactly right, since none of
+                // them can retroactively know whether they came from an online order.
+                db.execSQL("ALTER TABLE cust_orders ADD COLUMN isOnlineOrder INTEGER NOT NULL DEFAULT 0")
+            }
+        }
+
+        /** A shop's status/message notification can now carry a bill amount to pay (see
+         *  OrderStatusPush/PaymentDialog) — 0 (the default) means none attached. */
+        private val MIGRATION_99_100 = object : androidx.room.migration.Migration(99, 100) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE customer_notifications ADD COLUMN amount REAL NOT NULL DEFAULT 0")
+            }
+        }
+
+        /** A shop owner's reply can now carry a photo and/or voice note, same as an order's own
+         *  attachments (see OrderStatusPush/MessageDialog). Empty string default = none sent. */
+        private val MIGRATION_100_101 = object : androidx.room.migration.Migration(100, 101) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE customer_notifications ADD COLUMN attachments TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
+        /** Order History becomes the durable archive for an order's own attachments plus the
+         *  shop's latest reply (message/attachments) about it — see CustomerOrderHistory. */
+        private val MIGRATION_101_102 = object : androidx.room.migration.Migration(101, 102) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE customer_order_history ADD COLUMN attachments TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE customer_order_history ADD COLUMN replyMessage TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE customer_order_history ADD COLUMN replyAttachments TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
+        /** A customer paying via the QR-code fallback (no automatic success callback the app can
+         *  detect, unlike the intent-based "Pay via UPI now") can now attach a payment-success
+         *  screenshot as proof when marking a bill paid — carried on the chat message the same
+         *  way an order/notification already carries its own attachments. */
+        private val MIGRATION_102_103 = object : androidx.room.migration.Migration(102, 103) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE shop_messages ADD COLUMN attachments TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
+        /** customer_notifications only ever held what the shop sent (see [CustomerNotification]).
+         *  Now it also stores the customer's own replies (direction='OUT', inserted locally right
+         *  after a successful send — see CustomerCatalogViewModel.replyToShop), so the
+         *  same table can drive a real two-way chat thread per shop, matching ShopMessage's
+         *  direction column on the owner side. Existing rows default to 'IN', which is correct —
+         *  they were all shop-sent. */
+        private val MIGRATION_103_104 = object : androidx.room.migration.Migration(103, 104) {
+            override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE customer_notifications ADD COLUMN direction TEXT NOT NULL DEFAULT 'IN'")
+            }
+        }
+
         fun get(context: Context): AppDatabase =
             INSTANCE ?: synchronized(this) {
                 INSTANCE ?: Room.databaseBuilder(
@@ -766,7 +1069,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "pos_billing.db"
                 )
-                    .addMigrations(MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45, MIGRATION_45_46, MIGRATION_46_47, MIGRATION_47_48, MIGRATION_48_49, MIGRATION_49_50, MIGRATION_50_51, MIGRATION_51_52, MIGRATION_52_53, MIGRATION_53_54, MIGRATION_54_55, MIGRATION_55_56, MIGRATION_56_57, MIGRATION_57_58, MIGRATION_58_59, MIGRATION_59_60, MIGRATION_60_61, MIGRATION_61_62, MIGRATION_62_63, MIGRATION_63_64, MIGRATION_64_65, MIGRATION_65_66, MIGRATION_66_67, MIGRATION_67_68, MIGRATION_68_69, MIGRATION_69_70, MIGRATION_70_71, MIGRATION_71_72, MIGRATION_72_73, MIGRATION_73_74, MIGRATION_74_75, MIGRATION_75_76, MIGRATION_76_77, MIGRATION_77_78, MIGRATION_78_79, MIGRATION_79_80, MIGRATION_80_81)
+                    .addMigrations(MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39, MIGRATION_39_40, MIGRATION_40_41, MIGRATION_41_42, MIGRATION_42_43, MIGRATION_43_44, MIGRATION_44_45, MIGRATION_45_46, MIGRATION_46_47, MIGRATION_47_48, MIGRATION_48_49, MIGRATION_49_50, MIGRATION_50_51, MIGRATION_51_52, MIGRATION_52_53, MIGRATION_53_54, MIGRATION_54_55, MIGRATION_55_56, MIGRATION_56_57, MIGRATION_57_58, MIGRATION_58_59, MIGRATION_59_60, MIGRATION_60_61, MIGRATION_61_62, MIGRATION_62_63, MIGRATION_63_64, MIGRATION_64_65, MIGRATION_65_66, MIGRATION_66_67, MIGRATION_67_68, MIGRATION_68_69, MIGRATION_69_70, MIGRATION_70_71, MIGRATION_71_72, MIGRATION_72_73, MIGRATION_73_74, MIGRATION_74_75, MIGRATION_75_76, MIGRATION_76_77, MIGRATION_77_78, MIGRATION_78_79, MIGRATION_79_80, MIGRATION_80_81, MIGRATION_81_82, MIGRATION_82_83, MIGRATION_83_84, MIGRATION_84_85, MIGRATION_85_86, MIGRATION_86_87, MIGRATION_87_88, MIGRATION_88_89, MIGRATION_89_90, MIGRATION_90_91, MIGRATION_91_92, MIGRATION_92_93, MIGRATION_93_94, MIGRATION_94_95, MIGRATION_95_96, MIGRATION_96_97, MIGRATION_97_98, MIGRATION_98_99, MIGRATION_99_100, MIGRATION_100_101, MIGRATION_101_102, MIGRATION_102_103, MIGRATION_103_104)
                     .fallbackToDestructiveMigration()
                     .build()
                     .also { INSTANCE = it }

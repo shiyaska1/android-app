@@ -44,6 +44,7 @@ data class MoveRow(val name: String, val qty: Double, val dateMillis: Long, val 
 @Dao
 interface MaterialOutDao {
     @Query("SELECT COUNT(*) FROM material_outs") suspend fun count(): Int
+    @Query("SELECT * FROM material_outs WHERE voucherNo = :voucherNo LIMIT 1") suspend fun byNo(voucherNo: String): MaterialOut?
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertHeader(m: MaterialOut): Long
     @Insert suspend fun insertLines(lines: List<MaterialOutItem>)
     @Update suspend fun updateHeader(m: MaterialOut)

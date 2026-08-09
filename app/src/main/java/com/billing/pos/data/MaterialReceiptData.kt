@@ -56,6 +56,7 @@ data class LpoReceivedRow(val lpoId: Long, val name: String, val qty: Double)
 @Dao
 interface MaterialReceiptDao {
     @Query("SELECT COUNT(*) FROM material_receipts") suspend fun count(): Int
+    @Query("SELECT * FROM material_receipts WHERE receiptNo = :receiptNo LIMIT 1") suspend fun byNo(receiptNo: String): MaterialReceipt?
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertHeader(m: MaterialReceipt): Long
     @Insert suspend fun insertLines(lines: List<MaterialReceiptItem>)
     @Update suspend fun updateHeader(m: MaterialReceipt)

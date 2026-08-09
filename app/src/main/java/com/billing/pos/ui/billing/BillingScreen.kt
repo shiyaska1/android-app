@@ -73,6 +73,7 @@ import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -170,8 +171,6 @@ fun BillingScreen(
     var showPhotoOptions by remember { mutableStateOf(false) }
     var showSetTotal by remember { mutableStateOf(false) }
     var ocrReview by remember { mutableStateOf<List<com.billing.pos.ocr.ScannedItem>?>(null) }
-    // Picture-bill "Read items" asks the language before reading.
-    var askBillOcrLangFor by remember { mutableStateOf<android.net.Uri?>(null) }
     // Items handed over from the sticky-note OCR. Numbers were reviewed in the note, so they
     // go straight to the cart; text-mode items open the review popup to fill in prices.
     LaunchedEffect(Unit) {
@@ -187,7 +186,7 @@ fun BillingScreen(
     LaunchedEffect(items) {
         if (OrderToBillLink.hasData) {
             val taken = OrderToBillLink.take()
-            vm.loadFromOrders(taken.customerId, taken.customerName, taken.lines, taken.sourceKind, taken.sourceIds)
+            vm.loadFromOrders(taken.customerId, taken.customerName, taken.lines, taken.sourceKind, taken.sourceIds, taken.paymentModeHint)
         }
     }
 
@@ -388,23 +387,24 @@ fun BillingScreen(
                     if (custQuery.isBlank()) customers
                     else customers.filter { it.name.contains(custQuery, ignoreCase = true) || it.phone.contains(custQuery) }
                 }
-                ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }, modifier = Modifier.weight(1.5f)) {
+                // Plain field + inline list, not ExposedDropdownMenuBox — that popup-based
+                // combobox fights with the keyboard on real devices (typing the first
+                // character snaps the field back to the old value and blocks further typing).
+                Column(Modifier.weight(1.5f)) {
                     OutlinedTextField(
                         value = custQuery, onValueChange = { custQuery = it; expanded = true },
                         label = { Text("Customer") }, placeholder = { Text("Search") }, singleLine = true,
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded) },
-                        modifier = Modifier.menuAnchor().fillMaxWidth().onFocusChanged { fs ->
-                            if (fs.isFocused) { custQuery = ""; expanded = true } else custQuery = vm.selectedCustomer?.name ?: ""
+                        modifier = Modifier.fillMaxWidth().onFocusChanged { fs ->
+                            if (fs.isFocused) { custQuery = ""; expanded = true }
+                            else { expanded = false; custQuery = vm.selectedCustomer?.name ?: "" }
                         }
                     )
-                    ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-                        filteredCustomers.forEach { c ->
-                            DropdownMenuItem(
-                                text = { Text(c.name + if (c.isDefault) "  (default)" else "") },
-                                onClick = { vm.selectCustomer(c); custQuery = c.name; expanded = false; focusManager.clearFocus() }
-                            )
-                        }
-                        if (filteredCustomers.isEmpty()) DropdownMenuItem(text = { Text("No match") }, onClick = { expanded = false })
+                    if (expanded) {
+                        com.billing.pos.ui.common.SearchPickList(
+                            items = filteredCustomers,
+                            itemLabel = { it.name + if (it.isDefault) "  (default)" else "" },
+                            onPick = { c -> vm.selectCustomer(c); custQuery = c.name; expanded = false; focusManager.clearFocus() }
+                        )
                     }
                 }
                 IconButton(onClick = { showNewCustomer = true }) { Icon(Icons.Filled.PersonAdd, "New customer") }
@@ -421,6 +421,19 @@ fun BillingScreen(
                             DropdownMenuItem(text = { Text(m.label) }, onClick = { vm.selectPayment(m); payExpanded = false })
                         }
                     }
+                }
+            }
+
+            // No Tax Invoice: a per-sale switch, only offered when Settings has it turned on.
+            val noTaxInvoiceEnabled = remember { com.billing.pos.data.AppPrefs(context).noTaxInvoiceEnabled }
+            if (noTaxInvoiceEnabled && !vm.estimateMode) {
+                Row(
+                    Modifier.fillMaxWidth().padding(top = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text("No Tax Invoice", style = MaterialTheme.typography.bodyMedium)
+                    Switch(checked = vm.noTaxInvoice, onCheckedChange = { vm.updateNoTaxInvoice(it) })
                 }
             }
 
@@ -626,19 +639,6 @@ fun BillingScreen(
                         }
                     }
                 }
-            }
-
-            askBillOcrLangFor?.let { billUri ->
-                com.billing.pos.ui.common.OcrLanguageAskDialog(
-                    onPick = { picked ->
-                        askBillOcrLangFor = null
-                        scope.launch {
-                            val lines = com.billing.pos.ocr.TextOcr.lines(context, billUri, picked)
-                            ocrReview = com.billing.pos.ocr.ItemListParser.parse(lines)
-                        }
-                    },
-                    onDismiss = { askBillOcrLangFor = null }
-                )
             }
 
             if (showRemarkPopup) {
@@ -954,7 +954,10 @@ fun BillingScreen(
             dismissButton = {
                 TextButton(onClick = {
                     showPhotoOptions = false
-                    askBillOcrLangFor = uri
+                    scope.launch {
+                        val lines = com.billing.pos.ocr.TextOcr.lines(context, uri)
+                        ocrReview = com.billing.pos.ocr.ItemListParser.parse(lines)
+                    }
                 }) { Text("Read items") }
             }
         )

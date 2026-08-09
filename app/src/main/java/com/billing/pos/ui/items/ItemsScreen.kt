@@ -30,10 +30,12 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DocumentScanner
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.DriveFileMove
 import androidx.compose.material.icons.filled.EventBusy
 import androidx.compose.material.icons.filled.GridOn
 import androidx.compose.material.icons.filled.Mic
@@ -45,6 +47,7 @@ import androidx.compose.material.icons.filled.Place
 import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Divider
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -262,7 +265,7 @@ class ItemsViewModel(app: Application) : AndroidViewModel(app) {
         existing: Item?, name: String, price: Double, tax: Double, barcode: String, hsn: String,
         category: String, openingStock: Double, unit: String, storeLocation: String, chemicalContent: String,
         secondaryUnit: String = "PCS", conversionFactor: Double = 1.0, purchasePrice: Double = 0.0,
-        mrp: Double = 0.0,
+        mrp: Double = 0.0, cess: Double = 0.0,
         onDone: () -> Unit
     ) {
         if (name.isBlank()) { message.value = "Enter a name"; return }
@@ -270,11 +273,12 @@ class ItemsViewModel(app: Application) : AndroidViewModel(app) {
             val id: Long = if (existing == null) {
                 repo.addItem(
                     name, price, tax, barcode, hsn, category, openingStock, unit, storeLocation, chemicalContent,
-                    secondaryUnit, conversionFactor, purchasePrice, mrp
+                    secondaryUnit, conversionFactor, purchasePrice, mrp, cessPercent = cess
                 )
             } else {
                 repo.updateItem(existing.copy(
-                    name = name.trim(), price = price, purchasePrice = purchasePrice, mrp = mrp, taxPercent = tax, barcode = barcode.trim(),
+                    name = name.trim(), price = price, purchasePrice = purchasePrice, mrp = mrp, taxPercent = tax,
+                    cessPercent = cess, barcode = barcode.trim(),
                     hsn = hsn.trim(), category = category.trim(), openingStock = openingStock,
                     unit = unit.trim().ifBlank { "PCS" }, storeLocation = storeLocation.trim(),
                     chemicalContent = chemicalContent.trim(),
@@ -295,6 +299,17 @@ class ItemsViewModel(app: Application) : AndroidViewModel(app) {
 
     fun delete(item: Item) {
         viewModelScope.launch { repo.deleteItem(item); message.value = "Item deleted" }
+    }
+
+    /** Bulk re-categorizes the selected items — the multi-select "move to category" action. */
+    fun moveToCategory(ids: Set<Long>, newCategory: String) {
+        if (ids.isEmpty()) return
+        val cat = newCategory.trim()
+        viewModelScope.launch {
+            val targets = rows.value.filter { it.item.id in ids }.map { it.item }
+            targets.forEach { repo.updateItem(it.copy(category = cat)) }
+            message.value = "${targets.size} item(s) moved to " + cat.ifBlank { "no category" }
+        }
     }
 
     fun clearAllItems() {
@@ -432,10 +447,15 @@ fun ItemsScreen(
 
     var showDialog by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<Item?>(null) }
+    // Multi-select: tick items, then move them all into a different category at once.
+    var selectMode by remember { mutableStateOf(false) }
+    val selectedIds = remember { mutableStateListOf<Long>() }
+    var showMoveCategory by remember { mutableStateOf(false) }
     // "+" asks whether one item or several, then opens the matching form.
     var askAddMode by remember { mutableStateOf(false) }
     var showMulti by remember { mutableStateOf(false) }
     var showPhotoMulti by remember { mutableStateOf(false) }
+    var showBulkComma by remember { mutableStateOf(false) }
     var deleteFor by remember { mutableStateOf<Item?>(null) }
     // Deep link (from the item-wise sales report): open this item in edit mode once loaded.
     var editLinkDone by remember { mutableStateOf(false) }
@@ -457,25 +477,12 @@ fun ItemsScreen(
     val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) vm.importSpreadsheet(context, uri)
     }
-    // Language is asked before the gallery opens — this flow fills the review list directly.
-    var galleryOcrLang by remember { mutableStateOf<String?>(null) }
-    var askGalleryLang by remember { mutableStateOf(false) }
     val galleryScan = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) scope.launch {
             scanResult = com.billing.pos.ocr.ItemListParser.parse(
-                com.billing.pos.ocr.TextOcr.lines(context, uri, galleryOcrLang)
+                com.billing.pos.ocr.TextOcr.lines(context, uri)
             )
         }
-    }
-
-    if (askGalleryLang) {
-        com.billing.pos.ui.common.OcrLanguageAskDialog(
-            onPick = { picked ->
-                galleryOcrLang = picked; askGalleryLang = false
-                galleryScan.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-            },
-            onDismiss = { askGalleryLang = false }
-        )
     }
 
     fun doPrint(item: Item, count: Int) {
@@ -562,51 +569,71 @@ fun ItemsScreen(
                     actionIconContentColor = MaterialTheme.colorScheme.onPrimary
                 ),
                 actions = {
-                    if (requireBatch) {
-                        IconButton(onClick = { showExpiry = true }) {
-                            Icon(Icons.Filled.EventBusy, contentDescription = "Batch expiry report")
+                    if (selectMode) {
+                        Text(
+                            "${selectedIds.size} selected",
+                            color = MaterialTheme.colorScheme.onPrimary,
+                            modifier = Modifier.padding(end = 4.dp)
+                        )
+                        IconButton(onClick = { if (selectedIds.isNotEmpty()) showMoveCategory = true }, enabled = selectedIds.isNotEmpty()) {
+                            Icon(Icons.Filled.DriveFileMove, contentDescription = "Move to category")
                         }
-                    }
-                    Box {
-                        IconButton(onClick = { importMenu = true }) {
-                            Icon(Icons.Filled.DocumentScanner, contentDescription = "Import items")
+                        IconButton(onClick = { selectMode = false; selectedIds.clear() }) {
+                            Icon(Icons.Filled.Close, contentDescription = "Cancel selection")
                         }
-                        DropdownMenu(expanded = importMenu, onDismissRequest = { importMenu = false }) {
-                            DropdownMenuItem(
-                                text = { Text("Import Excel / CSV") },
-                                onClick = {
-                                    importMenu = false
-                                    filePicker.launch(arrayOf(
-                                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                        "application/vnd.ms-excel", "text/csv", "text/comma-separated-values",
-                                        "application/octet-stream", "*/*"
-                                    ))
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Download blank template") },
-                                onClick = { importMenu = false; requestTemplate() }
-                            )
-                            Divider()
-                            DropdownMenuItem(
-                                text = { Text("Clear all items", color = MaterialTheme.colorScheme.error) },
-                                onClick = { importMenu = false; confirmClear = true }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Scan with camera") },
-                                onClick = { importMenu = false; scanList() }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Pick photo (gallery)") },
-                                onClick = { importMenu = false; askGalleryLang = true }
-                            )
+                    } else {
+                        if (requireBatch) {
+                            IconButton(onClick = { showExpiry = true }) {
+                                Icon(Icons.Filled.EventBusy, contentDescription = "Batch expiry report")
+                            }
                         }
-                    }
-                    IconButton(onClick = { downloadPdf { buildItemsPdf() } }) {
-                        Icon(Icons.Filled.Download, contentDescription = "Download list PDF")
-                    }
-                    IconButton(onClick = { downloadXlsx { buildItemsXlsx() } }) {
-                        Icon(Icons.Filled.GridOn, contentDescription = "Download Excel")
+                        IconButton(onClick = { selectMode = true }) {
+                            Icon(Icons.Filled.Checklist, contentDescription = "Select items")
+                        }
+                        Box {
+                            IconButton(onClick = { importMenu = true }) {
+                                Icon(Icons.Filled.DocumentScanner, contentDescription = "Import items")
+                            }
+                            DropdownMenu(expanded = importMenu, onDismissRequest = { importMenu = false }) {
+                                DropdownMenuItem(
+                                    text = { Text("Import Excel / CSV") },
+                                    onClick = {
+                                        importMenu = false
+                                        filePicker.launch(arrayOf(
+                                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                            "application/vnd.ms-excel", "text/csv", "text/comma-separated-values",
+                                            "application/octet-stream", "*/*"
+                                        ))
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Download blank template") },
+                                    onClick = { importMenu = false; requestTemplate() }
+                                )
+                                Divider()
+                                DropdownMenuItem(
+                                    text = { Text("Clear all items", color = MaterialTheme.colorScheme.error) },
+                                    onClick = { importMenu = false; confirmClear = true }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Scan with camera") },
+                                    onClick = { importMenu = false; scanList() }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Pick photo (gallery)") },
+                                    onClick = {
+                                        importMenu = false
+                                        galleryScan.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                                    }
+                                )
+                            }
+                        }
+                        IconButton(onClick = { downloadPdf { buildItemsPdf() } }) {
+                            Icon(Icons.Filled.Download, contentDescription = "Download list PDF")
+                        }
+                        IconButton(onClick = { downloadXlsx { buildItemsXlsx() } }) {
+                            Icon(Icons.Filled.GridOn, contentDescription = "Download Excel")
+                        }
                     }
                 }
             )
@@ -633,27 +660,32 @@ fun ItemsScreen(
                 }
                 var catMenu by remember { mutableStateOf(false) }
                 var catQuery by remember { mutableStateOf(filterCategory.ifBlank { "All categories" }) }
-                ExposedDropdownMenuBox(expanded = catMenu, onExpandedChange = { catMenu = !catMenu }) {
+                // Plain field + inline list, not ExposedDropdownMenuBox — that popup-based
+                // combobox fights with the keyboard on real devices (typing the first character
+                // snaps the field back to the old value and blocks further typing).
+                Column {
                     OutlinedTextField(
                         value = catQuery,
                         onValueChange = { catQuery = it; catMenu = true },
                         label = { Text("Category") },
                         placeholder = { Text("Search category") },
                         singleLine = true,
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(catMenu) },
-                        modifier = Modifier.menuAnchor().fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth()
                             .onFocusChanged { fs ->
                                 if (fs.isFocused) { catQuery = ""; catMenu = true }
-                                else if (!catMenu) catQuery = filterCategory.ifBlank { "All categories" }
+                                else { catMenu = false; catQuery = filterCategory.ifBlank { "All categories" } }
                             }
                     )
-                    val catMatches = categories.filter { catQuery.isBlank() || it.contains(catQuery, true) }
-                    ExposedDropdownMenu(expanded = catMenu, onDismissRequest = { catMenu = false; catQuery = filterCategory.ifBlank { "All categories" } }) {
-                        DropdownMenuItem(text = { Text("All categories") }, onClick = { filterCategory = ""; catQuery = "All categories"; catMenu = false })
-                        catMatches.forEach { cat ->
-                            DropdownMenuItem(text = { Text(cat) }, onClick = { filterCategory = cat; catQuery = cat; catMenu = false })
-                        }
-                        if (catMatches.isEmpty() && catQuery.isNotBlank()) DropdownMenuItem(text = { Text("No match") }, onClick = { catMenu = false })
+                    if (catMenu) {
+                        val catMatches = categories.filter { catQuery.isBlank() || it.contains(catQuery, true) }
+                        com.billing.pos.ui.common.SearchPickList(
+                            items = listOf("All categories") + catMatches,
+                            itemLabel = { it },
+                            onPick = { cat ->
+                                filterCategory = if (cat == "All categories") "" else cat
+                                catQuery = cat; catMenu = false
+                            }
+                        )
                     }
                 }
             }
@@ -662,9 +694,21 @@ fun ItemsScreen(
                 items(filteredRows, key = { it.item.id }) { row ->
                 val item = row.item
                 Row(
-                    Modifier.fillMaxWidth().clickable { editing = item; vm.beginEdit(item); showDialog = true }.padding(vertical = 8.dp),
+                    Modifier.fillMaxWidth()
+                        .clickable {
+                            if (selectMode) {
+                                if (item.id in selectedIds) selectedIds.remove(item.id) else selectedIds.add(item.id)
+                            } else { editing = item; vm.beginEdit(item); showDialog = true }
+                        }
+                        .padding(vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
+                    if (selectMode) {
+                        Checkbox(
+                            checked = item.id in selectedIds,
+                            onCheckedChange = { checked -> if (checked) selectedIds.add(item.id) else selectedIds.remove(item.id) }
+                        )
+                    }
                     Column(Modifier.weight(1f)) {
                         Text(
                             item.name + (if (item.category.isNotBlank()) "  ·  ${item.category}" else ""),
@@ -700,6 +744,47 @@ fun ItemsScreen(
         }
     }
 
+    if (showMoveCategory) {
+        var moveCat by remember { mutableStateOf("") }
+        var moveCatMenu by remember { mutableStateOf(false) }
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showMoveCategory = false },
+            title = { Text("Move ${selectedIds.size} item(s) to category") },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = moveCat,
+                        onValueChange = { moveCat = it; moveCatMenu = true },
+                        label = { Text("Category") },
+                        placeholder = { Text("Type new, or pick existing") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                            .onFocusChanged { fs -> moveCatMenu = fs.isFocused }
+                    )
+                    if (moveCatMenu) {
+                        val matches = categories.filter { moveCat.isBlank() || it.contains(moveCat, true) }
+                        com.billing.pos.ui.common.SearchPickList(
+                            items = matches,
+                            itemLabel = { it },
+                            onPick = { c -> moveCat = c; moveCatMenu = false },
+                            emptyText = "No match — type a new category name"
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = moveCat.isNotBlank(),
+                    onClick = {
+                        vm.moveToCategory(selectedIds.toSet(), moveCat)
+                        showMoveCategory = false; selectMode = false; selectedIds.clear()
+                    }
+                ) { Text("Move") }
+            },
+            dismissButton = { TextButton(onClick = { showMoveCategory = false }) { Text("Cancel") } }
+        )
+    }
+
     if (askAddMode) {
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { askAddMode = false },
@@ -712,6 +797,9 @@ fun ItemsScreen(
                     androidx.compose.material3.TextButton(onClick = {
                         askAddMode = false; showMulti = true
                     }, modifier = Modifier.fillMaxWidth()) { Text("Multiple items — a table of rows") }
+                    androidx.compose.material3.TextButton(onClick = {
+                        askAddMode = false; showBulkComma = true
+                    }, modifier = Modifier.fillMaxWidth()) { Text("Multiple, comma-separated — same price & category") }
                     androidx.compose.material3.TextButton(onClick = {
                         askAddMode = false; showPhotoMulti = true
                     }, modifier = Modifier.fillMaxWidth()) { Text("Multiple by image — photograph each item") }
@@ -746,6 +834,17 @@ fun ItemsScreen(
         )
     }
 
+    if (showBulkComma) {
+        val cats = remember(rows) {
+            rows.map { it.item.category }.filter { it.isNotBlank() }.distinct().sortedBy { it.lowercase() }
+        }
+        BulkCommaItemDialog(
+            categories = cats,
+            onSave = { entered -> vm.saveMany(context, entered) { showBulkComma = false } },
+            onDismiss = { showBulkComma = false }
+        )
+    }
+
     if (showDialog) {
         ItemDialog(
             existing = editing,
@@ -767,8 +866,8 @@ fun ItemsScreen(
             onAddCatalogue = { runCatching { cataloguePicker.launch(arrayOf("application/pdf")) } },
             onRemoveAttachment = { vm.removeAttachment(it) },
             onDismiss = { vm.cancelEdit(); showDialog = false },
-            onSave = { n, p, t, b, h, cat, os, u, loc, chem, sec, f, pp, mv ->
-                vm.save(editing, n, p, t, b, h, cat, os, u, loc, chem, sec, f, pp, mv) { showDialog = false }
+            onSave = { n, p, t, b, h, cat, os, u, loc, chem, sec, f, pp, mv, cess ->
+                vm.save(editing, n, p, t, b, h, cat, os, u, loc, chem, sec, f, pp, mv, cess) { showDialog = false }
             }
         )
     }
@@ -829,9 +928,11 @@ private fun ItemDialog(
     onAddCatalogue: () -> Unit,
     onRemoveAttachment: (ItemAttachment) -> Unit,
     onDismiss: () -> Unit,
-    onSave: (String, Double, Double, String, String, String, Double, String, String, String, String, Double, Double, Double) -> Unit
+    onSave: (String, Double, Double, String, String, String, Double, String, String, String, String, Double, Double, Double, Double) -> Unit
 ) {
     val context = LocalContext.current
+    val gstEnabled = remember { com.billing.pos.data.AppPrefs(context).gstEnabled }
+    val cessEnabled = remember { com.billing.pos.data.AppPrefs(context).cessEnabled }
     var showBatchInput by remember { mutableStateOf(false) }
     var editBatchIndex by remember { mutableStateOf(-1) }
     var showSizeInput by remember { mutableStateOf(false) }
@@ -852,6 +953,7 @@ private fun ItemDialog(
     var priceForQty by remember { mutableStateOf("1") }
     var taxable by remember { mutableStateOf((existing?.taxPercent ?: 0.0) > 0.0) }
     var taxPercent by remember { mutableStateOf(if ((existing?.taxPercent ?: 0.0) > 0.0) Format.money(existing!!.taxPercent) else "18") }
+    var cessPercent by remember { mutableStateOf(if ((existing?.cessPercent ?: 0.0) > 0.0) Format.money(existing!!.cessPercent) else "") }
     var barcode by remember { mutableStateOf(existing?.barcode ?: "") }
     var hsn by remember { mutableStateOf(existing?.hsn ?: "") }
     var category by remember { mutableStateOf(existing?.category ?: "") }
@@ -1027,42 +1129,50 @@ private fun ItemDialog(
                 }
 
                 // Primary unit — price and stock are always expressed in this unit.
-                ExposedDropdownMenuBox(expanded = unitMenu, onExpandedChange = { unitMenu = !unitMenu }) {
+                // Plain field + inline list, not ExposedDropdownMenuBox — that popup-based
+                // combobox fights with the keyboard on real devices (typing the first character
+                // snaps the field back to the old value and blocks further typing).
+                Column {
                     OutlinedTextField(
-                        value = unitQuery, onValueChange = { unitQuery = it; unit = it }, label = { Text("Primary unit") }, singleLine = true,
-                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = unitMenu) },
-                        modifier = Modifier.menuAnchor().fillMaxWidth()
+                        value = unitQuery,
+                        onValueChange = { unitQuery = it; unit = it; unitMenu = true },
+                        label = { Text("Primary unit") }, singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
                             .onFocusChanged { fs ->
                                 if (fs.isFocused) { unitQuery = ""; unitMenu = true }
-                                else if (!unitMenu) unitQuery = unit
+                                else { unitMenu = false; unitQuery = unit }
                             }
                     )
-                    ExposedDropdownMenu(expanded = unitMenu, onDismissRequest = { unitMenu = false }) {
-                        ITEM_UNITS.forEach { u ->
-                            DropdownMenuItem(text = { Text(u) }, onClick = { unit = u; unitQuery = u; unitMenu = false })
-                        }
+                    if (unitMenu) {
+                        val unitMatches = ITEM_UNITS.filter { unitQuery.isBlank() || it.contains(unitQuery, ignoreCase = true) }
+                        com.billing.pos.ui.common.SearchPickList(
+                            items = unitMatches,
+                            itemLabel = { it },
+                            onPick = { u -> unit = u; unitQuery = u; unitMenu = false }
+                        )
                     }
                 }
 
                 // Secondary unit + how many of it make one primary unit.
                 Row(Modifier.padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Box(Modifier.weight(1f)) {
-                        ExposedDropdownMenuBox(expanded = secUnitMenu, onExpandedChange = { secUnitMenu = !secUnitMenu }) {
-                            OutlinedTextField(
-                                value = secondaryUnitQuery, onValueChange = { secondaryUnitQuery = it; secondaryUnit = it },
-                                label = { Text("Secondary unit") }, singleLine = true,
-                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = secUnitMenu) },
-                                modifier = Modifier.menuAnchor().fillMaxWidth()
-                                    .onFocusChanged { fs ->
-                                        if (fs.isFocused) { secondaryUnitQuery = ""; secUnitMenu = true }
-                                        else if (!secUnitMenu) secondaryUnitQuery = secondaryUnit
-                                    }
-                            )
-                            ExposedDropdownMenu(expanded = secUnitMenu, onDismissRequest = { secUnitMenu = false }) {
-                                ITEM_UNITS.forEach { u ->
-                                    DropdownMenuItem(text = { Text(u) }, onClick = { secondaryUnit = u; secondaryUnitQuery = u; secUnitMenu = false })
+                    Column(Modifier.weight(1f)) {
+                        OutlinedTextField(
+                            value = secondaryUnitQuery,
+                            onValueChange = { secondaryUnitQuery = it; secondaryUnit = it; secUnitMenu = true },
+                            label = { Text("Secondary unit") }, singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                                .onFocusChanged { fs ->
+                                    if (fs.isFocused) { secondaryUnitQuery = ""; secUnitMenu = true }
+                                    else { secUnitMenu = false; secondaryUnitQuery = secondaryUnit }
                                 }
-                            }
+                        )
+                        if (secUnitMenu) {
+                            val secUnitMatches = ITEM_UNITS.filter { secondaryUnitQuery.isBlank() || it.contains(secondaryUnitQuery, ignoreCase = true) }
+                            com.billing.pos.ui.common.SearchPickList(
+                                items = secUnitMatches,
+                                itemLabel = { it },
+                                onPick = { u -> secondaryUnit = u; secondaryUnitQuery = u; secUnitMenu = false }
+                            )
                         }
                     }
                     OutlinedTextField(
@@ -1086,32 +1196,29 @@ private fun ItemDialog(
                 )
 
                 // Category: pick an existing one from the dropdown, or type/tap + for a new one.
+                // Plain field + inline list, not ExposedDropdownMenuBox — that popup-based
+                // combobox fights with the keyboard on real devices (typing the first character
+                // snaps the field back to the old value and blocks further typing).
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    ExposedDropdownMenuBox(
-                        expanded = catMenu,
-                        onExpandedChange = { catMenu = !catMenu },
-                        modifier = Modifier.weight(1f)
-                    ) {
+                    Column(Modifier.weight(1f)) {
                         OutlinedTextField(
                             value = categoryQuery,
-                            onValueChange = { categoryQuery = it; category = it },
+                            onValueChange = { categoryQuery = it; category = it; catMenu = true },
                             label = { Text("Category") },
                             singleLine = true,
-                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = catMenu) },
-                            modifier = Modifier.menuAnchor().fillMaxWidth()
+                            modifier = Modifier.fillMaxWidth()
                                 .onFocusChanged { fs ->
                                     if (fs.isFocused) { categoryQuery = ""; catMenu = true }
-                                    else if (!catMenu) categoryQuery = category
+                                    else { catMenu = false; categoryQuery = category }
                                 }
                         )
-                        if (categories.isNotEmpty()) {
+                        if (catMenu && categories.isNotEmpty()) {
                             val catMatches = categories.filter { categoryQuery.isBlank() || it.contains(categoryQuery, true) }
-                            ExposedDropdownMenu(expanded = catMenu, onDismissRequest = { catMenu = false }) {
-                                catMatches.forEach { c ->
-                                    DropdownMenuItem(text = { Text(c) }, onClick = { category = c; categoryQuery = c; catMenu = false })
-                                }
-                                if (catMatches.isEmpty()) DropdownMenuItem(text = { Text("No match") }, onClick = { catMenu = false })
-                            }
+                            com.billing.pos.ui.common.SearchPickList(
+                                items = catMatches,
+                                itemLabel = { it },
+                                onPick = { c -> category = c; categoryQuery = c; catMenu = false }
+                            )
                         }
                     }
                     IconButton(onClick = { category = ""; categoryQuery = ""; catMenu = false }) {
@@ -1193,9 +1300,29 @@ private fun ItemDialog(
                 if (taxable) {
                     OutlinedTextField(
                         value = taxPercent, onValueChange = { taxPercent = it.filter { c -> c.isDigit() || c == '.' } },
-                        label = { Text("Tax %") }, singleLine = true,
+                        label = { Text(if (gstEnabled) "GST %" else "Tax %") }, singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.fillMaxWidth()
                     )
+                    if (gstEnabled) {
+                        val half = (taxPercent.toDoubleOrNull() ?: 0.0) / 2.0
+                        Text(
+                            "= ${Format.money(half)}% CGST + ${Format.money(half)}% SGST on the invoice",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline
+                        )
+                        if (cessEnabled) {
+                            OutlinedTextField(
+                                value = cessPercent, onValueChange = { cessPercent = it.filter { c -> c.isDigit() || c == '.' } },
+                                label = { Text("Cess % (optional)") }, singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                            )
+                            Text(
+                                "GST Compensation Cess — only applies to a short list of goods (tobacco, " +
+                                    "aerated drinks, coal, luxury vehicles, ...). Leave blank for everything else.",
+                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline
+                            )
+                        }
+                    }
                 }
                 OutlinedTextField(
                     value = barcode, onValueChange = { barcode = it },
@@ -1222,8 +1349,14 @@ private fun ItemDialog(
                 }
                 OutlinedTextField(
                     value = hsn, onValueChange = { hsn = it },
-                    label = { Text("HSN / SAC (optional)") }, singleLine = true, modifier = Modifier.fillMaxWidth()
+                    label = { Text(if (gstEnabled) "HSN / SAC" else "HSN / SAC (optional)") }, singleLine = true, modifier = Modifier.fillMaxWidth()
                 )
+                if (gstEnabled && hsn.isNotBlank() && hsn.length !in intArrayOf(4, 6, 8)) {
+                    Text(
+                        "GST HSN/SAC codes are usually 4, 6 or 8 digits long.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error
+                    )
+                }
 
                 Divider(Modifier.padding(top = 4.dp))
 
@@ -1299,7 +1432,8 @@ private fun ItemDialog(
                     val f = if (unitsDiffer) (factorText.toDoubleOrNull() ?: 1.0) else 1.0
                     val pp = purchasePrice.toDoubleOrNull() ?: 0.0
                     val mv = mrp.toDoubleOrNull() ?: 0.0
-                    onSave(name, p, t, barcode, hsn, category, os, unit, storeLocation, chemical, sec, f, pp, mv)
+                    val cess = if (taxable && gstEnabled && cessEnabled) (cessPercent.toDoubleOrNull() ?: 0.0) else 0.0
+                    onSave(name, p, t, barcode, hsn, category, os, unit, storeLocation, chemical, sec, f, pp, mv, cess)
                 }
             ) {
                 Text(if (factorInvalid) "Set conv. factor" else "Save")

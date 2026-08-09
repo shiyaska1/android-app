@@ -93,6 +93,11 @@ interface EstimateDao {
     @Query("SELECT * FROM estimates WHERE id = :id LIMIT 1") suspend fun byId(id: Long): Estimate?
     @Query("SELECT * FROM estimates WHERE deviceId = :deviceId AND estimateNo = :estimateNo LIMIT 1")
     suspend fun byDeviceAndNo(deviceId: String, estimateNo: String): Estimate?
+
+    /** Fallback match by number alone, for records with no deviceId (older data, imports) —
+     *  without this, merge/sync re-inserts them as new duplicates every cycle. */
+    @Query("SELECT * FROM estimates WHERE estimateNo = :estimateNo LIMIT 1")
+    suspend fun byNo(estimateNo: String): Estimate?
     @Query("SELECT * FROM estimate_items WHERE estimateId = :id") suspend fun linesFor(id: Long): List<EstimateItem>
     @Query("SELECT * FROM estimate_items") suspend fun allLines(): List<EstimateItem>
 }

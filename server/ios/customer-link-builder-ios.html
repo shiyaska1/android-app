@@ -1,0 +1,625 @@
+<title>POS Billing — iPhone Customer Link Builder</title>
+<style>
+  :root {
+    --ink: #16283D;
+    --ink-soft: #3D5169;
+    --paper: #F4F3EF;
+    --surface: #FFFFFF;
+    --rule: #DAD7CE;
+    --rule-soft: #E7E5DE;
+    --marigold: #C87A21;
+    --marigold-soft: #F3E4D2;
+    --ledger-green: #1F6E4F;
+    --ledger-green-soft: #DCEEE5;
+    --danger: #A6341C;
+    --danger-soft: #F6E0D9;
+    --muted: #6B7280;
+
+    --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ink: #E9E7E1;
+      --ink-soft: #A9B2BE;
+      --paper: #111820;
+      --surface: #19212B;
+      --rule: #2E3945;
+      --rule-soft: #232C37;
+      --marigold: #E39A3E;
+      --marigold-soft: #3A2E1A;
+      --ledger-green: #43A57C;
+      --ledger-green-soft: #16352A;
+      --danger: #E8836A;
+      --danger-soft: #3A2019;
+      --muted: #8B95A1;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ink: #E9E7E1; --ink-soft: #A9B2BE; --paper: #111820; --surface: #19212B;
+    --rule: #2E3945; --rule-soft: #232C37; --marigold: #E39A3E; --marigold-soft: #3A2E1A;
+    --ledger-green: #43A57C; --ledger-green-soft: #16352A; --danger: #E8836A; --danger-soft: #3A2019;
+    --muted: #8B95A1;
+  }
+  :root[data-theme="light"] {
+    --ink: #16283D; --ink-soft: #3D5169; --paper: #F4F3EF; --surface: #FFFFFF;
+    --rule: #DAD7CE; --rule-soft: #E7E5DE; --marigold: #C87A21; --marigold-soft: #F3E4D2;
+    --ledger-green: #1F6E4F; --ledger-green-soft: #DCEEE5; --danger: #A6341C; --danger-soft: #F6E0D9;
+    --muted: #6B7280;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    font-size: 0.938rem;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 36px 20px 64px; }
+
+  header { margin-bottom: 28px; }
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 0.688rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--marigold);
+    margin: 0 0 8px;
+  }
+  h1 { font-size: 1.625rem; font-weight: 700; margin: 0 0 8px; letter-spacing: -0.01em; text-wrap: balance; }
+  header p { margin: 0; max-width: 62ch; color: var(--ink-soft); }
+
+  .grid { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); gap: 20px; align-items: start; }
+  @media (max-width: 860px) { .grid { grid-template-columns: 1fr; } }
+
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--rule);
+    padding: 22px 24px;
+  }
+  .panel h2 {
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 16px;
+  }
+
+  .field { margin-bottom: 16px; }
+  .field:last-child { margin-bottom: 0; }
+  label {
+    display: block;
+    font-size: 0.813rem;
+    font-weight: 600;
+    margin-bottom: 5px;
+    color: var(--ink);
+  }
+  .hint { font-size: 0.75rem; color: var(--muted); margin-top: 4px; line-height: 1.5; }
+  input[type="text"], input[type="url"], select {
+    width: 100%;
+    font-family: var(--font-mono);
+    font-size: 0.875rem;
+    padding: 9px 11px;
+    border: 1px solid var(--rule);
+    background: var(--paper);
+    color: var(--ink);
+    border-radius: 2px;
+  }
+  input:focus, select:focus, button:focus-visible {
+    outline: 2px solid var(--marigold);
+    outline-offset: 1px;
+  }
+  select { font-family: var(--font-sans); appearance: auto; }
+
+  .output-block { margin-bottom: 18px; }
+  .output-block:last-child { margin-bottom: 0; }
+  .output-label {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6px;
+  }
+  .output-label span {
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .copy-btn {
+    font-family: var(--font-sans);
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 4px 10px;
+    border: 1px solid var(--rule);
+    background: var(--surface);
+    color: var(--ink);
+    cursor: pointer;
+    border-radius: 2px;
+  }
+  .copy-btn:hover { border-color: var(--marigold); color: var(--marigold); }
+  .copy-btn.copied { border-color: var(--ledger-green); color: var(--ledger-green); }
+
+  .output-value {
+    font-family: var(--font-mono);
+    font-size: 0.813rem;
+    padding: 10px 12px;
+    background: var(--paper);
+    border: 1px solid var(--rule);
+    word-break: break-all;
+    max-height: 130px;
+    overflow-y: auto;
+    color: var(--ink);
+  }
+
+  .qr-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    padding: 20px 0 4px;
+  }
+  #qrCanvas {
+    background: #FFFFFF;
+    border: 1px solid var(--rule);
+    image-rendering: pixelated;
+  }
+  .qr-meta {
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--muted);
+  }
+
+  .banner {
+    font-size: 0.813rem;
+    padding: 10px 12px;
+    border-left: 3px solid var(--marigold);
+    background: var(--marigold-soft);
+    color: var(--ink);
+  }
+  .banner.error { border-color: var(--danger); background: var(--danger-soft); }
+  .banner.ok { border-color: var(--ledger-green); background: var(--ledger-green-soft); }
+
+  .note {
+    font-size: 0.813rem;
+    padding: 12px 14px;
+    border: 1px solid var(--rule);
+    background: var(--rule-soft);
+    color: var(--ink-soft);
+    margin-bottom: 24px;
+  }
+  .note b { color: var(--ink); }
+
+  footer {
+    margin-top: 32px;
+    padding-top: 16px;
+    border-top: 1px solid var(--rule);
+    font-size: 0.75rem;
+    color: var(--muted);
+  }
+  footer a { color: var(--marigold); }
+</style>
+
+<div class="wrap">
+  <header>
+    <p class="eyebrow">POS Billing &middot; Online Ordering &middot; iPhone</p>
+    <h1>iPhone Customer Link Builder</h1>
+    <p>
+      Builds the install link and QR code for <code>pos_customer_app_ios.php</code> — the web app
+      built specifically for iPhone customers, with real push notifications. Everything runs in
+      this page; nothing is sent anywhere.
+    </p>
+  </header>
+
+  <div class="note">
+    <b>iPhone customers only.</b> Android customers should keep using the Play Store app, or
+    <code>customer-link-builder.html</code> / <code>pos_customer_app.php</code> for the plain web
+    version — this link is specifically for <code>pos_customer_app_ios.php</code>.
+  </div>
+
+  <div class="grid">
+    <div class="panel">
+      <h2>1 &middot; Where you uploaded the iOS app page</h2>
+      <div class="field">
+        <label for="baseUrl">pos_customer_app_ios.php URL</label>
+        <input type="url" id="baseUrl" placeholder="https://yourdomain.com/pos_customer_app_ios.php">
+        <p class="hint">Where you uploaded pos_customer_app_ios.php — flat, next to pos_online_catalog.php, not inside a subfolder.</p>
+      </div>
+
+      <h2 style="margin-top:24px;">2 &middot; This shop</h2>
+      <div class="field">
+        <label for="shopCode">Shop code</label>
+        <input type="text" id="shopCode" placeholder="e.g. the shop owner's Device ID from Settings">
+      </div>
+      <div class="field">
+        <label for="catalogUrl">Catalog URL</label>
+        <input type="text" id="catalogUrl" placeholder="https://yourdomain.com/pos_online_catalog.php?key=...">
+        <p class="hint">Same value the shop owner set as "Online catalog URL" in their Settings.</p>
+      </div>
+      <div class="field">
+        <label for="bizType">Business type <span style="font-weight:400;color:var(--muted);">(optional — wording only)</span></label>
+        <select id="bizType">
+          <option value="">Not set (generic "Order")</option>
+          <option value="Restaurant">Restaurant</option>
+          <option value="Medical store">Medical store</option>
+          <option value="Medical lab">Medical lab</option>
+        </select>
+      </div>
+      <div class="field">
+        <label style="display:flex;align-items:center;gap:8px;font-weight:600;">
+          <input type="checkbox" id="premium" style="width:auto;">
+          Premium shop
+        </label>
+        <p class="hint">Unlocks attaching a photo to an order, on top of the note every customer gets.</p>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Result</h2>
+
+      <div class="output-block">
+        <div class="output-label">
+          <span>Full link to share / scan</span>
+          <button class="copy-btn" data-copy-target="fullLinkOut">Copy</button>
+        </div>
+        <div class="output-value" id="fullLinkOut">&mdash;</div>
+      </div>
+
+      <div id="qrBanner"></div>
+
+      <div class="qr-wrap" id="qrWrap" style="display:none;">
+        <canvas id="qrCanvas"></canvas>
+        <span class="qr-meta" id="qrMeta"></span>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    Opening this link works immediately — no install needed. For real push notifications, the
+    customer still needs to tap Share &rarr; Add to Home Screen in Safari; the app itself shows a
+    banner walking them through that. See the top comment in <code>pos_customer_app_ios.php</code>
+    for the (optional) Firebase Web Push setup.
+  </footer>
+</div>
+
+<script>
+// ---- Minimal QR Code encoder (byte mode, versions 1-15, ECC L/M/Q/H) ----
+// ISO/IEC 18004 core algorithm — verified against a reference encoder + opencv decode
+// round-trip for versions 1-15 up to ~400 bytes before being used here.
+const QR = (function () {
+  'use strict';
+  const EXP = new Array(512);
+  const LOG = new Array(256);
+  (function initGF() {
+    let x = 1;
+    for (let i = 0; i < 255; i++) {
+      EXP[i] = x; LOG[x] = i;
+      x <<= 1;
+      if (x & 0x100) x ^= 0x11d;
+    }
+    for (let i = 255; i < 512; i++) EXP[i] = EXP[i - 255];
+  })();
+  function gfMul(a, b) { if (a === 0 || b === 0) return 0; return EXP[LOG[a] + LOG[b]]; }
+  function polyMul(a, b) {
+    const r = new Array(a.length + b.length - 1).fill(0);
+    for (let i = 0; i < a.length; i++) for (let j = 0; j < b.length; j++) r[i + j] ^= gfMul(a[i], b[j]);
+    return r;
+  }
+  function rsGeneratorPoly(degree) {
+    let poly = [1];
+    for (let i = 0; i < degree; i++) poly = polyMul(poly, [1, EXP[i]]);
+    return poly;
+  }
+  function rsEncode(data, eccCount) {
+    const gen = rsGeneratorPoly(eccCount);
+    const res = data.concat(new Array(eccCount).fill(0));
+    for (let i = 0; i < data.length; i++) {
+      const coef = res[i];
+      if (coef !== 0) for (let j = 0; j < gen.length; j++) res[i + j] ^= gfMul(gen[j], coef);
+    }
+    return res.slice(data.length);
+  }
+
+  const RS_BLOCKS = {
+    1:  { L: [[1,26,19]], M: [[1,26,16]], Q: [[1,26,13]], H: [[1,26,9]] },
+    2:  { L: [[1,44,34]], M: [[1,44,28]], Q: [[1,44,22]], H: [[1,44,16]] },
+    3:  { L: [[1,70,55]], M: [[1,70,44]], Q: [[2,35,17]], H: [[2,35,13]] },
+    4:  { L: [[1,100,80]], M: [[2,50,32]], Q: [[2,50,24]], H: [[4,25,9]] },
+    5:  { L: [[1,134,108]], M: [[2,67,43]], Q: [[2,33,15],[2,34,16]], H: [[2,33,11],[2,34,12]] },
+    6:  { L: [[2,86,68]], M: [[4,43,27]], Q: [[4,43,19]], H: [[4,43,15]] },
+    7:  { L: [[2,98,78]], M: [[4,49,31]], Q: [[2,32,14],[4,33,15]], H: [[4,39,13],[1,40,14]] },
+    8:  { L: [[2,121,97]], M: [[2,60,38],[2,61,39]], Q: [[4,40,18],[2,41,19]], H: [[4,40,14],[2,41,15]] },
+    9:  { L: [[2,146,116]], M: [[3,58,36],[2,59,37]], Q: [[4,36,16],[4,37,17]], H: [[4,36,12],[4,37,13]] },
+    10: { L: [[2,86,68],[2,87,69]], M: [[4,69,43],[1,70,44]], Q: [[6,43,19],[2,44,20]], H: [[6,43,15],[2,44,16]] },
+    11: { L: [[4,101,81]], M: [[1,80,50],[4,81,51]], Q: [[4,50,22],[4,51,23]], H: [[3,36,12],[8,37,13]] },
+    12: { L: [[2,116,92],[2,117,93]], M: [[6,58,36],[2,59,37]], Q: [[4,46,20],[6,47,21]], H: [[7,42,14],[4,43,15]] },
+    13: { L: [[4,133,107]], M: [[8,59,37],[1,60,38]], Q: [[8,44,20],[4,45,21]], H: [[12,33,11],[4,34,12]] },
+    14: { L: [[3,145,115],[1,146,116]], M: [[4,64,40],[5,65,41]], Q: [[11,36,16],[5,37,17]], H: [[11,36,12],[5,37,13]] },
+    15: { L: [[5,109,87],[1,110,88]], M: [[5,65,41],[5,66,42]], Q: [[5,54,24],[7,55,25]], H: [[11,36,12],[7,37,13]] }
+  };
+  const ECC_CODEWORDS_PER_BLOCK = {
+    1:  { L: 7, M: 10, Q: 13, H: 17 },
+    2:  { L: 10, M: 16, Q: 22, H: 28 },
+    3:  { L: 15, M: 26, Q: 18, H: 22 },
+    4:  { L: 20, M: 18, Q: 26, H: 16 },
+    5:  { L: 26, M: 24, Q: 18, H: 22 },
+    6:  { L: 18, M: 16, Q: 24, H: 28 },
+    7:  { L: 20, M: 18, Q: 18, H: 26 },
+    8:  { L: 24, M: 22, Q: 22, H: 26 },
+    9:  { L: 30, M: 22, Q: 20, H: 24 },
+    10: { L: 18, M: 26, Q: 24, H: 28 },
+    11: { L: 20, M: 30, Q: 28, H: 24 },
+    12: { L: 24, M: 22, Q: 26, H: 28 },
+    13: { L: 26, M: 22, Q: 24, H: 22 },
+    14: { L: 30, M: 24, Q: 20, H: 24 },
+    15: { L: 22, M: 24, Q: 30, H: 24 }
+  };
+  const ALIGN = {
+    1: [], 2: [6,18], 3: [6,22], 4: [6,26], 5: [6,30], 6: [6,34],
+    7: [6,22,38], 8: [6,24,42], 9: [6,26,46], 10: [6,28,50],
+    11: [6,30,54], 12: [6,32,58], 13: [6,34,62], 14: [6,26,46,66], 15: [6,26,48,70]
+  };
+  function versionInfoBits(version) {
+    const g = 0x1f25;
+    let val = version << 12;
+    for (let i = 5; i >= 0; i--) if (val & (1 << (i + 12))) val ^= g << i;
+    return (version << 12) | val;
+  }
+  const FORMAT_INFO = {
+    L: [0x77c4,0x72f3,0x7daa,0x789d,0x662f,0x6318,0x6c41,0x6976],
+    M: [0x5412,0x5125,0x5e7c,0x5b4b,0x45f9,0x40ce,0x4f97,0x4aa0],
+    Q: [0x355f,0x3068,0x3f31,0x3a06,0x24b4,0x2183,0x2eda,0x2bed],
+    H: [0x1689,0x13be,0x1ce7,0x19d0,0x0762,0x0255,0x0d0c,0x083b]
+  };
+
+  function capacityFor(version, ecc) {
+    const blocks = RS_BLOCKS[version][ecc];
+    let totalData = 0;
+    blocks.forEach(function (b) { totalData += b[0] * b[2]; });
+    return { totalData: totalData };
+  }
+
+  const MAX_VERSION = 15;
+  function pickVersion(byteLen, ecc) {
+    for (let v = 1; v <= MAX_VERSION; v++) {
+      const cap = capacityFor(v, ecc);
+      const headerBits = v <= 9 ? 12 : 20;
+      const availBits = cap.totalData * 8 - headerBits;
+      if (byteLen * 8 <= availBits) return v;
+    }
+    throw new Error('Too long for a QR code here (max ~' + capacityFor(MAX_VERSION, ecc).totalData + ' bytes) — shorten the catalog URL, e.g. with a URL shortener.');
+  }
+
+  function encodeDataBits(bytes, version, totalDataCodewords) {
+    const bits = [];
+    const push = function (val, len) { for (let i = len - 1; i >= 0; i--) bits.push((val >> i) & 1); };
+    push(0b0100, 4);
+    push(bytes.length, version <= 9 ? 8 : 16);
+    bytes.forEach(function (b) { push(b, 8); });
+    const totalBits = totalDataCodewords * 8;
+    for (let i = 0; i < 4 && bits.length < totalBits; i++) bits.push(0);
+    while (bits.length % 8 !== 0) bits.push(0);
+    const padBytes = [0xec, 0x11];
+    let pi = 0;
+    while (bits.length < totalBits) { push(padBytes[pi % 2], 8); pi++; }
+    const cws = [];
+    for (let i = 0; i < bits.length; i += 8) {
+      let v = 0;
+      for (let j = 0; j < 8; j++) v = (v << 1) | bits[i + j];
+      cws.push(v);
+    }
+    return cws;
+  }
+
+  function interleave(dataCws, version, ecc) {
+    const blocks = RS_BLOCKS[version][ecc];
+    const eccPerBlock = ECC_CODEWORDS_PER_BLOCK[version][ecc];
+    const dataBlocks = [];
+    const eccBlocks = [];
+    let offset = 0;
+    blocks.forEach(function (b) {
+      const count = b[0], dataLen = b[2];
+      for (let i = 0; i < count; i++) {
+        const block = dataCws.slice(offset, offset + dataLen);
+        offset += dataLen;
+        dataBlocks.push(block);
+        eccBlocks.push(rsEncode(block, eccPerBlock));
+      }
+    });
+    const maxData = Math.max.apply(null, dataBlocks.map(function (b) { return b.length; }));
+    const result = [];
+    for (let i = 0; i < maxData; i++) dataBlocks.forEach(function (b) { if (i < b.length) result.push(b[i]); });
+    for (let i = 0; i < eccPerBlock; i++) eccBlocks.forEach(function (b) { result.push(b[i]); });
+    return result;
+  }
+
+  function applyMask(maskId, r, c) {
+    switch (maskId) {
+      case 0: return (r + c) % 2 === 0;
+    }
+  }
+
+  function buildMatrix(version, ecc, maskId, finalCws) {
+    const size = version * 4 + 17;
+    const m = Array.from({ length: size }, function () { return new Array(size).fill(null); });
+    const isFn = Array.from({ length: size }, function () { return new Array(size).fill(false); });
+
+    function setFn(r, c, v) { if (r >= 0 && r < size && c >= 0 && c < size) { m[r][c] = v; isFn[r][c] = true; } }
+    function placeFinder(r, c) {
+      for (let dr = -1; dr <= 7; dr++) for (let dc = -1; dc <= 7; dc++) {
+        const rr = r + dr, cc = c + dc;
+        if (rr < 0 || rr >= size || cc < 0 || cc >= size) continue;
+        const on = (dr >= 0 && dr <= 6 && dc >= 0 && dc <= 6) &&
+          (dr === 0 || dr === 6 || dc === 0 || dc === 6 || (dr >= 2 && dr <= 4 && dc >= 2 && dc <= 4));
+        setFn(rr, cc, on);
+      }
+    }
+    placeFinder(0, 0); placeFinder(0, size - 7); placeFinder(size - 7, 0);
+
+    for (let i = 8; i < size - 8; i++) { setFn(6, i, i % 2 === 0); setFn(i, 6, i % 2 === 0); }
+
+    const centers = ALIGN[version] || [];
+    centers.forEach(function (r) { centers.forEach(function (c) {
+      if ((r <= 8 && c <= 8) || (r <= 8 && c >= size - 9) || (r >= size - 9 && c <= 8)) return;
+      for (let dr = -2; dr <= 2; dr++) for (let dc = -2; dc <= 2; dc++) {
+        setFn(r + dr, c + dc, Math.max(Math.abs(dr), Math.abs(dc)) !== 1);
+      }
+    }); });
+
+    setFn(size - 8, 8, true);
+
+    for (let i = 0; i < 9; i++) { if (!isFn[8][i]) setFn(8, i, false); if (!isFn[i][8]) setFn(i, 8, false); }
+    for (let i = 0; i < 8; i++) { setFn(8, size - 1 - i, false); setFn(size - 1 - i, 8, false); }
+
+    if (version >= 7) {
+      const versionBits = versionInfoBits(version);
+      for (let i = 0; i < 18; i++) {
+        const bit = !!((versionBits >> i) & 1);
+        const rowInBlock = Math.floor(i / 3), colInBlock = i % 3;
+        setFn(rowInBlock, size - 11 + colInBlock, bit);
+        setFn(size - 11 + colInBlock, rowInBlock, bit);
+      }
+    }
+
+    const dataBits = [];
+    finalCws.forEach(function (cw) { for (let i = 7; i >= 0; i--) dataBits.push((cw >> i) & 1); });
+    let bitIdx = 0, dir = -1, col = size - 1;
+    while (col > 0) {
+      if (col === 6) col--;
+      for (let i = 0; i < size; i++) {
+        const row = dir < 0 ? size - 1 - i : i;
+        for (let c = 0; c < 2; c++) {
+          const cc = col - c;
+          if (isFn[row][cc]) continue;
+          let bit = bitIdx < dataBits.length ? dataBits[bitIdx] : 0;
+          bitIdx++;
+          if (applyMask(maskId, row, cc)) bit ^= 1;
+          m[row][cc] = !!bit;
+        }
+      }
+      dir = -dir;
+      col -= 2;
+    }
+
+    const fmt = FORMAT_INFO[ecc][maskId];
+    for (let i = 0; i < 15; i++) {
+      const bit = !!((fmt >> i) & 1);
+      if (i <= 5) m[i][8] = bit;
+      else if (i === 6) m[7][8] = bit;
+      else if (i === 7) m[8][8] = bit;
+      else if (i === 8) m[8][7] = bit;
+      else m[8][14 - i] = bit;
+      if (i <= 7) m[8][size - 1 - i] = bit;
+      else m[size - 15 + i][8] = bit;
+    }
+
+    return m;
+  }
+
+  function encodeQR(text, eccLevel) {
+    const ecc = eccLevel || 'M';
+    const bytes = Array.from(new TextEncoder().encode(text));
+    const version = pickVersion(bytes.length, ecc);
+    const cap = capacityFor(version, ecc);
+    const dataCws = encodeDataBits(bytes, version, cap.totalData);
+    const finalCws = interleave(dataCws, version, ecc);
+    const matrix = buildMatrix(version, ecc, 0, finalCws);
+    return { version: version, ecc: ecc, size: version * 4 + 17, matrix: matrix };
+  }
+
+  return { encodeQR: encodeQR, MAX_VERSION: MAX_VERSION };
+})();
+
+// ---- Page logic ----
+const els = {
+  baseUrl: document.getElementById('baseUrl'),
+  shopCode: document.getElementById('shopCode'),
+  catalogUrl: document.getElementById('catalogUrl'),
+  bizType: document.getElementById('bizType'),
+  premium: document.getElementById('premium'),
+  fullLinkOut: document.getElementById('fullLinkOut'),
+  qrBanner: document.getElementById('qrBanner'),
+  qrWrap: document.getElementById('qrWrap'),
+  qrCanvas: document.getElementById('qrCanvas'),
+  qrMeta: document.getElementById('qrMeta')
+};
+
+function drawQR(matrix, size) {
+  const scale = size <= 45 ? 6 : (size <= 65 ? 5 : 4);
+  const quiet = 4;
+  const px = (size + quiet * 2) * scale;
+  const canvas = els.qrCanvas;
+  canvas.width = px;
+  canvas.height = px;
+  canvas.style.width = Math.min(px, 260) + 'px';
+  canvas.style.height = Math.min(px, 260) + 'px';
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#FFFFFF';
+  ctx.fillRect(0, 0, px, px);
+  ctx.fillStyle = '#16283D';
+  for (let r = 0; r < size; r++) {
+    for (let c = 0; c < size; c++) {
+      if (matrix[r][c]) ctx.fillRect((c + quiet) * scale, (r + quiet) * scale, scale, scale);
+    }
+  }
+}
+
+function render() {
+  const base = els.baseUrl.value.trim();
+  const shop = els.shopCode.value.trim();
+  const catalogUrl = els.catalogUrl.value.trim();
+  const bizType = els.bizType.value;
+
+  if (!base || !shop || !catalogUrl) {
+    els.fullLinkOut.textContent = '—';
+    els.qrWrap.style.display = 'none';
+    els.qrBanner.innerHTML = '<div class="banner">Fill in the app page URL, shop code and catalog URL to generate the link.</div>';
+    return;
+  }
+
+  const parts = ['shop=' + encodeURIComponent(shop), 'url=' + encodeURIComponent(catalogUrl)];
+  if (bizType) parts.push('type=' + encodeURIComponent(bizType));
+  if (els.premium.checked) parts.push('premium=1');
+
+  const sep = base.indexOf('?') >= 0 ? '&' : '?';
+  const fullLink = base + sep + parts.join('&');
+
+  els.fullLinkOut.textContent = fullLink;
+
+  try {
+    const result = QR.encodeQR(fullLink, 'M');
+    drawQR(result.matrix, result.size);
+    els.qrWrap.style.display = '';
+    els.qrMeta.textContent = fullLink.length + ' chars · QR version ' + result.version + ' · ECC M';
+    els.qrBanner.innerHTML = '<div class="banner ok">Ready — scan with an iPhone camera, or share the link directly.</div>';
+  } catch (e) {
+    els.qrWrap.style.display = 'none';
+    els.qrBanner.innerHTML = '<div class="banner error">' + e.message + '</div>';
+  }
+}
+
+[els.baseUrl, els.shopCode, els.catalogUrl, els.bizType, els.premium].forEach(function (el) {
+  el.addEventListener('input', render);
+  el.addEventListener('change', render);
+});
+
+document.querySelectorAll('.copy-btn').forEach(function (btn) {
+  btn.addEventListener('click', function () {
+    const target = document.getElementById(btn.getAttribute('data-copy-target'));
+    const text = target.textContent;
+    if (!text || text === '—') return;
+    navigator.clipboard.writeText(text).then(function () {
+      btn.textContent = 'Copied';
+      btn.classList.add('copied');
+      setTimeout(function () { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 1400);
+    });
+  });
+});
+
+render();
+</script>

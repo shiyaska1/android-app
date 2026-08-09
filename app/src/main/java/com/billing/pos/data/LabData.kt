@@ -125,6 +125,7 @@ interface LabTestDao {
     @Query("SELECT * FROM lab_tests ORDER BY name COLLATE NOCASE") fun observeTests(): Flow<List<LabTest>>
     @Query("SELECT * FROM lab_tests") suspend fun allTests(): List<LabTest>
     @Query("SELECT * FROM lab_tests WHERE id = :id LIMIT 1") suspend fun testById(id: Long): LabTest?
+    @Query("SELECT * FROM lab_tests WHERE name = :name COLLATE NOCASE LIMIT 1") suspend fun testByName(name: String): LabTest?
     @Query("SELECT * FROM lab_evaluations WHERE testId = :testId ORDER BY sortOrder, id") suspend fun evaluationsFor(testId: Long): List<LabEvaluation>
     @Query("SELECT * FROM lab_evaluations") suspend fun allEvaluations(): List<LabEvaluation>
 }
@@ -150,6 +151,7 @@ interface PatientDao {
     @Query("SELECT * FROM patients ORDER BY name COLLATE NOCASE") fun observeAll(): Flow<List<Patient>>
     @Query("SELECT * FROM patients") suspend fun all(): List<Patient>
     @Query("SELECT * FROM patients WHERE id = :id LIMIT 1") suspend fun byId(id: Long): Patient?
+    @Query("SELECT * FROM patients WHERE name = :name COLLATE NOCASE AND phone = :phone LIMIT 1") suspend fun byNameAndPhone(name: String, phone: String): Patient?
 }
 
 /* ==================== Lab bill + results ==================== */
@@ -263,6 +265,7 @@ interface LabBillDao {
     @Query("SELECT * FROM lab_bills ORDER BY dateMillis DESC") fun observeBills(): Flow<List<LabBill>>
     @Query("SELECT * FROM lab_bills") suspend fun allBills(): List<LabBill>
     @Query("SELECT * FROM lab_bills WHERE id = :id LIMIT 1") suspend fun billById(id: Long): LabBill?
+    @Query("SELECT * FROM lab_bills WHERE billNo = :billNo LIMIT 1") suspend fun byNo(billNo: String): LabBill?
     @Query("SELECT * FROM lab_bill_tests WHERE billId = :billId") suspend fun testsFor(billId: Long): List<LabBillTest>
     @Query("SELECT * FROM lab_bill_tests") suspend fun allBillTests(): List<LabBillTest>
     @Query("SELECT * FROM lab_results WHERE billId = :billId ORDER BY sortOrder, id") suspend fun resultsFor(billId: Long): List<LabResultValue>

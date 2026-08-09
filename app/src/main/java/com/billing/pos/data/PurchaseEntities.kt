@@ -11,7 +11,11 @@ data class Supplier(
     val phone: String = "",
     val address: String = "",
     val gstin: String = "",
-    val isDefault: Boolean = false
+    val isDefault: Boolean = false,
+    /** State/UT name (see [IndianStates]) — used to tell an interstate purchase (IGST) from an
+     *  intra-state one (CGST+SGST) against the company's own GSTIN. Blank = unknown, treated
+     *  as intra-state. */
+    val state: String = ""
 )
 
 /** A purchase bill header (mirror of Bill, but for buying from a supplier). */
@@ -29,7 +33,11 @@ data class Purchase(
     val discount: Double,
     val grandTotal: Double,
     val paidAmount: Double = 0.0,
+    /** GST Compensation Cess total, separate from [taxTotal] (CGST/SGST/IGST). */
+    val cessTotal: Double = 0.0,
     val supplierGstin: String = "",
+    /** Snapshot of [Supplier.state] at purchase time — decides IGST vs CGST+SGST on this purchase. */
+    val supplierState: String = "",
     val source: String = "",
     /** When false, this purchase does NOT add stock (goods already received via a Material
      *  Receipt Note against the LPO); it is booked only for VAT. Default true = normal purchase. */
@@ -67,6 +75,8 @@ data class PurchaseItem(
     val price: Double,
     val taxPercent: Double,
     val lineTotal: Double,
+    /** GST Compensation Cess % on this line, on top of [taxPercent]. */
+    val cessPercent: Double = 0.0,
     /** Batch/lot received (when batch tracking is on). */
     val batchNo: String = "",
     /** Unit this line was purchased in (blank = the item's primary unit). */

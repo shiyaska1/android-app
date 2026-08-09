@@ -1,0 +1,2476 @@
+package com.billing.pos.ui.customer
+
+import android.Manifest
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AddAPhoto
+import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.material.icons.filled.Call
+import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.Chat
+import androidx.compose.material.icons.filled.Checklist
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.SelectAll
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.filled.NotificationsOff
+import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material.icons.filled.Place
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Remove
+import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.Storefront
+import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Divider
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedIconButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
+import java.io.File
+import java.io.FileOutputStream
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.billing.pos.customer.NearbyShops
+import com.billing.pos.customer.ReferralLink
+import com.billing.pos.customer.RemoteImageCache
+import com.billing.pos.customer.ShopSwitch
+import com.billing.pos.customer.ThumbnailCompressor
+import com.billing.pos.ui.common.rememberThumbnail
+import com.billing.pos.data.AppPrefs
+import com.billing.pos.data.CustomerNotification
+import com.billing.pos.data.CustomerOrderHistory
+import com.billing.pos.data.DownloadSaver
+import com.billing.pos.data.OnlineOrderStatus
+import com.billing.pos.data.ShopCatalogItem
+import com.billing.pos.ui.billing.collectAsStateSafe
+import com.billing.pos.util.Format
+import com.journeyapps.barcodescanner.ScanContract
+import com.journeyapps.barcodescanner.ScanOptions
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+
+/**
+ * The entire app, for a customer install: the shop's item catalog, grouped by category, with a
+ * manual refresh. Cached offline (see [CustomerCatalogViewModel]) so it still opens with data
+ * after the first successful fetch. Picking a quantity on any item reveals the Order button —
+ * register (name/phone, asked once) if not already, then "Are you at the delivery location right
+ * now?" — Yes captures the phone's current GPS fix; No asks for a Google Maps link instead
+ * (compulsory either way, the shop needs to know where to deliver) — then POST to the server.
+ */
+private data class PendingOrderSubmit(
+    val name: String, val phone: String, val address: String,
+    val note: String, val attachments: List<String>,
+    val paymentStatus: String = ""
+)
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun CustomerCatalogScreen(
+    onExitTestMode: () -> Unit = {},
+    // True when a shop owner opened this screen from their own Dashboard (see
+    // MainActivity's "customerPreview" route) to show a customer how ordering works, on the
+    // same catalog/settings they've already configured — not an actual customer's device.
+    // Shows a back arrow instead of touching customerMode/onboarded, so returning to the shop
+    // app is a plain nav pop, with nothing to undo.
+    isOwnerPreview: Boolean = false,
+    onBackToShop: () -> Unit = {},
+    vm: CustomerCatalogViewModel = viewModel()
+) {
+    val context = LocalContext.current
+    val prefs = remember { AppPrefs(context) }
+    val items by vm.items.collectAsStateSafe()
+    val refreshing by vm.refreshing.collectAsStateSafe()
+    val message by vm.message.collectAsStateSafe()
+    val technicalError by vm.technicalError.collectAsStateSafe()
+    val qty by vm.qty.collectAsStateSafe()
+    val saving by vm.saving.collectAsStateSafe()
+    val snackbar = remember { SnackbarHostState() }
+    var selectedCategory by rememberSaveable { mutableStateOf("All") }
+    var showSaveDialog by rememberSaveable { mutableStateOf(false) }
+    var showRegisterDialog by rememberSaveable { mutableStateOf(false) }
+    var showPaymentDialog by rememberSaveable { mutableStateOf(false) }
+    var showDeliveryPointDialog by rememberSaveable { mutableStateOf(false) }
+    var showManualLocationDialog by rememberSaveable { mutableStateOf(false) }
+    var pendingOrderSubmit by remember { mutableStateOf<PendingOrderSubmit?>(null) }
+    var showSwitchShop by rememberSaveable { mutableStateOf(false) }
+    var showDirectory by rememberSaveable { mutableStateOf(false) }
+    var showHistory by rememberSaveable { mutableStateOf(false) }
+    var showNotifications by rememberSaveable { mutableStateOf(false) }
+    var payingNotification by remember { mutableStateOf<CustomerNotification?>(null) }
+    val history by vm.history.collectAsStateSafe()
+    val notifications by vm.notifications.collectAsStateSafe()
+    val unreadNotifications by vm.unreadNotifications.collectAsStateSafe()
+    val replying by vm.replying.collectAsStateSafe()
+    val scope = rememberCoroutineScope()
+
+    // Note + attachments live here, on the main screen, instead of inside the "Your details"
+    // dialog — so a shop with no browsable catalog (e.g. a medical store that only takes a
+    // prescription photo) still has somewhere to write/attach without picking any items first.
+    var orderNote by rememberSaveable { mutableStateOf("") }
+    val orderAttachments = remember { mutableStateListOf<String>() }
+    var compressingAttachment by remember { mutableStateOf(false) }
+    var viewingAttachment by remember { mutableStateOf<String?>(null) }
+    var pendingCameraFile by remember { mutableStateOf<java.io.File?>(null) }
+
+    // 1024px so an attachment stays legible (e.g. a prescription) — not the 240px item-thumbnail
+    // size — but still compressed client-side before it ever reaches the server.
+    suspend fun compressToDataUri(sourcePath: String): String? = withContext(Dispatchers.IO) {
+        runCatching {
+            val bytes = ThumbnailCompressor.compress(sourcePath, maxBytes = 300 * 1024, maxDim = 1024) ?: return@runCatching null
+            "data:image/jpeg;base64," + android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+        }.getOrNull()
+    }
+
+    val galleryPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
+        if (uris.isEmpty()) return@rememberLauncherForActivityResult
+        compressingAttachment = true
+        scope.launch {
+            for (uri in uris) {
+                val dataUri = withContext(Dispatchers.IO) {
+                    val tempFile = java.io.File.createTempFile("attach_", ".jpg", context.cacheDir)
+                    runCatching {
+                        context.contentResolver.openInputStream(uri)?.use { input -> tempFile.outputStream().use { output -> input.copyTo(output) } }
+                    }
+                    val result = compressToDataUri(tempFile.absolutePath)
+                    tempFile.delete()
+                    result
+                }
+                if (dataUri != null) orderAttachments.add(dataUri)
+            }
+            compressingAttachment = false
+        }
+    }
+    val cameraCapture = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
+        val f = pendingCameraFile
+        pendingCameraFile = null
+        if (ok && f != null) {
+            compressingAttachment = true
+            scope.launch {
+                val dataUri = compressToDataUri(f.absolutePath)
+                f.delete()
+                if (dataUri != null) orderAttachments.add(dataUri)
+                compressingAttachment = false
+            }
+        } else {
+            f?.delete()
+        }
+    }
+    fun launchCamera() {
+        // Must be under cacheDir/shared/ — that's the only cache location file_paths.xml exposes
+        // through the FileProvider; a file directly in cacheDir's root can't be shared this way.
+        val sharedDir = java.io.File(context.cacheDir, "shared").apply { mkdirs() }
+        val file = java.io.File.createTempFile("attach_cam_", ".jpg", sharedDir)
+        pendingCameraFile = file
+        val uri = FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
+        runCatching { cameraCapture.launch(uri) }
+            .onFailure { pendingCameraFile?.delete(); pendingCameraFile = null; scope.launch { snackbar.showSnackbar("No camera app found") } }
+    }
+    // Declaring android.permission.CAMERA in the manifest (needed elsewhere, e.g. QR scanning)
+    // means the system camera intent below silently fails without this being granted first —
+    // it used to just show "No camera app found", which was misleading; the camera was there,
+    // permission just hadn't been asked for.
+    val cameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) launchCamera() else scope.launch { snackbar.showSnackbar("Camera permission is needed to attach a photo") }
+    }
+    fun requestCameraAndLaunch() {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            launchCamera()
+        } else {
+            cameraPermission.launch(Manifest.permission.CAMERA)
+        }
+    }
+
+    // A voice note travels the exact same premium-only attachment channel as a photo (see
+    // OrderNoteCard) — same VoiceRecorder used for dictation elsewhere in the app.
+    var isRecordingVoice by remember { mutableStateOf(false) }
+    var voiceRecorder by remember { mutableStateOf<com.billing.pos.audio.VoiceRecorder?>(null) }
+    var recordingFile by remember { mutableStateOf<java.io.File?>(null) }
+    fun startVoiceRecording() {
+        val sharedDir = java.io.File(context.cacheDir, "shared").apply { mkdirs() }
+        val file = java.io.File(sharedDir, "voice_${System.nanoTime()}.m4a")
+        runCatching {
+            voiceRecorder = com.billing.pos.audio.VoiceRecorder(file.absolutePath).also { it.start() }
+            recordingFile = file
+            isRecordingVoice = true
+        }.onFailure {
+            voiceRecorder = null
+            file.delete()
+            scope.launch { snackbar.showSnackbar("Could not start recording") }
+        }
+    }
+    fun stopVoiceRecording() {
+        val rec = voiceRecorder ?: return
+        val file = recordingFile
+        isRecordingVoice = false
+        voiceRecorder = null
+        recordingFile = null
+        scope.launch {
+            withContext(Dispatchers.IO) { rec.stop() }
+            if (file != null && file.exists() && file.length() > 0) {
+                orderAttachments.add(withContext(Dispatchers.IO) { com.billing.pos.util.VoiceAttachment.encode(file) })
+                file.delete()
+            } else {
+                file?.delete()
+                snackbar.showSnackbar("No voice detected — try again, speaking closer to the phone")
+            }
+        }
+    }
+    val micPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) startVoiceRecording() else scope.launch { snackbar.showSnackbar("Microphone permission is needed to record a voice note") }
+    }
+    fun requestMicAndRecord() {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            startVoiceRecording()
+        } else {
+            micPermission.launch(Manifest.permission.RECORD_AUDIO)
+        }
+    }
+
+    // One shared player for every voice note shown on this screen — an order's own attachment
+    // before it's sent, a shop's reply on the Notifications bell, or a past order's/reply's voice
+    // note in Order History. Decoded to a temp file just for the duration of playback, cleaned up
+    // as soon as it stops/finishes — nothing extra is kept on the phone beyond the data URI
+    // already stored in Room.
+    var playingVoiceNote by remember { mutableStateOf<String?>(null) }
+    val voicePlayer = remember { android.media.MediaPlayer() }
+    var playingVoiceFile by remember { mutableStateOf<java.io.File?>(null) }
+    DisposableEffect(Unit) {
+        onDispose {
+            runCatching { voicePlayer.stop() }
+            runCatching { voicePlayer.release() }
+            playingVoiceFile?.delete()
+        }
+    }
+    fun toggleVoicePlayback(dataUri: String) {
+        if (playingVoiceNote == dataUri) {
+            runCatching { voicePlayer.stop(); voicePlayer.reset() }
+            playingVoiceFile?.delete()
+            playingVoiceFile = null
+            playingVoiceNote = null
+            return
+        }
+        val file = com.billing.pos.util.VoiceAttachment.decodeToTempFile(context, dataUri)
+        if (file == null) {
+            scope.launch { snackbar.showSnackbar("Could not play voice note") }
+            return
+        }
+        runCatching {
+            playingVoiceFile?.delete()
+            playingVoiceFile = file
+            voicePlayer.reset()
+            voicePlayer.setDataSource(file.absolutePath)
+            voicePlayer.setOnCompletionListener {
+                playingVoiceNote = null
+                file.delete()
+                if (playingVoiceFile == file) playingVoiceFile = null
+            }
+            voicePlayer.prepare()
+            voicePlayer.start()
+            playingVoiceNote = dataUri
+        }.onFailure {
+            file.delete()
+            scope.launch { snackbar.showSnackbar("Could not play voice note") }
+        }
+    }
+
+    // Without this, every order-status/chat/promotion notification is silently dropped on
+    // Android 13+ (POST_NOTIFICATIONS defaults to denied until explicitly granted) — the
+    // notification still lands in the in-app bell (that's just a DB insert), it just never pops
+    // as a system alert. Ask once, right when the catalog first opens, same as the diary's
+    // reminder-permission pattern elsewhere in the app.
+    val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
+    LaunchedEffect(Unit) {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+    // A real customer's device already has a cached catalog from its last fetch/install; a shop
+    // owner previewing on their own phone has never fetched their own shop as a "customer" before,
+    // so the list would otherwise open empty until they find the refresh icon themselves.
+    LaunchedEffect(isOwnerPreview) { if (isOwnerPreview) vm.refresh() }
+
+    // One-time, dismissible — right on first open, before any order, so the shop can see and
+    // reach this customer from the moment they install (see RegisterDialog). Never shown on an
+    // owner's own preview, and never again once shown/skipped once (whether or not they filled
+    // it in) — see AppPrefs.customerRegisterPromptShown.
+    LaunchedEffect(Unit) {
+        if (!isOwnerPreview && prefs.customerPhone.isBlank() && !prefs.customerRegisterPromptShown) {
+            showRegisterDialog = true
+        }
+    }
+
+    val locationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
+        val granted = grants[Manifest.permission.ACCESS_FINE_LOCATION] == true || grants[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+        val pending = pendingOrderSubmit
+        pendingOrderSubmit = null
+        if (granted && pending != null) {
+            vm.saveOrder(pending.name, pending.phone, pending.address, pending.note, pending.attachments, paymentStatus = pending.paymentStatus)
+        } else if (!granted) {
+            scope.launch { snackbar.showSnackbar("Location permission is required to place an order") }
+        }
+    }
+    // "Yes, I'm at the delivery point" path — captures the phone's current GPS fix. Only clears
+    // pendingOrderSubmit on the immediate-submit branch; the permission-request branch hands that
+    // job to the locationPermission callback above, once the async permission result comes back.
+    fun submitOrderAtCurrentLocation(pending: PendingOrderSubmit) {
+        val hasLocation = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (hasLocation) {
+            vm.saveOrder(pending.name, pending.phone, pending.address, pending.note, pending.attachments, paymentStatus = pending.paymentStatus)
+            pendingOrderSubmit = null
+        } else {
+            pendingOrderSubmit = pending
+            locationPermission.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
+        }
+    }
+    // "No, I'm not there" path — a pasted Google Maps link stands in for GPS; no location
+    // permission needed at all since the phone's own position is never read.
+    fun submitOrderWithManualLocation(pending: PendingOrderSubmit, mapsLink: String) {
+        vm.saveOrder(pending.name, pending.phone, pending.address, pending.note, pending.attachments, manualLocationLink = mapsLink, paymentStatus = pending.paymentStatus)
+    }
+
+    // "I'll pick it up myself" — skips reading any location at all, GPS or pasted link. The
+    // sentinel travels through to the shop owner's Online Orders screen as a "Self pickup" badge
+    // instead of a delivery-location button (see OrderCard).
+    fun submitOrderPickup(pending: PendingOrderSubmit) {
+        vm.saveOrder(
+            pending.name, pending.phone, pending.address, pending.note, pending.attachments,
+            manualLocationLink = com.billing.pos.customer.OrderSubmit.PICKUP_LOCATION, paymentStatus = pending.paymentStatus
+        )
+    }
+
+    // Re-read after every fetch (a plain remember would freeze these at first composition).
+    val shopName = prefs.shopDisplayName
+    val shopPhone = prefs.shopContactPhone
+    val shopAddress = prefs.shopDisplayAddress
+
+    val catalogLabel = remember {
+        when (prefs.customerBusinessType) {
+            "Medical store" -> "Medicines"
+            "Medical lab" -> "Home Collection"
+            "Restaurant" -> "Order"
+            else -> "Order"
+        }
+    }
+
+    LaunchedEffect(message) {
+        message?.let { snackbar.showSnackbar(it); vm.messageShown() }
+    }
+
+    // Order-update notification tap → open the notification list straight away.
+    val pendingNotificationsOpen = com.billing.pos.auth.PendingCustomerNotificationsOpen.pending
+    LaunchedEffect(pendingNotificationsOpen) {
+        if (com.billing.pos.auth.PendingCustomerNotificationsOpen.consume()) showNotifications = true
+    }
+
+    var searchQuery by rememberSaveable { mutableStateOf("") }
+
+    val categories = remember(items) {
+        listOf("All") + items.map { it.category }.filter { it.isNotBlank() }.distinct().sortedBy { it.lowercase() }
+    }
+    val shown = remember(items, selectedCategory, searchQuery) {
+        items
+            .filter { selectedCategory == "All" || it.category == selectedCategory }
+            .filter { searchQuery.isBlank() || it.name.contains(searchQuery, ignoreCase = true) }
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(shopName.ifBlank { catalogLabel } + if (isOwnerPreview) " · Preview" else "") },
+                navigationIcon = {
+                    if (isOwnerPreview) {
+                        IconButton(onClick = onBackToShop) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back to shop app")
+                        }
+                    }
+                },
+                actions = {
+                    if (shopPhone.isNotBlank()) {
+                        IconButton(onClick = {
+                            val digits = shopPhone.filter { it.isDigit() }
+                            val msg = android.net.Uri.encode("Hi, I'd like to place an order.")
+                            val intent = android.content.Intent(
+                                android.content.Intent.ACTION_VIEW,
+                                android.net.Uri.parse("https://wa.me/$digits?text=$msg")
+                            )
+                            runCatching { context.startActivity(intent) }
+                        }) {
+                            Icon(Icons.Default.Chat, contentDescription = "Message shop on WhatsApp")
+                        }
+                    }
+                    IconButton(onClick = { showNotifications = true }) {
+                        BadgedBox(badge = { if (unreadNotifications > 0) Badge { Text("$unreadNotifications") } }) {
+                            Icon(
+                                if (unreadNotifications > 0) Icons.Default.NotificationsActive else Icons.Default.Notifications,
+                                contentDescription = "Notifications"
+                            )
+                        }
+                    }
+                    IconButton(onClick = { showHistory = true }) {
+                        Icon(Icons.Default.History, contentDescription = "Order history")
+                    }
+                    IconButton(onClick = { showDirectory = true }) {
+                        Icon(Icons.Default.Storefront, contentDescription = "Browse shops")
+                    }
+                    IconButton(onClick = { showSwitchShop = true }) {
+                        Icon(Icons.Default.SwapHoriz, contentDescription = "Switch shop")
+                    }
+                    IconButton(onClick = { vm.refresh() }) {
+                        if (refreshing) {
+                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                        } else {
+                            Icon(Icons.Default.Refresh, contentDescription = "Refresh items")
+                        }
+                    }
+                    if (com.billing.pos.BuildConfig.DEBUG) {
+                        IconButton(onClick = {
+                            prefs.customerMode = false
+                            prefs.onboarded = false
+                            prefs.referrerChecked = false
+                            onExitTestMode()
+                        }) {
+                            Icon(Icons.Default.BugReport, contentDescription = "Exit test mode")
+                        }
+                    }
+                }
+            )
+        },
+        snackbarHost = { SnackbarHost(snackbar) }
+    ) { padding ->
+        LazyColumn(
+            modifier = Modifier.fillMaxSize().padding(padding),
+            contentPadding = PaddingValues(bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            item {
+                val bannerImage = prefs.shopBannerImage
+                if (bannerImage.isNotBlank()) {
+                    val banner = remember(bannerImage) { decodeDataUriBitmap(bannerImage) }
+                    if (banner != null) {
+                        androidx.compose.foundation.Image(
+                            banner,
+                            contentDescription = "$shopName banner",
+                            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                            modifier = Modifier.fillMaxWidth().height(120.dp)
+                        )
+                    }
+                }
+                if (vm.lastFetchedAt > 0L) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "Updated " + SimpleDateFormat("dd MMM, HH:mm", Locale.getDefault()).format(Date(vm.lastFetchedAt)) +
+                                " — new offer? tap refresh",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.outline
+                        )
+                        IconButton(onClick = { vm.refresh() }, modifier = Modifier.size(28.dp)) {
+                            if (refreshing) {
+                                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                            } else {
+                                Icon(Icons.Default.Refresh, contentDescription = "Refresh to see new offers", modifier = Modifier.size(18.dp))
+                            }
+                        }
+                    }
+                }
+            }
+
+            // The shop's own contact number and address — set once in Settings > Company details
+            // and pushed to the server independent of the product catalog (see ShopInfoSync), so
+            // even a note/prescription-only shop with no browsable items still reaches the
+            // customer here.
+            if (shopPhone.isNotBlank() || shopAddress.isNotBlank()) {
+                item {
+                    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp)) {
+                        if (shopPhone.isNotBlank()) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.clickable {
+                                    runCatching {
+                                        context.startActivity(android.content.Intent(android.content.Intent.ACTION_DIAL, android.net.Uri.parse("tel:$shopPhone")))
+                                    }
+                                }
+                            ) {
+                                Icon(Icons.Default.Call, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.outline)
+                                Text(shopPhone, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 6.dp))
+                            }
+                        }
+                        if (shopAddress.isNotBlank()) {
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 2.dp)) {
+                                Icon(Icons.Default.Place, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.outline)
+                                Text(shopAddress, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 6.dp))
+                            }
+                        }
+                    }
+                }
+            }
+
+            item {
+                OrderNoteCard(
+                    note = orderNote,
+                    onNoteChange = { orderNote = it },
+                    attachments = orderAttachments,
+                    premium = vm.isPremiumShop,
+                    compressing = compressingAttachment,
+                    isRecordingVoice = isRecordingVoice,
+                    playingVoiceNote = playingVoiceNote,
+                    onAddFromCamera = { requestCameraAndLaunch() },
+                    onAddFromGallery = { galleryPicker.launch("image/*") },
+                    onStartVoice = { requestMicAndRecord() },
+                    onStopVoice = { stopVoiceRecording() },
+                    onRemoveAttachment = { orderAttachments.remove(it) },
+                    onViewAttachment = { uri -> if (com.billing.pos.util.VoiceAttachment.isAudio(uri)) toggleVoicePlayback(uri) else viewingAttachment = uri }
+                )
+            }
+
+            // Always here, right between the note and the item catalog — not hidden until
+            // something's picked, and not tucked away in a footer the customer has to scroll
+            // down past a long item list to find. Tapping it with nothing to submit yet just
+            // prompts for one (no server call — there's nothing worth sending).
+            item {
+                val total = items.filter { qty.containsKey(it.id) }.sumOf { it.price * (qty[it.id] ?: 0) }
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        if (qty.isNotEmpty()) {
+                            Text("${qty.values.sum()} item(s)", style = MaterialTheme.typography.labelMedium)
+                            Text("₹" + Format.money(total), fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    Button(
+                        onClick = {
+                            if (qty.isEmpty() && orderNote.isBlank() && orderAttachments.isEmpty()) {
+                                scope.launch { snackbar.showSnackbar("Please order something — add an item, write a note, or attach a photo") }
+                            } else {
+                                showSaveDialog = true
+                            }
+                        },
+                        enabled = !saving
+                    ) {
+                        if (saving) {
+                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                        } else {
+                            Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Text("  Order")
+                        }
+                    }
+                }
+            }
+
+            if (items.isNotEmpty()) {
+                item {
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        label = { Text("Search items…") },
+                        singleLine = true,
+                        leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)
+                    )
+                }
+            }
+
+            if (categories.size > 1) {
+                item {
+                    LazyRow(
+                        contentPadding = PaddingValues(horizontal = 12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(categories) { cat ->
+                            FilterChip(
+                                selected = selectedCategory == cat,
+                                onClick = { selectedCategory = cat },
+                                label = { Text(cat) }
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (items.isEmpty()) {
+                item {
+                    Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                        if (refreshing) {
+                            CircularProgressIndicator()
+                        } else {
+                            Text(
+                                "No items yet — tap refresh",
+                                color = MaterialTheme.colorScheme.outline
+                            )
+                        }
+                    }
+                }
+            } else if (shown.isEmpty()) {
+                item {
+                    Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                        Text("No items match \"$searchQuery\"", color = MaterialTheme.colorScheme.outline)
+                    }
+                }
+            } else {
+                items(shown, key = { it.id }) { item ->
+                    CatalogItemRow(
+                        item = item,
+                        qty = qty[item.id] ?: 0,
+                        onQtyChange = { n -> vm.setQty(item.id, n) },
+                        modifier = Modifier.padding(horizontal = 12.dp)
+                    )
+                }
+            }
+        }
+    }
+
+    if (showRegisterDialog) {
+        RegisterDialog(
+            onDismiss = { showRegisterDialog = false; prefs.customerRegisterPromptShown = true },
+            onConfirm = { name, phone ->
+                showRegisterDialog = false
+                prefs.customerRegisterPromptShown = true
+                vm.registerCustomer(name, phone)
+            }
+        )
+    }
+    if (showSaveDialog) {
+        val cartTotal = items.filter { qty.containsKey(it.id) }.sumOf { it.price * (qty[it.id] ?: 0) }
+        SaveOrderDialog(
+            initialName = vm.savedCustomerName,
+            initialPhone = vm.savedCustomerPhone,
+            initialAddress = vm.savedCustomerAddress,
+            onDismiss = { showSaveDialog = false },
+            onConfirm = { name, phone, address ->
+                showSaveDialog = false
+                pendingOrderSubmit = PendingOrderSubmit(name, phone, address, orderNote.trim(), orderAttachments.toList())
+                orderNote = ""; orderAttachments.clear()
+                if (prefs.shopUpiId.isNotBlank() && cartTotal > 0.0) {
+                    showPaymentDialog = true
+                } else {
+                    showDeliveryPointDialog = true
+                }
+            }
+        )
+    }
+    if (showPaymentDialog) {
+        val cartTotal = items.filter { qty.containsKey(it.id) }.sumOf { it.price * (qty[it.id] ?: 0) }
+        // No order id exists yet at this point (the order is only created after this choice) —
+        // a fresh reference per dialog instance is enough; it only needs to be unique, not
+        // correlated to anything server-side.
+        val paymentReference = remember(showPaymentDialog) { "ORD" + System.currentTimeMillis() }
+        PaymentDialog(
+            amount = cartTotal,
+            upiVpa = prefs.shopUpiId,
+            upiName = prefs.shopUpiName.ifBlank { shopName },
+            reference = paymentReference,
+            onDismiss = { showPaymentDialog = false; pendingOrderSubmit = null },
+            onChoose = { status, proof ->
+                showPaymentDialog = false
+                pendingOrderSubmit = pendingOrderSubmit?.let { p ->
+                    p.copy(paymentStatus = status, attachments = if (proof != null) p.attachments + proof else p.attachments)
+                }
+                showDeliveryPointDialog = true
+            }
+        )
+    }
+    if (showDeliveryPointDialog) {
+        DeliveryPointDialog(
+            onDismiss = { showDeliveryPointDialog = false; pendingOrderSubmit = null },
+            onAtLocation = {
+                showDeliveryPointDialog = false
+                pendingOrderSubmit?.let { submitOrderAtCurrentLocation(it) }
+            },
+            onNotAtLocation = {
+                showDeliveryPointDialog = false
+                showManualLocationDialog = true
+            },
+            onPickup = {
+                showDeliveryPointDialog = false
+                pendingOrderSubmit?.let { submitOrderPickup(it) }
+                pendingOrderSubmit = null
+            }
+        )
+    }
+    if (showManualLocationDialog) {
+        ManualLocationDialog(
+            onDismiss = { showManualLocationDialog = false; pendingOrderSubmit = null },
+            onConfirm = { link ->
+                showManualLocationDialog = false
+                pendingOrderSubmit?.let { submitOrderWithManualLocation(it, link) }
+                pendingOrderSubmit = null
+            }
+        )
+    }
+    viewingAttachment?.let { uri ->
+        com.billing.pos.ui.common.DataUriImageViewerDialog(dataUri = uri, onDismiss = { viewingAttachment = null })
+    }
+    if (showSwitchShop) {
+        SwitchShopDialog(
+            recent = vm.recentShops(),
+            onDismiss = { showSwitchShop = false },
+            onSwitch = { shop, fromScan -> vm.switchShop(shop, forceFetch = fromScan) { showSwitchShop = false } }
+        )
+    }
+    if (showDirectory) {
+        ShopDirectoryDialog(
+            shops = vm.knownShops(),
+            currentShop = prefs.shopCode,
+            currentShopName = shopName,
+            onDismiss = { showDirectory = false },
+            onPick = { shop, forceFetch -> vm.switchShop(shop, forceFetch = forceFetch) { showDirectory = false } }
+        )
+    }
+    if (showHistory) {
+        OrderHistoryDialog(
+            history = history,
+            playingVoiceNote = playingVoiceNote,
+            onDismiss = { showHistory = false },
+            onReorder = { order -> vm.reorder(order); showHistory = false },
+            onDelete = { order -> vm.deleteHistoryOrder(order) },
+            onTogglePlay = { uri -> toggleVoicePlayback(uri) },
+            onViewImage = { uri -> viewingAttachment = uri }
+        )
+    }
+    if (showNotifications) {
+        LaunchedEffect(Unit) { vm.notificationsOpened() }
+        NotificationsDialog(
+            notifications = notifications,
+            replying = replying,
+            shopUpi = { shop -> vm.upiFor(shop) },
+            isPremiumForShop = { shop -> vm.isPremiumForShop(shop) },
+            playingVoiceNote = playingVoiceNote,
+            isShopMuted = { shop -> vm.isShopMuted(shop) },
+            onDismiss = { showNotifications = false },
+            onClearAll = { vm.clearAllNotifications(); showNotifications = false },
+            onDeleteThread = { shop -> vm.deleteThread(shop) },
+            onDeleteThreads = { shops -> vm.deleteThreads(shops) },
+            onReply = { shop, shopName, text, attachments -> vm.replyToShop(shop, shopName, text, attachments) },
+            onMuteShop = { shop, muted -> vm.setShopMuted(shop, muted) },
+            onPayNotification = { n -> payingNotification = n },
+            onTogglePlay = { uri -> toggleVoicePlayback(uri) },
+            onViewImage = { uri -> viewingAttachment = uri }
+        )
+    }
+    payingNotification?.let { n ->
+        // Always resolve UPI details for the shop that actually sent this notification (n.shop),
+        // never the blanket "currently active shop" prefs fields — a customer connected to
+        // several shops (ShopSwitch) can receive a bill from one that isn't the one on screen.
+        val payUpi = vm.upiFor(n.shop)
+        if (payUpi != null) {
+            PaymentDialog(
+                amount = n.amount,
+                upiVpa = payUpi.first,
+                upiName = payUpi.second.ifBlank { n.shopName.ifBlank { shopName } },
+                declineLabel = "Not now",
+                reference = n.orderId.ifBlank { "PAY" + System.currentTimeMillis() },
+                onDismiss = { payingNotification = null },
+                onChoose = { status, proof ->
+                    payingNotification = null
+                    if (status == "UPI") vm.markNotificationPaid(n, proof)
+                }
+            )
+        }
+        // else: that shop has no UPI ID (or was never known) — nothing to pay with, so no dialog.
+        // Can't happen via the button itself (it's gated by the same shopUpi() lookup), only if
+        // reached some other way; silently not showing a dialog is the safe outcome here.
+    }
+    technicalError?.let { detail ->
+        TechnicalErrorDialog(
+            detail = detail,
+            shopName = shopName,
+            shopPhone = shopPhone,
+            onDismiss = { vm.technicalErrorShown() }
+        )
+    }
+    if (saving) {
+        // Blocking, full-screen — the server can be slow to respond (especially with photo
+        // attachments), and without this the customer has no sign anything is happening and may
+        // think the app froze and tap Save again.
+        Dialog(
+            onDismissRequest = {},
+            properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false, usePlatformDefaultWidth = false)
+        ) {
+            Box(
+                Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.6f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator(color = androidx.compose.ui.graphics.Color.White)
+                    Spacer(Modifier.height(16.dp))
+                    Text(
+                        "Sending your order…",
+                        color = androidx.compose.ui.graphics.Color.White,
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Text(
+                        "This can take a moment — please wait",
+                        color = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.8f),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** Shown when an order save or catalog fetch fails for a reason the customer can't fix
+ *  themselves (server down, shop moved servers, etc.) — a snackbar would just vanish and leave
+ *  them unsure whether the order went through, so this stays up until dismissed. Only ever offers
+ *  the shop's own number, if the shop owner has entered one — never the developer's own support
+ *  line, which has no business being customer-facing here. */
+@Composable
+private fun TechnicalErrorDialog(
+    detail: String,
+    shopName: String,
+    shopPhone: String,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    fun call(number: String) {
+        runCatching {
+            context.startActivity(android.content.Intent(android.content.Intent.ACTION_DIAL, android.net.Uri.parse("tel:$number")))
+        }
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Default.ErrorOutline, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
+        title = { Text("Technical error") },
+        text = {
+            Column {
+                Text(
+                    if (shopPhone.isNotBlank()) "Something went wrong reaching the shop's server. Please try again in a moment, or contact the shop directly below."
+                    else "Something went wrong reaching the shop's server. Please try again in a moment."
+                )
+                if (detail.isNotBlank()) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                }
+                if (shopPhone.isNotBlank()) {
+                    Divider(Modifier.padding(vertical = 12.dp))
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth().clickable { call(shopPhone) }.padding(vertical = 6.dp)
+                    ) {
+                        Icon(Icons.Default.Call, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        Spacer(Modifier.width(12.dp))
+                        Column {
+                            Text(shopName.ifBlank { "Shop" }, style = MaterialTheme.typography.bodyMedium)
+                            Text(shopPhone, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } }
+    )
+}
+
+/** One conversation per shop, collapsed from the flat [CustomerNotification] list the same way
+ *  [com.billing.pos.ui.messages.ShopMessagesScreen] collapses ShopMessage rows into threads on
+ *  the owner side. */
+private data class CustomerChatThread(
+    val shop: String,
+    val shopName: String,
+    val lastText: String,
+    val lastFromShop: Boolean,
+    val lastAt: Long,
+    val unreadCount: Int
+)
+
+/** The customer's chat with every shop they're connected to — a "Chats" list grouped by shop,
+ *  each opening into a full live thread: status updates/messages the shop sent, the customer's
+ *  own replies, and a reply bar to send more — the same structure as
+ *  [com.billing.pos.ui.messages.ShopMessagesScreen] on the owner side. Individual messages aren't
+ *  deletable one at a time (the shop's own chat has no such option either); a whole thread can be
+ *  cleared instead. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun NotificationsDialog(
+    notifications: List<CustomerNotification>,
+    replying: Boolean,
+    /** Resolves a shop code to its own (payee-VPA, payee-name) UPI details, or null if that shop
+     *  has none set — always looked up per-thread (see ShopSwitch), never assumed to be whichever
+     *  shop is currently active. */
+    shopUpi: (String) -> Pair<String, String>?,
+    /** Whether [String] (a shop code) is on the premium tier — gates attach-photo/record-voice in
+     *  that shop's thread. Per-shop, not global: a customer can be connected to more than one
+     *  shop and premium status can differ between them. */
+    isPremiumForShop: (String) -> Boolean,
+    playingVoiceNote: String?,
+    isShopMuted: (String) -> Boolean,
+    onDismiss: () -> Unit,
+    onClearAll: () -> Unit,
+    onDeleteThread: (shop: String) -> Unit,
+    onDeleteThreads: (shops: Set<String>) -> Unit,
+    onReply: (shop: String, shopName: String, text: String, attachments: List<String>) -> Unit,
+    onMuteShop: (shop: String, muted: Boolean) -> Unit,
+    onPayNotification: (CustomerNotification) -> Unit,
+    onTogglePlay: (String) -> Unit,
+    onViewImage: (String) -> Unit
+) {
+    var selectedShop by rememberSaveable { mutableStateOf<String?>(null) }
+    // "Select" mode on the Chats list, to delete more than one chat at once — mirrors the shop
+    // owner's own Messages list. "Clear all" stays a single-tap escape hatch for everything.
+    var selectMode by rememberSaveable { mutableStateOf(false) }
+    val selectedShops = remember { mutableStateListOf<String>() }
+    var confirmBulkDelete by remember { mutableStateOf(false) }
+    var confirmClearAll by remember { mutableStateOf(false) }
+    // decorFitsSystemWindows = false lets this dialog's own window go edge-to-edge like the
+    // main Activity window — without it, navigationBarsPadding()/imePadding() inside
+    // ChatThreadScreen's reply bar see the wrong insets (the dialog window already avoids the
+    // system bars on its own), squashing the reply bar down near-invisible above 3-button nav.
+    // The shop owner's equivalent screen isn't a dialog at all, so it never hit this.
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+    ) {
+        val shop = selectedShop
+        if (shop != null) {
+            val threadMessages = remember(notifications, shop) {
+                notifications.filter { it.shop == shop }.sortedBy { it.receivedAt }
+            }
+            val shopName = notifications.lastOrNull { it.shop == shop && it.shopName.isNotBlank() }?.shopName?.ifBlank { shop } ?: shop
+            ChatThreadScreen(
+                shop = shop,
+                shopName = shopName,
+                messages = threadMessages,
+                replying = replying,
+                premium = isPremiumForShop(shop),
+                canPay = shopUpi(shop) != null,
+                muted = isShopMuted(shop),
+                playingVoiceNote = playingVoiceNote,
+                onBack = { selectedShop = null },
+                onMuteToggle = { onMuteShop(shop, !isShopMuted(shop)) },
+                onDeleteThread = { onDeleteThread(shop); selectedShop = null },
+                onReply = onReply,
+                onPayNotification = onPayNotification,
+                onTogglePlay = onTogglePlay,
+                onViewImage = onViewImage
+            )
+        } else {
+            val threads = remember(notifications) {
+                notifications.filter { it.shop.isNotBlank() }.groupBy { it.shop }.map { (shopCode, msgs) ->
+                    val last = msgs.maxByOrNull { it.receivedAt }!!
+                    val statusLabel = OnlineOrderStatus.entries.find { it.name == last.status }?.label
+                    val preview = last.message.ifBlank {
+                        statusLabel ?: (if (last.amount > 0.0) "Bill amount: " + com.billing.pos.util.Format.rupee(last.amount) else "")
+                    }
+                    CustomerChatThread(
+                        shop = shopCode,
+                        shopName = msgs.lastOrNull { it.shopName.isNotBlank() }?.shopName?.ifBlank { shopCode } ?: shopCode,
+                        lastText = preview.ifBlank { "…" },
+                        lastFromShop = last.direction != "OUT",
+                        lastAt = last.receivedAt,
+                        unreadCount = msgs.count { it.direction == "IN" && !it.read }
+                    )
+                    // Most recently active shop first, so whatever needs attention is always the
+                    // top row — no need to scan the whole list to spot it.
+                }.sortedByDescending { it.lastAt }
+            }
+            if (confirmBulkDelete) {
+                AlertDialog(
+                    onDismissRequest = { confirmBulkDelete = false },
+                    title = { Text("Delete ${selectedShops.size} chat(s)?") },
+                    text = { Text("Removes these conversations from this phone only. This can't be undone.") },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            onDeleteThreads(selectedShops.toSet())
+                            confirmBulkDelete = false; selectMode = false; selectedShops.clear()
+                        }) { Text("Delete") }
+                    },
+                    dismissButton = { TextButton(onClick = { confirmBulkDelete = false }) { Text("Cancel") } }
+                )
+            }
+            if (confirmClearAll) {
+                AlertDialog(
+                    onDismissRequest = { confirmClearAll = false },
+                    title = { Text("Clear all chats?") },
+                    text = { Text("Removes every conversation from this phone only. This can't be undone.") },
+                    confirmButton = { TextButton(onClick = { onClearAll(); confirmClearAll = false }) { Text("Clear all") } },
+                    dismissButton = { TextButton(onClick = { confirmClearAll = false }) { Text("Cancel") } }
+                )
+            }
+            Scaffold(
+                topBar = {
+                    TopAppBar(
+                        title = {
+                            if (selectMode) Text("${selectedShops.size} selected") else Text("Chats")
+                        },
+                        navigationIcon = {
+                            IconButton(onClick = {
+                                if (selectMode) { selectMode = false; selectedShops.clear() } else onDismiss()
+                            }) {
+                                Icon(
+                                    if (selectMode) Icons.Filled.Close else Icons.AutoMirrored.Filled.ArrowBack,
+                                    contentDescription = if (selectMode) "Cancel selection" else "Close"
+                                )
+                            }
+                        },
+                        actions = {
+                            if (selectMode) {
+                                val allSelected = threads.isNotEmpty() && selectedShops.size == threads.size
+                                IconButton(onClick = {
+                                    if (allSelected) selectedShops.clear()
+                                    else { selectedShops.clear(); selectedShops.addAll(threads.map { it.shop }) }
+                                }) {
+                                    Icon(Icons.Filled.SelectAll, contentDescription = if (allSelected) "Deselect all" else "Select all")
+                                }
+                                IconButton(onClick = { if (selectedShops.isNotEmpty()) confirmBulkDelete = true }, enabled = selectedShops.isNotEmpty()) {
+                                    Icon(Icons.Filled.Delete, contentDescription = "Delete selected")
+                                }
+                            } else if (threads.isNotEmpty()) {
+                                IconButton(onClick = { selectMode = true }) {
+                                    Icon(Icons.Filled.Checklist, contentDescription = "Select chats")
+                                }
+                                TextButton(onClick = { confirmClearAll = true }) { Text("Clear all") }
+                            }
+                        }
+                    )
+                }
+            ) { pad ->
+                if (threads.isEmpty()) {
+                    Box(Modifier.fillMaxSize().padding(pad), contentAlignment = Alignment.Center) {
+                        Text("No messages yet.", color = MaterialTheme.colorScheme.outline)
+                    }
+                } else {
+                    LazyColumn(Modifier.fillMaxSize().padding(pad)) {
+                        items(threads, key = { it.shop }) { thread ->
+                            // Separates "the shop said something new" from "that's just my own
+                            // last reply" at a glance, without opening the thread — a "You: "
+                            // prefix for the customer's own last message (matching the usual chat
+                            // convention), bold + tinted when it's unread from the shop so it
+                            // stands out from an already-read/no-reply-needed row.
+                            val unread = thread.unreadCount > 0
+                            ListItem(
+                                leadingContent = {
+                                    if (selectMode) {
+                                        Checkbox(
+                                            checked = thread.shop in selectedShops,
+                                            onCheckedChange = { checked ->
+                                                if (checked) selectedShops.add(thread.shop) else selectedShops.remove(thread.shop)
+                                            }
+                                        )
+                                    }
+                                },
+                                headlineContent = { Text(thread.shopName, fontWeight = FontWeight.SemiBold) },
+                                supportingContent = {
+                                    Text(
+                                        (if (!thread.lastFromShop) "You: " else "") + thread.lastText,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        fontWeight = if (unread) FontWeight.Bold else FontWeight.Normal,
+                                        color = if (unread) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                },
+                                trailingContent = {
+                                    if (unread) Badge { Text("${thread.unreadCount}") }
+                                },
+                                modifier = Modifier.fillMaxWidth().clickable {
+                                    if (selectMode) {
+                                        if (thread.shop in selectedShops) selectedShops.remove(thread.shop) else selectedShops.add(thread.shop)
+                                    } else {
+                                        selectedShop = thread.shop
+                                    }
+                                }
+                            )
+                            Divider()
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** One shop's full chat thread — message bubbles (the shop's on the left, the customer's own on
+ *  the right, mirroring [com.billing.pos.ui.messages.ShopMessagesScreen]'s ThreadScreen) plus a
+ *  reply bar. Attach-photo and record-voice only show when [premium] — the shop owner's own
+ *  reply has both always on, no such gate, since premium is a paid customer-facing perk. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ChatThreadScreen(
+    shop: String,
+    shopName: String,
+    messages: List<CustomerNotification>,
+    replying: Boolean,
+    premium: Boolean,
+    canPay: Boolean,
+    muted: Boolean,
+    playingVoiceNote: String?,
+    onBack: () -> Unit,
+    onMuteToggle: () -> Unit,
+    onDeleteThread: () -> Unit,
+    onReply: (shop: String, shopName: String, text: String, attachments: List<String>) -> Unit,
+    onPayNotification: (CustomerNotification) -> Unit,
+    onTogglePlay: (String) -> Unit,
+    onViewImage: (String) -> Unit
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val listState = rememberLazyListState()
+    // A fixed dp gap plus navigationBarsPadding() wasn't reliably enough clearance on every
+    // device/OEM nav bar when this screen is hosted inside a Dialog window (insets there can be
+    // reported inconsistently even with decorFitsSystemWindows = false) — sizing the extra gap
+    // as a fraction of screen height instead guarantees visible breathing room under the reply
+    // bar regardless of what the dialog window reports for insets.
+    val extraBottomGap = (LocalConfiguration.current.screenHeightDp * 0.12f).dp
+    var text by rememberSaveable(shop) { mutableStateOf("") }
+    val pendingAttachments = remember(shop) { mutableStateListOf<String>() }
+    var compressing by remember { mutableStateOf(false) }
+    var isRecordingVoice by remember { mutableStateOf(false) }
+    var voiceRecorder by remember { mutableStateOf<com.billing.pos.audio.VoiceRecorder?>(null) }
+    var recordingFile by remember { mutableStateOf<File?>(null) }
+    var confirmDeleteThread by remember { mutableStateOf(false) }
+
+    suspend fun compressPicked(uri: android.net.Uri): String? = withContext(Dispatchers.IO) {
+        runCatching {
+            val tempFile = File.createTempFile("reply_", ".jpg", context.cacheDir)
+            context.contentResolver.openInputStream(uri)?.use { input -> tempFile.outputStream().use { output -> input.copyTo(output) } }
+            val bytes = ThumbnailCompressor.compress(tempFile.absolutePath, maxBytes = 300 * 1024, maxDim = 1024)
+            tempFile.delete()
+            bytes?.let { "data:image/jpeg;base64," + android.util.Base64.encodeToString(it, android.util.Base64.NO_WRAP) }
+        }.getOrNull()
+    }
+    val galleryPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        compressing = true
+        scope.launch {
+            val dataUri = compressPicked(uri)
+            compressing = false
+            if (dataUri != null) pendingAttachments.add(dataUri)
+        }
+    }
+    fun startVoiceRecording() {
+        val dir = File(context.cacheDir, "shared").apply { mkdirs() }
+        val file = File(dir, "voice_${System.nanoTime()}.m4a")
+        runCatching {
+            voiceRecorder = com.billing.pos.audio.VoiceRecorder(file.absolutePath).also { it.start() }
+            recordingFile = file
+            isRecordingVoice = true
+        }.onFailure {
+            voiceRecorder = null
+            file.delete()
+        }
+    }
+    fun stopVoiceRecording() {
+        val rec = voiceRecorder ?: return
+        val file = recordingFile
+        isRecordingVoice = false
+        voiceRecorder = null
+        recordingFile = null
+        scope.launch {
+            withContext(Dispatchers.IO) { rec.stop() }
+            if (file != null && file.exists() && file.length() > 0) {
+                pendingAttachments.add(withContext(Dispatchers.IO) { com.billing.pos.util.VoiceAttachment.encode(file) })
+                file.delete()
+            } else {
+                file?.delete()
+            }
+        }
+    }
+    val micPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) startVoiceRecording()
+    }
+    fun requestMicAndRecord() {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            startVoiceRecording()
+        } else {
+            micPermission.launch(Manifest.permission.RECORD_AUDIO)
+        }
+    }
+
+    // Opens pointed straight at the last message, not the top of the conversation — an instant
+    // jump (not animated) so there's no visible scroll-from-top on entry; a later message arriving
+    // while the thread is already open still animates down to it.
+    LaunchedEffect(shop) { if (messages.isNotEmpty()) listState.scrollToItem(messages.size - 1) }
+    LaunchedEffect(messages.size) { if (messages.isNotEmpty()) listState.animateScrollToItem(messages.size - 1) }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(shopName) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back") }
+                },
+                actions = {
+                    IconButton(onClick = onMuteToggle) {
+                        Icon(
+                            if (muted) Icons.Default.NotificationsOff else Icons.Default.Notifications,
+                            contentDescription = if (muted) "Unmute $shopName" else "Mute $shopName",
+                            tint = if (muted) MaterialTheme.colorScheme.error else LocalContentColor.current
+                        )
+                    }
+                    IconButton(onClick = { confirmDeleteThread = true }) {
+                        Icon(Icons.Default.Delete, contentDescription = "Delete this chat")
+                    }
+                }
+            )
+        },
+        bottomBar = {
+            // navigationBarsPadding alone still left this sitting right under the phone's
+            // gesture/button bar on some devices (same issue already fixed on the shop owner's
+            // Messages screen) — the extra gap on top (12% of screen height, see extraBottomGap
+            // above) keeps a visible gap so the reply box and Send button are never hidden behind it.
+            Column(Modifier.fillMaxWidth().navigationBarsPadding().imePadding().padding(8.dp).padding(bottom = extraBottomGap)) {
+                if (pendingAttachments.isNotEmpty()) {
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 6.dp)) {
+                        items(pendingAttachments.toList()) { uri ->
+                            Box(Modifier.size(56.dp)) {
+                                if (com.billing.pos.util.VoiceAttachment.isAudio(uri)) {
+                                    Box(
+                                        Modifier.fillMaxSize()
+                                            .clip(androidx.compose.foundation.shape.RoundedCornerShape(6.dp))
+                                            .background(MaterialTheme.colorScheme.secondaryContainer),
+                                        contentAlignment = Alignment.Center
+                                    ) { Icon(Icons.Default.Mic, contentDescription = "Voice note") }
+                                } else {
+                                    val bmp = remember(uri) { decodeDataUriBitmap(uri) }
+                                    if (bmp != null) {
+                                        Image(
+                                            bitmap = bmp, contentDescription = "Attachment",
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier.fillMaxSize().clip(androidx.compose.foundation.shape.RoundedCornerShape(6.dp))
+                                        )
+                                    }
+                                }
+                                OutlinedIconButton(
+                                    onClick = { pendingAttachments.remove(uri) },
+                                    modifier = Modifier.size(18.dp).align(Alignment.TopEnd),
+                                    colors = IconButtonDefaults.outlinedIconButtonColors(containerColor = MaterialTheme.colorScheme.surface)
+                                ) { Icon(Icons.Filled.Close, contentDescription = "Remove", modifier = Modifier.size(10.dp)) }
+                            }
+                        }
+                    }
+                }
+                if (isRecordingVoice) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 4.dp)) {
+                        Icon(Icons.Default.Mic, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
+                        Text("  Recording… tap the mic again to stop", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    OutlinedTextField(
+                        value = text, onValueChange = { text = it },
+                        placeholder = { Text("Message") },
+                        modifier = Modifier.weight(1f)
+                    )
+                    if (premium) {
+                        IconButton(onClick = { galleryPicker.launch("image/*") }, enabled = !compressing && !isRecordingVoice) {
+                            if (compressing) CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                            else Icon(Icons.Filled.AttachFile, contentDescription = "Attach a photo")
+                        }
+                        IconButton(
+                            onClick = { if (isRecordingVoice) stopVoiceRecording() else requestMicAndRecord() },
+                            enabled = !compressing
+                        ) {
+                            Icon(
+                                if (isRecordingVoice) Icons.Default.Stop else Icons.Default.Mic,
+                                contentDescription = if (isRecordingVoice) "Stop recording" else "Record a voice note",
+                                tint = if (isRecordingVoice) MaterialTheme.colorScheme.error else LocalContentColor.current
+                            )
+                        }
+                    }
+                    IconButton(
+                        onClick = {
+                            val toSend = text.trim()
+                            if (toSend.isNotBlank()) {
+                                onReply(shop, shopName, toSend, pendingAttachments.toList())
+                                text = ""; pendingAttachments.clear()
+                            }
+                        },
+                        enabled = !replying && !compressing && !isRecordingVoice && text.isNotBlank()
+                    ) { Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send") }
+                }
+            }
+        }
+    ) { pad ->
+        LazyColumn(state = listState, modifier = Modifier.fillMaxSize().padding(pad).padding(horizontal = 12.dp)) {
+            items(messages, key = { it.id }) { n ->
+                val fromCustomer = n.direction == "OUT"
+                Row(
+                    Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    horizontalArrangement = if (fromCustomer) Arrangement.End else Arrangement.Start
+                ) {
+                    Surface(
+                        color = if (fromCustomer) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                        shape = MaterialTheme.shapes.medium
+                    ) {
+                        Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp)) {
+                            val statusLabel = OnlineOrderStatus.entries.find { it.name == n.status }?.label
+                            if (statusLabel != null) {
+                                Text(statusLabel, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleSmall)
+                            }
+                            if (n.message.isNotBlank()) {
+                                Text(n.message, style = MaterialTheme.typography.bodyMedium)
+                            }
+                            if (n.amount > 0.0) {
+                                Text(
+                                    "Amount: " + com.billing.pos.util.Format.rupee(n.amount),
+                                    fontWeight = FontWeight.Bold,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    modifier = Modifier.padding(top = 2.dp)
+                                )
+                                if (!fromCustomer && canPay) {
+                                    TextButton(onClick = { onPayNotification(n) }, modifier = Modifier.padding(top = 2.dp)) {
+                                        Text("Pay via UPI")
+                                    }
+                                }
+                            }
+                            if (n.attachmentList.isNotEmpty()) {
+                                ReadOnlyAttachmentRow(
+                                    uris = n.attachmentList,
+                                    playingVoiceNote = playingVoiceNote,
+                                    onTogglePlay = onTogglePlay,
+                                    onViewImage = onViewImage,
+                                    modifier = Modifier.padding(top = 6.dp)
+                                )
+                            }
+                            Text(
+                                SimpleDateFormat("dd MMM, HH:mm", Locale.getDefault()).format(Date(n.receivedAt)),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.outline,
+                                modifier = Modifier.padding(top = 4.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (confirmDeleteThread) {
+        AlertDialog(
+            onDismissRequest = { confirmDeleteThread = false },
+            title = { Text("Delete this chat?") },
+            text = { Text("Removes the whole conversation with $shopName from this phone. This can't be undone.") },
+            confirmButton = { TextButton(onClick = { confirmDeleteThread = false; onDeleteThread() }) { Text("Delete") } },
+            dismissButton = { TextButton(onClick = { confirmDeleteThread = false }) { Text("Cancel") } }
+        )
+    }
+}
+
+@Composable
+private fun SaveOrderDialog(
+    initialName: String,
+    initialPhone: String,
+    initialAddress: String,
+    onDismiss: () -> Unit,
+    onConfirm: (name: String, phone: String, address: String) -> Unit
+) {
+    var name by rememberSaveable { mutableStateOf(initialName) }
+    var phone by rememberSaveable { mutableStateOf(initialPhone) }
+    var address by rememberSaveable { mutableStateOf(initialAddress) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Your details") },
+        text = {
+            Column {
+                Text(
+                    "So the shop knows who ordered and can reach you.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.outline,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+                OutlinedTextField(
+                    value = name, onValueChange = { name = it },
+                    label = { Text("Your name") }, singleLine = true,
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                )
+                OutlinedTextField(
+                    value = phone, onValueChange = { phone = it },
+                    label = { Text("Mobile number") }, singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                )
+                OutlinedTextField(
+                    value = address, onValueChange = { address = it },
+                    label = { Text("Address (optional)") }, singleLine = true,
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onConfirm(name.trim(), phone.trim(), address.trim()) },
+                enabled = name.isNotBlank() && phone.isNotBlank()
+            ) { Text("Save order") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
+/** One-time, dismissible prompt shown right on first catalog open — before any order — so the
+ *  shop can see and reach a customer from the moment they install, not just once they check out.
+ *  "Skip" leaves everything exactly as it was (blank name/phone, no FCM registration); it never
+ *  reappears on this device either way (see [AppPrefs.customerRegisterPromptShown]). */
+@Composable
+private fun RegisterDialog(onDismiss: () -> Unit, onConfirm: (name: String, phone: String) -> Unit) {
+    var name by rememberSaveable { mutableStateOf("") }
+    var phone by rememberSaveable { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Welcome!") },
+        text = {
+            Column {
+                Text(
+                    "Register so the shop knows you're here and can reach you with offers — you can still browse and order without this.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.outline,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+                OutlinedTextField(
+                    value = name, onValueChange = { name = it },
+                    label = { Text("Your name") }, singleLine = true,
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                )
+                OutlinedTextField(
+                    value = phone, onValueChange = { phone = it },
+                    label = { Text("Mobile number") }, singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onConfirm(name.trim(), phone.trim()) },
+                enabled = name.isNotBlank() && phone.isNotBlank()
+            ) { Text("Register") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Skip") } }
+    )
+}
+
+/**
+ * Shown right after "Your details", only when the shop has a UPI ID set (see
+ * [AppPrefs.shopUpiId]) — lets the customer pay for this order right now via a UPI QR code,
+ * instead of Cash on delivery. Direct intent-launched payment ("Pay via UPI now", opening the
+ * UPI app straight from this app) used to be offered first, with the QR code as a fallback, but
+ * enough UPI apps flag/decline or otherwise mishandle a payment intent launched by a third-party
+ * app that it was pulled entirely — scanning a QR is the standard flow every merchant uses and
+ * isn't affected by that, since payment starts from inside the UPI app's own scanner. The QR path
+ * has no automatic success signal at all, so "I've paid via QR" requires a payment screenshot to
+ * be attached first, either picked manually or captured automatically when the UPI app's own
+ * "Share" hands one straight to this app. Payment isn't verified automatically either way: the
+ * shop owner checks their own UPI app before dispatching, and can flip a false "Paid via UPI"
+ * claim back to unpaid from Online Orders (see [OnlineOrdersViewModel.disputePayment]) if it
+ * never arrives.
+ */
+@Composable
+private fun PaymentDialog(
+    amount: Double, upiVpa: String, upiName: String,
+    declineLabel: String = "Cash on delivery",
+    // A unique transaction reference (order id when known, else a fresh one) — see [UpiQr.link].
+    reference: String = "",
+    onDismiss: () -> Unit, onChoose: (status: String, proofAttachment: String?) -> Unit
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var proofDataUri by remember { mutableStateOf<String?>(null) }
+    var compressingProof by remember { mutableStateOf(false) }
+    suspend fun compressProof(uri: android.net.Uri): String? = withContext(Dispatchers.IO) {
+        runCatching {
+            val tempFile = File.createTempFile("proof_", ".jpg", context.cacheDir)
+            context.contentResolver.openInputStream(uri)?.use { input -> tempFile.outputStream().use { output -> input.copyTo(output) } }
+            val bytes = ThumbnailCompressor.compress(tempFile.absolutePath, maxBytes = 300 * 1024, maxDim = 1024)
+            tempFile.delete()
+            bytes?.let { "data:image/jpeg;base64," + android.util.Base64.encodeToString(it, android.util.Base64.NO_WRAP) }
+        }.getOrNull()
+    }
+    val proofPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        compressingProof = true
+        scope.launch {
+            val dataUri = compressProof(uri)
+            compressingProof = false
+            if (dataUri != null) proofDataUri = dataUri
+        }
+    }
+    // Claim any file shared straight into this app (e.g. a UPI app's own "Share" on its
+    // payment-success screen) as this order's payment proof, instead of letting it fall through
+    // to the diary's generic "new entry with this attachment" handling.
+    DisposableEffect(Unit) {
+        com.billing.pos.auth.PendingSharedMedia.awaitingPaymentProof = true
+        onDispose { com.billing.pos.auth.PendingSharedMedia.awaitingPaymentProof = false }
+    }
+    LaunchedEffect(com.billing.pos.auth.PendingSharedMedia.generation) {
+        if (com.billing.pos.auth.PendingSharedMedia.hasItems) {
+            val uri = com.billing.pos.auth.PendingSharedMedia.consume().firstOrNull() ?: return@LaunchedEffect
+            compressingProof = true
+            val dataUri = compressProof(uri)
+            compressingProof = false
+            if (dataUri != null) proofDataUri = dataUri
+        }
+    }
+    val qr = remember(upiVpa, upiName, amount, reference) {
+        com.billing.pos.util.UpiQr.bitmap(com.billing.pos.util.UpiQr.link(upiVpa, upiName, amount, "Order", reference))
+    }
+    // Some UPI apps (PhonePe in particular) don't accept a QR handed to them via the share sheet
+    // below — this saves the same PNG straight into the phone's own Downloads/gallery, so it can
+    // be opened directly from that UPI app's own "scan from gallery" option instead of relying on
+    // a share-target hand-off.
+    fun downloadQr(bmp: android.graphics.Bitmap) {
+        scope.launch {
+            val ok = withContext(Dispatchers.IO) {
+                runCatching {
+                    val file = File.createTempFile("upi_qr_", ".png", context.cacheDir)
+                    FileOutputStream(file).use { bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+                    val saved = DownloadSaver.save(context, file, "upi_qr_" + System.currentTimeMillis() + ".png", "image/png")
+                    file.delete()
+                    saved
+                }.getOrDefault(false)
+            }
+            android.widget.Toast.makeText(
+                context,
+                if (ok) "QR saved to Downloads" else "Could not save QR",
+                android.widget.Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+    var pendingQrDownload by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
+    val storagePermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        val bmp = pendingQrDownload; pendingQrDownload = null
+        if (granted && bmp != null) downloadQr(bmp)
+        else if (!granted) android.widget.Toast.makeText(context, "Storage permission denied", android.widget.Toast.LENGTH_SHORT).show()
+    }
+    fun requestQrDownload(bmp: android.graphics.Bitmap) {
+        if (DownloadSaver.needsLegacyPermission() &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_EXTERNAL_STORAGE) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) { pendingQrDownload = bmp; storagePermission.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE) }
+        else downloadQr(bmp)
+    }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Pay via UPI") },
+        text = {
+            Column {
+                Text(
+                    "Order total: " + com.billing.pos.util.Format.rupee(amount),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Column(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    if (qr != null) {
+                        Image(
+                            bitmap = qr.asImageBitmap(),
+                            contentDescription = "UPI QR",
+                            modifier = Modifier.size(200.dp).padding(top = 8.dp)
+                        )
+                        // Lets the QR reach another phone — share sheet covers both "save to
+                        // this device" (Files/gallery, most launchers offer it there) and
+                        // sending it straight to someone else (WhatsApp etc.) to scan there.
+                        TextButton(onClick = {
+                            runCatching {
+                                val dir = File(context.cacheDir, "shared").apply { mkdirs() }
+                                val file = File(dir, "upi_qr_" + System.currentTimeMillis() + ".png")
+                                FileOutputStream(file).use { qr.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+                                val uri = FileProvider.getUriForFile(context, context.packageName + ".provider", file)
+                                val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                    type = "image/png"
+                                    putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                                    addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                }
+                                context.startActivity(android.content.Intent.createChooser(send, "Save or share QR code"))
+                            }
+                        }) { Text("Save / share this QR") }
+                        TextButton(onClick = { requestQrDownload(qr) }) { Text("Download to storage") }
+                    } else {
+                        Text("Could not make the QR", color = MaterialTheme.colorScheme.error)
+                    }
+                    Text(
+                        "Scan this with any UPI app (on this phone or another) to pay $upiVpa.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.outline,
+                        modifier = Modifier.padding(top = 6.dp)
+                    )
+                    // The QR path has no automatic success signal — a bare "I paid" claim here
+                    // would be unverifiable, so a payment screenshot is required before this can
+                    // be tapped. Attaching it manually or sharing it straight from the UPI app's
+                    // own "Share" button (see the PendingSharedMedia effect above) both work;
+                    // either way the button stays disabled/waiting until one lands.
+                    val proofUri = proofDataUri
+                    Button(
+                        onClick = { onChoose("UPI", proofUri) },
+                        enabled = !compressingProof && proofUri != null,
+                        modifier = Modifier.fillMaxWidth().padding(top = 10.dp)
+                    ) {
+                        Text(
+                            when {
+                                compressingProof -> "Attaching…"
+                                proofUri == null -> "Attach the payment screenshot below to confirm"
+                                else -> "I've paid via QR"
+                            }
+                        )
+                    }
+                    if (proofUri != null) {
+                        val proofBmp = remember(proofUri) { decodeDataUriBitmap(proofUri) }
+                        Box(Modifier.padding(top = 10.dp), contentAlignment = Alignment.TopEnd) {
+                            if (proofBmp != null) {
+                                Image(
+                                    bitmap = proofBmp,
+                                    contentDescription = "Payment screenshot",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.size(120.dp)
+                                )
+                            }
+                            OutlinedIconButton(
+                                onClick = { proofDataUri = null },
+                                modifier = Modifier.size(24.dp),
+                                colors = IconButtonDefaults.outlinedIconButtonColors(containerColor = MaterialTheme.colorScheme.surface)
+                            ) { Icon(Icons.Filled.Close, contentDescription = "Remove", modifier = Modifier.size(14.dp)) }
+                        }
+                    }
+                    TextButton(
+                        onClick = { proofPicker.launch("image/*") },
+                        enabled = !compressingProof
+                    ) { Text(if (compressingProof) "Attaching…" else if (proofUri != null) "Change payment screenshot" else "Attach payment screenshot") }
+                }
+                Text(
+                    "We can't verify this automatically — the shop will confirm it in their own UPI app before dispatching.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.outline,
+                    modifier = Modifier.padding(top = 10.dp)
+                )
+            }
+        },
+        // Once a payment screenshot is attached, the customer has already signalled they paid via
+        // QR — offering "Cash on delivery" at that point would just invite tapping the wrong
+        // button by habit. Hidden then; "I've paid via QR" above is the way forward instead.
+        confirmButton = {
+            if (proofDataUri == null) TextButton(onClick = { onChoose("", null) }) { Text(declineLabel) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
+/** Shown right after "Your details" — decides whether the order location comes from GPS (the
+ *  customer is standing at the delivery point right now) or a pasted Google Maps link (they're
+ *  ordering ahead, from somewhere else, e.g. for their home while still at work). */
+@Composable
+private fun DeliveryPointDialog(onDismiss: () -> Unit, onAtLocation: () -> Unit, onNotAtLocation: () -> Unit, onPickup: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("How should we get this to you?") },
+        text = {
+            Column {
+                Text(
+                    "If you're at the delivery address right now, we'll use this phone's current " +
+                        "location — or share a Google Maps link for somewhere else.",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Divider(Modifier.padding(vertical = 12.dp))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth().clickable { onPickup() }.padding(vertical = 8.dp)
+                ) {
+                    Icon(Icons.Default.Storefront, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.width(12.dp))
+                    Column {
+                        Text("I'll pick it up myself", style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            "No delivery — you'll collect the order from the shop, no location needed",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onAtLocation) { Text("Yes, I'm here") } },
+        dismissButton = { TextButton(onClick = onNotAtLocation) { Text("No, share a link") } }
+    )
+}
+
+/** Delivery location is compulsory — the shop needs to know where to deliver — so [onConfirm] is
+ *  disabled until something's pasted in. No format validation beyond non-blank: a shop owner
+ *  reading a garbled link back is still better than blocking the order outright over it. */
+@Composable
+private fun ManualLocationDialog(onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
+    var link by rememberSaveable { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Delivery location") },
+        text = {
+            Column {
+                Text(
+                    "Open Google Maps, drop a pin on the delivery address, and share/paste the link here. This is required.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.outline,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+                OutlinedTextField(
+                    value = link, onValueChange = { link = it },
+                    label = { Text("Google Maps link") }, singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(link.trim()) }, enabled = link.isNotBlank()) { Text("Place order") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+    )
+}
+
+/** Note + attachments, always visible on the main catalog screen (not tucked inside the "Your
+ *  details" dialog) — so a shop with no browsable catalog at all (e.g. a medical store that only
+ *  takes a prescription photo) still has somewhere to write/attach. Several photos can be
+ *  attached, from camera or gallery, each removable and viewable before sending. */
+@Composable
+private fun OrderNoteCard(
+    note: String,
+    onNoteChange: (String) -> Unit,
+    attachments: List<String>,
+    premium: Boolean,
+    compressing: Boolean,
+    isRecordingVoice: Boolean,
+    playingVoiceNote: String?,
+    onAddFromCamera: () -> Unit,
+    onAddFromGallery: () -> Unit,
+    onStartVoice: () -> Unit,
+    onStopVoice: () -> Unit,
+    onRemoveAttachment: (String) -> Unit,
+    onViewAttachment: (String) -> Unit
+) {
+    Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
+        Column(Modifier.padding(14.dp)) {
+            Text(
+                if (premium) "Don't want to pick items? Write what you want here instead, or attach a photo/voice note using the icons."
+                else "Don't want to pick items? Write what you want here instead.",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.outline
+            )
+            OutlinedTextField(
+                value = note, onValueChange = onNoteChange,
+                label = { Text("Note / your order") },
+                minLines = 2, maxLines = 2,
+                trailingIcon = if (!premium) null else {
+                    {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(onClick = onAddFromCamera, enabled = !compressing && !isRecordingVoice) {
+                                Icon(Icons.Default.CameraAlt, contentDescription = "Attach a photo from camera")
+                            }
+                            IconButton(onClick = onAddFromGallery, enabled = !compressing && !isRecordingVoice) {
+                                Icon(Icons.Default.AddAPhoto, contentDescription = "Attach a photo from gallery")
+                            }
+                            IconButton(onClick = if (isRecordingVoice) onStopVoice else onStartVoice, enabled = !compressing) {
+                                Icon(
+                                    if (isRecordingVoice) Icons.Default.Stop else Icons.Default.Mic,
+                                    contentDescription = if (isRecordingVoice) "Stop recording" else "Record a voice note",
+                                    tint = if (isRecordingVoice) MaterialTheme.colorScheme.error else LocalContentColor.current
+                                )
+                            }
+                        }
+                    }
+                },
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+            )
+            if (premium) {
+                if (compressing) {
+                    Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                        Text("  Adding attachment…", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline, modifier = Modifier.padding(start = 6.dp))
+                    }
+                }
+                if (isRecordingVoice) {
+                    Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Mic, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
+                        Text("  Recording… tap the mic again to stop", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+                    }
+                }
+                if (attachments.isNotEmpty()) {
+                    LazyRow(
+                        contentPadding = PaddingValues(top = 10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(attachments) { uri ->
+                            Box(Modifier.size(72.dp)) {
+                                if (com.billing.pos.util.VoiceAttachment.isAudio(uri)) {
+                                    Box(
+                                        Modifier.fillMaxSize()
+                                            .clip(androidx.compose.foundation.shape.RoundedCornerShape(6.dp))
+                                            .background(MaterialTheme.colorScheme.secondaryContainer)
+                                            .clickable { onViewAttachment(uri) },
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            if (playingVoiceNote == uri) Icons.Default.Stop else Icons.Default.PlayArrow,
+                                            contentDescription = if (playingVoiceNote == uri) "Stop voice note" else "Play voice note"
+                                        )
+                                    }
+                                } else {
+                                    val bmp = remember(uri) { decodeDataUriBitmap(uri) }
+                                    if (bmp != null) {
+                                        androidx.compose.foundation.Image(
+                                            bmp, contentDescription = "Attachment",
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier.fillMaxSize()
+                                                .clip(androidx.compose.foundation.shape.RoundedCornerShape(6.dp))
+                                                .clickable { onViewAttachment(uri) }
+                                        )
+                                    }
+                                }
+                                OutlinedIconButton(
+                                    onClick = { onRemoveAttachment(uri) },
+                                    modifier = Modifier.size(22.dp).align(Alignment.TopEnd),
+                                    colors = IconButtonDefaults.outlinedIconButtonColors(
+                                        containerColor = MaterialTheme.colorScheme.surface
+                                    )
+                                ) {
+                                    Icon(Icons.Default.Close, contentDescription = "Remove attachment", modifier = Modifier.size(14.dp))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+
+/** Scan the same QR a shop hands out for install to point this app at a different shop —
+ *  no reinstall needed — or tap a recently-used shop to switch straight back. A scan (camera or
+ *  a QR photo from the gallery, e.g. one a friend forwarded over WhatsApp) always fetches that
+ *  shop's current items, even if it's a shop this device already knows — see [onSwitch]'s
+ *  `fromScan` flag. Tapping a "switch back to" entry, by contrast, is just picking an
+ *  already-known shop and shows its cache instantly (see [CustomerCatalogViewModel.switchShop]). */
+@Composable
+private fun SwitchShopDialog(
+    recent: List<ShopSwitch.Shop>,
+    onDismiss: () -> Unit,
+    onSwitch: (shop: ShopSwitch.Shop, fromScan: Boolean) -> Unit
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var scanError by remember { mutableStateOf(false) }
+    var decoding by remember { mutableStateOf(false) }
+    val scanLauncher = rememberLauncherForActivityResult(ScanContract()) { result ->
+        val contents = result.contents ?: return@rememberLauncherForActivityResult
+        val shop = ShopSwitch.parse(contents)
+        if (shop != null) onSwitch(shop, true) else scanError = true
+    }
+    val cameraPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) scanLauncher.launch(ScanOptions().setPrompt("Scan the new shop's QR code").setBeepEnabled(true))
+    }
+    fun startScan() {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            scanLauncher.launch(ScanOptions().setPrompt("Scan the new shop's QR code").setBeepEnabled(true))
+        } else {
+            cameraPermission.launch(Manifest.permission.CAMERA)
+        }
+    }
+    val galleryPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        decoding = true
+        scope.launch {
+            val shop = withContext(Dispatchers.IO) {
+                runCatching {
+                    context.contentResolver.openInputStream(uri)?.use { input ->
+                        val bytes = input.readBytes()
+                        val opt = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                        android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opt)
+                        var sample = 1
+                        while (opt.outWidth / sample > 2000 || opt.outHeight / sample > 2000) sample *= 2
+                        val bmp = android.graphics.BitmapFactory.decodeByteArray(
+                            bytes, 0, bytes.size, android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }
+                        )
+                        bmp?.let { ShopSwitch.decodeFromBitmap(it) }?.let { ShopSwitch.parse(it) }
+                    }
+                }.getOrNull()
+            }
+            decoding = false
+            if (shop != null) onSwitch(shop, true) else scanError = true
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Switch shop") },
+        text = {
+            Column {
+                Text(
+                    "Scan a different shop's QR code to switch — no need to reinstall the app.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.outline
+                )
+                Row(
+                    Modifier.fillMaxWidth().padding(top = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(onClick = { startScan() }, enabled = !decoding, modifier = Modifier.weight(1f)) {
+                        Text("Scan QR")
+                    }
+                    OutlinedButton(
+                        onClick = { galleryPicker.launch("image/*") },
+                        enabled = !decoding, modifier = Modifier.weight(1f)
+                    ) {
+                        if (decoding) {
+                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                        } else {
+                            Text("From gallery")
+                        }
+                    }
+                }
+                if (scanError) {
+                    Text(
+                        "That QR code isn't a shop link.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
+                if (recent.isNotEmpty()) {
+                    Divider(Modifier.padding(vertical = 12.dp))
+                    Text("Switch back to:", style = MaterialTheme.typography.labelMedium)
+                    recent.forEach { shop ->
+                        TextButton(
+                            onClick = { onSwitch(shop, false) },
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text(shop.name.ifBlank { shop.shop }, modifier = Modifier.fillMaxWidth()) }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } }
+    )
+}
+
+/** Every shop this device has connected to, grouped by the shop's own category (Restaurant,
+ *  Medical store, ...) — e.g. scan 3 restaurants' QR codes, and this shows all 3 under
+ *  "Restaurant" so the customer can pick which one to order from — plus a "Nearby" tab that asks
+ *  the server hosting the CURRENT shop (do=directory) for every other shop sharing that same
+ *  deployment and sorts them by distance, so a customer can discover a shop they've never scanned
+ *  a QR for. Picking a known shop shows its cache instantly (see
+ *  [CustomerCatalogViewModel.switchShop]'s `forceFetch`); picking a nearby one is a discovery —
+ *  same as a fresh QR scan — so it always fetches. "Invite a friend" at the top shares the
+ *  current shop's own install link (see [ReferralLink]). */
+@Composable
+private fun ShopDirectoryDialog(
+    shops: List<ShopSwitch.Shop>,
+    currentShop: String,
+    currentShopName: String,
+    onDismiss: () -> Unit,
+    onPick: (shop: ShopSwitch.Shop, forceFetch: Boolean) -> Unit
+) {
+    val context = LocalContext.current
+    val prefs = remember { AppPrefs(context) }
+    val scope = rememberCoroutineScope()
+    val grouped = remember(shops) {
+        shops.groupBy { it.category.ifBlank { "Other" } }.toSortedMap(compareBy { it.lowercase() })
+    }
+    var mutedShops by remember { mutableStateOf(ShopSwitch.mutedShops(context)) }
+    var showNearby by remember { mutableStateOf(false) }
+    var nearbyLoading by remember { mutableStateOf(false) }
+    var nearbyError by remember { mutableStateOf<String?>(null) }
+    var nearbyResults by remember { mutableStateOf<List<NearbyShops.Entry>?>(null) }
+
+    fun runNearbySearch() {
+        nearbyLoading = true
+        nearbyError = null
+        scope.launch {
+            when (val result = NearbyShops.fetch(context)) {
+                is NearbyShops.Result.Ok -> nearbyResults = result.shops
+                is NearbyShops.Result.Failed -> nearbyError = result.message
+            }
+            nearbyLoading = false
+        }
+    }
+    val nearbyLocationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
+        val granted = grants[Manifest.permission.ACCESS_FINE_LOCATION] == true || grants[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+        if (granted) runNearbySearch() else nearbyError = "Location permission is required to find nearby shops"
+    }
+    fun startNearbySearch() {
+        val hasPermission = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (hasPermission) runNearbySearch()
+        else nearbyLocationPermission.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Browse shops") },
+        text = {
+            Column {
+                OutlinedButton(
+                    onClick = {
+                        val link = ReferralLink.build(prefs) ?: return@OutlinedButton
+                        val text = "Order from ${currentShopName.ifBlank { "this shop" }} on the POS Billing app — install here: $link"
+                        val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(android.content.Intent.EXTRA_TEXT, text)
+                        }
+                        runCatching { context.startActivity(android.content.Intent.createChooser(intent, "Invite a friend")) }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.PersonAdd, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Text("  Invite a friend to " + currentShopName.ifBlank { "this shop" })
+                }
+                Row(
+                    Modifier.fillMaxWidth().padding(top = 12.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    FilterChip(selected = !showNearby, onClick = { showNearby = false }, label = { Text("My shops") })
+                    FilterChip(
+                        selected = showNearby,
+                        onClick = {
+                            showNearby = true
+                            if (nearbyResults == null && !nearbyLoading) startNearbySearch()
+                        },
+                        label = { Text("Nearby") }
+                    )
+                }
+                Divider(Modifier.padding(vertical = 12.dp))
+
+                if (!showNearby) {
+                    if (shops.isEmpty()) {
+                        Text("No shops yet — switch shop to scan one.", color = MaterialTheme.colorScheme.outline)
+                    } else {
+                        grouped.forEach { (category, group) ->
+                            Text(category, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 10.dp))
+                            group.forEach { shop ->
+                                val isCurrent = shop.shop == currentShop
+                                Column(
+                                    Modifier.fillMaxWidth()
+                                        .let { if (!isCurrent) it.clickable { onPick(shop, false) } else it }
+                                        .padding(vertical = 8.dp)
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+                                            Text(
+                                                shop.name.ifBlank { shop.shop },
+                                                fontWeight = FontWeight.Medium,
+                                                style = MaterialTheme.typography.bodyMedium
+                                            )
+                                            if (isCurrent) {
+                                                Text(
+                                                    "  (current)",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.primary
+                                                )
+                                            }
+                                        }
+                                        val isMuted = shop.shop in mutedShops
+                                        IconButton(
+                                            onClick = {
+                                                val now = !isMuted
+                                                ShopSwitch.setMuted(context, shop.shop, now)
+                                                mutedShops = if (now) mutedShops + shop.shop else mutedShops - shop.shop
+                                            },
+                                            modifier = Modifier.size(32.dp)
+                                        ) {
+                                            Icon(
+                                                if (isMuted) Icons.Default.NotificationsOff else Icons.Default.Notifications,
+                                                contentDescription = if (isMuted) "Unmute ${shop.name.ifBlank { shop.shop }}" else "Mute ${shop.name.ifBlank { shop.shop }}",
+                                                modifier = Modifier.size(18.dp),
+                                                tint = if (isMuted) MaterialTheme.colorScheme.error else LocalContentColor.current
+                                            )
+                                        }
+                                    }
+                                    if (shop.address.isNotBlank()) {
+                                        Text(shop.address, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                                    }
+                                }
+                                Divider()
+                            }
+                        }
+                    }
+                } else {
+                    when {
+                        nearbyLoading -> Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
+                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                            Text("  Searching nearby...", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                        }
+                        nearbyError != null -> Column {
+                            Text(nearbyError!!, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                            TextButton(onClick = { startNearbySearch() }, modifier = Modifier.padding(top = 4.dp)) { Text("Try again") }
+                        }
+                        nearbyResults?.isEmpty() == true -> Text(
+                            "No other shops with a location set were found on this shop's server.",
+                            color = MaterialTheme.colorScheme.outline
+                        )
+                        else -> nearbyResults?.forEach { entry ->
+                            Column(
+                                Modifier.fillMaxWidth()
+                                    .clickable {
+                                        onPick(
+                                            ShopSwitch.Shop(
+                                                shop = entry.shop, url = prefs.onlineCatalogUrl,
+                                                type = entry.category, premium = false,
+                                                name = entry.name, category = entry.category, address = entry.address
+                                            ),
+                                            true
+                                        )
+                                    }
+                                    .padding(vertical = 8.dp)
+                            ) {
+                                Text(entry.name.ifBlank { entry.shop }, fontWeight = FontWeight.Medium, style = MaterialTheme.typography.bodyMedium)
+                                Text(
+                                    "%.1f km".format(entry.distanceKm) + (if (entry.address.isNotBlank()) " · ${entry.address}" else ""),
+                                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline
+                                )
+                            }
+                            Divider()
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } }
+    )
+}
+
+/** Order History is the durable per-order archive: what the customer sent (photo/voice note) and
+ *  the shop's latest reply about it (see [com.billing.pos.customer.NotificationsFetch]) both live
+ *  here, surviving a "Clear all" on the Notifications bell — [onDelete] is how the customer frees
+ *  up phone space, order by order, once they no longer need one. */
+@Composable
+private fun OrderHistoryDialog(
+    history: List<CustomerOrderHistory>,
+    playingVoiceNote: String?,
+    onDismiss: () -> Unit,
+    onReorder: (CustomerOrderHistory) -> Unit,
+    onDelete: (CustomerOrderHistory) -> Unit,
+    onTogglePlay: (String) -> Unit,
+    onViewImage: (String) -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Order history") },
+        text = {
+            if (history.isEmpty()) {
+                Text("No past orders yet.", color = MaterialTheme.colorScheme.outline)
+            } else {
+                Column {
+                    history.forEach { order ->
+                        Column(Modifier.padding(vertical = 8.dp)) {
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    SimpleDateFormat("dd MMM, HH:mm", Locale.getDefault()).format(Date(order.placedAt)),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.outline
+                                )
+                                IconButton(onClick = { onDelete(order) }, modifier = Modifier.size(28.dp)) {
+                                    Icon(Icons.Default.Delete, contentDescription = "Delete this order from history", modifier = Modifier.size(16.dp))
+                                }
+                            }
+                            order.items.forEach { line ->
+                                Text("${line.name} x${line.qty}", style = MaterialTheme.typography.bodySmall)
+                            }
+                            if (order.note.isNotBlank()) {
+                                Text(order.note, style = MaterialTheme.typography.bodySmall)
+                            }
+                            if (order.attachmentList.isNotEmpty()) {
+                                ReadOnlyAttachmentRow(
+                                    uris = order.attachmentList,
+                                    playingVoiceNote = playingVoiceNote,
+                                    onTogglePlay = onTogglePlay,
+                                    onViewImage = onViewImage,
+                                    modifier = Modifier.padding(top = 4.dp)
+                                )
+                            }
+                            Row(
+                                Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                if (order.items.isNotEmpty()) {
+                                    Text("₹" + Format.money(order.total), fontWeight = FontWeight.Bold)
+                                    TextButton(onClick = { onReorder(order) }) { Text("Re-order") }
+                                } else {
+                                    Text("Written order", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                                }
+                            }
+                            if (order.replyMessage.isNotBlank() || order.replyAttachmentList.isNotEmpty()) {
+                                Column(
+                                    Modifier.fillMaxWidth().padding(top = 6.dp)
+                                        .background(MaterialTheme.colorScheme.surfaceVariant, androidx.compose.foundation.shape.RoundedCornerShape(6.dp))
+                                        .padding(8.dp)
+                                ) {
+                                    Text("Shop's reply", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                    if (order.replyMessage.isNotBlank()) {
+                                        Text(order.replyMessage, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 2.dp))
+                                    }
+                                    if (order.replyAttachmentList.isNotEmpty()) {
+                                        ReadOnlyAttachmentRow(
+                                            uris = order.replyAttachmentList,
+                                            playingVoiceNote = playingVoiceNote,
+                                            onTogglePlay = onTogglePlay,
+                                            onViewImage = onViewImage,
+                                            modifier = Modifier.padding(top = 4.dp)
+                                        )
+                                    }
+                                }
+                            }
+                            Divider(Modifier.padding(top = 4.dp))
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } }
+    )
+}
+
+/** A read-only row of photo/voice-note thumbnails — an order's own attachments, or a shop's reply
+ *  to one, shown in both [NotificationsDialog] and [OrderHistoryDialog]. Tapping a photo opens
+ *  [onViewImage]; tapping a voice note toggles playback via [onTogglePlay] (see
+ *  [CustomerCatalogScreen]'s shared player). */
+@Composable
+private fun ReadOnlyAttachmentRow(
+    uris: List<String>,
+    playingVoiceNote: String?,
+    onTogglePlay: (String) -> Unit,
+    onViewImage: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    LazyRow(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        items(uris) { uri ->
+            if (com.billing.pos.util.VoiceAttachment.isAudio(uri)) {
+                Box(
+                    Modifier.size(56.dp)
+                        .clip(androidx.compose.foundation.shape.RoundedCornerShape(6.dp))
+                        .background(MaterialTheme.colorScheme.secondaryContainer)
+                        .clickable { onTogglePlay(uri) },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(if (playingVoiceNote == uri) Icons.Default.Stop else Icons.Default.PlayArrow, contentDescription = "Voice note")
+                }
+            } else {
+                val bmp = remember(uri) { decodeDataUriBitmap(uri) }
+                if (bmp != null) {
+                    androidx.compose.foundation.Image(
+                        bmp, contentDescription = "Attachment",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.size(56.dp)
+                            .clip(androidx.compose.foundation.shape.RoundedCornerShape(6.dp))
+                            .clickable { onViewImage(uri) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** Item photos travel as a base64 data URI in the catalog fetch itself (see ThumbnailCompressor /
+ *  OnlineCatalogUpload) — no separate image download, so this just decodes what's already there. */
+private fun decodeDataUriBitmap(dataUri: String): androidx.compose.ui.graphics.ImageBitmap? {
+    if (!dataUri.startsWith("data:image")) return null
+    val comma = dataUri.indexOf(',')
+    if (comma < 0) return null
+    return runCatching {
+        val bytes = android.util.Base64.decode(dataUri.substring(comma + 1), android.util.Base64.DEFAULT)
+        android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+            ?.asImageBitmap()
+    }.getOrNull()
+}
+
+/** True for a URL that points directly at an image file (by extension) — as opposed to a page
+ *  the customer just needs to open in a browser (a product page, a Drive folder listing, etc.). */
+private fun isDirectImageUrl(url: String): Boolean {
+    val clean = url.substringBefore('?').substringBefore('#').trim().lowercase()
+    return listOf(".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp").any { clean.endsWith(it) }
+}
+
+@Composable
+private fun CatalogItemRow(item: ShopCatalogItem, qty: Int, onQtyChange: (Int) -> Unit, modifier: Modifier = Modifier) {
+    val uriHandler = LocalUriHandler.current
+    val context = LocalContext.current
+
+    // item.driveLink is one or more links, comma-separated — image links are downloaded/cached
+    // and shown as a thumbnail + full-screen swipeable gallery; anything else (a product page, a
+    // Drive folder) stays a plain clickable link the customer opens in their browser.
+    val links = remember(item.driveLink) {
+        item.driveLink.split(",").map { it.trim() }.filter { it.isNotBlank() }
+    }
+    val imageLinks = remember(links) { links.filter { isDirectImageUrl(it) } }
+    val textLinks = remember(links) { links.filterNot { isDirectImageUrl(it) } }
+
+    var galleryPaths by remember(item.driveLink) { mutableStateOf<List<String>>(emptyList()) }
+    LaunchedEffect(item.driveLink) {
+        if (imageLinks.isNotEmpty()) {
+            galleryPaths = coroutineScope {
+                imageLinks.map { url -> async { RemoteImageCache.fetch(context, url)?.absolutePath } }.awaitAll()
+            }.filterNotNull()
+        }
+    }
+    val galleryThumb = galleryPaths.firstOrNull()?.let { rememberThumbnail(it, 200) }
+    var viewingGallery by remember { mutableStateOf(false) }
+
+    Card(modifier.fillMaxWidth()) {
+        Row(
+            Modifier.fillMaxWidth().padding(14.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            val thumb = remember(item.imageUrl) { decodeDataUriBitmap(item.imageUrl) }
+            if (thumb != null) {
+                androidx.compose.foundation.Image(
+                    thumb,
+                    contentDescription = item.name,
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                    modifier = Modifier.size(55.dp).padding(end = 12.dp)
+                )
+            }
+            if (galleryThumb != null) {
+                Box(Modifier.size(55.dp).padding(end = 12.dp)) {
+                    androidx.compose.foundation.Image(
+                        galleryThumb,
+                        contentDescription = item.name,
+                        contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                            .clip(androidx.compose.foundation.shape.RoundedCornerShape(6.dp))
+                            .clickable { viewingGallery = true }
+                    )
+                    if (galleryPaths.size > 1) {
+                        Text(
+                            "+${galleryPaths.size - 1}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = androidx.compose.ui.graphics.Color.White,
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .background(
+                                    androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.6f),
+                                    androidx.compose.foundation.shape.RoundedCornerShape(topStart = 4.dp)
+                                )
+                                .padding(horizontal = 4.dp, vertical = 1.dp)
+                        )
+                    }
+                }
+            }
+            Column(Modifier.weight(1f)) {
+                Text(item.name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                if (item.description.isNotBlank()) {
+                    Text(
+                        item.description,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.outline
+                    )
+                }
+                Text("₹" + Format.money(item.price) + if (item.unit.isNotBlank()) " / ${item.unit}" else "", fontWeight = FontWeight.Bold)
+                textLinks.forEachIndexed { idx, link ->
+                    Text(
+                        if (textLinks.size > 1) "View catalog ${idx + 1}" else "View photos / catalog",
+                        style = MaterialTheme.typography.bodySmall.copy(textDecoration = TextDecoration.Underline),
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.clickable { runCatching { uriHandler.openUri(link) } }
+                    )
+                }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                OutlinedIconButton(onClick = { if (qty > 0) onQtyChange(qty - 1) }, enabled = qty > 0) {
+                    Icon(Icons.Default.Remove, contentDescription = "Remove one")
+                }
+                Text(
+                    "$qty",
+                    modifier = Modifier.padding(horizontal = 10.dp),
+                    style = MaterialTheme.typography.titleMedium
+                )
+                OutlinedIconButton(onClick = { onQtyChange(qty + 1) }) {
+                    Icon(Icons.Default.Add, contentDescription = "Add one")
+                }
+            }
+        }
+    }
+    if (viewingGallery && galleryPaths.isNotEmpty()) {
+        com.billing.pos.ui.common.ImageViewerDialog(paths = galleryPaths, onDismiss = { viewingGallery = false })
+    }
+}

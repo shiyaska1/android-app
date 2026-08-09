@@ -18,11 +18,25 @@ object InvoicePdf {
     private const val PAGE_W = 420   // ~ A5 width in points
     private const val MARGIN = 24f
 
-    /** Builds the invoice PDF per the width setting: rich A4 layout, else the thermal receipt. */
-    fun make(context: Context, company: CompanyInfo, bill: Bill, lines: List<BillItem>, imagePaths: List<String> = emptyList(), docTitle: String? = null): Uri =
-        if (com.billing.pos.data.AppPrefs(context).receiptWidth == "A4")
-            A4InvoicePdf.invoice(context, company, bill, lines, imagePaths, docTitle)
-        else ThermalPdf.invoice(context, company, bill, lines, imagePaths, docTitle)
+    /** Builds the invoice PDF: Saudi ZATCA or UAE VAT layout when that mode is on (checked before
+     *  the width setting — they're a distinct invoice standard, not a paper-size choice), else the
+     *  usual GST/plain layout per the width setting: rich A4, or the thermal receipt. */
+    fun make(context: Context, company: CompanyInfo, bill: Bill, lines: List<BillItem>, imagePaths: List<String> = emptyList(), docTitle: String? = null): Uri {
+        val prefs = com.billing.pos.data.AppPrefs(context)
+        return when {
+            bill.isNoTax -> if (prefs.receiptWidth == "A4") A4InvoicePdf.invoice(context, company, bill, lines, imagePaths, docTitle) else ThermalPdf.invoice(context, company, bill, lines, imagePaths, docTitle)
+            prefs.zatcaEnabled -> {
+                val qr = com.billing.pos.util.ZatcaQr.payload(
+                    company.name.ifBlank { "My Shop" }, prefs.zatcaVatNumber, bill.dateMillis, bill.grandTotal, bill.taxTotal
+                )
+                GulfInvoicePdf.invoice(context, company, bill, lines, imagePaths, "SIMPLIFIED TAX INVOICE", "SAR", "VAT Reg. No", prefs.zatcaVatNumber, qr)
+            }
+            prefs.uaeVatEnabled ->
+                GulfInvoicePdf.invoice(context, company, bill, lines, imagePaths, "TAX INVOICE", "AED", "TRN", prefs.uaeTrn, null)
+            prefs.receiptWidth == "A4" -> A4InvoicePdf.invoice(context, company, bill, lines, imagePaths, docTitle)
+            else -> ThermalPdf.invoice(context, company, bill, lines, imagePaths, docTitle)
+        }
+    }
 
     fun generate(context: Context, company: CompanyInfo, bill: Bill, lines: List<BillItem>, docTitle: String = "TAX INVOICE"): Uri {
         val doc = PdfDocument()

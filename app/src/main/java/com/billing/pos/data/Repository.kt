@@ -376,8 +376,8 @@ class Repository(private val context: Context) {
     suspend fun deleteUser(user: User) = userDao.delete(user)
 
     // ---- customers / items ----
-    suspend fun addCustomer(name: String, phone: String, address: String, gstin: String = "", customerType: String = "General"): Long {
-        val id = customerDao.insert(Customer(name = name.trim(), phone = phone.trim(), address = address.trim(), gstin = gstin.trim(), customerType = customerType.trim().ifBlank { "General" }))
+    suspend fun addCustomer(name: String, phone: String, address: String, gstin: String = "", customerType: String = "General", state: String = ""): Long {
+        val id = customerDao.insert(Customer(name = name.trim(), phone = phone.trim(), address = address.trim(), gstin = gstin.trim(), customerType = customerType.trim().ifBlank { "General" }, state = state.trim()))
         ensureCustomerHead(name)   // create the customer's ledger head immediately
         return id
     }
@@ -433,6 +433,7 @@ class Repository(private val context: Context) {
             grandTotal = amount,
             paidAmount = 0.0,
             customerGstin = customer.gstin,
+            customerState = customer.state,
             remarks = note.trim(),
             isLegacy = true,
             updatedAt = System.currentTimeMillis()
@@ -442,16 +443,95 @@ class Repository(private val context: Context) {
 
     fun quickInvoicesForCustomer(customerId: Long): Flow<List<Bill>> = billDao.quickInvoicesForCustomer(customerId)
 
+    /** A priced, itemised invoice built from a Fast bill calculator tape, with a chosen payment
+     *  method (unlike [addQuickInvoice], which is always Credit). Kept out of the main invoice
+     *  list/sales & GST reports, same as [addQuickInvoice] — calculator invoices are meant to be
+     *  seen through the customer they're for, not mixed into the regular sales flow — but the
+     *  payment method still correctly moves the customer's payable or the Cash/Bank balance.
+     *  Each added (positive) entry becomes its own line, named after its label ("Amount" when
+     *  blank). Subtracted (negative) entries are totalled into the invoice's discount, so the
+     *  grand total always matches the tape's own total — a line with a negative price would
+     *  instead distort the item-wise sales figures. */
+    suspend fun addSaleInvoiceFromTape(
+        customer: Customer,
+        entries: List<Pair<Double, String>>,
+        note: String,
+        dateMillis: Long,
+        paymentMethod: String,
+        existingBillId: Long = 0
+    ): Long {
+        ensureCustomerHead(customer.name)
+        val lines = entries.filter { it.first > 0.0 }.map { (amount, label) ->
+            BillItem(billId = 0, name = label.ifBlank { "Amount" }, qty = 1.0, price = amount, taxPercent = 0.0, lineTotal = amount)
+        }
+        val subTotal = lines.sumOf { it.lineTotal }
+        // Negatives are stored negative on the tape, so this flips them back to a positive
+        // discount figure.
+        val discount = -entries.filter { it.first < 0.0 }.sumOf { it.first }
+        val grandTotal = subTotal - discount
+        val paid = if (paymentMethod.equals(PaymentMethod.CREDIT.label, ignoreCase = true)) 0.0 else grandTotal
+        // Re-saving an edited calculation updates the invoice it already made rather than
+        // adding a second one — its number and date stay put, only the amounts/lines/payment
+        // method change.
+        val existing = existingBillId.takeIf { it > 0 }?.let { billDao.byId(it) }
+        if (existing != null && existing.isLegacy) {
+            billDao.updateBill(
+                existing.copy(
+                    customerId = customer.id, customerName = customer.name,
+                    paymentMethod = paymentMethod,
+                    subTotal = subTotal, discount = discount, grandTotal = grandTotal, paidAmount = paid,
+                    customerGstin = customer.gstin, customerState = customer.state,
+                    remarks = note.trim(), updatedAt = System.currentTimeMillis()
+                ),
+                lines
+            )
+            return existing.id
+        }
+        val bill = Bill(
+            billNo = nextBillNo(),
+            dateMillis = dateMillis,
+            customerId = customer.id,
+            customerName = customer.name,
+            paymentMethod = paymentMethod,
+            subTotal = subTotal,
+            taxTotal = 0.0,
+            additionalCharge = 0.0,
+            discount = discount,
+            grandTotal = grandTotal,
+            paidAmount = paid,
+            customerGstin = customer.gstin,
+            customerState = customer.state,
+            remarks = note.trim(),
+            // Calculator invoices are kept out of the main invoice list/reports, same as a
+            // quick due — visible only through the customer they're for, never in the regular
+            // sales flow. The payment method/paid amount still correctly move the customer's
+            // payable (or Cash/Bank) balance; only the Sales-register/GST-return side is skipped.
+            isLegacy = true,
+            updatedAt = System.currentTimeMillis()
+        )
+        return billDao.saveBill(bill, lines)
+    }
+
+    /** Ensures a calculator label also exists as a sellable item, so a labelled tape entry can
+     *  be turned straight into a real sale invoice line. A no-op when the name is already an
+     *  item — never overwrites a price/tax the user has since set on it. */
+    suspend fun ensureItemForLabel(label: String) {
+        val n = label.trim()
+        if (n.isBlank() || itemDao.byName(n) != null) return
+        itemDao.insert(Item(name = n, price = 0.0, taxPercent = 0.0))
+    }
+
     val allCustomers: Flow<List<Customer>> get() = customers
 
     suspend fun addItem(
         name: String, price: Double, taxPercent: Double, barcode: String = "", hsn: String = "",
         category: String = "", openingStock: Double = 0.0, unit: String = "PCS", storeLocation: String = "",
         chemicalContent: String = "", secondaryUnit: String = "PCS", conversionFactor: Double = 1.0,
-        purchasePrice: Double = 0.0, mrp: Double = 0.0
+        purchasePrice: Double = 0.0, mrp: Double = 0.0, cessPercent: Double = 0.0
     ): Long =
         itemDao.insert(Item(
             name = name.trim(), price = price, purchasePrice = purchasePrice, mrp = mrp, taxPercent = taxPercent,
+            cessPercent = cessPercent,
             barcode = barcode.trim(), hsn = hsn.trim(),
             category = category.trim(), openingStock = openingStock, unit = unit.trim().ifBlank { "PCS" },
             secondaryUnit = secondaryUnit.trim().ifBlank { "PCS" },
@@ -588,15 +668,75 @@ class Repository(private val context: Context) {
         list.forEach { customerAttachmentDao.insert(it.copy(id = 0, customerId = customerId)) }
     }
 
+    /** Same as [appendCustomerAttachments] for one file, returning its new row id — lets the
+     *  caller remember which attachment it just added (e.g. a calculation's [SavedCalc.linkedAttachmentId]). */
+    suspend fun appendCustomerAttachment(customerId: Long, attachment: CustomerAttachment): Long =
+        customerAttachmentDao.insert(attachment.copy(id = 0, customerId = customerId))
+
+    /** Removes one customer attachment (row + file) by id — a no-op if it's already gone. */
+    suspend fun removeCustomerAttachment(id: Long) {
+        val att = customerAttachmentDao.byId(id) ?: return
+        runCatching { java.io.File(att.path).delete() }
+        customerAttachmentDao.deleteById(id)
+    }
+
     private val savedCalcDao = db.savedCalcDao()
 
     /** Saved calculator tapes, newest first. */
     val savedCalcs: kotlinx.coroutines.flow.Flow<List<SavedCalc>> = savedCalcDao.observeAll()
 
+    suspend fun savedCalcsAll(): List<SavedCalc> = savedCalcDao.all()
+
     suspend fun saveCalc(c: SavedCalc): Long =
         if (c.id == 0L) savedCalcDao.insert(c) else { savedCalcDao.update(c); c.id }
 
-    suspend fun deleteCalc(id: Long) = savedCalcDao.delete(id)
+    suspend fun calcById(id: Long): SavedCalc? = savedCalcDao.byId(id)
+
+    /** Deletes the calculation, and cleans up whatever it had created for its customer: the
+     *  linked customer-attachment PDF (always, it's harmless) and the linked quick-due invoice
+     *  when it's still safe to (see [removeQuickInvoiceIfSafe]) — so deleting a calculation
+     *  never leaves a stranded PDF or due behind. */
+    suspend fun deleteCalc(id: Long) {
+        val calc = savedCalcDao.byId(id)
+        savedCalcDao.delete(id)
+        calc?.linkedAttachmentId?.takeIf { it > 0 }?.let { removeCustomerAttachment(it) }
+        val bill = calc?.linkedBillId?.takeIf { it > 0 }?.let { billDao.byId(it) } ?: return
+        removeQuickInvoiceIfSafe(bill)
+    }
+
+    /** Deletes a quick-due invoice only if it's still safe to: still a legacy quick invoice
+     *  (never a real sale bill made from the calculator) that hasn't been paid against yet, by
+     *  a direct receipt or by an amount already recorded on the bill itself — deleting either
+     *  of those would silently erase real money collected from the customer. A no-op otherwise. */
+    suspend fun removeQuickInvoiceIfSafe(bill: Bill) {
+        if (!bill.isLegacy || bill.paidAmount > 0.0) return
+        if (receiptDao.all().any { it.billId == bill.id }) return
+        deleteBill(bill)
+    }
+
+    /**
+     * Keeps a saved calculation's quick-due invoice in step with its current customer/total —
+     * used on every Save, not just the first, so editing a calculation (e.g. correcting an
+     * amount) updates what the customer owes instead of leaving the original due frozen.
+     * Reuses [existingBillId]'s row when it's still a legacy quick invoice (updating only its
+     * amount/note — the paid amount, if any, is left untouched, so this is safe even if it's
+     * been partly paid); otherwise creates a fresh one, same as a first save. [total] <= 0
+     * means "no due should exist" — the caller is expected to have handled removing
+     * [existingBillId] first in that case (see [removeQuickInvoiceIfSafe]).
+     */
+    suspend fun syncQuickInvoice(customer: Customer, total: Double, note: String, existingBillId: Long): Long {
+        val existing = existingBillId.takeIf { it > 0 }?.let { billDao.byId(it) }
+        if (existing != null && existing.isLegacy) {
+            billDao.updateBillHeader(
+                existing.copy(
+                    customerId = customer.id, customerName = customer.name,
+                    subTotal = total, grandTotal = total, remarks = note.trim(), updatedAt = System.currentTimeMillis()
+                )
+            )
+            return existing.id
+        }
+        return addQuickInvoice(customer, total, note, System.currentTimeMillis())
+    }
 
     private val expenseAttachmentDao = db.expenseAttachmentDao()
     suspend fun expenseAttachmentsFor(expenseId: Long): List<ExpenseAttachment> =
@@ -1005,10 +1145,46 @@ class Repository(private val context: Context) {
         com.billing.pos.bills.BillAttachmentStore.delete(attachment)
     }
 
-    /** Bill number for the next locally-created bill, e.g. A-INV-0001 (the A- prefix is this device's tag). */
+    /**
+     * Bill number for the next locally-created bill, e.g. A-INV-0001 (the A- prefix is this
+     * device's tag). In GST mode the series resets each Indian financial year (1 Apr – 31 Mar),
+     * e.g. A-INV-25-26-0001, matching how GST invoice series are conventionally numbered.
+     */
     suspend fun nextBillNo(): String {
+        if (AppPrefs(context).gstEnabled) {
+            val fyStart = financialYearStartMillis(System.currentTimeMillis())
+            val n = billDao.localCountSince(fyStart) + 1
+            return tagPrefix() + "INV-" + financialYearLabel(fyStart) + "-" + n.toString().padStart(4, '0')
+        }
         val n = billDao.localCount() + 1
         return tagPrefix() + "INV-" + n.toString().padStart(4, '0')
+    }
+
+    /** Bill number for the next No Tax Invoice — its own series, separate from [nextBillNo],
+     *  using the prefix set in Settings (e.g. NT-0001, NT-0002, ...). */
+    suspend fun nextNoTaxBillNo(): String {
+        val prefix = AppPrefs(context).noTaxInvoicePrefix.ifBlank { "NT-" }
+        val n = billDao.localCountNoTax() + 1
+        return tagPrefix() + prefix + n.toString().padStart(4, '0')
+    }
+
+    /** Start of the Indian financial year (1 April, 00:00) containing [millis]. */
+    private fun financialYearStartMillis(millis: Long): Long {
+        val c = java.util.Calendar.getInstance().apply {
+            timeInMillis = millis
+            if (get(java.util.Calendar.MONTH) < java.util.Calendar.APRIL) add(java.util.Calendar.YEAR, -1)
+            set(java.util.Calendar.MONTH, java.util.Calendar.APRIL)
+            set(java.util.Calendar.DAY_OF_MONTH, 1)
+            set(java.util.Calendar.HOUR_OF_DAY, 0); set(java.util.Calendar.MINUTE, 0)
+            set(java.util.Calendar.SECOND, 0); set(java.util.Calendar.MILLISECOND, 0)
+        }
+        return c.timeInMillis
+    }
+
+    /** "25-26" for the FY starting at [fyStartMillis]. */
+    private fun financialYearLabel(fyStartMillis: Long): String {
+        val startYear = java.util.Calendar.getInstance().apply { timeInMillis = fyStartMillis }.get(java.util.Calendar.YEAR)
+        return (startYear % 100).toString().padStart(2, '0') + "-" + ((startYear + 1) % 100).toString().padStart(2, '0')
     }
 
     // ---- bills ----
@@ -1285,17 +1461,19 @@ class Repository(private val context: Context) {
     }
 
     // ---- suppliers ----
-    suspend fun addSupplier(name: String, phone: String, address: String, gstin: String = ""): Supplier {
-        val s = Supplier(name = name.trim(), phone = phone.trim(), address = address.trim(), gstin = gstin.trim())
+    suspend fun addSupplier(name: String, phone: String, address: String, gstin: String = "", state: String = ""): Supplier {
+        val s = Supplier(name = name.trim(), phone = phone.trim(), address = address.trim(), gstin = gstin.trim(), state = state.trim())
         val id = supplierDao.insert(s)
         ensureSupplierHead(name)   // create the supplier's ledger head immediately
         return s.copy(id = id)
     }
 
-    /** One-time: make sure every existing customer/supplier has a ledger head. */
+    /** One-time: make sure every existing customer/supplier has a ledger head — including the
+     *  default Cash Customer/Cash Supplier, which need one just as much as a named party (sales
+     *  and purchases against them still post to Sundry Debtors/Creditors). */
     suspend fun syncPartyHeads() {
-        customerDao.all().filter { !it.isDefault }.forEach { ensureCustomerHead(it.name) }
-        supplierDao.all().filter { !it.isDefault }.forEach { ensureSupplierHead(it.name) }
+        customerDao.all().forEach { ensureCustomerHead(it.name) }
+        supplierDao.all().forEach { ensureSupplierHead(it.name) }
     }
 
     // ---- VAT / tax report data ----
@@ -1303,6 +1481,11 @@ class Repository(private val context: Context) {
     suspend fun purchasesAll(): List<Purchase> = purchaseDao.all()
     suspend fun saleTaxLines(): List<TaxLineInfo> = billDao.taxLines()
     suspend fun purchaseTaxLines(): List<TaxLineInfo> = purchaseDao.taxLines()
+    suspend fun itemsAll(): List<Item> = itemDao.all()
+    suspend fun salesReturnsAll(): List<SalesReturn> = salesReturnDao.all()
+    suspend fun customersAll(): List<Customer> = customerDao.all()
+    suspend fun suppliersAll(): List<Supplier> = supplierDao.all()
+    suspend fun purchaseReturnsAll(): List<PurchaseReturn> = purchaseReturnDao.all()
 
     suspend fun updateSupplier(supplier: Supplier) = supplierDao.update(supplier)
 
@@ -1343,6 +1526,7 @@ class Repository(private val context: Context) {
             grandTotal = amount,
             paidAmount = 0.0,
             supplierGstin = supplier.gstin,
+            supplierState = supplier.state,
             remarks = note.trim(),
             isLegacy = true,
             updatedAt = System.currentTimeMillis()

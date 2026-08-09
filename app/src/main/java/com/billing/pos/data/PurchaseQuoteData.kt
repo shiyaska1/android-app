@@ -50,6 +50,7 @@ data class PurchaseQuoteItem(
 @Dao
 interface PurchaseQuoteDao {
     @Query("SELECT COUNT(*) FROM purchase_quotes") suspend fun count(): Int
+    @Query("SELECT * FROM purchase_quotes WHERE quoteNo = :quoteNo LIMIT 1") suspend fun byNo(quoteNo: String): PurchaseQuote?
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertHeader(r: PurchaseQuote): Long
     @Insert suspend fun insertLines(lines: List<PurchaseQuoteItem>)
     @Update suspend fun updateHeader(r: PurchaseQuote)

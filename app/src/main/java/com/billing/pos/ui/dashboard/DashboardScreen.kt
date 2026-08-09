@@ -4,6 +4,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.NoteAdd
 import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
@@ -27,6 +29,7 @@ import androidx.compose.material.icons.filled.Balance
 import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material.icons.filled.Assessment
 import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.Handyman
 import androidx.compose.material.icons.filled.AssignmentReturn
 import androidx.compose.material.icons.automirrored.filled.Send
@@ -75,6 +78,7 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.ShoppingCart
+import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -86,6 +90,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -150,6 +155,7 @@ fun DashboardScreen(
     onCashbook: () -> Unit,
     onReports: () -> Unit,
     onCustomers: () -> Unit,
+    onCustomerTypes: () -> Unit,
     onContacts: () -> Unit,
     onSendSms: () -> Unit,
     onBulkSms: () -> Unit,
@@ -158,7 +164,12 @@ fun DashboardScreen(
     onSmsReport: () -> Unit,
     onSmsSettings: () -> Unit,
     onItems: () -> Unit,
+    onItemCategories: () -> Unit,
+    onCalcLabels: () -> Unit,
     onBundles: () -> Unit,
+    onOnlineItems: () -> Unit,
+    onOnlineOrders: () -> Unit,
+    onMessages: () -> Unit,
     onNewPurchase: () -> Unit,
     onPurchases: () -> Unit,
     onSuppliers: () -> Unit,
@@ -226,13 +237,20 @@ fun DashboardScreen(
     onUsers: () -> Unit,
     onSettings: () -> Unit,
     onBackup: () -> Unit,
-    onLogout: () -> Unit
+    onLogout: () -> Unit,
+    /** Opens the shop's own live customer catalog (see MainActivity's "customerPreview" route)
+     *  on this same device, so the owner can show a customer how ordering works and hand the
+     *  phone back — a plain nav push, nothing in Settings/licensing is touched by it. */
+    onPreviewCustomerApp: () -> Unit = {}
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val syncScope = rememberCoroutineScope()
     var syncingNow by remember { mutableStateOf(false) }
     var syncFailureMessage by remember { mutableStateOf<String?>(null) }
-    val businessType = remember { com.billing.pos.data.AppPrefs(context).businessType }
+    var confirmRepair by remember { mutableStateOf(false) }
+    var repairBusy by remember { mutableStateOf(false) }
+    val dashPrefs = remember { com.billing.pos.data.AppPrefs(context) }
+    val businessType = remember { dashPrefs.businessType }
     val isRental = businessType == "Rental"
     val isPersonal = businessType == "Personal"
     // The two counter tools, available here as well as inside a sale.
@@ -270,6 +288,7 @@ fun DashboardScreen(
         add(Tile("Estimates", Icons.Filled.RequestQuote, onEstimates, "Transactions/Customer Relation"))
         if (Session.canViewInvoice) add(Tile("Sales Return", Icons.Filled.AssignmentReturn, onSalesReturns, "Transactions/Customer Relation"))
         add(Tile("Orders", Icons.Filled.ListAlt, onOrders, "Transactions/Customer Relation"))
+        add(Tile("Online Orders", Icons.Filled.Storefront, onOnlineOrders, "Transactions/Customer Relation"))
         // Vendor Relation: every transaction made with/for a supplier.
         add(Tile("New Purchase", Icons.Filled.ShoppingCart, onNewPurchase, "Transactions/Vendor Relation"))
         if (Session.canViewInvoice) add(Tile("Purchases", Icons.Filled.Inventory2, onPurchases, "Transactions/Vendor Relation"))
@@ -299,8 +318,12 @@ fun DashboardScreen(
 
         // ---- Masters ----
         add(Tile("Customers", Icons.Filled.People, onCustomers, "Masters"))
+        add(Tile("Customer Types", Icons.Filled.Category, onCustomerTypes, "Masters"))
         add(Tile("Items", Icons.Filled.Category, onItems, "Masters"))
+        add(Tile("Item Categories", Icons.Filled.Category, onItemCategories, "Masters"))
         add(Tile("Item Bundles", Icons.Filled.Inventory2, onBundles, "Masters"))
+        add(Tile("Calculator Labels", Icons.Filled.Category, onCalcLabels, "Masters"))
+        add(Tile("Online Items", Icons.Filled.Storefront, onOnlineItems, "Masters"))
         add(Tile("Suppliers", Icons.Filled.LocalShipping, onSuppliers, "Masters"))
         if (isLab) {
             add(Tile("Patients", Icons.Filled.People, onPatients, "Masters"))
@@ -326,7 +349,7 @@ fun DashboardScreen(
         if (Session.canViewPayment) add(Tile("Payments", Icons.Filled.MoneyOff, onExpenses, "Accounts/Transactions"))
         if (Session.canViewCashbook) add(Tile("Cash Book", Icons.Filled.AccountBalanceWallet, onCashbook, "Accounts/Transactions"))
         if (Session.canViewInvoice) add(Tile("Outstanding", Icons.Filled.AccountBalance, onOutstanding, "Accounts/Transactions"))
-        if (Session.canManageUsers) add(Tile("Accounts", Icons.Filled.AccountTree, onAccounts, "Accounts/Masters"))
+        if (Session.canManageUsers) add(Tile("Chart of Accounts", Icons.Filled.AccountTree, onAccounts, "Accounts/Masters"))
         if (Session.canManageUsers) add(Tile("Cost Centers", Icons.Filled.AccountTree, onCostCenters, "Accounts/Masters"))
         if (Session.canManageUsers) add(Tile("Fixed Assets", Icons.Filled.AccountBalance, onFixedAssets, "Accounts/Masters"))
         if (Session.canManageUsers) add(Tile("Cheques", Icons.Filled.Payments, onCheques, "Accounts/Masters"))
@@ -390,8 +413,37 @@ fun DashboardScreen(
                             }
                         }
                     }
+                    IconButton(onClick = { if (!repairBusy) confirmRepair = true }) {
+                        if (repairBusy) {
+                            CircularProgressIndicator(modifier = Modifier.size(20.dp), color = MaterialTheme.colorScheme.onPrimary, strokeWidth = 2.dp)
+                        } else {
+                            Icon(Icons.Filled.Build, contentDescription = "Repair duplicate data")
+                        }
+                    }
+                    val unreadMessages by remember { com.billing.pos.data.AppDatabase.get(context).shopMessageDao().observeUnreadCount() }
+                        .collectAsState(initial = 0)
+                    IconButton(onClick = onMessages) {
+                        BadgedBox(badge = { if (unreadMessages > 0) Badge { Text("$unreadMessages") } }) {
+                            Icon(Icons.Filled.Chat, contentDescription = "Messages")
+                        }
+                    }
                     IconButton(onClick = onQuickNote) {
                         Icon(Icons.Filled.NoteAdd, contentDescription = "Quick note")
+                    }
+                    // Lets the shop owner show a customer how ordering works, on their own real
+                    // catalog, without a second phone — then hand the phone back with one tap.
+                    IconButton(onClick = {
+                        val p = com.billing.pos.data.AppPrefs(context)
+                        p.shopCode = p.shopCode.ifBlank { com.billing.pos.data.License.deviceId(context) }
+                        p.customerBusinessType = p.businessType
+                        // Preview is the owner testing their own setup, not a real customer being
+                        // granted anything — always show every premium-gated feature (voice notes,
+                        // photo attachments) here so there's nothing left untestable without a
+                        // second "premium" customer link to scan first.
+                        p.customerPremiumShop = true
+                        onPreviewCustomerApp()
+                    }) {
+                        Icon(Icons.Filled.Storefront, contentDescription = "Preview customer app")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -424,8 +476,19 @@ fun DashboardScreen(
                 .sortedByDescending { usage.getInt(it.label, 0) }
                 .take(5)
         }
-        // Sections start closed; opening one is remembered only for this visit.
-        val openSections = remember { androidx.compose.runtime.mutableStateMapOf<String, Boolean>() }
+        // Which report/account sections are expanded, persisted so it survives navigating away
+        // and back, and even closing and reopening the app.
+        val sectionPrefs = remember { context.getSharedPreferences("dashboard_ui", android.content.Context.MODE_PRIVATE) }
+        val openSections = remember {
+            androidx.compose.runtime.mutableStateMapOf<String, Boolean>().apply {
+                sectionPrefs.getStringSet("open_sections", null)?.forEach { put(it, true) }
+            }
+        }
+        fun toggleSection(key: String) {
+            val next = !(openSections[key] == true)
+            openSections[key] = next
+            sectionPrefs.edit().putStringSet("open_sections", openSections.filterValues { it }.keys.toMutableSet()).apply()
+        }
 
         Column(Modifier.fillMaxSize().padding(pad)) {
             // Screens set aside with the minimise handle, waiting to be picked up again.
@@ -536,7 +599,7 @@ fun DashboardScreen(
                                 item(span = { GridItemSpan(maxLineSpan) }) {
                                     Row(
                                         Modifier.fillMaxWidth()
-                                            .clickable { openSections[section] = !open }
+                                            .clickable { toggleSection(section) }
                                             .padding(top = 10.dp, bottom = 2.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
@@ -570,7 +633,7 @@ fun DashboardScreen(
                                             item(span = { GridItemSpan(maxLineSpan) }) {
                                                 Row(
                                                     Modifier.fillMaxWidth()
-                                                        .clickable { openSections[key] = !subOpen }
+                                                        .clickable { toggleSection(key) }
                                                         .padding(top = 6.dp, bottom = 2.dp),
                                                     verticalAlignment = Alignment.CenterVertically
                                                 ) {
@@ -609,7 +672,7 @@ fun DashboardScreen(
                                 item(span = { GridItemSpan(maxLineSpan) }) {
                                     Row(
                                         Modifier.fillMaxWidth()
-                                            .clickable { openSections[section] = !open }
+                                            .clickable { toggleSection(section) }
                                             .padding(top = 10.dp, bottom = 2.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
@@ -645,7 +708,7 @@ fun DashboardScreen(
                                             item(span = { GridItemSpan(maxLineSpan) }) {
                                                 Row(
                                                     Modifier.fillMaxWidth()
-                                                        .clickable { openSections[key] = !subOpen }
+                                                        .clickable { toggleSection(key) }
                                                         .padding(top = 6.dp, bottom = 2.dp),
                                                     verticalAlignment = Alignment.CenterVertically
                                                 ) {
@@ -682,7 +745,7 @@ fun DashboardScreen(
                                 item(span = { GridItemSpan(maxLineSpan) }) {
                                     Row(
                                         Modifier.fillMaxWidth()
-                                            .clickable { openSections[section] = !open }
+                                            .clickable { toggleSection(section) }
                                             .padding(top = 10.dp, bottom = 2.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
@@ -758,6 +821,39 @@ fun DashboardScreen(
             text = { Text(msg) },
             confirmButton = {
                 androidx.compose.material3.TextButton(onClick = { syncFailureMessage = null }) { Text("OK") }
+            }
+        )
+    }
+    if (confirmRepair) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { confirmRepair = false },
+            title = { Text("Repair duplicate data") },
+            text = {
+                Text(
+                    "Repeated cloud sync or attachment restore can leave behind exact duplicates — " +
+                        "the same diary note, invoice, purchase, receipt, payment, quotation, " +
+                        "estimate, order or saved calculation inserted again, or the same photo " +
+                        "attached twice. This finds them and merges each group into one copy. " +
+                        "Nothing else is touched, and nothing you wrote is deleted — duplicates' " +
+                        "content is kept on the copy that survives."
+                )
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    confirmRepair = false; repairBusy = true
+                    syncScope.launch {
+                        val result = com.billing.pos.data.DataRepair.repair(context)
+                        repairBusy = false
+                        android.widget.Toast.makeText(
+                            context,
+                            "Repaired ${result.recordsMerged} duplicate record(s) and ${result.attachmentsMerged} duplicate attachment(s)",
+                            android.widget.Toast.LENGTH_LONG
+                        ).show()
+                    }
+                }) { Text("Repair") }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { confirmRepair = false }) { Text("Cancel") }
             }
         )
     }

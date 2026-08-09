@@ -167,7 +167,15 @@ class OrderViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
             if (agg.isEmpty()) { message.value = "These orders have no items"; return@launch }
-            com.billing.pos.ui.billing.OrderToBillLink.set(custId, custName, agg.values.toList())
+            // Only hint a payment method when EVERY chosen order actually came from accepting an
+            // online order (see CustOrder.isOnlineOrder) — a plain order entered directly here has
+            // no meaningful paymentStatus, so mixing one in (or converting only plain orders)
+            // leaves this blank and the bill defaults to Cash as usual. All-online and agreeing on
+            // how they were paid (all UPI, or all Cash-on-delivery/Credit) picks that.
+            val paymentModeHint = if (chosen.all { it.isOnlineOrder }) {
+                chosen.map { if (it.paymentStatus == "UPI") "UPI" else "Credit" }.distinct().singleOrNull().orEmpty()
+            } else ""
+            com.billing.pos.ui.billing.OrderToBillLink.set(custId, custName, agg.values.toList(), paymentModeHint = paymentModeHint)
             onReady()
         }
     }

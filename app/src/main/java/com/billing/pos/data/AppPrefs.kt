@@ -30,6 +30,137 @@ class AppPrefs(context: Context) {
 
     val company: CompanyInfo get() = CompanyInfo(companyName, companyAddress, companyPhone, companyGstin)
 
+    /**
+     * India GST mode. When on: item entry labels its tax field "GST %", invoices always
+     * title "TAX INVOICE" and split the tax total into CGST + SGST (assumes intra-state
+     * sales, the common case for a single-location shop), and print the customer's GSTIN
+     * with a B2B/B2C tag based on whether one was entered for that customer.
+     */
+    var gstEnabled: Boolean
+        get() = p.getBoolean("gst_enabled", false)
+        set(v) { p.edit().putBoolean("gst_enabled", v).apply() }
+
+    /**
+     * Composition scheme dealer. A composition dealer legally cannot show CGST/SGST/IGST as a
+     * separate line on the invoice — only visible when [gstEnabled] is also on. Invoices title
+     * as "BILL OF SUPPLY" and the tax breakup is hidden entirely (only the grand total shows).
+     */
+    var compositionScheme: Boolean
+        get() = p.getBoolean("gst_composition", false)
+        set(v) { p.edit().putBoolean("gst_composition", v).apply() }
+
+    /**
+     * True (the default — matches every version of this app before the setting existed): item
+     * prices already include tax+cess, so it's extracted out of the entered price. False: prices
+     * exclude tax+cess, so it's added on top. Only Billing and Purchase respect this.
+     */
+    var priceIncludesTax: Boolean
+        get() = p.getBoolean("price_includes_tax", true)
+        set(v) { p.edit().putBoolean("price_includes_tax", v).apply() }
+
+    /**
+     * GST Compensation Cess (tobacco, aerated drinks, coal, luxury vehicles, ...) — off by
+     * default since almost no business needs it. Only visible when [gstEnabled] is also on;
+     * turning it on reveals a per-item Cess % field.
+     */
+    var cessEnabled: Boolean
+        get() = p.getBoolean("gst_cess_enabled", false)
+        set(v) { p.edit().putBoolean("gst_cess_enabled", v).apply() }
+
+    /**
+     * No Tax Invoice — off by default. Turning it on adds a per-sale "No Tax Invoice" switch to
+     * the Billing screen: that invoice prints with no company header, no title, and no tax
+     * shown (only date + bill no, then the same item table/totals as usual), uses its own
+     * numbering series ([noTaxInvoicePrefix]), and is excluded from every GST/VAT report and
+     * the main Invoice list — it only shows in the separate No Tax Invoices list.
+     */
+    var noTaxInvoiceEnabled: Boolean
+        get() = p.getBoolean("no_tax_invoice_enabled", false)
+        set(v) { p.edit().putBoolean("no_tax_invoice_enabled", v).apply() }
+
+    /** Number-series prefix for No Tax Invoices, e.g. "NT-" giving NT-0001, NT-0002, ... */
+    var noTaxInvoicePrefix: String
+        get() = p.getString("no_tax_invoice_prefix", "NT-") ?: "NT-"
+        set(v) { p.edit().putString("no_tax_invoice_prefix", v.trim()).apply() }
+
+    /** Saudi ZATCA mode — off by default. When on, PDF invoices print as a ZATCA "Simplified Tax
+     *  Invoice" (seller + VAT reg. no., SAR totals, ZATCA QR code) instead of the GST/plain layout;
+     *  mutually exclusive with GST mode in what gets printed. */
+    var zatcaEnabled: Boolean
+        get() = p.getBoolean("zatca_enabled", false)
+        set(v) { p.edit().putBoolean("zatca_enabled", v).apply() }
+
+    /** Seller's 15-digit Saudi VAT registration number, encoded into the ZATCA QR. */
+    var zatcaVatNumber: String
+        get() = p.getString("zatca_vat_number", "") ?: ""
+        set(v) { p.edit().putString("zatca_vat_number", v.trim()).apply() }
+
+    /** UAE VAT mode — off by default, mutually exclusive with GST/ZATCA in what gets printed.
+     *  Prints a UAE FTA-style tax invoice: seller TRN, a single VAT line (no CGST/SGST-style
+     *  state split), totals in AED. UAE's standard rate is 5%. */
+    var uaeVatEnabled: Boolean
+        get() = p.getBoolean("uae_vat_enabled", false)
+        set(v) { p.edit().putBoolean("uae_vat_enabled", v).apply() }
+
+    /** Seller's 15-digit UAE Tax Registration Number (TRN), printed on the invoice. */
+    var uaeTrn: String
+        get() = p.getString("uae_trn", "") ?: ""
+        set(v) { p.edit().putString("uae_trn", v.trim()).apply() }
+
+    /**
+     * Weighing-scale barcodes — off by default. Turns on parsing "in-store" barcodes (a fixed
+     * prefix digit + item PLU code + weight-or-price value + a standard EAN-13 check digit) so
+     * scanning a scale-printed label during a sale looks the item up by its PLU and fills the
+     * cart line's quantity (or price) straight from the label, no typing needed.
+     */
+    var weighScaleEnabled: Boolean
+        get() = p.getBoolean("weigh_scale_enabled", false)
+        set(v) { p.edit().putBoolean("weigh_scale_enabled", v).apply() }
+
+    /** Leading digit that marks a barcode as scale-printed (GS1 reserves "2" for this — no real
+     *  product barcode starts with it, so this is a safe, low-collision signal). */
+    var weighScalePrefix: String
+        get() = p.getString("weigh_scale_prefix", "2") ?: "2"
+        set(v) { p.edit().putString("weigh_scale_prefix", v.trim().ifBlank { "2" }).apply() }
+
+    /** Digits after the prefix that carry the item's PLU code — matched against that item's own
+     *  Barcode field, so no separate PLU field is needed. */
+    var weighScaleItemCodeLen: Int
+        get() = p.getInt("weigh_scale_item_len", 5)
+        set(v) { p.edit().putInt("weigh_scale_item_len", v.coerceIn(1, 9)).apply() }
+
+    /** Digits after the item code that carry the weight or price value. */
+    var weighScaleValueLen: Int
+        get() = p.getInt("weigh_scale_value_len", 6)
+        set(v) { p.edit().putInt("weigh_scale_value_len", v.coerceIn(1, 9)).apply() }
+
+    /** False (default): the value is the weighed quantity in grams — the cart line's quantity is
+     *  set from it and priced at the item's own rate. True: the value is the price (in paise) the
+     *  scale already computed — the cart line's quantity is back-computed from the item's rate so
+     *  price × qty still equals the scanned total. */
+    var weighScaleValueIsPrice: Boolean
+        get() = p.getBoolean("weigh_scale_value_is_price", false)
+        set(v) { p.edit().putBoolean("weigh_scale_value_is_price", v).apply() }
+
+    /** Physical label size for a dedicated barcode-label printer, in millimetres. Each printed
+     *  label becomes its own PDF page at this size (rather than a multi-up A4 sheet) so it lines
+     *  up with the printer's roll/gap settings. */
+    var barcodeLabelWidthMm: Double
+        get() = p.getFloat("barcode_label_w_mm", 40f).toDouble()
+        set(v) { p.edit().putFloat("barcode_label_w_mm", v.toFloat()).apply() }
+    var barcodeLabelHeightMm: Double
+        get() = p.getFloat("barcode_label_h_mm", 25f).toDouble()
+        set(v) { p.edit().putFloat("barcode_label_h_mm", v.toFloat()).apply() }
+    var barcodeShowPrice: Boolean
+        get() = p.getBoolean("barcode_show_price", true)
+        set(v) { p.edit().putBoolean("barcode_show_price", v).apply() }
+    var barcodeShowCompanyName: Boolean
+        get() = p.getBoolean("barcode_show_company", false)
+        set(v) { p.edit().putBoolean("barcode_show_company", v).apply() }
+    var barcodeShowSize: Boolean
+        get() = p.getBoolean("barcode_show_size", false)
+        set(v) { p.edit().putBoolean("barcode_show_size", v).apply() }
+
     /** UPI ID (VPA) money is collected to, e.g. name@okaxis, and the payee name shown. */
     var upiId: String
         get() = p.getString("upi_id", "") ?: ""
@@ -101,6 +232,166 @@ class AppPrefs(context: Context) {
     var cloudAutoSync: Boolean
         get() = p.getBoolean("cloud_auto_sync", false)
         set(v) { p.edit().putBoolean("cloud_auto_sync", v).apply() }
+
+    // ---- Online ordering ----
+    /** True for a "customer" install (Play referrer carried mode=customer) — the whole app is
+     *  the ordering catalog instead of the shop-owner billing app; no business type, no license. */
+    var customerMode: Boolean
+        get() = p.getBoolean("customer_mode", false)
+        set(v) { p.edit().putBoolean("customer_mode", v).apply() }
+    /** Set once Play has given a definitive referrer answer (even an empty one) — see
+     *  [com.billing.pos.customer.InstallReferrer.read] — so the service is only queried until
+     *  then, not forever. A timed-out attempt does NOT set this, so boot retries it instead of
+     *  wrongly settling into the shop-owner flow just because Play was slow to answer once. */
+    var referrerChecked: Boolean
+        get() = p.getBoolean("referrer_checked", false)
+        set(v) { p.edit().putBoolean("referrer_checked", v).apply() }
+    /** How many boots in a row the referrer check has timed out — caps the retries in
+     *  [com.billing.pos.ui.auth.BootViewModel] so a device where Play never answers doesn't keep
+     *  the splash screen waiting on every single launch forever. */
+    var referrerRetryCount: Int
+        get() = p.getInt("referrer_retry_count", 0)
+        set(v) { p.edit().putInt("referrer_retry_count", v).apply() }
+    /** Customer install: what kind of shop this is ("Restaurant", "Medical store", "Medical lab",
+     *  ...), read from the install link's referrer — so the catalog screen can use a fitting
+     *  name ("Order" vs "Medicines" vs "Home Collection") instead of one generic label. Blank
+     *  falls back to a neutral "Order". */
+    var customerBusinessType: String
+        get() = (p.getString("customer_business_type", "") ?: "").trim()
+        set(v) { p.edit().putString("customer_business_type", v.trim()).apply() }
+    /** Customer install: true when the referrer carried premium=1 — unlocks attaching a photo
+     *  to an order, on top of the note every customer install already gets. Set once at boot,
+     *  same as [customerBusinessType]; there's no billing/tier system behind this yet, it's
+     *  purely whatever the link the shop was given says. */
+    var customerPremiumShop: Boolean
+        get() = p.getBoolean("customer_premium_shop", false)
+        set(v) { p.edit().putBoolean("customer_premium_shop", v).apply() }
+    /** Shop owner: the code they hand out in their customer-facing Play Store links/QR codes,
+     *  so the server can tell shops apart on one shared endpoint. Customer install: the code
+     *  read back from that link's referrer, identifying which shop's catalog to fetch. */
+    var shopCode: String
+        get() = (p.getString("shop_code", "") ?: "").trim()
+        set(v) { p.edit().putString("shop_code", v.trim()).apply() }
+    /** Shop owner: where "Upload" POSTs the online-marked items. Customer install: where the
+     *  catalog is fetched from (GET, with shop=[shopCode] appended) — normally the same URL,
+     *  set once by the shop owner and carried into the customer link's referrer by the developer. */
+    var onlineCatalogUrl: String
+        get() = (p.getString("online_catalog_url", "") ?: "").trim()
+        set(v) { p.edit().putString("online_catalog_url", v.trim()).apply() }
+    /** Shop owner: where the customer app POSTs a placed order, and where "Orders" fetches from. */
+    var fetchOrdersUrl: String
+        get() = (p.getString("fetch_orders_url", "") ?: "").trim()
+        set(v) { p.edit().putString("fetch_orders_url", v.trim()).apply() }
+    /** Shop owner: where they hosted server/ios/pos_customer_app_ios.php (the standalone iPhone
+     *  web app — see its own doc comment for hosting instructions), e.g.
+     *  "https://yourdomain.com/pos_customer_app_ios.php". Blank until set; needed to generate an
+     *  iOS install QR/link, separate from the Android Play Store one (see ReferralLink). */
+    var iosCustomerAppUrl: String
+        get() = (p.getString("ios_customer_app_url", "") ?: "").trim()
+        set(v) { p.edit().putString("ios_customer_app_url", v.trim()).apply() }
+    /** When the catalog was last successfully fetched (customer install), for an offline banner. */
+    var catalogLastFetchedAt: Long
+        get() = p.getLong("catalog_last_fetched_at", 0L)
+        set(v) { p.edit().putLong("catalog_last_fetched_at", v).apply() }
+    /** Customer install: the shop's display name, carried in the catalog fetch response. */
+    var shopDisplayName: String
+        get() = (p.getString("shop_display_name", "") ?: "").trim()
+        set(v) { p.edit().putString("shop_display_name", v.trim()).apply() }
+    /** Customer install: the shop's WhatsApp/mobile number, so the customer can message them
+     *  directly ("order will be placed") — carried in the catalog fetch response. Digits only. */
+    var shopContactPhone: String
+        get() = (p.getString("shop_contact_phone", "") ?: "").trim()
+        set(v) { p.edit().putString("shop_contact_phone", v.trim()).apply() }
+    /** Shop owner: local file path of the banner image shown at the top of the customer catalog
+     *  screen — picked in Settings, embedded (compressed) into the next Online Items upload. */
+    var onlineBannerPath: String
+        get() = p.getString("online_banner_path", "") ?: ""
+        set(v) { p.edit().putString("online_banner_path", v).apply() }
+    /** Shop owner: this shop's own GPS coordinates, captured once in Settings > Online ordering
+     *  and uploaded with every catalog fetch — lets a customer's "Nearby shops" search find it.
+     *  0.0/0.0 (the default) means never captured; [shopLocationCaptured] is the honest check. */
+    var shopLatitude: Double
+        get() = p.getFloat("shop_latitude", 0f).toDouble()
+        set(v) { p.edit().putFloat("shop_latitude", v.toFloat()).apply() }
+    var shopLongitude: Double
+        get() = p.getFloat("shop_longitude", 0f).toDouble()
+        set(v) { p.edit().putFloat("shop_longitude", v.toFloat()).apply() }
+    val shopLocationCaptured: Boolean get() = shopLatitude != 0.0 || shopLongitude != 0.0
+    /** Customer install: the shop's banner image, as a base64 data URI carried in the catalog
+     *  fetch response — same convention as item photos, cached so it survives offline reopens. */
+    var shopBannerImage: String
+        get() = p.getString("shop_banner_image", "") ?: ""
+        set(v) { p.edit().putString("shop_banner_image", v).apply() }
+    /** Customer install: the shop's own category (Settings > Business type on the shop owner's
+     *  device), carried in the catalog fetch response — always current, unlike
+     *  [customerBusinessType] which is just whatever the install link said once. */
+    var shopDisplayCategory: String
+        get() = (p.getString("shop_display_category", "") ?: "").trim()
+        set(v) { p.edit().putString("shop_display_category", v.trim()).apply() }
+    /** Customer install: the shop's own address, carried in the catalog fetch response. */
+    var shopDisplayAddress: String
+        get() = (p.getString("shop_display_address", "") ?: "").trim()
+        set(v) { p.edit().putString("shop_display_address", v.trim()).apply() }
+    /** Customer install: the shop's own UPI ID (VPA), carried in the catalog fetch response —
+     *  lets the customer pay for an order online, straight to the shop, at order time. Blank
+     *  when the shop owner hasn't set one in their own Settings > UPI ID. */
+    var shopUpiId: String
+        get() = (p.getString("shop_upi_id", "") ?: "").trim()
+        set(v) { p.edit().putString("shop_upi_id", v.trim()).apply() }
+    /** Customer install: the payee name to show in the customer's UPI app, carried in the
+     *  catalog fetch response. */
+    var shopUpiName: String
+        get() = (p.getString("shop_upi_name", "") ?: "").trim()
+        set(v) { p.edit().putString("shop_upi_name", v.trim()).apply() }
+    /** Customer install: every shop this device has ever connected to (current one included) —
+     *  see com.billing.pos.customer.ShopSwitch.rememberKnown/known. Unlike
+     *  [customerRecentShops] (capped at 5, excludes the current shop, only for quick "switch
+     *  back"), this is the full directory the "Browse shops" screen groups by category. */
+    var customerKnownShops: String
+        get() = p.getString("customer_known_shops", "") ?: ""
+        set(v) { p.edit().putString("customer_known_shops", v).apply() }
+    /** Customer install: this customer's own name/phone, asked once (first "Save" on an order)
+     *  and remembered so they don't retype it every time. */
+    var customerName: String
+        get() = (p.getString("customer_own_name", "") ?: "").trim()
+        set(v) { p.edit().putString("customer_own_name", v.trim()).apply() }
+    var customerPhone: String
+        get() = (p.getString("customer_own_phone", "") ?: "").trim()
+        set(v) { p.edit().putString("customer_own_phone", v.trim()).apply() }
+    /** Customer install: whether the one-time "Register your details" prompt (shown right on
+     *  first catalog open, before any order — see CustomerCatalogScreen) has already been shown
+     *  or skipped, so it never nags again after that. Separate from [customerPhone] being blank,
+     *  since a customer can dismiss it once and keep browsing without registering at all. */
+    var customerRegisterPromptShown: Boolean
+        get() = p.getBoolean("customer_register_prompt_shown", false)
+        set(v) { p.edit().putBoolean("customer_register_prompt_shown", v).apply() }
+    /** Customer install: optional delivery address, remembered the same way as name/phone. */
+    var customerAddress: String
+        get() = (p.getString("customer_own_address", "") ?: "").trim()
+        set(v) { p.edit().putString("customer_own_address", v.trim()).apply() }
+    /** Customer install: shops previously switched away from (see [com.billing.pos.customer.ShopSwitch]),
+     *  so "switch back" is one tap instead of a re-scan. Packed JSON array, newest first, capped at 5. */
+    var customerRecentShops: String
+        get() = p.getString("customer_recent_shops", "") ?: ""
+        set(v) { p.edit().putString("customer_recent_shops", v).apply() }
+    /** Customer install: shop codes this customer has chosen to stop getting notifications from
+     *  (e.g. one sending too many promotions) — see [com.billing.pos.customer.ShopSwitch.isMuted].
+     *  Packed JSON array of shop codes; that shop's catalog/ordering still works as normal, only
+     *  its notifications stop being fetched/shown. */
+    var customerMutedShops: String
+        get() = p.getString("customer_muted_shops", "") ?: ""
+        set(v) { p.edit().putString("customer_muted_shops", v).apply() }
+    /** This device's current Firebase Cloud Messaging token — see PosMessagingService.onNewToken.
+     *  Also readable when a push arrives, to trigger the same fetch the 30-min poll would do. */
+    var fcmToken: String
+        get() = p.getString("fcm_token", "") ?: ""
+        set(v) { p.edit().putString("fcm_token", v).apply() }
+    /** Identity ("shop:<code>" or "customer:<shop>:<phone>") the current [fcmToken] was last
+     *  successfully registered with the server under — see PushTokenRegistration. Re-registers
+     *  only when the token or this identity changes, so a normal app open doesn't re-POST it. */
+    var fcmTokenRegisteredFor: String
+        get() = p.getString("fcm_token_registered_for", "") ?: ""
+        set(v) { p.edit().putString("fcm_token_registered_for", v).apply() }
     /** Seconds between auto pull+merge+push cycles. Callers should floor this at ~10s before use so a mistyped value can't hammer the server. */
     var cloudAutoSyncIntervalSec: Int
         get() = p.getInt("cloud_auto_sync_interval_sec", 300)
@@ -183,6 +474,30 @@ class AppPrefs(context: Context) {
         if (customerTypes.none { it.equals(n, true) }) customerTypes = customerTypes + n
     }
 
+    /** User-added item categories (a saved set, in addition to any already used by items) — lets
+     *  a category be created from its master list before any item uses it. */
+    var itemCategories: List<String>
+        get() = (p.getString("item_categories", "") ?: "").split("|").map { it.trim() }.filter { it.isNotBlank() }
+        set(v) { p.edit().putString("item_categories", v.joinToString("|")).apply() }
+
+    fun addItemCategory(name: String) {
+        val n = name.trim()
+        if (n.isBlank()) return
+        if (itemCategories.none { it.equals(n, true) }) itemCategories = itemCategories + n
+    }
+
+    /** Calculator "label mode" suggestions — labels typed against an entry once, offered as
+     *  autocomplete the next time (Fast bill's label popup), managed from their own master. */
+    var calcLabels: List<String>
+        get() = (p.getString("calc_labels", "") ?: "").split("|").map { it.trim() }.filter { it.isNotBlank() }
+        set(v) { p.edit().putString("calc_labels", v.joinToString("|")).apply() }
+
+    fun addCalcLabel(name: String) {
+        val n = name.trim()
+        if (n.isBlank()) return
+        if (calcLabels.none { it.equals(n, true) }) calcLabels = calcLabels + n
+    }
+
     // ---- licensing / trial ----
     var mobileNumber: String
         get() = p.getString("mobile", "") ?: ""
@@ -207,6 +522,22 @@ class AppPrefs(context: Context) {
     var licensed: Boolean
         get() = p.getBoolean("licensed", false)
         set(v) { p.edit().putBoolean("licensed", v).apply() }
+
+    /** Unlocks unlimited items in the online catalog upload AND unlimited daily notifications
+     *  (see License.ONLINE_CATALOG_FREE_LIMIT / License.NOTIFICATION_FREE_LIMIT_PER_DAY), once a
+     *  valid pro key has been entered — the same one-time key lifts both caps. */
+    var onlineCatalogPro: Boolean
+        get() = p.getBoolean("online_catalog_pro", false)
+        set(v) { p.edit().putBoolean("online_catalog_pro", v).apply() }
+
+    /** Rolling 24h window for the free-plan notification cap — see [License.reserveNotificationSend]. */
+    var notifWindowStart: Long
+        get() = p.getLong("notif_window_start", 0L)
+        set(v) { p.edit().putLong("notif_window_start", v).apply() }
+
+    var notifWindowCount: Int
+        get() = p.getInt("notif_window_count", 0)
+        set(v) { p.edit().putInt("notif_window_count", v).apply() }
 
     // ---- thermal printer ----
     /** Bluetooth MAC address of the chosen thermal printer ("" = auto-pick). */
@@ -236,11 +567,15 @@ class AppPrefs(context: Context) {
     companion object {
         val RECEIPT_WIDTHS = listOf("58mm", "80mm", "A4")
 
+        /** Sole OCR/handwriting language now — Malayalam and Arabic (Tesseract, and the
+         *  ink-writing chooser) were removed to cut APK size and simplify those scan flows
+         *  down to one path. */
         const val OCR_ENGLISH = "English"
+        /** Still used for the audio-transcription language choice (diary voice notes) — an
+         *  unrelated feature (Android's own SpeechRecognizer, not OCR) that keeps its
+         *  Malayalam option. */
         const val OCR_MALAYALAM = "Malayalam"
         const val OCR_ARABIC = "Arabic"
-        const val OCR_AUTO = "Auto"
-        val OCR_LANGUAGES = listOf(OCR_ENGLISH, OCR_MALAYALAM, OCR_ARABIC, OCR_AUTO)
         /** Monospace columns for a given width. */
         fun colsFor(width: String): Int = when (width) { "80mm" -> 48; "A4" -> 64; else -> 32 }
         /** PDF page width in points for a given width (58mm ≈ 165pt). */
@@ -279,14 +614,6 @@ class AppPrefs(context: Context) {
         get() = p.getString("business_type", "") ?: ""
         set(v) { p.edit().putString("business_type", v).apply() }
 
-    /**
-     * Which script the camera/gallery OCR should read.
-     * "English" = ML Kit Latin, "Malayalam" = Tesseract, "Auto" = try Latin then fall back.
-     */
-    var ocrLanguage: String
-        get() = p.getString("ocr_language", OCR_ENGLISH) ?: OCR_ENGLISH
-        set(v) { p.edit().putString("ocr_language", v).apply() }
-
     /** When on, a full-screen handwriting sticky-note canvas opens on launch (before the dashboard). */
     var stickyNoteOnLaunch: Boolean
         get() = p.getBoolean("sticky_note", false)
@@ -296,6 +623,15 @@ class AppPrefs(context: Context) {
     var appLock: Boolean
         get() = p.getBoolean("app_lock", false)
         set(v) { p.edit().putBoolean("app_lock", v).apply() }
+
+    /** Off by default: the app auto-signs in as the super admin, no login screen. On: every app
+     *  open shows the username/password login screen instead — the owner creates one account per
+     *  staff member (Users) with per-module permissions, and each signs in with their own
+     *  credentials. Carried by backup, so restoring the owner's backup onto a staff phone also
+     *  turns this on there. */
+    var requireLoginOnLaunch: Boolean
+        get() = p.getBoolean("require_login_on_launch", false)
+        set(v) { p.edit().putBoolean("require_login_on_launch", v).apply() }
 
     // ---- medical store: expiring-stock alerts ----
     /** Medical store only: warn about batches nearing expiry (daily notification + popup on open). */

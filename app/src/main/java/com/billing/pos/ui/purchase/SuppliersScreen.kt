@@ -17,6 +17,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.GridOn
@@ -84,13 +85,13 @@ class SuppliersViewModel(app: Application) : AndroidViewModel(app) {
     fun consumeMessage() { message.value = null }
 
     fun save(
-        existing: Supplier?, name: String, phone: String, address: String, gstin: String,
+        existing: Supplier?, name: String, phone: String, address: String, gstin: String, state: String,
         openingAmount: Double, openingIsDebit: Boolean, onDone: () -> Unit
     ) {
         if (name.isBlank()) { message.value = "Enter a name"; return }
         viewModelScope.launch {
-            if (existing == null) repo.addSupplier(name, phone, address, gstin)
-            else repo.updateSupplier(existing.copy(name = name.trim(), phone = phone.trim(), address = address.trim(), gstin = gstin.trim()))
+            if (existing == null) repo.addSupplier(name, phone, address, gstin, state)
+            else repo.updateSupplier(existing.copy(name = name.trim(), phone = phone.trim(), address = address.trim(), gstin = gstin.trim(), state = state.trim()))
             repo.setSupplierOpeningBalance(name.trim(), openingAmount, openingIsDebit)
             message.value = "Saved"; onDone()
         }
@@ -261,8 +262,8 @@ fun SuppliersScreen(
             onAddQuickPurchase = { s, amt, note, date -> vm.addQuickPurchase(s, amt, note, date) },
             onDeleteQuickPurchase = { p -> vm.deleteQuickPurchase(p) },
             onDismiss = { showDialog = false },
-            onSave = { n, p, a, g, openingAmt, openingIsDebit ->
-                vm.save(editing, n, p, a, g, openingAmt, openingIsDebit) { showDialog = false }
+            onSave = { n, p, a, g, st, openingAmt, openingIsDebit ->
+                vm.save(editing, n, p, a, g, st, openingAmt, openingIsDebit) { showDialog = false }
             }
         )
     }
@@ -297,12 +298,16 @@ private fun SupplierDialog(
     onAddQuickPurchase: (Supplier, Double, String, Long) -> Unit,
     onDeleteQuickPurchase: (com.billing.pos.data.Purchase) -> Unit,
     onDismiss: () -> Unit,
-    onSave: (String, String, String, String, Double, Boolean) -> Unit
+    onSave: (String, String, String, String, String, Double, Boolean) -> Unit
 ) {
+    val dialogContext = androidx.compose.ui.platform.LocalContext.current
+    val gstEnabled = remember { AppPrefs(dialogContext).gstEnabled }
     var name by remember { mutableStateOf(existing?.name ?: "") }
     var phone by remember { mutableStateOf(existing?.phone ?: "") }
     var address by remember { mutableStateOf(existing?.address ?: "") }
     var gstin by remember { mutableStateOf(existing?.gstin ?: "") }
+    var state by remember { mutableStateOf(existing?.state ?: "") }
+    var stateMenu by remember { mutableStateOf(false) }
 
     var openingAmount by remember { mutableStateOf("") }
     var openingIsDebit by remember { mutableStateOf(false) }
@@ -334,6 +339,25 @@ private fun SupplierDialog(
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
                 )
                 OutlinedTextField(value = gstin, onValueChange = { gstin = it }, label = { Text("GSTIN / TIN") }, singleLine = true, modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
+                if (gstEnabled) {
+                    androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                        OutlinedTextField(
+                            readOnly = true, value = state.ifBlank { "Select state (for IGST vs CGST+SGST)" },
+                            onValueChange = {}, label = { Text("State") }, singleLine = true,
+                            trailingIcon = {
+                                IconButton(onClick = { stateMenu = true }) {
+                                    Icon(Icons.Filled.ArrowDropDown, "Pick state")
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        androidx.compose.material3.DropdownMenu(expanded = stateMenu, onDismissRequest = { stateMenu = false }) {
+                            com.billing.pos.data.IndianStates.NAMES.forEach { s ->
+                                androidx.compose.material3.DropdownMenuItem(text = { Text(s) }, onClick = { state = s; stateMenu = false })
+                            }
+                        }
+                    }
+                }
                 OutlinedTextField(value = address, onValueChange = { address = it }, label = { Text("Address") }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
 
                 // Opening balance: what you already owed (or were owed by) this supplier before this app.
@@ -383,7 +407,7 @@ private fun SupplierDialog(
         },
         confirmButton = {
             TextButton(onClick = {
-                onSave(name, phone, address, gstin, openingAmount.toDoubleOrNull() ?: 0.0, openingIsDebit)
+                onSave(name, phone, address, gstin, state, openingAmount.toDoubleOrNull() ?: 0.0, openingIsDebit)
             }) { Text("Save") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }

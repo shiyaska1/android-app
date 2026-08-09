@@ -103,6 +103,67 @@ object License {
         return accepted.any { it == norm }
     }
 
+    /** Cap on how many distinct items a shop can mark online at once (see Online Items screen) —
+     *  separate from the trial/renewal licence above. Lower during the free trial than after
+     *  activation (see [onlineCatalogItemLimit]). Upgrading to unlimited is a one-time
+     *  device-locked key, same HMAC scheme as [activationKey] but with its own message suffix
+     *  ("PRO") so it can never collide with a renewal key for the same device. The same Pro key
+     *  also lifts [NOTIFICATION_FREE_LIMIT_PER_DAY] below — one purchase unlocks both. */
+    const val ONLINE_CATALOG_FREE_LIMIT = 100
+    /** Cap while still on the free trial (not yet activated) — tighter than [ONLINE_CATALOG_FREE_LIMIT]. */
+    const val ONLINE_CATALOG_TRIAL_LIMIT = 50
+
+    /** The item cap that currently applies: [ONLINE_CATALOG_TRIAL_LIMIT] until the app is
+     *  activated, [ONLINE_CATALOG_FREE_LIMIT] after — ignored entirely once Pro is unlocked. */
+    fun onlineCatalogItemLimit(context: Context): Int =
+        if (AppPrefs(context).licensed) ONLINE_CATALOG_FREE_LIMIT else ONLINE_CATALOG_TRIAL_LIMIT
+
+    fun onlineCatalogProKey(deviceId: String): String {
+        val hex = hmacHex(deviceId.trim().uppercase() + "PRO").take(16).uppercase()
+        return hex.chunked(4).joinToString("-")
+    }
+
+    fun isOnlineCatalogProValid(deviceId: String, key: String): Boolean {
+        val norm = key.uppercase().replace(Regex("[^0-9A-F]"), "")
+        if (norm.isEmpty()) return false
+        return onlineCatalogProKey(deviceId).replace("-", "") == norm
+    }
+
+    /** Cap on how many order-status/chat/broadcast notifications a shop can push to customers in
+     *  a rolling 24-hour window — protects a shop's own (often modest) server hosting from being
+     *  hammered. Lower during the free trial than after activation, same reasoning as
+     *  [ONLINE_CATALOG_TRIAL_LIMIT]. Lifted for good by the same Pro key as
+     *  [ONLINE_CATALOG_FREE_LIMIT] (see [onlineCatalogProKey]/[isOnlineCatalogProValid]). */
+    const val NOTIFICATION_FREE_LIMIT_PER_DAY = 100
+    /** Cap while still on the free trial (not yet activated) — tighter than [NOTIFICATION_FREE_LIMIT_PER_DAY]. */
+    const val NOTIFICATION_TRIAL_LIMIT_PER_DAY = 50
+    private const val NOTIFICATION_WINDOW_MILLIS = 24L * 60 * 60 * 1000
+
+    /** The notification cap that currently applies — same trial-vs-activated split as
+     *  [onlineCatalogItemLimit], ignored entirely once Pro is unlocked. */
+    fun notificationDailyLimit(context: Context): Int =
+        if (AppPrefs(context).licensed) NOTIFICATION_FREE_LIMIT_PER_DAY else NOTIFICATION_TRIAL_LIMIT_PER_DAY
+
+    /**
+     * True when another notification can be sent right now without exceeding today's cap — and if
+     * so, counts it towards the window atomically. Pro accounts are never limited. Call this once
+     * per notification actually about to be sent; a "false" here means don't send, and prompt for
+     * the Pro key instead (see [com.billing.pos.ui.common.ProLimitDialog]).
+     */
+    fun reserveNotificationSend(context: Context): Boolean {
+        val prefs = AppPrefs(context)
+        if (prefs.onlineCatalogPro) return true
+        val limit = notificationDailyLimit(context)
+        val now = System.currentTimeMillis()
+        if (now - prefs.notifWindowStart >= NOTIFICATION_WINDOW_MILLIS) {
+            prefs.notifWindowStart = now
+            prefs.notifWindowCount = 0
+        }
+        if (prefs.notifWindowCount >= limit) return false
+        prefs.notifWindowCount += 1
+        return true
+    }
+
     private fun hmacHex(message: String): String {
         val mac = Mac.getInstance("HmacSHA256")
         mac.init(SecretKeySpec(SECRET.toByteArray(Charsets.UTF_8), "HmacSHA256"))

@@ -157,20 +157,25 @@ fun PatientDialog(existing: Patient?, doctorNames: List<String>, onDismiss: () -
                     val q = referredByQuery.trim()
                     if (q.isBlank()) doctorNames.take(8) else doctorNames.filter { it.contains(q, true) && !it.equals(q, true) }.take(8)
                 }
-                ExposedDropdownMenuBox(expanded = docMenu && docMatches.isNotEmpty(), onExpandedChange = { docMenu = it }) {
+                // Plain field + inline list, not ExposedDropdownMenuBox — that popup-based
+                // combobox fights with the keyboard on real devices (typing the first
+                // character snaps the field back to the old value and blocks further typing).
+                Column {
                     OutlinedTextField(
                         value = referredByQuery, onValueChange = { referredByQuery = it; referredBy = it; docMenu = true },
                         label = { Text("Referred by (doctor)") }, singleLine = true,
-                        modifier = Modifier.menuAnchor().fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth()
                             .onFocusChanged { fs ->
                                 if (fs.isFocused) { referredByQuery = ""; docMenu = true }
-                                else if (!docMenu) referredByQuery = referredBy
+                                else { docMenu = false; referredByQuery = referredBy }
                             }
                     )
-                    ExposedDropdownMenu(expanded = docMenu && docMatches.isNotEmpty(), onDismissRequest = { docMenu = false }) {
-                        docMatches.forEach { d ->
-                            DropdownMenuItem(text = { Text(d) }, onClick = { referredBy = d; referredByQuery = d; docMenu = false })
-                        }
+                    if (docMenu && docMatches.isNotEmpty()) {
+                        com.billing.pos.ui.common.SearchPickList(
+                            items = docMatches,
+                            itemLabel = { it },
+                            onPick = { d -> referredBy = d; referredByQuery = d; docMenu = false }
+                        )
                     }
                 }
                 OutlinedTextField(value = address, onValueChange = { address = it }, label = { Text("Address") }, modifier = Modifier.fillMaxWidth())

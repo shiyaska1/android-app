@@ -25,12 +25,14 @@ import androidx.compose.material.icons.filled.Campaign
 import androidx.compose.material.icons.filled.Chat
 import androidx.compose.material.icons.filled.DriveFileMove
 import androidx.compose.material.icons.filled.GridOn
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material.icons.filled.UploadFile
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Divider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
@@ -102,6 +104,34 @@ class CustomersViewModel(app: Application) : AndroidViewModel(app) {
     val message = MutableStateFlow<String?>(null)
     fun consumeMessage() { message.value = null }
 
+    val sendingViaApp = MutableStateFlow(false)
+
+    /** Sends [text] to each of [recipients] through the online-ordering app's own chat/notification
+     *  system (see OrderStatusPush) instead of opening WhatsApp — lands directly in that customer's
+     *  in-app chat thread, no manual "open WhatsApp, tap send, come back" step needed. Only reaches
+     *  customers who've opened the online-ordering app before (WhatsApp has no such requirement). */
+    fun sendViaApp(recipients: List<Customer>, text: String) {
+        if (text.isBlank() || recipients.isEmpty() || sendingViaApp.value) return
+        viewModelScope.launch {
+            sendingViaApp.value = true
+            var sent = 0
+            for (c in recipients) {
+                if (c.phone.isBlank()) continue
+                if (!com.billing.pos.data.License.reserveNotificationSend(getApplication())) {
+                    message.value = "Daily notification limit reached — sent to $sent so far"
+                    sendingViaApp.value = false
+                    return@launch
+                }
+                com.billing.pos.customer.OrderStatusPush.push(
+                    getApplication(), customerPhone = c.phone, orderId = "", message = text, customerName = c.name
+                )
+                sent++
+            }
+            message.value = if (sent > 0) "Sent to $sent customer(s) in-app" else "Tick customers that have a phone number"
+            sendingViaApp.value = false
+        }
+    }
+
     private val prefs = AppPrefs(app)
     private val addedTypes = MutableStateFlow(prefs.customerTypes)
 
@@ -117,7 +147,7 @@ class CustomersViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun save(
-        existing: Customer?, name: String, phone: String, address: String, gstin: String,
+        existing: Customer?, name: String, phone: String, address: String, gstin: String, state: String,
         customerType: String, attachments: List<CustomerAttachment>,
         openingAmount: Double, openingIsDebit: Boolean, onDone: () -> Unit
     ) {
@@ -125,9 +155,9 @@ class CustomersViewModel(app: Application) : AndroidViewModel(app) {
         val type = customerType.trim().ifBlank { "General" }
         viewModelScope.launch {
             // A new customer has no id until it is saved, so the files are filed afterwards.
-            val id = if (existing == null) repo.addCustomer(name, phone, address, gstin, type)
+            val id = if (existing == null) repo.addCustomer(name, phone, address, gstin, type, state)
             else {
-                repo.updateCustomer(existing.copy(name = name.trim(), phone = phone.trim(), address = address.trim(), gstin = gstin.trim(), customerType = type))
+                repo.updateCustomer(existing.copy(name = name.trim(), phone = phone.trim(), address = address.trim(), gstin = gstin.trim(), customerType = type, state = state.trim()))
                 existing.id
             }
             repo.replaceCustomerAttachments(id, attachments)
@@ -193,6 +223,7 @@ fun CustomersScreen(
     val customers by vm.customers.collectAsStateSafe()
     val balances by vm.customerBalances.collectAsStateSafe()
     val message by vm.message.collectAsStateSafe()
+    val sendingViaApp by vm.sendingViaApp.collectAsStateSafe()
 
     LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); vm.consumeMessage() } }
 
@@ -458,6 +489,22 @@ fun CustomersScreen(
                             else { sendQueue = chosen; sendIndex = 0 }
                         }
                     ) { Icon(Icons.Filled.Chat, "Send on WhatsApp"); Text("  Send") }
+                    // Straight to the customer's own in-app chat, no manual WhatsApp step —
+                    // only reaches customers who've opened the online-ordering app before,
+                    // unlike WhatsApp send above which works for anyone with the number.
+                    OutlinedButton(
+                        onClick = {
+                            val chosen = customers.filter { it.id in selected && it.phone.isNotBlank() }
+                            if (chosen.isEmpty()) vm.message.value = "Tick customers that have a phone number"
+                            else if (marketText.isBlank()) vm.message.value = "Write a message first"
+                            else vm.sendViaApp(chosen, marketText)
+                        },
+                        enabled = !sendingViaApp,
+                        modifier = Modifier.padding(start = 6.dp)
+                    ) {
+                        if (sendingViaApp) CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                        else { Icon(Icons.Filled.Notifications, "Send in app"); Text("  In-app") }
+                    }
                     Spacer(Modifier.weight(1f))
                     Text("${selected.size} selected", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
                 }
@@ -516,8 +563,8 @@ fun CustomersScreen(
             onDeleteQuickInvoice = { bill -> vm.deleteQuickInvoice(bill) },
             onMessage = { vm.message.value = it },
             onDismiss = { showDialog = false },
-            onSave = { name, phone, addr, gstin, custType, atts, openingAmt, openingIsDebit ->
-                vm.save(editing, name, phone, addr, gstin, custType, atts, openingAmt, openingIsDebit) { showDialog = false }
+            onSave = { name, phone, addr, gstin, state, custType, atts, openingAmt, openingIsDebit ->
+                vm.save(editing, name, phone, addr, gstin, state, custType, atts, openingAmt, openingIsDebit) { showDialog = false }
             }
         )
     }
@@ -570,12 +617,16 @@ private fun CustomerDialog(
     onDeleteQuickInvoice: (com.billing.pos.data.Bill) -> Unit,
     onMessage: (String) -> Unit,
     onDismiss: () -> Unit,
-    onSave: (String, String, String, String, String, List<CustomerAttachment>, Double, Boolean) -> Unit
+    onSave: (String, String, String, String, String, String, List<CustomerAttachment>, Double, Boolean) -> Unit
 ) {
+    val dialogContext = androidx.compose.ui.platform.LocalContext.current
+    val gstEnabled = remember { com.billing.pos.data.AppPrefs(dialogContext).gstEnabled }
     var name by remember { mutableStateOf(existing?.name ?: "") }
     var phone by remember { mutableStateOf(existing?.phone ?: "") }
     var address by remember { mutableStateOf(existing?.address ?: "") }
     var gstin by remember { mutableStateOf(existing?.gstin ?: "") }
+    var state by remember { mutableStateOf(existing?.state ?: "") }
+    var stateMenu by remember { mutableStateOf(false) }
     var custType by remember { mutableStateOf(existing?.customerType ?: "General") }
     var typeMenu by remember { mutableStateOf(false) }
     var newType by remember { mutableStateOf(false) }
@@ -674,6 +725,21 @@ private fun CustomerDialog(
                     label = { Text("GSTIN / TIN") }, singleLine = true,
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
                 )
+                if (gstEnabled) {
+                    Box(Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                        OutlinedTextField(
+                            readOnly = true, value = state.ifBlank { "Select state (for IGST vs CGST+SGST)" },
+                            onValueChange = {}, label = { Text("State") }, singleLine = true,
+                            trailingIcon = { IconButton(onClick = { stateMenu = true }) { Icon(Icons.Filled.ArrowDropDown, "Pick state") } },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        androidx.compose.material3.DropdownMenu(expanded = stateMenu, onDismissRequest = { stateMenu = false }) {
+                            com.billing.pos.data.IndianStates.NAMES.forEach { s ->
+                                androidx.compose.material3.DropdownMenuItem(text = { Text(s) }, onClick = { state = s; stateMenu = false })
+                            }
+                        }
+                    }
+                }
                 OutlinedTextField(
                     value = address, onValueChange = { address = it },
                     label = { Text("Address") },
@@ -729,7 +795,7 @@ private fun CustomerDialog(
         },
         confirmButton = {
             TextButton(onClick = {
-                onSave(name, phone, address, gstin, custType, attachments.toList(), openingAmount.toDoubleOrNull() ?: 0.0, openingIsDebit)
+                onSave(name, phone, address, gstin, state, custType, attachments.toList(), openingAmount.toDoubleOrNull() ?: 0.0, openingIsDebit)
             }) { Text("Save") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }

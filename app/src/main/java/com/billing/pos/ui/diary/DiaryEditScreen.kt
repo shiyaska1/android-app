@@ -191,19 +191,15 @@ fun DiaryEditScreen(
     // Voice note waiting to be converted to text, once its language is chosen.
     var transcribeBlock by remember { mutableStateOf<BlockUi?>(null) }
 
-    // Language for the photo OCR, asked before the picture is taken (only when OCR is on).
-    var imageOcrLang by remember { mutableStateOf<String?>(null) }
-    var askImageLangFor by remember { mutableStateOf<String?>(null) }
-
     // Image: photograph with the camera → auto-shrink → image block (+ OCR if ticked).
     val pickImage = com.billing.pos.ocr.rememberImageCamera { uri ->
-        vm.addImageUri(context, uri, readTextFromImage, imageOcrLang)
+        vm.addImageUri(context, uri, readTextFromImage)
     }
 
     // Pick an existing image from the gallery → auto-shrink → image block (+ OCR if ticked).
     val galleryPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.PickVisualMedia()
-    ) { uri -> if (uri != null) vm.addImageUri(context, uri, readTextFromImage, imageOcrLang) }
+    ) { uri -> if (uri != null) vm.addImageUri(context, uri, readTextFromImage) }
 
     val docPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenMultipleDocuments()
@@ -555,16 +551,13 @@ fun DiaryEditScreen(
                         Icon(Icons.Filled.Edit, null); Text(" Text")
                     }
                     OutlinedButton(
-                        onClick = { if (readTextFromImage) askImageLangFor = "camera" else pickImage() },
+                        onClick = { pickImage() },
                         modifier = Modifier.weight(1f)
                     ) {
                         Icon(Icons.Filled.PhotoCamera, null); Text(" Photo")
                     }
                     OutlinedButton(
-                        onClick = {
-                            if (readTextFromImage) askImageLangFor = "gallery"
-                            else galleryPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-                        },
+                        onClick = { galleryPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
                         modifier = Modifier.weight(1f)
                     ) {
                         Icon(Icons.Filled.PhotoLibrary, null); Text(" Gallery")
@@ -750,17 +743,6 @@ fun DiaryEditScreen(
                 vm.transcribeAudio(context, block, tag)
             },
             onDismiss = { transcribeBlock = null }
-        )
-    }
-
-    askImageLangFor?.let { which ->
-        com.billing.pos.ui.common.OcrLanguageAskDialog(
-            onPick = { picked ->
-                imageOcrLang = picked; askImageLangFor = null
-                if (which == "camera") pickImage()
-                else galleryPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-            },
-            onDismiss = { askImageLangFor = null }
         )
     }
 

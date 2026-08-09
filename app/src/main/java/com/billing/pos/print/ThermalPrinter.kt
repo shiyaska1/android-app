@@ -61,7 +61,7 @@ object ThermalPrinter {
             f.outputStream().use { bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
             f.absolutePath
         }.getOrNull() else null
-        sendBytes(context, buildReceipt(company, bill, lines, imagePaths, title, qrPath))
+        sendBytes(context, buildReceipt(context, company, bill, lines, imagePaths, title, qrPath))
     }
 
     /** Prints a diary entry: type, title, body, with the date and time. */
@@ -90,6 +90,20 @@ object ThermalPrinter {
     fun printPayment(context: Context, company: CompanyInfo, expense: Expense) {
         applyWidth(context)
         sendBytes(context, buildPaymentVoucher(company, expense))
+    }
+
+    /** Prints a Fast bill / calculator tape. [entries] is (signed amount, label) pairs, tape order. */
+    @SuppressLint("MissingPermission")
+    fun printCalcTape(
+        context: Context,
+        company: CompanyInfo,
+        customerName: String,
+        customerPhone: String,
+        narration: String,
+        entries: List<Pair<Double, String>>
+    ) {
+        applyWidth(context)
+        sendBytes(context, buildCalcTape(company, customerName, customerPhone, narration, entries))
     }
 
     /** Prints a purchase voucher. */
@@ -329,18 +343,42 @@ object ThermalPrinter {
         ESC.toByte(), 'G'.code.toByte(), 1
     )
 
-    private fun buildReceipt(company: CompanyInfo, bill: Bill, lines: List<BillItem>, imagePaths: List<String> = emptyList(), title: String? = null, qrPath: String? = null): ByteArray {
-        val actualTitle = title ?: if (bill.taxTotal > 0.0) "TAX INVOICE" else "INVOICE"
+    private fun buildReceipt(context: Context, company: CompanyInfo, bill: Bill, lines: List<BillItem>, imagePaths: List<String> = emptyList(), title: String? = null, qrPath: String? = null): ByteArray {
+        val prefs = com.billing.pos.data.AppPrefs(context)
+        // A No Tax Invoice never shows GST info, regardless of Settings — same as GST mode off.
+        val noTax = bill.isNoTax
+        val gst = !noTax && prefs.gstEnabled
+        val composition = gst && prefs.compositionScheme
+        val split = com.billing.pos.data.GstTax.split(bill.taxTotal, company.gstin, bill.customerState)
+        val actualTitle = title ?: when {
+            noTax -> ""
+            composition -> "BILL OF SUPPLY"
+            gst -> "TAX INVOICE"
+            else -> "INVOICE"
+        }
+        // With GST mode off, tax isn't itemised at all — Sub Total is the full inclusive amount.
+        val displaySubTotal = if (gst) bill.subTotal else bill.subTotal + bill.taxTotal + bill.cessTotal
         val sb = StringBuilder()
-        sb.append(center(company.name)).append('\n')
-        if (company.address.isNotBlank()) sb.append(center(company.address)).append('\n')
-        if (company.phone.isNotBlank()) sb.append(center("Ph: ${company.phone}")).append('\n')
-        sb.append(center(actualTitle)).append('\n')
-        sb.append(line()).append('\n')
-        sb.append("Bill: ${bill.billNo}\n")
-        sb.append("Date: ${Format.dateTime(bill.dateMillis)}\n")
-        sb.append("Cust: ${bill.customerName}\n")
-        sb.append("Pay : ${bill.paymentMethod}\n")
+        if (noTax) {
+            sb.append("Date: ${Format.dateTime(bill.dateMillis)}\n")
+            sb.append("Ref No: ${bill.billNo}\n")
+        } else {
+            sb.append(center(company.name)).append('\n')
+            if (company.address.isNotBlank()) sb.append(center(company.address)).append('\n')
+            if (company.phone.isNotBlank()) sb.append(center("Ph: ${company.phone}")).append('\n')
+            if (gst && company.gstin.isNotBlank()) sb.append(center("GSTIN: ${company.gstin}")).append('\n')
+            sb.append(center(actualTitle)).append('\n')
+            sb.append(line()).append('\n')
+            sb.append("Bill: ${bill.billNo}\n")
+            sb.append("Date: ${Format.dateTime(bill.dateMillis)}\n")
+            sb.append("Cust: ${bill.customerName}\n")
+            sb.append("Pay : ${bill.paymentMethod}\n")
+            if (gst) {
+                val supplyType = if (bill.customerGstin.isNotBlank()) "B2B" else "B2C"
+                if (bill.customerGstin.isNotBlank()) sb.append(clip("GSTIN: ${bill.customerGstin}", COLS)).append('\n')
+                sb.append("Supply: $supplyType\n")
+            }
+        }
         sb.append(line()).append('\n')
         sb.append(row("Item", "Qty", "Amount")).append('\n')
         sb.append(line()).append('\n')
@@ -350,8 +388,16 @@ object ThermalPrinter {
                 .append('\n')
         }
         sb.append(line()).append('\n')
-        sb.append(kv("Sub Total", Format.money(bill.subTotal))).append('\n')
-        if (bill.taxTotal != 0.0) sb.append(kv("Tax", Format.money(bill.taxTotal))).append('\n')
+        sb.append(kv("Sub Total", Format.money(displaySubTotal))).append('\n')
+        if (gst && !composition && bill.taxTotal != 0.0) {
+            if (split.interstate) {
+                sb.append(kv("IGST", Format.money(split.igst))).append('\n')
+            } else {
+                sb.append(kv("CGST", Format.money(split.cgst))).append('\n')
+                sb.append(kv("SGST", Format.money(split.sgst))).append('\n')
+            }
+        }
+        if (gst && !composition && bill.cessTotal != 0.0) sb.append(kv("Cess", Format.money(bill.cessTotal))).append('\n')
         if (bill.additionalCharge != 0.0)
             sb.append(kv("Additional", Format.money(bill.additionalCharge))).append('\n')
         if (bill.discount != 0.0)
@@ -514,6 +560,51 @@ object ThermalPrinter {
         sb.append(line()).append('\n')
         sb.append(kv("RECEIVED", Format.money(r.amount))).append('\n')
         sb.append(line()).append('\n')
+        sb.append(center("Thank you")).append('\n')
+        sb.append("\n\n\n")
+
+        val text = sb.toString().toByteArray(Charsets.US_ASCII)
+        val init = byteArrayOf(ESC.toByte(), '@'.code.toByte())
+        val cut = byteArrayOf(GS.toByte(), 'V'.code.toByte(), 66, 0)
+        return init + BOLD_ON + text + cut
+    }
+
+    private fun buildCalcTape(
+        company: CompanyInfo,
+        customerName: String,
+        customerPhone: String,
+        narration: String,
+        entries: List<Pair<Double, String>>
+    ): ByteArray {
+        val sb = StringBuilder()
+        sb.append(center(company.name)).append('\n')
+        if (company.address.isNotBlank()) sb.append(center(company.address)).append('\n')
+        if (company.phone.isNotBlank()) sb.append(center("Ph: ${company.phone}")).append('\n')
+        sb.append(center("CALCULATION")).append('\n')
+        sb.append(line()).append('\n')
+        sb.append("Date: ${Format.dateTime(System.currentTimeMillis())}\n")
+        if (customerName.isNotBlank() && customerName != com.billing.pos.data.SavedCalc.DEFAULT_CUSTOMER) {
+            sb.append("Cust: $customerName\n")
+            if (customerPhone.isNotBlank()) sb.append("Ph  : $customerPhone\n")
+        }
+        sb.append(line()).append('\n')
+        for ((amt, label) in entries) {
+            val sign = if (amt < 0) "-" else "+"
+            if (label.isNotBlank()) {
+                sb.append(clip(label, COLS)).append('\n')
+                sb.append(kv("  $sign", Format.money(kotlin.math.abs(amt)))).append('\n')
+            } else {
+                sb.append(kv(sign, Format.money(kotlin.math.abs(amt)))).append('\n')
+            }
+        }
+        sb.append(line()).append('\n')
+        sb.append(kv("TOTAL", Format.money(entries.sumOf { it.first }))).append('\n')
+        sb.append(line()).append('\n')
+        if (narration.isNotBlank()) {
+            sb.append("Note:\n")
+            narration.chunked(COLS).forEach { sb.append(it).append('\n') }
+            sb.append(line()).append('\n')
+        }
         sb.append(center("Thank you")).append('\n')
         sb.append("\n\n\n")
 

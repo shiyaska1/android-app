@@ -80,13 +80,18 @@ fun BackupScreen(
     fun saveBackup() {
         scope.launch {
             busy = true
-            val zip = withContext(Dispatchers.IO) { FullBackup.create(context) }
             val name = backupFileName()
+            // Unlike push/pull/Drive-upload below, this path wasn't guarded — any failure while
+            // building or writing a large backup (lots of attachments) crashed the whole app
+            // instead of showing an error.
             val ok = withContext(Dispatchers.IO) {
-                DownloadSaver.save(context, zip, name, "application/zip")
+                runCatching {
+                    val zip = FullBackup.create(context)
+                    DownloadSaver.save(context, zip, name, "application/zip")
+                }.getOrDefault(false)
             }
             busy = false
-            snackbar.showSnackbar(if (ok) "Backup saved to Downloads: $name" else "Could not save backup")
+            snackbar.showSnackbar(if (ok) "Backup saved to Downloads: $name" else "Could not save backup — try again, or turn off attachments if this keeps failing")
         }
     }
     val storagePermission = rememberLauncherForActivityResult(

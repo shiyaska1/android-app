@@ -56,6 +56,12 @@ interface ItemDao {
     @Query("SELECT COUNT(*) FROM items")
     suspend fun count(): Int
 
+    @Query("SELECT * FROM items WHERE isOnline = 1 ORDER BY category COLLATE NOCASE ASC, name COLLATE NOCASE ASC")
+    fun observeOnline(): Flow<List<Item>>
+
+    @Query("SELECT * FROM items WHERE isOnline = 1")
+    suspend fun online(): List<Item>
+
     @Insert
     suspend fun insert(item: Item): Long
 
@@ -119,8 +125,18 @@ interface ItemAttachmentDao {
 
 @Dao
 interface BillDao {
-    @Query("SELECT COUNT(*) FROM bills WHERE source = ''")
+    /** Excludes No Tax Invoices — they have their own separate numbering series. */
+    @Query("SELECT COUNT(*) FROM bills WHERE source = '' AND isNoTax = 0")
     suspend fun localCount(): Int
+
+    /** Local bills created since [from] — drives the GST-mode financial-year invoice series reset.
+     *  Excludes No Tax Invoices — they have their own separate numbering series. */
+    @Query("SELECT COUNT(*) FROM bills WHERE source = '' AND dateMillis >= :from AND isNoTax = 0")
+    suspend fun localCountSince(from: Long): Int
+
+    /** No Tax Invoices' own numbering series, kept separate from the regular invoice series. */
+    @Query("SELECT COUNT(*) FROM bills WHERE source = '' AND isNoTax = 1")
+    suspend fun localCountNoTax(): Int
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertBill(bill: Bill): Long
@@ -200,10 +216,15 @@ interface BillDao {
     )
     fun observeSaleMovements(): Flow<List<MoveRow>>
 
+    // bi.price is tax-INCLUSIVE (matches CartLine.tax's extraction) — taxable = the exclusive
+    // base extracted out of qty*price, not qty*price itself, or this would double-count vs.
+    // the Bill.subTotal/taxTotal actually shown on the invoice.
+    // No Tax Invoices (b.isNoTax) are excluded — they never appear in any GST/VAT report.
     @Query(
-        "SELECT (bi.qty*bi.price) AS taxable, (bi.qty*bi.price*bi.taxPercent/100.0) AS tax, " +
+        "SELECT (bi.qty*bi.price) / (1.0 + bi.taxPercent/100.0) AS taxable, " +
+            "(bi.qty*bi.price) - (bi.qty*bi.price) / (1.0 + bi.taxPercent/100.0) AS tax, " +
             "bi.taxPercent AS rate, b.dateMillis AS dateMillis " +
-            "FROM bill_items bi JOIN bills b ON bi.billId = b.id"
+            "FROM bill_items bi JOIN bills b ON bi.billId = b.id WHERE b.isNoTax = 0"
     )
     suspend fun taxLines(): List<TaxLineInfo>
 
@@ -212,6 +233,11 @@ interface BillDao {
 
     @Query("SELECT * FROM bills WHERE deviceId = :deviceId AND billNo = :billNo LIMIT 1")
     suspend fun byDeviceAndNo(deviceId: String, billNo: String): Bill?
+
+    /** Fallback match by number alone, for records with no deviceId (older data, imports) —
+     *  without this, merge/sync re-inserts them as new duplicates every cycle. */
+    @Query("SELECT * FROM bills WHERE billNo = :billNo LIMIT 1")
+    suspend fun byNo(billNo: String): Bill?
 }
 
 @Dao
@@ -230,6 +256,11 @@ interface ReceiptDao {
 
     @Query("SELECT * FROM receipts WHERE deviceId = :deviceId AND receiptNo = :receiptNo LIMIT 1")
     suspend fun byDeviceAndNo(deviceId: String, receiptNo: String): Receipt?
+
+    /** Fallback match by number alone, for records with no deviceId (older data, imports) —
+     *  without this, merge/sync re-inserts them as new duplicates every cycle. */
+    @Query("SELECT * FROM receipts WHERE receiptNo = :receiptNo LIMIT 1")
+    suspend fun byNo(receiptNo: String): Receipt?
 
     @Query("SELECT DISTINCT payFrom FROM receipts WHERE payFrom != '' ORDER BY payFrom COLLATE NOCASE ASC")
     suspend fun payFromNames(): List<String>
@@ -260,6 +291,11 @@ interface ExpenseDao {
 
     @Query("SELECT * FROM expenses WHERE deviceId = :deviceId AND voucherNo = :voucherNo LIMIT 1")
     suspend fun byDeviceAndNo(deviceId: String, voucherNo: String): Expense?
+
+    /** Fallback match by number alone, for records with no deviceId (older data, imports) —
+     *  without this, merge/sync re-inserts them as new duplicates every cycle. */
+    @Query("SELECT * FROM expenses WHERE voucherNo = :voucherNo LIMIT 1")
+    suspend fun byNo(voucherNo: String): Expense?
 
     @Insert
     suspend fun insert(expense: Expense): Long

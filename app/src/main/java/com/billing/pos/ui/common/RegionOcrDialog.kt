@@ -72,8 +72,6 @@ fun RegionOcrDialog(uri: Uri, fieldLabel: String = "the item name", onResult: (S
     var start by remember { mutableStateOf<Offset?>(null) }
     var end by remember { mutableStateOf<Offset?>(null) }
     var busy by remember { mutableStateOf(false) }
-    // Asked per scan: the chip row below the actions decides which engine reads the crop.
-    var ocrLang by remember { mutableStateOf(OcrLang.default(context)) }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -93,7 +91,7 @@ fun RegionOcrDialog(uri: Uri, fieldLabel: String = "the item name", onResult: (S
                                 val f = File(context.cacheDir, "region_ocr.jpg")
                                 f.outputStream().use { cropped.compress(Bitmap.CompressFormat.JPEG, 92, it) }
                                 if (cropped !== bmp) cropped.recycle()
-                                TextOcr.singleLine(context, Uri.fromFile(f), ocrLang).also { f.delete() }
+                                TextOcr.singleLine(context, Uri.fromFile(f)).also { f.delete() }
                             }
                             busy = false
                             onResult(text)
@@ -102,9 +100,8 @@ fun RegionOcrDialog(uri: Uri, fieldLabel: String = "the item name", onResult: (S
                     enabled = !busy, modifier = Modifier.weight(1f)
                 ) { Text(if (busy) "Reading…" else "OK") }
             }
-            OcrLanguageChips(selected = ocrLang, onSelect = { ocrLang = it }, enabled = !busy)
             Text(
-                "Drag a box around $fieldLabel, then tap OK. Wrong language? Switch above and tap OK again.",
+                "Drag a box around $fieldLabel, then tap OK.",
                 style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier.padding(top = 6.dp, bottom = 6.dp)
             )
@@ -161,8 +158,6 @@ fun RegionLinesOcrDialog(uri: Uri, onResult: (List<String>) -> Unit, onDismiss: 
     var start by remember { mutableStateOf<Offset?>(null) }
     var end by remember { mutableStateOf<Offset?>(null) }
     var busy by remember { mutableStateOf(false) }
-    // Asked per scan: the chip row below the actions decides which engine reads the crop.
-    var ocrLang by remember { mutableStateOf(OcrLang.default(context)) }
 
     Dialog(
         onDismissRequest = onDismiss,
@@ -182,7 +177,7 @@ fun RegionLinesOcrDialog(uri: Uri, onResult: (List<String>) -> Unit, onDismiss: 
                                 val f = File(context.cacheDir, "region_ocr_lines.jpg")
                                 f.outputStream().use { cropped.compress(Bitmap.CompressFormat.JPEG, 92, it) }
                                 if (cropped !== bmp) cropped.recycle()
-                                TextOcr.lines(context, Uri.fromFile(f), ocrLang).also { f.delete() }
+                                TextOcr.lines(context, Uri.fromFile(f)).also { f.delete() }
                             }
                             busy = false
                             onResult(lines)
@@ -191,9 +186,8 @@ fun RegionLinesOcrDialog(uri: Uri, onResult: (List<String>) -> Unit, onDismiss: 
                     enabled = !busy, modifier = Modifier.weight(1f)
                 ) { Text(if (busy) "Reading…" else "OK") }
             }
-            OcrLanguageChips(selected = ocrLang, onSelect = { ocrLang = it }, enabled = !busy)
             Text(
-                "Drag a box around the items, then tap OK. Wrong language? Switch above and tap OK again.",
+                "Drag a box around the items, then tap OK.",
                 style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier.padding(top = 6.dp, bottom = 6.dp)
             )

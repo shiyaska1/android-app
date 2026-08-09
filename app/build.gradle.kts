@@ -3,6 +3,7 @@ plugins {
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
     id("com.google.devtools.ksp")
+    id("com.google.gms.google-services")
 }
 
 android {
@@ -15,8 +16,8 @@ android {
         targetSdk = 36
         // CI sets VERSION_CODE per build (see .github/workflows/build.yml and release.yml) so every
         // APK/AAB gets a unique, always-increasing code without hand-editing this file each time.
-        versionCode = System.getenv("VERSION_CODE")?.toIntOrNull() ?: 205
-        versionName = "1.94.0"
+        versionCode = System.getenv("VERSION_CODE")?.toIntOrNull() ?: 347
+        versionName = "2.22.63"
         vectorDrawables { useSupportLibrary = true }
 
         // Real Android phones are arm. The x86/x86_64 native libs are emulator-only
@@ -87,10 +88,6 @@ android {
         buildConfig = true
     }
     androidResources {
-        // Keep the Tesseract model uncompressed in the APK. A DEFLATED asset cannot be
-        // opened with openFd(), and a compressed 12 MB model also costs a slow inflate
-        // on the first scan.
-        noCompress += "traineddata"
         noCompress += "tflite"
     }
     packaging {
@@ -124,6 +121,10 @@ dependencies {
     // App lock via the phone's own fingerprint / PIN / pattern
     implementation("androidx.biometric:biometric:1.1.0")
 
+    // Push notifications (instant order/status/chat alerts instead of the 30-min poll)
+    implementation(platform("com.google.firebase:firebase-bom:33.5.1"))
+    implementation("com.google.firebase:firebase-messaging-ktx")
+
     // Room (local offline database)
     implementation("androidx.room:room-runtime:2.6.1")
     implementation("androidx.room:room-ktx:2.6.1")
@@ -143,16 +144,16 @@ dependencies {
     // Play in-app updates: prompt for a new version as soon as one is published.
     implementation("com.google.android.play:app-update-ktx:2.1.0")
 
+    // Play Install Referrer: reads the &referrer= param from the install link, so a customer
+    // link (shop code + catalog URL) can skip straight to the ordering screen after install.
+    implementation("com.android.installreferrer:installreferrer:2.2")
+
     // Tiny embedded HTTP server for offline LAN sync between two devices on the same WiFi.
     implementation("org.nanohttpd:nanohttpd:2.3.1")
 
     // On-device image embeddings, for "find this item by photo" in price search.
     implementation("com.google.mediapipe:tasks-vision:0.10.35")
 
-    // Malayalam OCR. ML Kit cannot read Malayalam script at all, so Tesseract fills that
-    // gap — still fully offline (the model ships in assets/tessdata).
-    // 4.8.0+ ships 16 KB-page-aligned native libs, which Google Play requires.
-    implementation("cz.adaptech.tesseract4android:tesseract4android:4.9.0")
     // EXIF rotation, so a sideways photo still OCRs.
     implementation("androidx.exifinterface:exifinterface:1.3.7")
 

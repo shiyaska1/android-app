@@ -87,6 +87,11 @@ interface QuotationDao {
     @Query("SELECT * FROM quotations WHERE id = :id LIMIT 1") suspend fun byId(id: Long): Quotation?
     @Query("SELECT * FROM quotations WHERE deviceId = :deviceId AND quotationNo = :quotationNo LIMIT 1")
     suspend fun byDeviceAndNo(deviceId: String, quotationNo: String): Quotation?
+
+    /** Fallback match by number alone, for records with no deviceId (older data, imports) —
+     *  without this, merge/sync re-inserts them as new duplicates every cycle. */
+    @Query("SELECT * FROM quotations WHERE quotationNo = :quotationNo LIMIT 1")
+    suspend fun byNo(quotationNo: String): Quotation?
     @Query("SELECT * FROM quotation_items WHERE quotationId = :id") suspend fun linesFor(id: Long): List<QuotationItem>
     @Query("SELECT * FROM quotation_items") suspend fun allLines(): List<QuotationItem>
 }

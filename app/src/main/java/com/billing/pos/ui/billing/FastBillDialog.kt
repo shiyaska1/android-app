@@ -1,21 +1,29 @@
 package com.billing.pos.ui.billing
 
+import android.Manifest
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
@@ -23,16 +31,24 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Backspace
+import androidx.compose.material.icons.filled.ChevronLeft
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.PointOfSale
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.ListAlt
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.QrCode2
+import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.Gesture
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.filled.Print
+import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -68,7 +84,9 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.billing.pos.util.Format
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Fast bill — a calculator tape. Type an amount and press Enter (Enter acts as "+"); each amount
@@ -83,14 +101,41 @@ object FastBillLink {
     fun take(): List<Double> { val v = amounts; amounts = emptyList(); return v }
 }
 
+/** One tape entry: a signed amount, plus an optional name typed in "label mode". */
+private data class CalcEntry(val amount: Double, val label: String = "")
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun FastBillDialog(
     onSave: (List<Double>) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    /** When > 0, that saved calculation is loaded onto the tape as soon as it's found —
+     *  lets another screen (the calculator-label usage history) open straight into it. */
+    initialCalcId: Long = 0L
 ) {
-    val entries = remember { mutableStateListOf<Double>() }
+    val entries = remember { mutableStateListOf<CalcEntry>() }
     var input by remember { mutableStateOf("") }
+    // Label mode: when on, every + / − asks for a name (with autocomplete) before adding.
+    var labelMode by remember { mutableStateOf(false) }
+    var pendingSign by remember { mutableStateOf(0) }
+    var pendingAmount by remember { mutableStateOf(0.0) }
+    var labelInput by remember { mutableStateOf("") }
+    var showShareChoice by remember { mutableStateOf(false) }
+    var showPrintChoice by remember { mutableStateOf(false) }
+    // Chrome-free full-screen tape, sized to fit the whole thing on one screen — for handing
+    // the phone to the customer and letting them screenshot it.
+    var showFullView by remember { mutableStateOf(false) }
+    // "Sale bill": turns Save/Share's usual quick-due-plus-PDF hand-off into a real, priced
+    // sale invoice (payment method asked first) instead — see askPaymentMethod below.
+    var isSaleBill by remember { mutableStateOf(false) }
+    var askPaymentMethod by remember { mutableStateOf(false) }
+    // What to do once the payment method is picked — "text"/"pdf"/"print" of the real invoice
+    // just created, or null when the picker was opened from Save with nothing to share.
+    var pendingShareAction by remember { mutableStateOf<String?>(null) }
+    // Set only when Print is about to print a just-created sale invoice rather than the plain
+    // calculator tape — the Bluetooth/WiFi choice below uses this bill's own print/PDF instead.
+    var pendingPrintBill by remember { mutableStateOf<Pair<com.billing.pos.data.Bill, List<com.billing.pos.data.BillItem>>?>(null) }
+    var loadedInitialCalc by remember { mutableStateOf(false) }
     // Id of the saved tape being edited, or 0 while this is a fresh calculation.
     var savedId by remember { mutableStateOf(0L) }
     var showSaved by remember { mutableStateOf(false) }
@@ -102,8 +147,13 @@ fun FastBillDialog(
     var narration by remember { mutableStateOf("") }
     // Which customer the saved list is filtered to; blank means all of them.
     var listFilter by remember { mutableStateOf("") }
-    // Date range, off by default. When switched on it starts at one month back.
-    var dateRangeOn by remember { mutableStateOf(false) }
+    // Which customer type the saved list is filtered to; blank means all of them.
+    var typeFilter by remember { mutableStateOf("") }
+    // Customer whose type is being changed via the pen icon next to their name in the saved list.
+    var editTypeFor by remember { mutableStateOf<com.billing.pos.data.Customer?>(null) }
+    // Date range, on by default, showing today only — the common case is "what did I
+    // calculate today"; switch it off to see the full history.
+    var dateRangeOn by remember { mutableStateOf(true) }
     var editReceipt by remember { mutableStateOf<com.billing.pos.data.Receipt?>(null) }
     var qrAmount by remember { mutableStateOf<Double?>(null) }
     var fromMillis by remember { mutableStateOf(defaultFromMillis()) }
@@ -111,9 +161,11 @@ fun FastBillDialog(
     var editIndex by remember { mutableStateOf(-1) }
     val focus = remember { FocusRequester() }
     val mulDivFocus = remember { FocusRequester() }
+    val labelFocus = remember { FocusRequester() }
     val scroll = rememberScrollState()
-    val total = entries.sum()
+    val total = entries.sumOf { it.amount }
     val context = androidx.compose.ui.platform.LocalContext.current
+    val prefs = remember { com.billing.pos.data.AppPrefs(context) }
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     // Leaves a little breathing room below the +/-/x/div row, clear of the phone's gesture bar.
     val bottomPad = androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp.dp * 0.05f
@@ -126,28 +178,54 @@ fun FastBillDialog(
     var showNoAmountAlert by remember { mutableStateOf(false) }
     var showDivByZeroAlert by remember { mutableStateOf(false) }
     var confirmDeleteCalc by remember { mutableStateOf<com.billing.pos.data.SavedCalc?>(null) }
+    var confirmNewCalc by remember { mutableStateOf(false) }
 
-    /** [sign] is +1 for the "+" key and -1 for "−"; a minus entry is stored negative. */
+    /** Clears the tape (and the customer/narration it was for) to start over, without closing
+     *  the dialog — the "New calculation" toolbar icon. */
+    fun resetTape() {
+        entries.clear()
+        input = ""
+        savedId = 0L
+        custId = 0L
+        custName = com.billing.pos.data.SavedCalc.DEFAULT_CUSTOMER
+        custPhone = ""
+        narration = ""
+        isSaleBill = false
+        focus.requestFocus()
+    }
+
+    /** [sign] is +1 for the "+" key and -1 for "−"; a minus entry is stored negative. In label
+     *  mode, the amount is held pending and a popup asks for its name before it's added. */
     fun addNow(sign: Int = 1) {
         val v = input.toDoubleOrNull()
-        if (v != null && v > 0.0) entries.add(v * sign)
-        input = ""
-        focus.requestFocus()
+        if (v == null || v <= 0.0) return
+        if (labelMode) {
+            pendingAmount = v
+            pendingSign = sign
+            labelInput = ""
+            input = ""
+        } else {
+            entries.add(CalcEntry(v * sign))
+            input = ""
+            focus.requestFocus()
+        }
     }
 
     /** The tape as plain text, for sharing and for the diary copy. */
     fun tapeText(): String = buildString {
-        entries.forEachIndexed { i, v ->
-            val sign = if (v < 0) "-" else if (i == 0) " " else "+"
-            append(sign).append(' ').append(Format.money(kotlin.math.abs(v))).append('\n')
+        entries.forEachIndexed { i, e ->
+            val sign = if (e.amount < 0) "-" else if (i == 0) " " else "+"
+            append(sign).append(' ')
+            if (e.label.isNotBlank()) append(e.label).append(": ")
+            append(Format.money(kotlin.math.abs(e.amount))).append('\n')
         }
-        append("= ").append(Format.money(entries.sum()))
+        append("= ").append(Format.money(entries.sumOf { it.amount }))
     }
 
     fun saveToDiary() {
         if (entries.isEmpty()) return
         val body = tapeText()
-        val sum = Format.money(entries.sum())
+        val sum = Format.money(entries.sumOf { it.amount })
         scope.launch {
             com.billing.pos.diary.QuickDiaryNote.save(context, "Fast bill $sum", body)
         }
@@ -159,27 +237,202 @@ fun FastBillDialog(
     }
     val savedCalcs: List<com.billing.pos.data.SavedCalc> by
         repo.savedCalcs.collectAsState(initial = emptyList())
+    val customers by repo.customers.collectAsState(initial = emptyList<com.billing.pos.data.Customer>())
 
-    /** Stores the tape, updating the one being edited rather than piling up copies. */
-    fun storeTape(onDone: (String) -> Unit) {
+    /** Whatever is on the tape right now, the box's pending typed amount included. */
+    fun currentEntries(): List<CalcEntry> {
         val pending = input.toDoubleOrNull()
-        val all = if (pending != null && pending > 0.0) entries + pending else entries.toList()
+        return if (pending != null && pending > 0.0) entries + CalcEntry(pending) else entries.toList()
+    }
+
+    /** The named customer (typed or picked), creating them if they're new — or null for the
+     *  walk-in placeholder. Shared by the save/quick-due path and the sale-invoice path. */
+    suspend fun resolveCustomer(): com.billing.pos.data.Customer? {
+        val typedName = custName.trim()
+        return when {
+            typedName.isBlank() || typedName == com.billing.pos.data.SavedCalc.DEFAULT_CUSTOMER -> null
+            custId > 0 -> customers.firstOrNull { it.id == custId }
+            else -> customers.firstOrNull { it.name.equals(typedName, ignoreCase = true) }
+                ?: repo.addCustomerReturning(typedName, custPhone, "General")
+        }
+    }
+
+    /**
+     * Stores the tape (updating the one being edited rather than piling up copies). When a real
+     * customer is named (not the walk-in placeholder) and "Sale bill" is off, also attaches the
+     * total to them as a credit due dated today, with the tape PDF filed against the customer —
+     * same mechanism as a customer's "Add invoice" quick due. With "Sale bill" on, that step is
+     * skipped instead: [askPaymentMethod] (shown by the caller) turns the tape into a real,
+     * priced invoice instead of a due, so a second attachment would be redundant. [onShare], if
+     * given, shares the tape afterward (Save & Share).
+     */
+    fun storeTape(onDone: (String) -> Unit, onShare: ((String) -> Unit)? = null) {
+        val all = currentEntries()
         if (all.isEmpty()) { onDone("Nothing to save"); return }
+        val total = all.sumOf { it.amount }
         scope.launch {
+            val customer = resolveCustomer()
+            val fresh = savedId == 0L
+            // Carried forward, then reconciled below — every save keeps the due and its PDF
+            // in step with the calculation's current customer/total, not just the first one.
+            val prior = if (fresh) null else repo.calcById(savedId)
             val id = repo.saveCalc(
                 com.billing.pos.data.SavedCalc(
                     id = savedId,
                     dateMillis = System.currentTimeMillis(),
-                    amounts = com.billing.pos.data.SavedCalc.pack(all),
-                    total = all.sum(),
-                    customerId = custId,
-                    customerName = custName.ifBlank { com.billing.pos.data.SavedCalc.DEFAULT_CUSTOMER },
-                    narration = narration.trim()
+                    amounts = com.billing.pos.data.SavedCalc.pack(all.map { it.amount }),
+                    labels = com.billing.pos.data.SavedCalc.packLabels(all.map { it.label }),
+                    total = total,
+                    customerId = customer?.id ?: 0L,
+                    customerName = customer?.name ?: com.billing.pos.data.SavedCalc.DEFAULT_CUSTOMER,
+                    narration = narration.trim(),
+                    linkedBillId = prior?.linkedBillId ?: 0L,
+                    linkedAttachmentId = prior?.linkedAttachmentId ?: 0L
                 )
             )
-            val fresh = savedId == 0L
             savedId = id
-            onDone(if (fresh) "Calculation saved" else "Calculation updated")
+            var msg = if (fresh) "Calculation saved" else "Calculation updated"
+
+            // Whatever this calculation had previously created (a quick due, a PDF) no longer
+            // applies — the customer was cleared, the total dropped to zero, or "Sale bill" is
+            // now on (a real invoice replaces the due, via the payment-method popup instead).
+            suspend fun clearStaleLinks() {
+                if (prior == null || (prior.linkedBillId <= 0 && prior.linkedAttachmentId <= 0)) return
+                prior.linkedAttachmentId.takeIf { it > 0 }?.let { repo.removeCustomerAttachment(it) }
+                val oldBill = prior.linkedBillId.takeIf { it > 0 }?.let { repo.billById(it) }
+                repo.calcById(id)?.let { repo.saveCalc(it.copy(linkedBillId = 0, linkedAttachmentId = 0)) }
+                oldBill?.let { repo.removeQuickInvoiceIfSafe(it) }
+            }
+
+            if (isSaleBill) {
+                clearStaleLinks()
+            } else if (customer != null && total > 0.0) {
+                val billId = repo.syncQuickInvoice(customer, total, narration.trim(), prior?.linkedBillId ?: 0L)
+                // The PDF is filed fresh every save (old copy removed first) rather than
+                // updated in place, same as the Share button's PDF option's content.
+                prior?.linkedAttachmentId?.takeIf { it > 0 }?.let { repo.removeCustomerAttachment(it) }
+                var attId = 0L
+                runCatching {
+                    val company = com.billing.pos.data.AppPrefs(context).company
+                    com.billing.pos.pdf.ThermalPdf.calcTapeFile(
+                        context, company, customer.name, customer.phone, narration.trim(), all.map { it.amount to it.label }
+                    )
+                }.getOrNull()?.let { pdf ->
+                    com.billing.pos.data.CustomerAttachmentStore.importFrom(context, pdf.absolutePath, "application/pdf")
+                        ?.let { att -> attId = repo.appendCustomerAttachment(customer.id, att) }
+                }
+                repo.calcById(id)?.let { repo.saveCalc(it.copy(linkedBillId = billId, linkedAttachmentId = attId)) }
+                msg += if (fresh) " • ${Format.rupee(total)} added as credit for ${customer.name}"
+                else " • due updated to ${Format.rupee(total)} for ${customer.name}"
+            } else {
+                clearStaleLinks()
+            }
+            onDone(msg)
+            if (onShare != null) {
+                val header = if (customer != null) customer.name + (if (customer.phone.isNotBlank()) " - ${customer.phone}" else "") + "\n\n" else ""
+                onShare(header + tapeText())
+            }
+        }
+    }
+
+    /**
+     * Turns the current tape into a real, priced sale invoice — the "Sale bill" checkbox's
+     * payment-method popup calls this once a method is picked. When [action] is given (the
+     * Text/PDF/Print the user actually asked for before the picker interrupted them), the real
+     * invoice — bill number, date, customer, items, the usual "INVOICE" heading, at the
+     * configured print width — is shared or printed afterward, the same document a normal sale
+     * would produce, not the calculator's own "Calculation" tape format.
+     */
+    fun createSaleInvoice(paymentMethod: String, action: String? = null) {
+        val all = currentEntries()
+        if (all.isEmpty()) return
+        scope.launch {
+            // No named customer: bill it to the real default "Cash Customer" party (not a
+            // fresh one of that name — that party already exists with its own ledger head).
+            val customer = resolveCustomer()
+                ?: customers.firstOrNull { it.isDefault }
+                ?: customers.firstOrNull { it.name.equals(com.billing.pos.data.SavedCalc.DEFAULT_CUSTOMER, ignoreCase = true) }
+                ?: repo.addCustomerReturning(com.billing.pos.data.SavedCalc.DEFAULT_CUSTOMER, "", "General")
+            all.map { it.label }.filter { it.isNotBlank() }.distinct().forEach { repo.ensureItemForLabel(it) }
+            val prior = savedId.takeIf { it > 0 }?.let { repo.calcById(it) }
+            val credit = paymentMethod.equals(com.billing.pos.data.PaymentMethod.CREDIT.label, ignoreCase = true)
+
+            // Credit keeps an invoice against the customer; Cash/UPI/Card is settled on the
+            // spot, so any invoice this calculation previously left on them is removed and
+            // their payable drops accordingly. Either way there's never a second copy.
+            val billId = if (credit) {
+                repo.addSaleInvoiceFromTape(
+                    customer, all.map { it.amount to it.label }, narration.trim(),
+                    System.currentTimeMillis(), paymentMethod, prior?.linkedBillId ?: 0L
+                )
+            } else {
+                prior?.linkedBillId?.takeIf { it > 0 }?.let { repo.billById(it) }?.let { repo.removeQuickInvoiceIfSafe(it) }
+                0L
+            }
+
+            // The filed PDF is refreshed either way, so it always shows the current amounts
+            // and the payment mode that was just chosen.
+            prior?.linkedAttachmentId?.takeIf { it > 0 }?.let { repo.removeCustomerAttachment(it) }
+            var attId = 0L
+            runCatching {
+                val company = com.billing.pos.data.AppPrefs(context).company
+                com.billing.pos.pdf.ThermalPdf.calcTapeFile(
+                    context, company, customer.name, customer.phone, narration.trim(),
+                    all.map { it.amount to it.label }, paymentMode = paymentMethod
+                )
+            }.getOrNull()?.let { pdf ->
+                com.billing.pos.data.CustomerAttachmentStore.importFrom(context, pdf.absolutePath, "application/pdf")
+                    ?.let { att -> attId = repo.appendCustomerAttachment(customer.id, att) }
+            }
+            if (savedId > 0) {
+                repo.calcById(savedId)?.let { repo.saveCalc(it.copy(linkedBillId = billId, linkedAttachmentId = attId)) }
+            }
+
+            android.widget.Toast.makeText(
+                context,
+                if (credit) "Sale invoice saved for ${customer.name}" else "Sale ($paymentMethod) saved for ${customer.name}",
+                android.widget.Toast.LENGTH_SHORT
+            ).show()
+
+            if (action == null) return@launch
+            // Non-credit leaves no stored invoice, so its share/print falls back to the tape
+            // document (which now carries the payment mode) instead.
+            val bill = billId.takeIf { it > 0 }?.let { repo.billById(it) }
+            val lines = if (bill != null) repo.linesFor(bill.id) else emptyList()
+            val company = com.billing.pos.data.AppPrefs(context).company
+            if (action == "print") {
+                pendingPrintBill = if (bill != null) bill to lines else null
+                showPrintChoice = true
+            } else {
+                val uri = if (bill != null) com.billing.pos.pdf.InvoicePdf.make(context, company, bill, lines)
+                else com.billing.pos.pdf.ThermalPdf.calcTape(
+                    context, company, customer.name, customer.phone, narration.trim(),
+                    all.map { it.amount to it.label }, paymentMode = paymentMethod
+                )
+                shareCalcPdfTo(context, customer.name, customer.phone, uri)
+            }
+        }
+    }
+
+    /** Opens a saved tape for editing: the amounts/labels, its customer and its narration all
+     *  come back, and saving updates this same entry instead of piling up a copy. */
+    fun loadCalc(calc: com.billing.pos.data.SavedCalc) {
+        entries.clear()
+        val amts = calc.amountList
+        val lbls = calc.labelList
+        entries.addAll(amts.mapIndexed { i, a -> CalcEntry(a, lbls.getOrElse(i) { "" }) })
+        savedId = calc.id
+        custId = calc.customerId
+        custName = calc.customerName
+        custPhone = customers.firstOrNull { it.id == calc.customerId }?.phone ?: ""
+        narration = calc.narration
+        input = ""
+    }
+
+    // A specific past calculation to open straight into (from the label-history screen).
+    LaunchedEffect(initialCalcId, savedCalcs) {
+        if (initialCalcId > 0 && !loadedInitialCalc) {
+            savedCalcs.firstOrNull { it.id == initialCalcId }?.let { loadCalc(it); loadedInitialCalc = true }
         }
     }
 
@@ -198,13 +451,22 @@ fun FastBillDialog(
         ) {
             // ---- TOP BAR: icon-only, evenly spread so it never crowds ----
             Row(
-                Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 6.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 6.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(2.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(onClick = onDismiss) {
                     Icon(Icons.Filled.Close, contentDescription = "Close")
                 }
+                IconButton(onClick = { if (entries.isNotEmpty() || input.isNotBlank()) confirmNewCalc = true else resetTape() }) {
+                    Icon(Icons.Filled.RestartAlt, contentDescription = "New calculation")
+                }
+                // Label mode: on, every + / − asks for a name before the amount is added.
+                androidx.compose.material3.Checkbox(
+                    checked = labelMode,
+                    onCheckedChange = { labelMode = it }
+                )
+                Text("Label", style = MaterialTheme.typography.labelSmall)
                 IconButton(onClick = { showSaved = true }) {
                     Icon(Icons.Filled.ListAlt, contentDescription = "Saved calculations")
                 }
@@ -213,22 +475,18 @@ fun FastBillDialog(
                     enabled = entries.isNotEmpty() || (input.toDoubleOrNull() ?: 0.0) > 0.0
                 ) { Icon(Icons.Filled.Save, contentDescription = "Save calculation") }
                 IconButton(
-                    onClick = {
-                        if (entries.isNotEmpty()) {
-                            saveToDiary()
-                            // The customer (with mobile number) goes out with the tape.
-                            val header = if (custName.isNotBlank() && custName != com.billing.pos.data.SavedCalc.DEFAULT_CUSTOMER)
-                                custName + (if (custPhone.isNotBlank()) " - $custPhone" else "") + "\n\n" else ""
-                            shareTapeToWhatsApp(context, header + tapeText())
-                        }
-                    },
+                    onClick = { if (entries.isNotEmpty()) showShareChoice = true },
                     enabled = entries.isNotEmpty()
-                ) { Icon(Icons.Filled.Share, contentDescription = "Share on WhatsApp") }
+                ) { Icon(Icons.Filled.Share, contentDescription = "Share") }
+                IconButton(
+                    onClick = { if (entries.isNotEmpty()) showFullView = true },
+                    enabled = entries.isNotEmpty()
+                ) { Icon(Icons.Filled.Fullscreen, contentDescription = "Full screen — show customer") }
                 IconButton(
                     // A UPI payment QR for the current total; the customer scans to pay.
                     onClick = {
                         val pending = input.toDoubleOrNull() ?: 0.0
-                        val amt = entries.sum() + if (pending > 0.0) pending else 0.0
+                        val amt = entries.sumOf { it.amount } + if (pending > 0.0) pending else 0.0
                         if (amt > 0.0) qrAmount = amt
                     },
                     enabled = entries.isNotEmpty() || (input.toDoubleOrNull() ?: 0.0) > 0.0
@@ -237,7 +495,7 @@ fun FastBillDialog(
                 IconButton(
                     onClick = {
                         val pending = input.toDoubleOrNull()
-                        val all = if (pending != null && pending > 0.0) entries + pending else entries.toList()
+                        val all = if (pending != null && pending > 0.0) entries.map { it.amount } + pending else entries.map { it.amount }
                         saveToDiary()
                         if (all.isNotEmpty()) onSave(all)
                         onDismiss()
@@ -263,7 +521,7 @@ fun FastBillDialog(
                             textAlign = TextAlign.Center
                         )
                     }
-                    entries.forEachIndexed { i, v ->
+                    entries.forEachIndexed { i, e ->
                         // Long-press an amount to edit or delete it; the total recalculates.
                         Row(
                             Modifier.fillMaxWidth()
@@ -272,18 +530,36 @@ fun FastBillDialog(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                if (v < 0) "-" else if (i == 0) " " else "+",
+                                if (e.amount < 0) "-" else if (i == 0) " " else "+",
                                 fontSize = 30.sp, fontFamily = FontFamily.Monospace,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.65f)
                             )
-                            Text(
-                                Format.money(kotlin.math.abs(v)),
-                                modifier = Modifier.weight(1f),
-                                fontSize = 34.sp, fontFamily = FontFamily.Monospace,
-                                fontWeight = FontWeight.Bold, textAlign = TextAlign.End,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer
-                            )
+                            // With a label: two columns — the name on the left, the amount on
+                            // the right. Without one: the amount alone, as before.
+                            if (e.label.isNotBlank()) {
+                                Text(
+                                    e.label,
+                                    modifier = Modifier.weight(1f).padding(end = 8.dp),
+                                    fontSize = 18.sp, fontWeight = FontWeight.Medium,
+                                    maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                                Text(
+                                    Format.money(kotlin.math.abs(e.amount)),
+                                    fontSize = 28.sp, fontFamily = FontFamily.Monospace,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            } else {
+                                Text(
+                                    Format.money(kotlin.math.abs(e.amount)),
+                                    modifier = Modifier.weight(1f),
+                                    fontSize = 34.sp, fontFamily = FontFamily.Monospace,
+                                    fontWeight = FontWeight.Bold, textAlign = TextAlign.End,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            }
                         }
                     }
                     if (entries.isNotEmpty()) {
@@ -386,7 +662,6 @@ fun FastBillDialog(
 
     // ---- Save popup: who it is for, and why ----
     if (askSave) {
-        val customers by repo.customers.collectAsState(initial = emptyList<com.billing.pos.data.Customer>())
         var custMenu by remember { mutableStateOf(false) }
         var newCust by remember { mutableStateOf(false) }
         var newCustName by remember { mutableStateOf("") }
@@ -472,15 +747,35 @@ fun FastBillDialog(
                         maxLines = 6,
                         modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
                     )
+                    Row(Modifier.padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        androidx.compose.material3.Checkbox(checked = isSaleBill, onCheckedChange = { isSaleBill = it })
+                        Text("Sale bill", style = MaterialTheme.typography.bodyMedium)
+                    }
                 }
             },
             confirmButton = {
-                TextButton(onClick = {
-                    askSave = false
-                    storeTape { msg ->
-                        android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
-                    }
-                }) { Text("OK") }
+                Row {
+                    TextButton(onClick = {
+                        askSave = false
+                        storeTape(onDone = { msg -> android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show() })
+                        if (isSaleBill) askPaymentMethod = true
+                    }) { Text("Save") }
+                    TextButton(onClick = {
+                        askSave = false
+                        if (isSaleBill) {
+                            // The real invoice (once the payment method is picked) is what gets
+                            // shared, not the calculator's own tape text.
+                            storeTape(onDone = { msg -> android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show() })
+                            pendingShareAction = "pdf"
+                            askPaymentMethod = true
+                        } else {
+                            storeTape(
+                                onDone = { msg -> android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show() },
+                                onShare = { text -> shareCalcTextTo(context, custName, custPhone, text) }
+                            )
+                        }
+                    }) { Text("Save & Share") }
+                }
             },
             dismissButton = { TextButton(onClick = { askSave = false }) { Text("Cancel") } }
         )
@@ -488,12 +783,17 @@ fun FastBillDialog(
 
     // Saved tapes: newest first, tap one to carry on adding to it.
     if (showSaved) {
-        val shown = savedCalcs.filter {
-            (listFilter.isBlank() || it.customerName.contains(listFilter.trim(), ignoreCase = true)) &&
-                (!dateRangeOn || (it.dateMillis >= startOfDayMillis(fromMillis) && it.dateMillis <= endOfDayMillis(toMillis)))
-        }
         val receipts by repo.allReceipts.collectAsState(initial = emptyList<com.billing.pos.data.Receipt>())
         val savedCustomers by repo.customers.collectAsState(initial = emptyList<com.billing.pos.data.Customer>())
+        val typeById = remember(savedCustomers) { savedCustomers.associate { it.id to it.customerType } }
+        val availableTypes = remember(savedCustomers) {
+            savedCustomers.map { it.customerType }.filter { it.isNotBlank() }.distinct().sortedBy { it.lowercase() }
+        }
+        val shown = savedCalcs.filter {
+            (listFilter.isBlank() || it.customerName.contains(listFilter.trim(), ignoreCase = true)) &&
+                (typeFilter.isBlank() || typeById[it.customerId].orEmpty().equals(typeFilter, ignoreCase = true)) &&
+                (!dateRangeOn || (it.dateMillis >= startOfDayMillis(fromMillis) && it.dateMillis <= endOfDayMillis(toMillis)))
+        }
         val shownTotal = shown.sumOf { it.total }
 
         // Money already received from a customer since a tape was saved, up to the next
@@ -580,7 +880,28 @@ fun FastBillDialog(
                         }
                     }
                 }
-                // Date range, off by default so the list shows everything until asked.
+                // Filter by customer type; "All" is the default.
+                if (availableTypes.isNotEmpty()) {
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        androidx.compose.material3.FilterChip(
+                            selected = typeFilter.isBlank(),
+                            onClick = { typeFilter = "" },
+                            label = { Text("All types", style = MaterialTheme.typography.labelSmall) }
+                        )
+                        availableTypes.forEach { t ->
+                            androidx.compose.material3.FilterChip(
+                                selected = typeFilter.equals(t, ignoreCase = true),
+                                onClick = { typeFilter = if (typeFilter.equals(t, ignoreCase = true)) "" else t },
+                                label = { Text(t, style = MaterialTheme.typography.labelSmall) }
+                            )
+                        }
+                    }
+                }
+                // Date range, on by default (today) — switch off to see the full history.
                 Row(
                     Modifier.fillMaxWidth().padding(horizontal = 12.dp),
                     verticalAlignment = Alignment.CenterVertically
@@ -619,21 +940,24 @@ fun FastBillDialog(
                                     .combinedClickable(onClick = {
                                         // Open in edit mode: the tape, its customer and its
                                         // narration all come back, and saving updates this entry.
-                                        entries.clear()
-                                        entries.addAll(calc.amountList)
-                                        savedId = calc.id
-                                        custId = calc.customerId
-                                        custName = calc.customerName
-                                        custPhone = savedCustomers.firstOrNull { it.id == calc.customerId }?.phone ?: ""
-                                        narration = calc.narration
-                                        input = ""
+                                        loadCalc(calc)
                                         showSaved = false
                                     })
                                     .padding(horizontal = 14.dp, vertical = 12.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Column(Modifier.weight(1f)) {
-                                    Text(calc.customerName, fontWeight = FontWeight.Bold)
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(calc.customerName, fontWeight = FontWeight.Bold)
+                                        if (calc.customerId > 0) {
+                                            IconButton(
+                                                onClick = { editTypeFor = savedCustomers.firstOrNull { it.id == calc.customerId } },
+                                                modifier = Modifier.size(28.dp)
+                                            ) {
+                                                Icon(Icons.Filled.Edit, "Change customer type", modifier = Modifier.size(16.dp))
+                                            }
+                                        }
+                                    }
                                     Text(
                                         Format.dateTime(calc.dateMillis) + "  •  " + calc.amountList.size + " amount(s)",
                                         style = MaterialTheme.typography.bodySmall,
@@ -747,6 +1071,44 @@ fun FastBillDialog(
         )
     }
 
+    // Change a customer's type right from the saved-calc list, via the pen icon by their name.
+    editTypeFor?.let { cust ->
+        val prefs = remember { com.billing.pos.data.AppPrefs(context) }
+        val allCustomers by repo.customers.collectAsState(initial = emptyList<com.billing.pos.data.Customer>())
+        val typeOptions = remember(cust, allCustomers) {
+            val inUse = allCustomers.map { it.customerType }.filter { it.isNotBlank() }
+            (listOf("General") + prefs.customerTypes + inUse).distinct().sortedBy { it.lowercase() }
+        }
+        AlertDialog(
+            onDismissRequest = { editTypeFor = null },
+            title = { Text("Customer type — ${cust.name}") },
+            text = {
+                Column {
+                    Text(
+                        "Current: ${cust.customerType.ifBlank { "General" }}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                    Column(Modifier.heightIn(max = 240.dp).verticalScroll(rememberScrollState())) {
+                        typeOptions.forEach { t ->
+                            Text(
+                                t,
+                                fontWeight = if (t.equals(cust.customerType.ifBlank { "General" }, true)) FontWeight.Bold else FontWeight.Normal,
+                                modifier = Modifier.fillMaxWidth()
+                                    .clickable {
+                                        scope.launch { repo.updateCustomer(cust.copy(customerType = t)) }
+                                        editTypeFor = null
+                                    }
+                                    .padding(vertical = 10.dp)
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { editTypeFor = null }) { Text("Close") } }
+        )
+    }
+
     // Correcting a receipt straight from the calculation it was received against.
     qrAmount?.let { amt ->
         com.billing.pos.ui.common.UpiQrDialog(amount = amt, onDismiss = { qrAmount = null })
@@ -798,13 +1160,14 @@ fun FastBillDialog(
         )
     }
 
-    // Long-press edit: change or delete one amount, total recalculates.
+    // Long-press edit: change or delete one amount (and its label), total recalculates.
     if (editIndex in entries.indices) {
         val idx = editIndex
-        var text by remember(idx) { mutableStateOf(Format.money(kotlin.math.abs(entries[idx]))) }
+        var text by remember(idx) { mutableStateOf(Format.money(kotlin.math.abs(entries[idx].amount))) }
         // Sign is edited here too, so a line entered as + can be switched to − and the
         // total recalculates without deleting and re-typing it.
-        var plus by remember(idx) { mutableStateOf(entries[idx] >= 0) }
+        var plus by remember(idx) { mutableStateOf(entries[idx].amount >= 0) }
+        var labelText by remember(idx) { mutableStateOf(entries[idx].label) }
         AlertDialog(
             onDismissRequest = { editIndex = -1 },
             title = { Text("Edit amount ${idx + 1}") },
@@ -833,12 +1196,19 @@ fun FastBillDialog(
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
                     )
+                    OutlinedTextField(
+                        value = labelText,
+                        onValueChange = { labelText = it },
+                        label = { Text("Label") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                    )
                 }
             },
             confirmButton = {
                 TextButton(onClick = {
                     val v = text.toDoubleOrNull()
-                    if (v != null && v > 0.0) entries[idx] = if (plus) v else -v
+                    if (v != null && v > 0.0) entries[idx] = CalcEntry(if (plus) v else -v, labelText.trim())
                     editIndex = -1
                 }) { Text("Save") }
             },
@@ -926,7 +1296,381 @@ fun FastBillDialog(
         )
     }
 
+    // Label mode's popup: name this amount before it lands on the tape. Previously typed
+    // labels (the calc-label master) are offered as suggestions, filtered as it's typed.
+    if (pendingSign != 0) {
+        val suggestions = remember(labelInput) {
+            val q = labelInput.trim()
+            prefs.calcLabels.filter { q.isBlank() || it.contains(q, ignoreCase = true) }
+                .sortedBy { it.lowercase() }.take(6)
+        }
+        var drawLabel by remember { mutableStateOf(false) }
+        val voiceLabel = com.billing.pos.ui.common.rememberVoiceInput { text -> labelInput = text }
+        val cameraLabel = com.billing.pos.ocr.rememberImageCamera { uri ->
+            scope.launch {
+                com.billing.pos.ocr.TextOcr.lines(context, uri).firstOrNull()?.let { labelInput = it }
+            }
+        }
+        if (drawLabel) {
+            com.billing.pos.ui.common.HandwriteTextDialog(
+                onResult = { if (it.isNotBlank()) labelInput = it; drawLabel = false },
+                onDismiss = { drawLabel = false }
+            )
+        }
+        LaunchedEffect(Unit) { runCatching { labelFocus.requestFocus() } }
+        AlertDialog(
+            onDismissRequest = { pendingSign = 0 },
+            title = {
+                Text(
+                    (if (pendingSign < 0) "− " else "+ ") + Format.money(pendingAmount),
+                    fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = labelInput,
+                        onValueChange = { labelInput = it },
+                        label = { Text("Label") },
+                        singleLine = true,
+                        textStyle = LocalTextStyle.current.copy(fontSize = 24.sp, fontWeight = FontWeight.Bold),
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                        trailingIcon = {
+                            Row {
+                                IconButton(onClick = { drawLabel = true }) { Icon(Icons.Filled.Gesture, "Write") }
+                                IconButton(onClick = { voiceLabel() }) { Icon(Icons.Filled.Mic, "Speak") }
+                                IconButton(onClick = { cameraLabel() }) { Icon(Icons.Filled.PhotoCamera, "Read from photo") }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth().focusRequester(labelFocus)
+                    )
+                    if (suggestions.isNotEmpty()) {
+                        Column(Modifier.padding(top = 8.dp)) {
+                            suggestions.forEach { s ->
+                                Text(
+                                    s,
+                                    fontSize = 18.sp,
+                                    modifier = Modifier.fillMaxWidth()
+                                        .clickable { labelInput = s }
+                                        .padding(vertical = 10.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val lbl = labelInput.trim()
+                    entries.add(CalcEntry(pendingAmount * pendingSign, lbl))
+                    if (lbl.isNotBlank()) {
+                        prefs.addCalcLabel(lbl)
+                        scope.launch { repo.ensureItemForLabel(lbl) }
+                    }
+                    pendingSign = 0
+                    focus.requestFocus()
+                }) { Text("OK") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    entries.add(CalcEntry(pendingAmount * pendingSign))
+                    pendingSign = 0
+                    focus.requestFocus()
+                }) { Text("Skip") }
+            }
+        )
+    }
+
+    // Share button: text, a PDF (label/amount columns, thermal-receipt width), or Print —
+    // same Bluetooth/WiFi choice as a sales invoice. A real customer attached gets the
+    // text/PDF sent straight to their WhatsApp chat instead of a generic chooser. "Sale bill"
+    // additionally turns this share into a real, priced invoice once a payment method is picked.
+    if (showShareChoice) {
+        AlertDialog(
+            onDismissRequest = { showShareChoice = false },
+            title = { Text("Share as") },
+            text = {
+                Column {
+                    Text(
+                        "Text", fontWeight = FontWeight.Bold,
+                        modifier = Modifier.fillMaxWidth().clickable {
+                            showShareChoice = false
+                            // "Sale bill" on: the real invoice (once the payment method is
+                            // picked) is what gets shared, not the calculator's own tape text.
+                            if (isSaleBill) {
+                                pendingShareAction = "text"
+                                askPaymentMethod = true
+                            } else {
+                                saveToDiary()
+                                val header = if (custName.isNotBlank() && custName != com.billing.pos.data.SavedCalc.DEFAULT_CUSTOMER)
+                                    custName + (if (custPhone.isNotBlank()) " - $custPhone" else "") + "\n\n" else ""
+                                shareCalcTextTo(context, custName, custPhone, header + tapeText())
+                            }
+                        }.padding(vertical = 12.dp)
+                    )
+                    Text(
+                        "PDF", fontWeight = FontWeight.Bold,
+                        modifier = Modifier.fillMaxWidth().clickable {
+                            showShareChoice = false
+                            if (isSaleBill) {
+                                pendingShareAction = "pdf"
+                                askPaymentMethod = true
+                            } else {
+                                saveToDiary()
+                                val all = currentEntries()
+                                runCatching {
+                                    val company = com.billing.pos.data.AppPrefs(context).company
+                                    com.billing.pos.pdf.ThermalPdf.calcTape(context, company, custName, custPhone, narration, all.map { it.amount to it.label })
+                                }.onSuccess { uri -> shareCalcPdfTo(context, custName, custPhone, uri) }
+                            }
+                        }.padding(vertical = 12.dp)
+                    )
+                    Text(
+                        "Print", fontWeight = FontWeight.Bold,
+                        modifier = Modifier.fillMaxWidth().clickable {
+                            showShareChoice = false
+                            if (isSaleBill) {
+                                pendingShareAction = "print"
+                                askPaymentMethod = true
+                            } else {
+                                pendingPrintBill = null
+                                showPrintChoice = true
+                            }
+                        }.padding(vertical = 12.dp)
+                    )
+                    Divider(Modifier.padding(vertical = 8.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        androidx.compose.material3.Checkbox(checked = isSaleBill, onCheckedChange = { isSaleBill = it })
+                        Text("Sale bill", style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = { TextButton(onClick = { showShareChoice = false }) { Text("Cancel") } }
+        )
+    }
+
+    // Print: same Bluetooth (thermal, paired) / WiFi (system print, no pairing) choice as a
+    // sales invoice's Print button.
+    if (showPrintChoice) {
+        // Set only when printing the real invoice just created by "Sale bill" — otherwise the
+        // plain calculator tape, same as before.
+        val printBill = pendingPrintBill
+        fun doBluetoothPrint() {
+            scope.launch {
+                val company = com.billing.pos.data.AppPrefs(context).company
+                val result = withContext(Dispatchers.IO) {
+                    runCatching {
+                        if (printBill != null) {
+                            com.billing.pos.print.ThermalPrinter.printBill(context, company, printBill.first, printBill.second)
+                        } else {
+                            val all = currentEntries()
+                            com.billing.pos.print.ThermalPrinter.printCalcTape(context, company, custName, custPhone, narration, all.map { it.amount to it.label })
+                        }
+                    }
+                }
+                result.onSuccess { android.widget.Toast.makeText(context, "Sent to printer", android.widget.Toast.LENGTH_SHORT).show() }
+                    .onFailure { android.widget.Toast.makeText(context, it.message ?: "Print failed", android.widget.Toast.LENGTH_SHORT).show() }
+                pendingPrintBill = null
+            }
+        }
+        val printPermission = rememberLauncherForActivityResult(
+            ActivityResultContracts.RequestPermission()
+        ) { granted ->
+            if (granted) doBluetoothPrint()
+            else android.widget.Toast.makeText(context, "Allow 'Nearby devices' permission to print", android.widget.Toast.LENGTH_LONG).show()
+        }
+        AlertDialog(
+            onDismissRequest = { showPrintChoice = false; pendingPrintBill = null },
+            title = { Text("Print") },
+            text = { Text("Choose the printer connection.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showPrintChoice = false
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !com.billing.pos.print.ThermalPrinter.hasConnectPermission(context)) {
+                        printPermission.launch(Manifest.permission.BLUETOOTH_CONNECT)
+                    } else {
+                        doBluetoothPrint()
+                    }
+                }) { Text("Bluetooth (thermal)") }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showPrintChoice = false
+                    runCatching {
+                        val company = com.billing.pos.data.AppPrefs(context).company
+                        val uri = if (printBill != null) {
+                            com.billing.pos.pdf.InvoicePdf.make(context, company, printBill.first, printBill.second)
+                        } else {
+                            val all = currentEntries()
+                            com.billing.pos.pdf.ThermalPdf.calcTape(context, company, custName, custPhone, narration, all.map { it.amount to it.label })
+                        }
+                        com.billing.pos.print.SystemPrint.printPdf(context, uri, printBill?.first?.billNo ?: "Calculation")
+                    }
+                    pendingPrintBill = null
+                }) { Text("WiFi / System printer") }
+            }
+        )
+    }
+
+    // "Sale bill" payment method: Save/Share create the calculation as before; this turns it
+    // into a real, priced invoice too, once a payment method is picked.
+    if (askPaymentMethod) {
+        AlertDialog(
+            onDismissRequest = { askPaymentMethod = false },
+            title = { Text("Payment method") },
+            text = {
+                Column {
+                    com.billing.pos.data.PaymentMethod.values().forEach { m ->
+                        Text(
+                            m.label,
+                            modifier = Modifier.fillMaxWidth()
+                                .clickable {
+                                    askPaymentMethod = false
+                                    val action = pendingShareAction
+                                    pendingShareAction = null
+                                    createSaleInvoice(m.label, action)
+                                }
+                                .padding(vertical = 12.dp)
+                        )
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = { TextButton(onClick = { askPaymentMethod = false; pendingShareAction = null }) { Text("Cancel") } }
+        )
+    }
+
+    // Confirm before wiping an unsaved tape — the "New calculation" toolbar icon.
+    if (confirmNewCalc) {
+        AlertDialog(
+            onDismissRequest = { confirmNewCalc = false },
+            title = { Text("Start a new calculation?") },
+            text = { Text("This clears the current tape. Unsaved amounts will be lost.") },
+            confirmButton = { TextButton(onClick = { confirmNewCalc = false; resetTape() }) { Text("New") } },
+            dismissButton = { TextButton(onClick = { confirmNewCalc = false }) { Text("Cancel") } }
+        )
+    }
+
+    // Chrome-free full-screen tape for the customer to read and screenshot.
+    if (showFullView) {
+        val fvEntries = currentEntries()
+        CalcFullView(
+            customerName = custName,
+            entries = fvEntries,
+            total = fvEntries.sumOf { it.amount },
+            onClose = { showFullView = false }
+        )
+    }
+
     // ---- end of dialog file helpers ----
+}
+
+/**
+ * A bare, toolbar-free tape: every entry's label and amount, plus the total, scaled to fit
+ * the whole thing on one screen with no scrolling — meant to be handed to the customer and
+ * screenshotted. Row height (and so font size) shrinks as entries pile up instead of scrolling
+ * off; a single small close button is the only chrome left.
+ */
+@Composable
+private fun CalcFullView(
+    customerName: String,
+    entries: List<CalcEntry>,
+    total: Double,
+    onClose: () -> Unit
+) {
+    Dialog(
+        onDismissRequest = onClose,
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
+    ) {
+        BoxWithConstraints(
+            Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface).safeDrawingPadding()
+        ) {
+            // A fixed, compact row size — short tapes no longer stretch to fill the screen with
+            // wide gaps. Once a page is full, the rest spill onto further pages instead.
+            val rowHeight = 40.dp
+            val amountFontSize = 18.sp
+            val labelFontSize = 14.sp
+            val hasCustomer = customerName.isNotBlank() && customerName != com.billing.pos.data.SavedCalc.DEFAULT_CUSTOMER
+            val reserved = 32.dp + (if (hasCustomer) 22.dp else 0.dp) + 48.dp + 32.dp // close row + name + total row + page nav
+            val rowsPerPage = ((maxHeight - reserved) / rowHeight).toInt().coerceAtLeast(1)
+            val pageCount = if (entries.isEmpty()) 1 else ((entries.size + rowsPerPage - 1) / rowsPerPage).coerceAtLeast(1)
+            val pagerState = androidx.compose.foundation.pager.rememberPagerState(pageCount = { pageCount })
+            val scope = androidx.compose.runtime.rememberCoroutineScope()
+
+            Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    IconButton(onClick = onClose, modifier = Modifier.size(32.dp)) {
+                        Icon(Icons.Filled.Close, contentDescription = "Close", modifier = Modifier.size(20.dp))
+                    }
+                }
+                if (hasCustomer) {
+                    Text(customerName, fontWeight = FontWeight.Bold, fontSize = labelFontSize, modifier = Modifier.padding(bottom = 4.dp))
+                }
+                androidx.compose.foundation.pager.HorizontalPager(
+                    state = pagerState,
+                    modifier = Modifier.weight(1f)
+                ) { page ->
+                    Column {
+                        val start = page * rowsPerPage
+                        entries.drop(start).take(rowsPerPage).forEachIndexed { i, e ->
+                            Row(
+                                Modifier.fillMaxWidth().height(rowHeight),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    if (e.amount < 0) "-" else if (start + i == 0) " " else "+",
+                                    fontSize = amountFontSize, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    e.label.ifBlank { "" },
+                                    modifier = Modifier.weight(1f).padding(horizontal = 6.dp),
+                                    fontSize = labelFontSize, fontWeight = FontWeight.Medium,
+                                    maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    Format.money(kotlin.math.abs(e.amount)),
+                                    fontSize = amountFontSize, fontFamily = FontFamily.Monospace,
+                                    fontWeight = FontWeight.Bold, textAlign = TextAlign.End
+                                )
+                            }
+                        }
+                    }
+                }
+                if (pageCount > 1) {
+                    Row(
+                        Modifier.fillMaxWidth().height(32.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(
+                            onClick = { scope.launch { pagerState.animateScrollToPage((pagerState.currentPage - 1).coerceAtLeast(0)) } },
+                            enabled = pagerState.currentPage > 0,
+                            modifier = Modifier.size(28.dp)
+                        ) { Icon(Icons.Filled.ChevronLeft, contentDescription = "Previous page") }
+                        Text("${pagerState.currentPage + 1} / $pageCount", style = MaterialTheme.typography.labelSmall)
+                        IconButton(
+                            onClick = { scope.launch { pagerState.animateScrollToPage((pagerState.currentPage + 1).coerceAtMost(pageCount - 1)) } },
+                            enabled = pagerState.currentPage < pageCount - 1,
+                            modifier = Modifier.size(28.dp)
+                        ) { Icon(Icons.Filled.ChevronRight, contentDescription = "Next page") }
+                    }
+                }
+                Divider(thickness = 2.dp)
+                Row(
+                    Modifier.fillMaxWidth().height(48.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("TOTAL", fontSize = labelFontSize, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                    Text(
+                        Format.money(total),
+                        fontSize = (amountFontSize.value * 1.25f).sp, fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+        }
+    }
 }
 
 /** Shares the calculator tape as text, preferring WhatsApp and falling back to a chooser. */
@@ -944,6 +1688,67 @@ private fun shareTapeToWhatsApp(context: android.content.Context, text: String) 
     runCatching {
         context.startActivity(
             android.content.Intent.createChooser(send, "Share total")
+                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
+    }
+}
+
+/** Shares the tape's text straight to a real customer's WhatsApp chat (same "jid" trick as a
+ *  sales invoice share) when one is attached and has a phone number; otherwise the usual
+ *  WhatsApp-preferred chooser. */
+private fun shareCalcTextTo(context: android.content.Context, custName: String, custPhone: String, text: String) {
+    val digits = custPhone.filter { it.isDigit() }
+    if (custName.isNotBlank() && custName != com.billing.pos.data.SavedCalc.DEFAULT_CUSTOMER && digits.isNotEmpty()) {
+        fun tryPackage(pkg: String): Boolean {
+            val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(android.content.Intent.EXTRA_TEXT, text)
+                putExtra("jid", "$digits@s.whatsapp.net")
+                setPackage(pkg)
+                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            return runCatching { context.startActivity(intent) }.isSuccess
+        }
+        if (tryPackage("com.whatsapp")) return
+        if (tryPackage("com.whatsapp.w4b")) return
+    }
+    shareTapeToWhatsApp(context, text)
+}
+
+/** Shares the tape's PDF straight to a real customer's WhatsApp chat when one is attached and
+ *  has a phone number; otherwise the usual chooser. */
+private fun shareCalcPdfTo(context: android.content.Context, custName: String, custPhone: String, uri: android.net.Uri) {
+    val digits = custPhone.filter { it.isDigit() }
+    if (custName.isNotBlank() && custName != com.billing.pos.data.SavedCalc.DEFAULT_CUSTOMER && digits.isNotEmpty()) {
+        fun tryPackage(pkg: String): Boolean {
+            val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                type = "application/pdf"
+                putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                putExtra("jid", "$digits@s.whatsapp.net")
+                setPackage(pkg)
+                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            return runCatching { context.startActivity(intent) }.isSuccess
+        }
+        if (tryPackage("com.whatsapp")) return
+        if (tryPackage("com.whatsapp.w4b")) return
+    }
+    shareTapePdf(context, uri)
+}
+
+/** Shares the current tape's PDF via the ordinary chooser. */
+private fun shareTapePdf(context: android.content.Context, uri: android.net.Uri) {
+    runCatching {
+        val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+            type = "application/pdf"
+            putExtra(android.content.Intent.EXTRA_STREAM, uri)
+            addFlags(
+                android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                    android.content.Intent.FLAG_ACTIVITY_NEW_TASK
+            )
+        }
+        context.startActivity(
+            android.content.Intent.createChooser(send, "Share calculation")
                 .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
         )
     }
@@ -1004,10 +1809,8 @@ private fun shareCalcList(
     }
 }
 
-/** The date the range starts on when it is first switched on: one month back. */
-private fun defaultFromMillis(): Long = java.util.Calendar.getInstance().apply {
-    add(java.util.Calendar.MONTH, -1)
-}.timeInMillis
+/** The date the range starts on by default: today. */
+private fun defaultFromMillis(): Long = System.currentTimeMillis()
 
 private fun startOfDayMillis(m: Long): Long = java.util.Calendar.getInstance().apply {
     timeInMillis = m

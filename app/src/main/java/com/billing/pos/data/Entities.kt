@@ -13,7 +13,11 @@ data class Customer(
     val address: String = "",
     val gstin: String = "",
     val isDefault: Boolean = false,
-    val customerType: String = "General"
+    val customerType: String = "General",
+    /** State/UT name (see [IndianStates]) — used to tell an interstate sale (IGST) from an
+     *  intra-state one (CGST+SGST) against the company's own GSTIN. Blank = unknown, treated
+     *  as intra-state. */
+    val state: String = ""
 )
 
 /** A saleable item. taxPercent = 0.0 means "without tax". */
@@ -27,6 +31,8 @@ data class Item(
     /** List/MRP price in the primary unit; 0 = not set. Printed on the A4 invoice as a reference price. */
     val mrp: Double = 0.0,
     val taxPercent: Double = 0.0,
+    /** GST Compensation Cess % (tobacco, aerated drinks, coal, luxury vehicles, ...). 0 = none. */
+    val cessPercent: Double = 0.0,
     val barcode: String = "",
     val hsn: String = "",
     val category: String = "",
@@ -41,7 +47,17 @@ data class Item(
     /** Where the item sits in the store (rack/shelf), as free text. */
     val storeLocation: String = "",
     /** Composition / salt / chemical content (medical stores). Searchable. */
-    val chemicalContent: String = ""
+    val chemicalContent: String = "",
+    /** Included in the next "Upload" to the online catalog (customer ordering). */
+    val isOnline: Boolean = false,
+    /** Price shown to online customers when set (> 0); falls back to [price] when 0. */
+    val onlineOfferPrice: Double = 0.0,
+    /** Optional link(s) to a photo/catalog for this item — any URL (Google Drive, the shop's own
+     *  website, etc.), several allowed, comma-separated. A direct image link is downloaded and
+     *  shown to online customers as its own thumbnail (tap for a full-screen, zoomable, swipeable
+     *  gallery); anything else shows as a plain clickable link. An alternative to uploading a
+     *  photo to this server's own storage. */
+    val driveLink: String = ""
 )
 
 /**
@@ -74,7 +90,11 @@ data class Bill(
     val grandTotal: Double,
     /** Amount already received. Credit invoices start at 0; others = grandTotal. */
     val paidAmount: Double = 0.0,
+    /** GST Compensation Cess total, separate from [taxTotal] (CGST/SGST/IGST). */
+    val cessTotal: Double = 0.0,
     val customerGstin: String = "",
+    /** Snapshot of [Customer.state] at sale time — decides IGST vs CGST+SGST on this bill. */
+    val customerState: String = "",
     val source: String = "",
     /** Free-text note; printed on the bill only when non-blank. */
     val remarks: String = "",
@@ -85,7 +105,10 @@ data class Bill(
     val isLegacy: Boolean = false,
     /** Last created/edited time — distinct from [dateMillis] (the invoice date the user picks).
      * Drives the cloud-sync "only push recent changes" window. */
-    val updatedAt: Long = 0
+    val updatedAt: Long = 0,
+    /** A plain no-tax invoice: no company header, no title, no tax shown on print, its own
+     *  numbering series, and excluded from every GST/VAT report and the main Invoice list. */
+    val isNoTax: Boolean = false
 ) {
     val balance: Double get() = (grandTotal - paidAmount).coerceAtLeast(0.0)
     val paymentStatus: String
@@ -117,6 +140,8 @@ data class BillItem(
     val price: Double,
     val taxPercent: Double,
     val lineTotal: Double,
+    /** GST Compensation Cess % on this line, on top of [taxPercent]. */
+    val cessPercent: Double = 0.0,
     /** MRP snapshot at time of sale (0 = not set); printed on the A4 invoice. */
     val mrp: Double = 0.0,
     /** Batch/lot this line was sold from (when batch tracking is on). */

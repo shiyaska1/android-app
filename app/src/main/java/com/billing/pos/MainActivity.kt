@@ -31,11 +31,15 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.navArgument
+import com.billing.pos.auth.PendingCustomerNotificationsOpen
 import com.billing.pos.auth.PendingDiaryOpen
 import com.billing.pos.auth.PendingImport
 import com.billing.pos.auth.PendingQuickNoteOpen
+import com.billing.pos.auth.PendingShopMessageThreadOpen
 import com.billing.pos.auth.PendingSharedMedia
 import com.billing.pos.auth.Session
+import com.billing.pos.customer.EXTRA_OPEN_CUSTOMER_NOTIFICATIONS
+import com.billing.pos.customer.EXTRA_OPEN_MESSAGE_PHONE
 import com.billing.pos.diary.EXTRA_OPEN_DIARY_ID
 import com.billing.pos.quicknote.EXTRA_OPEN_QUICKNOTE_ID
 import com.billing.pos.data.AppPrefs
@@ -238,6 +242,13 @@ class MainActivity : FragmentActivity() {
 
         val quickNoteId = intent.getLongExtra(EXTRA_OPEN_QUICKNOTE_ID, 0L)
         if (quickNoteId > 0L) PendingQuickNoteOpen.id = quickNoteId
+
+        val messagePhone = intent.getStringExtra(EXTRA_OPEN_MESSAGE_PHONE)
+        if (!messagePhone.isNullOrBlank()) PendingShopMessageThreadOpen.phone = messagePhone
+
+        if (intent.getBooleanExtra(EXTRA_OPEN_CUSTOMER_NOTIFICATIONS, false)) {
+            PendingCustomerNotificationsOpen.pending = true
+        }
     }
 }
 
@@ -246,20 +257,9 @@ private fun AppNav() {
     val nav = rememberNavController()
     val context = LocalContext.current
 
-    // Media shared in from another app (WhatsApp etc.).
-    //
-    // Cold start is routed by boot / login / change-password below. This effect covers only a
-    // WARM start (app already open, share arriving via onNewIntent). The bootDone guard is
-    // essential: without it this also fires on a cold start, navigates to the diary, the diary
-    // consumes the files, and boot then routes to the dashboard on top of it.
-    var bootDone by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
-    val sharedGeneration = PendingSharedMedia.generation
-    androidx.compose.runtime.LaunchedEffect(sharedGeneration) {
-        if (bootDone && PendingSharedMedia.awaitingDiary && Session.isLoggedIn) {
-            PendingSharedMedia.markRouted()
-            nav.navigate("diary/edit/0") { launchSingleTop = true }
-        }
-    }
+    // Sharing into the app no longer auto-navigates anywhere — the diary only picks up a share
+    // while it's already open (see DiaryEditScreen), and the payment dialog's QR-code fallback
+    // claims one via [PendingSharedMedia.awaitingPaymentProof] while it's showing.
 
     // Reminder tap → once logged in, open that diary entry in edit mode.
     val pendingDiaryId = PendingDiaryOpen.id
@@ -278,6 +278,16 @@ private fun AppNav() {
         if (qid != null && Session.isLoggedIn) {
             PendingQuickNoteOpen.consume()
             nav.navigate("quicknote/edit/$qid") { launchSingleTop = true }
+        }
+    }
+
+    // "New message" notification tap → once logged in, open that customer's thread straight away.
+    val pendingMessagePhone = PendingShopMessageThreadOpen.phone
+    androidx.compose.runtime.LaunchedEffect(pendingMessagePhone, Session.current) {
+        val phone = PendingShopMessageThreadOpen.phone
+        if (phone != null && Session.isLoggedIn) {
+            PendingShopMessageThreadOpen.consume()
+            nav.navigate("shopMessages/${Uri.encode(phone)}") { launchSingleTop = true }
         }
     }
 
@@ -344,13 +354,9 @@ private fun AppNav() {
         composable("boot") {
             BootScreen(onResolved = { route ->
                 val dest = when {
-                    route == "dashboard" && PendingSharedMedia.awaitingDiary -> {
-                        PendingSharedMedia.markRouted(); "diary/edit/0"
-                    }
                     route == "dashboard" && PendingImport.uri != null -> "invoices"
                     else -> route
                 }
-                bootDone = true
                 nav.navigate(dest) { popUpTo("boot") { inclusive = true } }
             })
         }
@@ -371,9 +377,52 @@ private fun AppNav() {
             )
         }
         composable("chooseBusiness") {
-            com.billing.pos.ui.auth.BusinessTypeScreen(onChosen = {
-                nav.navigate("dashboard") { popUpTo(0) { inclusive = true } }
-            })
+            com.billing.pos.ui.auth.BusinessTypeScreen(
+                onChosen = {
+                    nav.navigate("dashboard") { popUpTo(0) { inclusive = true } }
+                },
+                onCustomerLinkSimulated = {
+                    nav.navigate("customerCatalog") { popUpTo(0) { inclusive = true } }
+                }
+            )
+        }
+        composable("customerCatalog") {
+            com.billing.pos.ui.customer.CustomerCatalogScreen(
+                onExitTestMode = { nav.navigate("boot") { popUpTo(0) { inclusive = true } } }
+            )
+        }
+        // Shop owner previewing their own live customer catalog from the Dashboard (see
+        // DashboardScreen's "Preview customer app" icon) — a plain push onto the existing
+        // back stack, so the back arrow just pops back to the dashboard. Unlike "customerCatalog"
+        // above, this never touches AppPrefs.customerMode/onboarded — the owner's own session
+        // (login, licence, everything) is untouched underneath it.
+        composable("customerPreview") {
+            com.billing.pos.ui.customer.CustomerCatalogScreen(
+                isOwnerPreview = true,
+                onBackToShop = { nav.popBackStack() }
+            )
+        }
+        composable("onlineItems") {
+            com.billing.pos.ui.online.OnlineItemsScreen(onBack = { nav.popBackStack() })
+        }
+        composable("onlineOrders") {
+            com.billing.pos.ui.online.OnlineOrdersScreen(onBack = { nav.popBackStack() })
+        }
+        composable("shopMessages") {
+            com.billing.pos.ui.messages.ShopMessagesScreen(
+                onBack = { nav.popBackStack() },
+                onGoToOrders = { nav.navigate("onlineOrders") }
+            )
+        }
+        composable(
+            route = "shopMessages/{phone}",
+            arguments = listOf(navArgument("phone") { type = NavType.StringType })
+        ) { entry ->
+            com.billing.pos.ui.messages.ShopMessagesScreen(
+                onBack = { nav.popBackStack() },
+                onGoToOrders = { nav.navigate("onlineOrders") },
+                initialPhone = entry.arguments?.getString("phone")
+            )
         }
         composable("dashboard") {
             // Back from the dashboard means leaving the app, so make it deliberate — a
@@ -401,18 +450,8 @@ private fun AppNav() {
                 )
             }
 
-            // Catch-all for an incoming share: whatever route led here, if a shared file is
-            // still waiting, hand it to the diary. This does not depend on the boot/login
-            // handshake winning a race, so it holds even if an earlier redirect was missed.
-            androidx.compose.runtime.LaunchedEffect(PendingSharedMedia.generation) {
-                if (PendingSharedMedia.awaitingDiary) {
-                    PendingSharedMedia.markRouted()
-                    nav.navigate("diary/edit/0")
-                }
-            }
             // Sticky note on launch (once per app start).
             androidx.compose.runtime.LaunchedEffect(Unit) {
-                if (PendingSharedMedia.awaitingDiary) return@LaunchedEffect   // share wins
                 if (!com.billing.pos.ui.sticky.StickyGate.shown && com.billing.pos.data.AppPrefs(context).stickyNoteOnLaunch) {
                     com.billing.pos.ui.sticky.StickyGate.shown = true
                     nav.navigate("stickynote")
@@ -455,6 +494,7 @@ private fun AppNav() {
                 onCashbook = { nav.navigate("cashbook") },
                 onReports = { nav.navigate("reports") },
                 onCustomers = { nav.navigate("customers") },
+                onCustomerTypes = { nav.navigate("customertypes") },
                 onContacts = { nav.navigate("contacts") },
                 onSendSms = { nav.navigate("sendsms") },
                 onBulkSms = { nav.navigate("bulksms") },
@@ -463,7 +503,12 @@ private fun AppNav() {
                 onSmsReport = { nav.navigate("smsreport") },
                 onSmsSettings = { nav.navigate("smssettings") },
                 onItems = { nav.navigate("items") },
+                onItemCategories = { nav.navigate("itemcategories") },
+                onCalcLabels = { nav.navigate("calclabels") },
                 onBundles = { nav.navigate("bundles") },
+                onOnlineItems = { nav.navigate("onlineItems") },
+                onOnlineOrders = { nav.navigate("onlineOrders") },
+                onMessages = { nav.navigate("shopMessages") },
                 onNewPurchase = { nav.navigate("purchase") },
                 onPurchases = { nav.navigate("purchases") },
                 onSuppliers = { nav.navigate("suppliers") },
@@ -533,7 +578,8 @@ private fun AppNav() {
                 onUsers = { nav.navigate("users") },
                 onSettings = { nav.navigate("settings") },
                 onBackup = { nav.navigate("backup") },
-                onLogout = logout
+                onLogout = logout,
+                onPreviewCustomerApp = { nav.navigate("customerPreview") }
             )
         }
         composable("license") {
@@ -547,9 +593,6 @@ private fun AppNav() {
             LoginScreen(onLoggedIn = { mustChangePassword ->
                 val dest = when {
                     mustChangePassword -> "changepassword"
-                    PendingSharedMedia.awaitingDiary -> {
-                        PendingSharedMedia.markRouted(); "diary/edit/0"
-                    }
                     PendingImport.uri != null -> "invoices"
                     else -> "dashboard"
                 }
@@ -559,9 +602,6 @@ private fun AppNav() {
         composable("changepassword") {
             com.billing.pos.ui.auth.ChangePasswordScreen(onDone = {
                 val dest = when {
-                    PendingSharedMedia.awaitingDiary -> {
-                        PendingSharedMedia.markRouted(); "diary/edit/0"
-                    }
                     PendingImport.uri != null -> "invoices"
                     else -> "dashboard"
                 }
@@ -589,7 +629,17 @@ private fun AppNav() {
         composable("invoices") {
             InvoiceListScreen(
                 onBack = { nav.popBackStack() },
-                onEdit = { id -> nav.navigate("billing/edit/$id") }
+                onEdit = { id -> nav.navigate("billing/edit/$id") },
+                onOpenNoTax = if (com.billing.pos.data.AppPrefs(LocalContext.current).noTaxInvoiceEnabled) {
+                    { nav.navigate("invoices/notax") }
+                } else null
+            )
+        }
+        composable("invoices/notax") {
+            InvoiceListScreen(
+                onBack = { nav.popBackStack() },
+                onEdit = { id -> nav.navigate("billing/edit/$id") },
+                noTaxOnly = true
             )
         }
         composable("reports") {
@@ -631,6 +681,9 @@ private fun AppNav() {
         composable("orderstatusreport") { com.billing.pos.ui.order.OrderStatusReportScreen(onBack = { nav.popBackStack() }) }
         composable("customers") {
             CustomersScreen(onBack = { nav.popBackStack() })
+        }
+        composable("customertypes") {
+            com.billing.pos.ui.masters.CustomerTypeMasterScreen(onBack = { nav.popBackStack() })
         }
         composable("contacts") {
             com.billing.pos.ui.sms.ContactsScreen(onBack = { nav.popBackStack() })
@@ -928,6 +981,21 @@ private fun AppNav() {
         }
         composable("items") {
             ItemsScreen(onBack = { nav.popBackStack() })
+        }
+        composable("itemcategories") {
+            com.billing.pos.ui.masters.ItemCategoryMasterScreen(onBack = { nav.popBackStack() })
+        }
+        composable("calclabels") {
+            com.billing.pos.ui.masters.CalcLabelMasterScreen(
+                onBack = { nav.popBackStack() },
+                onOpenHistory = { label ->
+                    com.billing.pos.ui.masters.CalcLabelNav.label = label
+                    nav.navigate("calclabelhistory")
+                }
+            )
+        }
+        composable("calclabelhistory") {
+            com.billing.pos.ui.masters.CalcLabelHistoryScreen(onBack = { nav.popBackStack() })
         }
         composable(
             route = "items/edit/{id}",
