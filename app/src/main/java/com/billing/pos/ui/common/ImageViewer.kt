@@ -1,7 +1,11 @@
 package com.billing.pos.ui.common
 
+import android.Manifest
 import android.content.Intent
 import android.graphics.BitmapFactory
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -16,12 +20,14 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -39,6 +45,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import com.billing.pos.data.DownloadSaver
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 
 /**
@@ -112,4 +122,109 @@ fun ImageViewerDialog(paths: List<String>, onDismiss: () -> Unit, startIndex: In
             }
         }
     }
+}
+
+/**
+ * Full-screen zoomable viewer for a single base64 data-URI image — a chat message's photo
+ * attachment, which only ever exists as an in-memory data URI (see ShopMessage/CustomerNotification
+ * attachments), not a file on disk like [ImageViewerDialog]'s gallery photos. Same pinch-zoom /
+ * double-tap gestures, plus Download (saves to the Downloads folder via [DownloadSaver], same as
+ * the UPI QR download) and Share.
+ */
+@Composable
+fun DataUriImageViewerDialog(dataUri: String, onDismiss: () -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val bmp: ImageBitmap? = remember(dataUri) { decodeDataUriToImageBitmap(dataUri) }
+
+    fun download() {
+        scope.launch {
+            val ok = withContext(Dispatchers.IO) {
+                runCatching {
+                    val bytes = decodeDataUriBytes(dataUri) ?: return@runCatching false
+                    val file = File.createTempFile("chat_img_", ".jpg", context.cacheDir)
+                    file.writeBytes(bytes)
+                    val saved = DownloadSaver.save(context, file, "chat_img_" + System.currentTimeMillis() + ".jpg", "image/jpeg")
+                    file.delete()
+                    saved
+                }.getOrDefault(false)
+            }
+            android.widget.Toast.makeText(
+                context, if (ok) "Saved to Downloads" else "Could not save image", android.widget.Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
+    val storagePermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) download() else android.widget.Toast.makeText(context, "Storage permission denied", android.widget.Toast.LENGTH_SHORT).show()
+    }
+    fun requestDownload() {
+        if (DownloadSaver.needsLegacyPermission() &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_EXTERNAL_STORAGE) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) storagePermission.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+        else download()
+    }
+
+    var scale by remember(dataUri) { mutableStateOf(1f) }
+    var offX by remember(dataUri) { mutableStateOf(0f) }
+    var offY by remember(dataUri) { mutableStateOf(0f) }
+
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Column(Modifier.fillMaxSize().background(Color(0xFF000000))) {
+            Row(Modifier.fillMaxWidth().padding(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = onDismiss) { Icon(Icons.Filled.Close, "Close", tint = Color.White) }
+                Text("", modifier = Modifier.weight(1f))
+                IconButton(onClick = { requestDownload() }) { Icon(Icons.Filled.Download, "Download", tint = Color.White) }
+                IconButton(onClick = {
+                    runCatching {
+                        val bytes = decodeDataUriBytes(dataUri) ?: return@runCatching
+                        val sharedDir = File(context.cacheDir, "shared").apply { mkdirs() }
+                        val file = File(sharedDir, "chat_img_${System.nanoTime()}.jpg")
+                        file.writeBytes(bytes)
+                        val uri = FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
+                        val intent = Intent(Intent.ACTION_SEND).apply { type = "image/*"; putExtra(Intent.EXTRA_STREAM, uri); addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+                        context.startActivity(Intent.createChooser(intent, "Share image").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                    }
+                }) { Icon(Icons.Filled.Share, "Share", tint = Color.White) }
+            }
+            Box(
+                Modifier.weight(1f).fillMaxWidth()
+                    .pointerInput(dataUri) {
+                        detectTransformGestures { _, pan, zoom, _ ->
+                            scale = (scale * zoom).coerceIn(1f, 6f)
+                            if (scale > 1f) {
+                                val limit = size.width * (scale - 1f) / 2f
+                                offX = (offX + pan.x).coerceIn(-limit, limit)
+                                offY = (offY + pan.y).coerceIn(-limit, limit)
+                            } else { offX = 0f; offY = 0f }
+                        }
+                    }
+                    .pointerInput(dataUri) {
+                        detectTapGestures(onDoubleTap = {
+                            if (scale > 1f) { scale = 1f; offX = 0f; offY = 0f } else scale = 2.5f
+                        })
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                if (bmp != null) Image(
+                    bmp, contentDescription = null,
+                    modifier = Modifier.fillMaxSize().graphicsLayer(
+                        scaleX = scale, scaleY = scale, translationX = offX, translationY = offY
+                    ),
+                    contentScale = ContentScale.Fit
+                ) else Text("Could not open image", color = Color.White)
+            }
+        }
+    }
+}
+
+private fun decodeDataUriBytes(dataUri: String): ByteArray? {
+    if (!dataUri.startsWith("data:image")) return null
+    val comma = dataUri.indexOf(',')
+    if (comma < 0) return null
+    return runCatching { android.util.Base64.decode(dataUri.substring(comma + 1), android.util.Base64.DEFAULT) }.getOrNull()
+}
+
+private fun decodeDataUriToImageBitmap(dataUri: String): ImageBitmap? {
+    val bytes = decodeDataUriBytes(dataUri) ?: return null
+    return runCatching { BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap() }.getOrNull()
 }

@@ -745,7 +745,7 @@ fun CustomerCatalogScreen(
         )
     }
     viewingAttachment?.let { uri ->
-        AttachmentPreviewDialog(dataUri = uri, onDismiss = { viewingAttachment = null })
+        com.billing.pos.ui.common.DataUriImageViewerDialog(dataUri = uri, onDismiss = { viewingAttachment = null })
     }
     if (showSwitchShop) {
         SwitchShopDialog(
@@ -1863,31 +1863,6 @@ private fun OrderNoteCard(
     }
 }
 
-/** Full-screen preview of one not-yet-sent attachment, so the customer can verify it before
- *  saving/sharing the order — a simpler one-off version of [com.billing.pos.ui.common.ImageViewerDialog],
- *  which works from file paths rather than an in-memory data URI. */
-@Composable
-private fun AttachmentPreviewDialog(dataUri: String, onDismiss: () -> Unit) {
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Column(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black)) {
-            IconButton(onClick = onDismiss, modifier = Modifier.padding(4.dp)) {
-                Icon(Icons.Default.Close, contentDescription = "Close", tint = androidx.compose.ui.graphics.Color.White)
-            }
-            val bmp = remember(dataUri) { decodeDataUriBitmap(dataUri) }
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                if (bmp != null) {
-                    androidx.compose.foundation.Image(
-                        bmp, contentDescription = "Attachment",
-                        contentScale = ContentScale.Fit,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                } else {
-                    Text("Could not open image", color = androidx.compose.ui.graphics.Color.White)
-                }
-            }
-        }
-    }
-}
 
 /** Scan the same QR a shop hands out for install to point this app at a different shop —
  *  no reinstall needed — or tap a recently-used shop to switch straight back. A scan (camera or

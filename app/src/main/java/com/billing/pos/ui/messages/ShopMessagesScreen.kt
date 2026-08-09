@@ -120,26 +120,6 @@ private fun decodeAttachmentBitmap(dataUri: String): androidx.compose.ui.graphic
     }.getOrNull()
 }
 
-/** Opens an attachment in the device's default image viewer — same pattern as
- *  OnlineOrdersScreen's openAttachment, for a message bubble's photo. */
-private fun openMessageAttachment(context: android.content.Context, dataUri: String) {
-    if (!dataUri.startsWith("data:image")) return
-    val comma = dataUri.indexOf(',')
-    if (comma < 0) return
-    runCatching {
-        val bytes = android.util.Base64.decode(dataUri.substring(comma + 1), android.util.Base64.DEFAULT)
-        val sharedDir = java.io.File(context.cacheDir, "shared").apply { mkdirs() }
-        val file = java.io.File(sharedDir, "msg_attach_${System.nanoTime()}.jpg")
-        file.writeBytes(bytes)
-        val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
-        val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
-            setDataAndType(uri, "image/jpeg")
-            addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        }
-        context.startActivity(intent)
-    }
-}
-
 /** One row in the "Messages" list — every message with this customer collapsed to its latest,
  *  plus how many incoming ones are still unread. */
 data class ChatThread(
@@ -668,6 +648,7 @@ private fun ThreadScreen(
     var playingVoiceNote by remember { mutableStateOf<String?>(null) }
     val voicePlayer = remember { android.media.MediaPlayer() }
     var playingVoiceFile by remember { mutableStateOf<File?>(null) }
+    var viewingAttachment by remember { mutableStateOf<String?>(null) }
 
     fun stopPlayback() {
         runCatching { voicePlayer.stop(); voicePlayer.reset() }
@@ -767,6 +748,10 @@ private fun ThreadScreen(
             },
             dismissButton = { TextButton(onClick = { confirmDeleteThread = false }) { Text("Cancel") } }
         )
+    }
+
+    viewingAttachment?.let { uri ->
+        com.billing.pos.ui.common.DataUriImageViewerDialog(dataUri = uri, onDismiss = { viewingAttachment = null })
     }
 
     Scaffold(
@@ -912,7 +897,7 @@ private fun ThreadScreen(
                                                     modifier = Modifier
                                                         .size(120.dp)
                                                         .padding(end = 6.dp)
-                                                        .clickable { openMessageAttachment(context, uri) }
+                                                        .clickable { viewingAttachment = uri }
                                                 )
                                             }
                                         }
