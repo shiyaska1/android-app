@@ -62,6 +62,8 @@ class ImageListRepository(context: Context) {
         private const val KEY_DEVICE_ID = "device_id"
 
         // Pre-filled default so the app works out of the box; still editable in-app (pencil icon).
-        const val DEFAULT_SOURCE_URL = "https://eschoolsolutions.xyz/phpmailer/job_admin.php?action=list"
+        // Deliberately NOT under /phpmailer/ — that folder already runs a separate PHP app
+        // (an e-School Solution login) whose .htaccess/config conflicts with a standalone script.
+        const val DEFAULT_SOURCE_URL = "https://eschoolsolutions.xyz/indianjobs/job_admin.php?action=list"
     }
 }
