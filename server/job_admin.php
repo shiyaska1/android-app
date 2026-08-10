@@ -37,7 +37,16 @@ function read_urls(string $file): array {
         return [];
     }
     $decoded = json_decode(file_get_contents($file), true);
-    return is_array($decoded) ? array_values(array_filter($decoded, fn($u) => is_string($u) && trim($u) !== '')) : [];
+    if (!is_array($decoded)) {
+        return [];
+    }
+    $urls = [];
+    foreach ($decoded as $u) {
+        if (is_string($u) && trim($u) !== '') {
+            $urls[] = $u;
+        }
+    }
+    return $urls;
 }
 
 function write_urls(string $file, array $urls): void {
