@@ -5,63 +5,50 @@
  * Lets you manage the list of job-post image URLs that the Android app
  * displays. Existing images show as a checkable grid (select one-by-one or
  * "select all") with a Delete button; a single box lets you paste one new
- * image URL with a live preview before you commit it. Clicking "Save"
- * combines the new URL (if any) with whatever remains of the existing list
- * and writes it out as ONE comma-separated line to joburls.txt — exactly
- * the format the app's ImageListRepository expects.
+ * image URL with a live preview before you add it to the top of the list.
+ * Clicking "Save" writes the list out to job_urls.json.
+ *
+ * You never need to create that file yourself — this script creates it
+ * automatically the first time you click Save, as long as this folder is
+ * writable by the web server (the default on most hosting).
  *
  * --- Install ---
- * 1. Upload this file AND make sure $URLS_FILE below is writable by the
- *    web server (e.g. `chmod 664 joburls.txt` after creating an empty one,
- *    and `chmod 775` on its containing folder).
+ * 1. Upload ONLY this one file to your web server.
  * 2. Change $ADMIN_USER / $ADMIN_PASS below before this goes anywhere
  *    public — the admin/dev@123 defaults are placeholders only.
- * 3. Visit https://yourdomain.com/job_admin.php, log in, and manage images.
- * 4. Point the Android app's source URL (pencil icon) at either:
- *      https://yourdomain.com/joburls.txt                  (the plain file
- *        this script writes — needs the file to be publicly readable), or
- *      https://yourdomain.com/job_admin.php?action=list    (this script
- *        serves the same comma-separated content itself, GET, no login
- *        required — use this if you'd rather not expose joburls.txt
- *        directly, e.g. it sits outside the public web root).
+ * 3. Visit https://yourdomain.com/job_admin.php, log in, and add images.
+ * 4. Point the Android app's source URL (pencil icon) at:
+ *      https://yourdomain.com/job_admin.php?action=list
+ *    (GET, no login needed — the app fetches from there, never the JSON
+ *    file directly).
  */
 
 // ---- Configuration -------------------------------------------------------
 $ADMIN_USER = 'admin';
 $ADMIN_PASS = 'dev@123';
-$URLS_FILE = __DIR__ . '/joburls.txt';
+$DATA_FILE = __DIR__ . '/job_urls.json';
 // ---------------------------------------------------------------------------
 
 function read_urls(string $file): array {
     if (!file_exists($file)) {
         return [];
     }
-    $text = trim(file_get_contents($file));
-    if ($text === '') {
-        return [];
-    }
-    $parts = preg_split('/[,\r\n]+/', $text);
-    $urls = [];
-    foreach ($parts as $part) {
-        $part = trim($part);
-        if ($part !== '') {
-            $urls[] = $part;
-        }
-    }
-    return $urls;
+    $decoded = json_decode(file_get_contents($file), true);
+    return is_array($decoded) ? array_values(array_filter($decoded, fn($u) => is_string($u) && trim($u) !== '')) : [];
 }
 
 function write_urls(string $file, array $urls): void {
-    file_put_contents($file, implode(',', $urls));
+    // Creates the file automatically if it doesn't exist yet.
+    file_put_contents($file, json_encode(array_values($urls), JSON_PRETTY_PRINT));
 }
 
 // ---- Public read endpoint: GET job_admin.php?action=list ------------------
 // No login needed — this is what the Android app fetches. Plain text,
-// comma-separated, same format as joburls.txt.
+// comma-separated (the stored job_urls.json is turned into that here).
 if (($_GET['action'] ?? '') === 'list') {
     header('Content-Type: text/plain; charset=utf-8');
     header('Cache-Control: no-store');
-    echo implode(',', read_urls($URLS_FILE));
+    echo implode(',', read_urls($DATA_FILE));
     exit;
 }
 
@@ -97,11 +84,11 @@ if ($isLoggedIn && isset($_POST['action']) && $_POST['action'] === 'save') {
             $urls[] = $u;
         }
     }
-    write_urls($URLS_FILE, $urls);
-    $saveMessage = 'Saved ' . count($urls) . ' image URL(s) to joburls.txt.';
+    write_urls($DATA_FILE, $urls);
+    $saveMessage = 'Saved ' . count($urls) . ' image URL(s).';
 }
 
-$existingUrls = $isLoggedIn ? read_urls($URLS_FILE) : [];
+$existingUrls = $isLoggedIn ? read_urls($DATA_FILE) : [];
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -182,7 +169,7 @@ $existingUrls = $isLoggedIn ? read_urls($URLS_FILE) : [];
   </div>
 
   <div style="max-width:1000px;margin:16px auto;text-align:right;">
-    <button type="button" class="btn-primary" onclick="saveAll()">Save (upload to joburls.txt)</button>
+    <button type="button" class="btn-primary" onclick="saveAll()">Save</button>
   </div>
 
   <form id="uploadForm" method="post" style="display:none;">

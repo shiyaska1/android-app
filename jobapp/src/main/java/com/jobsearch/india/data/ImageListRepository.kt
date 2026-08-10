@@ -6,13 +6,14 @@ import kotlinx.coroutines.withContext
 import java.net.HttpURLConnection
 import java.net.URL
 
-/** Fetches the hosted comma-separated list of job-post image URLs (joburls.txt) and caches the
- *  last successful result on-device so the gallery still has content with no network connection. */
+/** Fetches the hosted comma-separated list of job-post image URLs (served by job_admin.php) and
+ *  caches the last successful result on-device so the gallery still has content with no network
+ *  connection. */
 class ImageListRepository(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences("job_gallery", Context.MODE_PRIVATE)
 
     var sourceUrl: String
-        get() = prefs.getString(KEY_SOURCE_URL, "") ?: ""
+        get() = prefs.getString(KEY_SOURCE_URL, DEFAULT_SOURCE_URL) ?: DEFAULT_SOURCE_URL
         set(value) = prefs.edit().putString(KEY_SOURCE_URL, value).apply()
 
     fun cachedImageUrls(): List<String> = parse(prefs.getString(KEY_CACHED_LIST, "") ?: "")
@@ -42,5 +43,8 @@ class ImageListRepository(context: Context) {
     companion object {
         private const val KEY_SOURCE_URL = "source_url"
         private const val KEY_CACHED_LIST = "cached_list"
+
+        // Pre-filled default so the app works out of the box; still editable in-app (pencil icon).
+        const val DEFAULT_SOURCE_URL = "https://eschoolsolutions.xyz/phpmailer/job_admin.php?action=list"
     }
 }
