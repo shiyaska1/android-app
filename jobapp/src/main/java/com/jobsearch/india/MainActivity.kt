@@ -9,11 +9,13 @@ import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import com.jobsearch.india.ui.GalleryApp
 import com.jobsearch.india.ui.theme.IndianJobsTheme
+import com.jobsearch.india.update.AppUpdater
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        AppUpdater.check(this)
         setContent {
             IndianJobsTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
@@ -21,5 +23,10 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        AppUpdater.check(this)
     }
 }

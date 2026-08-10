@@ -58,5 +58,9 @@ dependencies {
     // Async image loading from URLs for the job-post image gallery.
     implementation("io.coil-kt:coil-compose:2.6.0")
 
+    // Play in-app updates: force onto the latest version as soon as one is published,
+    // so future changes reach every customer instead of them staying on an old build.
+    implementation("com.google.android.play:app-update-ktx:2.1.0")
+
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
