@@ -12,15 +12,48 @@ android {
         applicationId = "com.jobsearch.india"
         minSdk = 26
         targetSdk = 36
+        // CI sets VERSION_CODE per build (see .github/workflows/build-jobapp.yml and
+        // release-jobapp.yml) so every APK/AAB gets a unique, always-increasing code.
         versionCode = System.getenv("VERSION_CODE")?.toIntOrNull() ?: 1
         versionName = "1.0.0"
         vectorDrawables { useSupportLibrary = true }
     }
 
+    // Play Store upload key — provided by CI via env vars (kept out of git). Falls back to the
+    // committed "stable" key for local/debug builds so a plain ./gradlew still works.
+    val uploadStoreFile = System.getenv("UPLOAD_STORE_FILE")
+    val uploadStorePassword = System.getenv("UPLOAD_STORE_PASSWORD")
+    val uploadKeyAlias = System.getenv("UPLOAD_KEY_ALIAS")
+    val uploadKeyPassword = System.getenv("UPLOAD_KEY_PASSWORD")
+    val hasUploadKey = !uploadStoreFile.isNullOrBlank() && !uploadStorePassword.isNullOrBlank()
+
+    signingConfigs {
+        create("stable") {
+            storeFile = file("keystore.jks")
+            storePassword = "jobkey123"
+            keyAlias = "indianjobs"
+            keyPassword = "jobkey123"
+        }
+        if (hasUploadKey) {
+            create("upload") {
+                storeFile = file(uploadStoreFile!!)
+                storePassword = uploadStorePassword
+                keyAlias = uploadKeyAlias
+                keyPassword = uploadKeyPassword
+            }
+        }
+    }
+
     buildTypes {
+        debug {
+            // Sign with the committed stable key so customers can update without data loss.
+            signingConfig = signingConfigs.getByName("stable")
+        }
         release {
             isMinifyEnabled = true
             isShrinkResources = true
+            // Use the Play upload key when CI provides it, else the local stable key.
+            signingConfig = signingConfigs.getByName(if (hasUploadKey) "upload" else "stable")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"

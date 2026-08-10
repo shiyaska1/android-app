@@ -1,0 +1,78 @@
+name: Release Indian Jobs AAB (Play Store)
+
+# Builds a SIGNED Android App Bundle (.aab) for Google Play, using the jobapp upload
+# keystore stored in the repo secrets. Trigger manually from the Actions tab, or by
+# pushing a version tag (e.g. git tag jobapp-v1.0.0 && git push origin jobapp-v1.0.0).
+on:
+  workflow_dispatch:
+  push:
+    tags: [ 'jobapp-v*' ]
+
+permissions:
+  contents: write   # to publish the .aab as a release asset
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Decode upload keystore
+        env:
+          KS_B64: ${{ secrets.JOBAPP_UPLOAD_KEYSTORE_BASE64 }}
+        run: echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/jobapp-upload-keystore.jks"
+
+      - name: Generate Gradle wrapper (8.13)
+        # Generated in a scratch directory: running the runner's own Gradle inside this
+        # project would configure it, and that Gradle is too new for our AGP.
+        run: |
+          mkdir -p /tmp/wrapgen
+          touch /tmp/wrapgen/settings.gradle
+          cd /tmp/wrapgen && gradle wrapper --gradle-version 8.13
+          cp -r /tmp/wrapgen/gradle/wrapper/gradle-wrapper.jar $GITHUB_WORKSPACE/gradle/wrapper/
+          cp /tmp/wrapgen/gradlew /tmp/wrapgen/gradlew.bat $GITHUB_WORKSPACE/
+          chmod +x $GITHUB_WORKSPACE/gradlew
+
+      - name: Compute version code
+        # Always increasing and always ahead of any hand-set versionCode in build.gradle.kts —
+        # the Play Store rejects an upload whose versionCode doesn't exceed the last one.
+        run: echo "VERSION_CODE=$(( ${{ github.run_number }} + 1000 ))" >> "$GITHUB_ENV"
+
+      - name: Build signed AAB
+        env:
+          UPLOAD_STORE_FILE: ${{ runner.temp }}/jobapp-upload-keystore.jks
+          UPLOAD_STORE_PASSWORD: ${{ secrets.JOBAPP_UPLOAD_STORE_PASSWORD }}
+          UPLOAD_KEY_ALIAS: ${{ secrets.JOBAPP_UPLOAD_KEY_ALIAS }}
+          UPLOAD_KEY_PASSWORD: ${{ secrets.JOBAPP_UPLOAD_KEY_PASSWORD }}
+          VERSION_CODE: ${{ env.VERSION_CODE }}
+        run: ./gradlew :jobapp:bundleRelease --stacktrace
+
+      - name: Publish AAB to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: jobapp-aab-v${{ github.run_number }}
+          name: Indian Jobs AAB v${{ github.run_number }}
+          body: |
+            Signed Play Store App Bundle built from commit ${{ github.sha }}.
+            Upload `jobapp-release.aab` to the Google Play Console.
+          files: jobapp/build/outputs/bundle/release/jobapp-release.aab
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload AAB artifact
+        uses: actions/upload-artifact@v4
+        continue-on-error: true
+        with:
+          name: indian-jobs-release-aab
+          path: jobapp/build/outputs/bundle/release/jobapp-release.aab
+          if-no-files-found: error

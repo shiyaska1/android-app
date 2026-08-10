@@ -20,13 +20,16 @@
  * 4. Point the Android app's source URL (pencil icon) at:
  *      https://yourdomain.com/job_admin.php?action=list
  *    (GET, no login needed — the app fetches from there, never the JSON
- *    file directly).
+ *    file directly). Each call the app makes also carries a random
+ *    per-install device_id, recorded here so the admin page can show how
+ *    many distinct devices have opened the app's home screen.
  */
 
 // ---- Configuration -------------------------------------------------------
 $ADMIN_USER = 'admin';
 $ADMIN_PASS = 'dev@123';
 $DATA_FILE = __DIR__ . '/job_urls.json';
+$VISITS_FILE = __DIR__ . '/job_visits.json';
 // ---------------------------------------------------------------------------
 
 function read_urls(string $file): array {
@@ -42,10 +45,46 @@ function write_urls(string $file, array $urls): void {
     file_put_contents($file, json_encode(array_values($urls), JSON_PRETTY_PRINT));
 }
 
+// Records a distinct device_id -> last-seen time, file-locked so concurrent
+// hits from different phones don't clobber each other. Creates the file
+// automatically on the first visit.
+function record_visit(string $file, string $deviceId): void {
+    $fp = fopen($file, 'c+');
+    if (!$fp) {
+        return;
+    }
+    flock($fp, LOCK_EX);
+    $size = filesize($file);
+    $content = $size > 0 ? fread($fp, $size) : '';
+    $data = json_decode($content, true);
+    if (!is_array($data)) {
+        $data = [];
+    }
+    $data[$deviceId] = time();
+    ftruncate($fp, 0);
+    rewind($fp);
+    fwrite($fp, json_encode($data));
+    fflush($fp);
+    flock($fp, LOCK_UN);
+    fclose($fp);
+}
+
+function count_visits(string $file): int {
+    if (!file_exists($file)) {
+        return 0;
+    }
+    $data = json_decode(file_get_contents($file), true);
+    return is_array($data) ? count($data) : 0;
+}
+
 // ---- Public read endpoint: GET job_admin.php?action=list ------------------
 // No login needed — this is what the Android app fetches. Plain text,
 // comma-separated (the stored job_urls.json is turned into that here).
 if (($_GET['action'] ?? '') === 'list') {
+    $deviceId = trim($_GET['device_id'] ?? '');
+    if ($deviceId !== '' && preg_match('/^[A-Za-z0-9\-]{1,64}$/', $deviceId)) {
+        record_visit($VISITS_FILE, $deviceId);
+    }
     header('Content-Type: text/plain; charset=utf-8');
     header('Cache-Control: no-store');
     echo implode(',', read_urls($DATA_FILE));
@@ -144,6 +183,7 @@ $existingUrls = $isLoggedIn ? read_urls($DATA_FILE) : [];
 
   <div class="topbar">
     <strong>Indian Jobs — Admin</strong>
+    <span>Home page visits (distinct devices): <strong><?= count_visits($VISITS_FILE) ?></strong></span>
     <a href="job_admin.php?logout=1">Log out</a>
   </div>
 

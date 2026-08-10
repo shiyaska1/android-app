@@ -1,0 +1,81 @@
+name: Build Indian Jobs APK
+
+# Build the jobapp debug APK in the cloud on every push, and on-demand from the Actions tab.
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write   # needed to publish releases
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Generate Gradle wrapper (8.13)
+        # Generated in a scratch directory: running the runner's own Gradle inside this
+        # project would configure it, and that Gradle is too new for our AGP.
+        run: |
+          mkdir -p /tmp/wrapgen
+          touch /tmp/wrapgen/settings.gradle
+          cd /tmp/wrapgen && gradle wrapper --gradle-version 8.13
+          cp -r /tmp/wrapgen/gradle/wrapper/gradle-wrapper.jar $GITHUB_WORKSPACE/gradle/wrapper/
+          cp /tmp/wrapgen/gradlew /tmp/wrapgen/gradlew.bat $GITHUB_WORKSPACE/
+          chmod +x $GITHUB_WORKSPACE/gradlew
+
+      - name: Compute version code
+        # Always increasing and always ahead of any hand-set versionCode in build.gradle.kts,
+        # so a debug APK installs as an upgrade over the previous one without uninstalling.
+        run: echo "VERSION_CODE=$(( ${{ github.run_number }} + 1000 ))" >> "$GITHUB_ENV"
+
+      - name: Build debug APK
+        env:
+          VERSION_CODE: ${{ env.VERSION_CODE }}
+        run: |
+          set -o pipefail
+          ./gradlew :jobapp:assembleDebug --stacktrace 2>&1 | tee build-log.txt
+
+      # A failed compile publishes its log as a release asset, so the errors are
+      # readable without Actions log access.
+      - name: Publish build log on failure
+        if: failure()
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: jobapp-buildlog-${{ github.run_number }}
+          name: Indian Jobs build log ${{ github.run_number }}
+          files: build-log.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        continue-on-error: true   # artifact storage quota can fill up; Release below is the reliable path
+        with:
+          name: indian-jobs-debug-apk
+          path: jobapp/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+
+      - name: Publish APK to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: jobapp-v${{ github.run_number }}
+          name: Indian Jobs v${{ github.run_number }}
+          body: |
+            Debug APK built automatically from commit ${{ github.sha }}.
+            Download `jobapp-debug.apk` below and install it on your Android device.
+          files: jobapp/build/outputs/apk/debug/jobapp-debug.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
