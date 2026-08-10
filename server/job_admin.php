@@ -17,13 +17,14 @@
  * 2. Change $ADMIN_USER / $ADMIN_PASS below before this goes anywhere
  *    public — the admin/dev@123 defaults are placeholders only.
  * 3. Visit https://yourdomain.com/job_admin.php, log in, and manage images.
- * 4. Point the Android app's "joburls.txt" source (pencil icon) at:
- *      https://yourdomain.com/joburls.txt
- *    (the plain text file this script writes — the app fetches that
- *    directly, never job_admin.php itself).
+ * 4. Point the Android app's source URL (pencil icon) at either:
+ *      https://yourdomain.com/joburls.txt                  (the plain file
+ *        this script writes — needs the file to be publicly readable), or
+ *      https://yourdomain.com/job_admin.php?action=list    (this script
+ *        serves the same comma-separated content itself, GET, no login
+ *        required — use this if you'd rather not expose joburls.txt
+ *        directly, e.g. it sits outside the public web root).
  */
-
-session_start();
 
 // ---- Configuration -------------------------------------------------------
 $ADMIN_USER = 'admin';
@@ -53,6 +54,18 @@ function read_urls(string $file): array {
 function write_urls(string $file, array $urls): void {
     file_put_contents($file, implode(',', $urls));
 }
+
+// ---- Public read endpoint: GET job_admin.php?action=list ------------------
+// No login needed — this is what the Android app fetches. Plain text,
+// comma-separated, same format as joburls.txt.
+if (($_GET['action'] ?? '') === 'list') {
+    header('Content-Type: text/plain; charset=utf-8');
+    header('Cache-Control: no-store');
+    echo implode(',', read_urls($URLS_FILE));
+    exit;
+}
+
+session_start();
 
 // ---- Login handling --------------------------------------------------------
 if (isset($_POST['action']) && $_POST['action'] === 'login') {
