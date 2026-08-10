@@ -1,0 +1,9 @@
+# Upload this into the SAME new subfolder as job_admin.php (e.g. /phpmailer/indianjobs/).
+#
+# The parent /phpmailer/ folder runs a separate PHP app whose config gets forced onto
+# every .php file inside it (most likely via auto_prepend_file), which is why
+# job_admin.php returned a blank HTTP 500 even on its plain login page. Apache .htaccess
+# settings are inherited by subfolders unless overridden, so this cancels that forcing
+# for just this subfolder. Harmless if that isn't actually the cause.
+php_value auto_prepend_file none
+php_value auto_append_file none
