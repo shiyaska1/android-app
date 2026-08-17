@@ -40,6 +40,31 @@ data class Supplier(
     val isDefault: Boolean = false
 )
 
+/** Core subset of the Android app's Bill entity — enough to record a real sale. */
+data class Bill(
+    val id: Long = 0,
+    val billNo: String,
+    val dateMillis: Long,
+    val customerId: Long,
+    val customerName: String,
+    val subTotal: Double,
+    val taxTotal: Double,
+    val grandTotal: Double
+)
+
+/** Core subset of the Android app's BillItem entity. */
+data class BillLine(
+    val id: Long = 0,
+    val billId: Long,
+    val name: String,
+    val qty: Double,
+    val price: Double,
+    val taxPercent: Double,
+    val lineTotal: Double
+)
+
+data class BillWithLines(val bill: Bill, val lines: List<BillLine>)
+
 /** The desktop app's own embedded SQLite database — plain JDBC for now (Room multiplatform,
  * reusing the Android app's 45 migrations as-is, lands in a later batch). Lives in the
  * OS-standard per-user app-data folder, created automatically on first run: no server, no
@@ -77,6 +102,19 @@ object DesktopDatabase {
                         "name TEXT NOT NULL, phone TEXT NOT NULL DEFAULT '', " +
                         "address TEXT NOT NULL DEFAULT '', gstin TEXT NOT NULL DEFAULT '', " +
                         "isDefault INTEGER NOT NULL DEFAULT 0)"
+                )
+                st.execute(
+                    "CREATE TABLE IF NOT EXISTS bills (" +
+                        "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+                        "billNo TEXT NOT NULL, dateMillis INTEGER NOT NULL, " +
+                        "customerId INTEGER NOT NULL, customerName TEXT NOT NULL, " +
+                        "subTotal REAL NOT NULL, taxTotal REAL NOT NULL, grandTotal REAL NOT NULL)"
+                )
+                st.execute(
+                    "CREATE TABLE IF NOT EXISTS bill_items (" +
+                        "id INTEGER PRIMARY KEY AUTOINCREMENT, billId INTEGER NOT NULL, " +
+                        "name TEXT NOT NULL, qty REAL NOT NULL, price REAL NOT NULL, " +
+                        "taxPercent REAL NOT NULL, lineTotal REAL NOT NULL)"
                 )
             }
         }
@@ -181,6 +219,99 @@ object DesktopDatabase {
         connection.prepareStatement("DELETE FROM suppliers WHERE id = ?").use { ps ->
             ps.setLong(1, id)
             ps.executeUpdate()
+        }
+    }
+
+    fun allBills(): List<Bill> {
+        connection.createStatement().use { st ->
+            st.executeQuery("SELECT * FROM bills ORDER BY dateMillis DESC, id DESC").use { rs ->
+                val out = mutableListOf<Bill>()
+                while (rs.next()) {
+                    out += Bill(
+                        id = rs.getLong("id"), billNo = rs.getString("billNo"),
+                        dateMillis = rs.getLong("dateMillis"), customerId = rs.getLong("customerId"),
+                        customerName = rs.getString("customerName"), subTotal = rs.getDouble("subTotal"),
+                        taxTotal = rs.getDouble("taxTotal"), grandTotal = rs.getDouble("grandTotal")
+                    )
+                }
+                return out
+            }
+        }
+    }
+
+    fun linesFor(billId: Long): List<BillLine> {
+        connection.prepareStatement("SELECT * FROM bill_items WHERE billId = ?").use { ps ->
+            ps.setLong(1, billId)
+            ps.executeQuery().use { rs ->
+                val out = mutableListOf<BillLine>()
+                while (rs.next()) {
+                    out += BillLine(
+                        id = rs.getLong("id"), billId = rs.getLong("billId"), name = rs.getString("name"),
+                        qty = rs.getDouble("qty"), price = rs.getDouble("price"),
+                        taxPercent = rs.getDouble("taxPercent"), lineTotal = rs.getDouble("lineTotal")
+                    )
+                }
+                return out
+            }
+        }
+    }
+
+    fun nextBillNo(): String {
+        connection.createStatement().use { st ->
+            st.executeQuery("SELECT COUNT(*) AS n FROM bills").use { rs ->
+                rs.next()
+                return "INV-" + (rs.getInt("n") + 1).toString().padStart(4, '0')
+            }
+        }
+    }
+
+    /** Saves a bill and its lines in one transaction; [lines] carry name/qty/price/taxPercent
+     * only — id/billId/lineTotal are computed here. Returns the saved [Bill]. */
+    fun saveBill(customerId: Long, customerName: String, lines: List<BillLine>): Bill {
+        val subTotal = lines.sumOf { it.qty * it.price }
+        val taxTotal = lines.sumOf { it.qty * it.price * it.taxPercent / 100.0 }
+        val grandTotal = subTotal + taxTotal
+        val billNo = nextBillNo()
+        val dateMillis = System.currentTimeMillis()
+
+        connection.autoCommit = false
+        try {
+            val billId = connection.prepareStatement(
+                "INSERT INTO bills (billNo, dateMillis, customerId, customerName, subTotal, taxTotal, grandTotal) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                java.sql.Statement.RETURN_GENERATED_KEYS
+            ).use { ps ->
+                ps.setString(1, billNo)
+                ps.setLong(2, dateMillis)
+                ps.setLong(3, customerId)
+                ps.setString(4, customerName)
+                ps.setDouble(5, subTotal)
+                ps.setDouble(6, taxTotal)
+                ps.setDouble(7, grandTotal)
+                ps.executeUpdate()
+                ps.generatedKeys.use { keys -> keys.next(); keys.getLong(1) }
+            }
+            connection.prepareStatement(
+                "INSERT INTO bill_items (billId, name, qty, price, taxPercent, lineTotal) VALUES (?, ?, ?, ?, ?, ?)"
+            ).use { ps ->
+                lines.forEach { l ->
+                    val lineTotal = l.qty * l.price * (1 + l.taxPercent / 100.0)
+                    ps.setLong(1, billId)
+                    ps.setString(2, l.name)
+                    ps.setDouble(3, l.qty)
+                    ps.setDouble(4, l.price)
+                    ps.setDouble(5, l.taxPercent)
+                    ps.setDouble(6, lineTotal)
+                    ps.addBatch()
+                }
+                ps.executeBatch()
+            }
+            connection.commit()
+            return Bill(billId, billNo, dateMillis, customerId, customerName, subTotal, taxTotal, grandTotal)
+        } catch (e: Exception) {
+            connection.rollback()
+            throw e
+        } finally {
+            connection.autoCommit = true
         }
     }
 }
