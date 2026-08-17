@@ -109,6 +109,7 @@ fun ItemFormDialog(onDismiss: () -> Unit, onSave: (Item) -> Unit) {
     var storeLocation by remember { mutableStateOf("") }
     var chemicalContent by remember { mutableStateOf("") }
 
+    @Composable
     fun numField(value: String, onChange: (String) -> Unit, label: String) {
         OutlinedTextField(
             value = value, onValueChange = { onChange(it.filter { c -> c.isDigit() || c == '.' }) },
