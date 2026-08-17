@@ -29,7 +29,8 @@ object BackupSync {
                 "openingStock", "unit", "secondaryUnit", "conversionFactor", "storeLocation", "chemicalContent"
             )
         ),
-        Triple("suppliers", "name", listOf("name", "phone", "address", "gstin", "isDefault"))
+        Triple("suppliers", "name", listOf("name", "phone", "address", "gstin", "isDefault")),
+        Triple("categories", "name", listOf("name"))
     )
 
     // table, naturalKeyColumn, insertColumns (customerId/supplierId deliberately excluded —

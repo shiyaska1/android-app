@@ -35,6 +35,9 @@ data class Item(
     val chemicalContent: String = ""
 )
 
+/** Item category master — a simple name list used to populate the Item Master's category field. */
+data class Category(val id: Long = 0, val name: String)
+
 /** Mirrors the Android app's Supplier entity column-for-column. */
 data class Supplier(
     val id: Long = 0,
@@ -213,7 +216,34 @@ object DesktopDatabase {
                 st.execute(
                     "CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
                 )
+                st.execute(
+                    "CREATE TABLE IF NOT EXISTS categories (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE)"
+                )
             }
+        }
+    }
+
+    fun allCategories(): List<Category> {
+        connection.createStatement().use { st ->
+            st.executeQuery("SELECT * FROM categories ORDER BY name").use { rs ->
+                val out = mutableListOf<Category>()
+                while (rs.next()) out += Category(id = rs.getLong("id"), name = rs.getString("name"))
+                return out
+            }
+        }
+    }
+
+    fun addCategory(name: String) {
+        connection.prepareStatement("INSERT OR IGNORE INTO categories (name) VALUES (?)").use { ps ->
+            ps.setString(1, name)
+            ps.executeUpdate()
+        }
+    }
+
+    fun deleteCategory(id: Long) {
+        connection.prepareStatement("DELETE FROM categories WHERE id = ?").use { ps ->
+            ps.setLong(1, id)
+            ps.executeUpdate()
         }
     }
 

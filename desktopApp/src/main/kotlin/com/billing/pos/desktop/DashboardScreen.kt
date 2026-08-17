@@ -97,6 +97,8 @@ fun DashboardScreen() {
             "Balance Sheet" -> BalanceSheetScreen(onBack = { openTile = null })
             "Settings", "Backup" -> SettingsScreen(onBack = { openTile = null })
             "Price Search" -> PriceSearchScreen(onBack = { openTile = null })
+            "Categories" -> CategoriesScreen(onBack = { openTile = null })
+            "Day Book" -> DayBookScreen(onBack = { openTile = null })
             else -> TileDetailScreen(tile.label, onBack = { openTile = null })
         }
         return
