@@ -25,7 +25,7 @@ compose.desktop {
             // resulting .exe/.msi with nothing else to install, no separate Java setup.
             targetFormats(TargetFormat.Exe, TargetFormat.Msi)
             packageName = "POS Billing"
-            packageVersion = "1.0.2"
+            packageVersion = "1.0.3"
             // jlink's automatic module detection missed java.sql (needed by the SQLite JDBC
             // driver) — every screen that touched the database threw NoClassDefFoundError on
             // java.sql.Connection at runtime. Hand-picking a module list risks the same failure

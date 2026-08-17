@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.PointOfSale
 import androidx.compose.material.icons.filled.ReceiptLong
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Summarize
 import androidx.compose.material.icons.filled.TrendingUp
@@ -62,6 +63,7 @@ private val TILES = listOf(
     Tile("Suppliers", Icons.Filled.ManageAccounts, "Masters"),
     Tile("Items", Icons.Filled.Inventory2, "Masters"),
     Tile("Categories", Icons.Filled.Category, "Masters"),
+    Tile("Price Search", Icons.Filled.Search, "Masters"),
     Tile("Ledger", Icons.Filled.MenuBook, "Accounts"),
     Tile("Trial Balance", Icons.Filled.Summarize, "Accounts"),
     Tile("Profit & Loss", Icons.Filled.TrendingUp, "Accounts"),
@@ -94,6 +96,7 @@ fun DashboardScreen() {
             "Profit & Loss" -> ProfitLossScreen(onBack = { openTile = null })
             "Balance Sheet" -> BalanceSheetScreen(onBack = { openTile = null })
             "Settings", "Backup" -> SettingsScreen(onBack = { openTile = null })
+            "Price Search" -> PriceSearchScreen(onBack = { openTile = null })
             else -> TileDetailScreen(tile.label, onBack = { openTile = null })
         }
         return
