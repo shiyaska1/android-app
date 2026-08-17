@@ -16,18 +16,23 @@ data class Customer(
     val customerType: String = "General"
 )
 
-/** Core subset of the Android app's Item entity — the commonly-used fields ported first;
- * the rest (openingStock, secondaryUnit, conversionFactor, rack location, etc.) are added as
- * the screens that actually need them (Purchases, Stock Report, ...) get ported. */
+/** Full parity with the Android app's Item entity — every field, none dropped. */
 data class Item(
     val id: Long = 0,
     val name: String,
     val price: Double,
     val purchasePrice: Double = 0.0,
+    val mrp: Double = 0.0,
     val taxPercent: Double = 0.0,
     val barcode: String = "",
+    val hsn: String = "",
     val category: String = "",
-    val unit: String = "PCS"
+    val openingStock: Double = 0.0,
+    val unit: String = "PCS",
+    val secondaryUnit: String = "PCS",
+    val conversionFactor: Double = 1.0,
+    val storeLocation: String = "",
+    val chemicalContent: String = ""
 )
 
 /** Mirrors the Android app's Supplier entity column-for-column. */
@@ -143,10 +148,22 @@ object DesktopDatabase {
                     "CREATE TABLE IF NOT EXISTS items (" +
                         "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
                         "name TEXT NOT NULL, price REAL NOT NULL DEFAULT 0, " +
-                        "purchasePrice REAL NOT NULL DEFAULT 0, taxPercent REAL NOT NULL DEFAULT 0, " +
-                        "barcode TEXT NOT NULL DEFAULT '', category TEXT NOT NULL DEFAULT '', " +
-                        "unit TEXT NOT NULL DEFAULT 'PCS')"
+                        "purchasePrice REAL NOT NULL DEFAULT 0, mrp REAL NOT NULL DEFAULT 0, " +
+                        "taxPercent REAL NOT NULL DEFAULT 0, barcode TEXT NOT NULL DEFAULT '', " +
+                        "hsn TEXT NOT NULL DEFAULT '', category TEXT NOT NULL DEFAULT '', " +
+                        "openingStock REAL NOT NULL DEFAULT 0, unit TEXT NOT NULL DEFAULT 'PCS', " +
+                        "secondaryUnit TEXT NOT NULL DEFAULT 'PCS', conversionFactor REAL NOT NULL DEFAULT 1, " +
+                        "storeLocation TEXT NOT NULL DEFAULT '', chemicalContent TEXT NOT NULL DEFAULT '')"
                 )
+                // In-place upgrade for databases created before these fields existed — SQLite
+                // 3.35+ (bundled by sqlite-jdbc) supports IF NOT EXISTS on ADD COLUMN, so this
+                // is a no-op on a fresh database and safe to re-run on every startup.
+                listOf(
+                    "mrp REAL NOT NULL DEFAULT 0", "hsn TEXT NOT NULL DEFAULT ''",
+                    "openingStock REAL NOT NULL DEFAULT 0", "secondaryUnit TEXT NOT NULL DEFAULT 'PCS'",
+                    "conversionFactor REAL NOT NULL DEFAULT 1", "storeLocation TEXT NOT NULL DEFAULT ''",
+                    "chemicalContent TEXT NOT NULL DEFAULT ''"
+                ).forEach { colDef -> st.execute("ALTER TABLE items ADD COLUMN IF NOT EXISTS $colDef") }
                 st.execute(
                     "CREATE TABLE IF NOT EXISTS suppliers (" +
                         "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
@@ -257,8 +274,12 @@ object DesktopDatabase {
                     out += Item(
                         id = rs.getLong("id"), name = rs.getString("name"),
                         price = rs.getDouble("price"), purchasePrice = rs.getDouble("purchasePrice"),
-                        taxPercent = rs.getDouble("taxPercent"), barcode = rs.getString("barcode"),
-                        category = rs.getString("category"), unit = rs.getString("unit")
+                        mrp = rs.getDouble("mrp"), taxPercent = rs.getDouble("taxPercent"),
+                        barcode = rs.getString("barcode"), hsn = rs.getString("hsn"),
+                        category = rs.getString("category"), openingStock = rs.getDouble("openingStock"),
+                        unit = rs.getString("unit"), secondaryUnit = rs.getString("secondaryUnit"),
+                        conversionFactor = rs.getDouble("conversionFactor"),
+                        storeLocation = rs.getString("storeLocation"), chemicalContent = rs.getString("chemicalContent")
                     )
                 }
                 return out
@@ -266,15 +287,26 @@ object DesktopDatabase {
         }
     }
 
-    fun addItem(name: String, price: Double, taxPercent: Double, barcode: String, category: String) {
+    fun addItem(item: Item) {
         connection.prepareStatement(
-            "INSERT INTO items (name, price, taxPercent, barcode, category) VALUES (?, ?, ?, ?, ?)"
+            "INSERT INTO items (name, price, purchasePrice, mrp, taxPercent, barcode, hsn, category, " +
+                "openingStock, unit, secondaryUnit, conversionFactor, storeLocation, chemicalContent) " +
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         ).use { ps ->
-            ps.setString(1, name)
-            ps.setDouble(2, price)
-            ps.setDouble(3, taxPercent)
-            ps.setString(4, barcode)
-            ps.setString(5, category)
+            ps.setString(1, item.name)
+            ps.setDouble(2, item.price)
+            ps.setDouble(3, item.purchasePrice)
+            ps.setDouble(4, item.mrp)
+            ps.setDouble(5, item.taxPercent)
+            ps.setString(6, item.barcode)
+            ps.setString(7, item.hsn)
+            ps.setString(8, item.category)
+            ps.setDouble(9, item.openingStock)
+            ps.setString(10, item.unit)
+            ps.setString(11, item.secondaryUnit)
+            ps.setDouble(12, item.conversionFactor)
+            ps.setString(13, item.storeLocation)
+            ps.setString(14, item.chemicalContent)
             ps.executeUpdate()
         }
     }

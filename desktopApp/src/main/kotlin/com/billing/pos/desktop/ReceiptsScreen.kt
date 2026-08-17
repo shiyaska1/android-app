@@ -1,6 +1,5 @@
 package com.billing.pos.desktop
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -50,7 +49,7 @@ private val receiptDateFmt = SimpleDateFormat("dd MMM yyyy", Locale.getDefault()
 @Composable
 fun ReceiptsScreen(onBack: () -> Unit) {
     var receipts by remember { mutableStateOf(DesktopDatabase.allReceipts()) }
-    val customers = remember { DesktopDatabase.allCustomers() }
+    var customers by remember { mutableStateOf(DesktopDatabase.allCustomers()) }
     var showDialog by remember { mutableStateOf(false) }
 
     Scaffold(
@@ -101,6 +100,7 @@ fun ReceiptsScreen(onBack: () -> Unit) {
         var amount by remember { mutableStateOf("") }
         var mode by remember { mutableStateOf("Cash") }
         var showCustomerPicker by remember { mutableStateOf(false) }
+        var showAddCustomer by remember { mutableStateOf(false) }
 
         AlertDialog(
             onDismissRequest = { showDialog = false },
@@ -137,24 +137,26 @@ fun ReceiptsScreen(onBack: () -> Unit) {
         )
 
         if (showCustomerPicker) {
-            AlertDialog(
-                onDismissRequest = { showCustomerPicker = false },
-                title = { Text("Select customer") },
-                text = {
-                    LazyColumn {
-                        items(customers, key = { it.id }) { c ->
-                            Text(
-                                c.name,
-                                modifier = Modifier.fillMaxWidth()
-                                    .clickable { selectedCustomer = c; showCustomerPicker = false }
-                                    .padding(vertical = 10.dp)
-                            )
-                            HorizontalDivider()
-                        }
-                    }
-                },
-                confirmButton = {},
-                dismissButton = { TextButton(onClick = { showCustomerPicker = false }) { Text("Cancel") } }
+            SearchablePickerDialog(
+                title = "Select customer",
+                items = customers,
+                labelOf = { it.name },
+                subtitleOf = { it.phone },
+                onDismiss = { showCustomerPicker = false },
+                onPick = { c -> selectedCustomer = c; showCustomerPicker = false },
+                onAddNew = { showCustomerPicker = false; showAddCustomer = true }
+            )
+        }
+
+        if (showAddCustomer) {
+            CustomerFormDialog(
+                onDismiss = { showAddCustomer = false },
+                onSave = { c ->
+                    DesktopDatabase.addCustomer(c.name, c.phone, c.address)
+                    customers = DesktopDatabase.allCustomers()
+                    selectedCustomer = customers.firstOrNull { it.name == c.name } ?: selectedCustomer
+                    showAddCustomer = false
+                }
             )
         }
     }

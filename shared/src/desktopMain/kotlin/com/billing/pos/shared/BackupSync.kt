@@ -22,7 +22,13 @@ import java.util.zip.ZipOutputStream
 object BackupSync {
     private val MASTER_TABLES = listOf(
         Triple("customers", "name", listOf("name", "phone", "address", "gstin", "isDefault", "customerType")),
-        Triple("items", "name", listOf("name", "price", "purchasePrice", "taxPercent", "barcode", "category", "unit")),
+        Triple(
+            "items", "name",
+            listOf(
+                "name", "price", "purchasePrice", "mrp", "taxPercent", "barcode", "hsn", "category",
+                "openingStock", "unit", "secondaryUnit", "conversionFactor", "storeLocation", "chemicalContent"
+            )
+        ),
         Triple("suppliers", "name", listOf("name", "phone", "address", "gstin", "isDefault"))
     )
 

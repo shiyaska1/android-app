@@ -1,6 +1,5 @@
 package com.billing.pos.desktop
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,7 +15,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
@@ -107,12 +105,14 @@ fun SalesScreen(onBack: () -> Unit) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun NewSaleScreen(onBack: () -> Unit, onSaved: () -> Unit) {
-    val customers = remember { DesktopDatabase.allCustomers() }
-    val availableItems = remember { DesktopDatabase.allItems() }
+    var customers by remember { mutableStateOf(DesktopDatabase.allCustomers()) }
+    var availableItems by remember { mutableStateOf(DesktopDatabase.allItems()) }
     var selectedCustomer by remember { mutableStateOf<Customer?>(customers.firstOrNull()) }
     var cart by remember { mutableStateOf(listOf<BillLine>()) }
     var showCustomerPicker by remember { mutableStateOf(false) }
     var showItemPicker by remember { mutableStateOf(false) }
+    var showAddCustomer by remember { mutableStateOf(false) }
+    var showAddItem by remember { mutableStateOf(false) }
 
     val subTotal = cart.sumOf { it.qty * it.price }
     val taxTotal = cart.sumOf { it.qty * it.price * it.taxPercent / 100.0 }
@@ -195,58 +195,61 @@ private fun NewSaleScreen(onBack: () -> Unit, onSaved: () -> Unit) {
     }
 
     if (showCustomerPicker) {
-        AlertDialog(
-            onDismissRequest = { showCustomerPicker = false },
-            title = { Text("Select customer") },
-            text = {
-                LazyColumn {
-                    items(customers, key = { it.id }) { c ->
-                        Text(
-                            c.name,
-                            modifier = Modifier.fillMaxWidth()
-                                .clickable { selectedCustomer = c; showCustomerPicker = false }
-                                .padding(vertical = 10.dp)
-                        )
-                        HorizontalDivider()
-                    }
-                }
-            },
-            confirmButton = {},
-            dismissButton = { TextButton(onClick = { showCustomerPicker = false }) { Text("Cancel") } }
+        SearchablePickerDialog(
+            title = "Select customer",
+            items = customers,
+            labelOf = { it.name },
+            subtitleOf = { it.phone },
+            onDismiss = { showCustomerPicker = false },
+            onPick = { c -> selectedCustomer = c; showCustomerPicker = false },
+            onAddNew = { showCustomerPicker = false; showAddCustomer = true }
         )
     }
 
     if (showItemPicker) {
-        AlertDialog(
-            onDismissRequest = { showItemPicker = false },
-            title = { Text("Pick item") },
-            text = {
-                LazyColumn {
-                    items(availableItems, key = { it.id }) { i ->
-                        Row(
-                            Modifier.fillMaxWidth()
-                                .clickable {
-                                    val existing = cart.firstOrNull { it.name == i.name }
-                                    cart = if (existing != null) {
-                                        cart.map { if (it === existing) it.copy(qty = it.qty + 1) else it }
-                                    } else {
-                                        cart + BillLine(billId = 0, name = i.name, qty = 1.0, price = i.price, taxPercent = i.taxPercent, lineTotal = 0.0)
-                                    }
-                                    showItemPicker = false
-                                }
-                                .padding(vertical = 10.dp)
-                        ) {
-                            Column(Modifier.weight(1f)) {
-                                Text(i.name)
-                                Text("₹${i.price}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
-                            }
-                        }
-                        HorizontalDivider()
-                    }
+        SearchablePickerDialog(
+            title = "Pick item",
+            items = availableItems,
+            labelOf = { it.name },
+            subtitleOf = { "₹${it.price}" },
+            onDismiss = { showItemPicker = false },
+            onPick = { i ->
+                val existing = cart.firstOrNull { it.name == i.name }
+                cart = if (existing != null) {
+                    cart.map { if (it === existing) it.copy(qty = it.qty + 1) else it }
+                } else {
+                    cart + BillLine(billId = 0, name = i.name, qty = 1.0, price = i.price, taxPercent = i.taxPercent, lineTotal = 0.0)
                 }
+                showItemPicker = false
             },
-            confirmButton = {},
-            dismissButton = { TextButton(onClick = { showItemPicker = false }) { Text("Cancel") } }
+            onAddNew = { showItemPicker = false; showAddItem = true }
+        )
+    }
+
+    if (showAddCustomer) {
+        CustomerFormDialog(
+            onDismiss = { showAddCustomer = false },
+            onSave = { c ->
+                DesktopDatabase.addCustomer(c.name, c.phone, c.address)
+                customers = DesktopDatabase.allCustomers()
+                selectedCustomer = customers.firstOrNull { it.name == c.name } ?: selectedCustomer
+                showAddCustomer = false
+            }
+        )
+    }
+
+    if (showAddItem) {
+        ItemFormDialog(
+            onDismiss = { showAddItem = false },
+            onSave = { i ->
+                DesktopDatabase.addItem(i)
+                availableItems = DesktopDatabase.allItems()
+                val saved = availableItems.firstOrNull { it.name == i.name }
+                if (saved != null) {
+                    cart = cart + BillLine(billId = 0, name = saved.name, qty = 1.0, price = saved.price, taxPercent = saved.taxPercent, lineTotal = 0.0)
+                }
+                showAddItem = false
+            }
         )
     }
 }
