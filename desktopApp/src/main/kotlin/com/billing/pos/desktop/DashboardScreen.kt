@@ -82,6 +82,7 @@ fun DashboardScreen() {
     if (tile != null) {
         when (tile.label) {
             "Customers" -> CustomersScreen(onBack = { openTile = null })
+            "Items" -> ItemsScreen(onBack = { openTile = null })
             else -> TileDetailScreen(tile.label, onBack = { openTile = null })
         }
         return
