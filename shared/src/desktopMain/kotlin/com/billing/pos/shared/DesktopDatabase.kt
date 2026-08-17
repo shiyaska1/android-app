@@ -88,6 +88,28 @@ data class PurchaseLine(
     val lineTotal: Double
 )
 
+/** Core subset of the Android app's Receipt entity — money received from a customer. */
+data class Receipt(
+    val id: Long = 0,
+    val receiptNo: String,
+    val customerName: String,
+    val dateMillis: Long,
+    val amount: Double,
+    val paymentMode: String
+)
+
+/** Core subset of the Android app's Expense entity — money paid out (a general expense or a
+ * payment against a purchase). [payTo] is the supplier/payee name, blank for general expenses. */
+data class Expense(
+    val id: Long = 0,
+    val voucherNo: String,
+    val dateMillis: Long,
+    val description: String,
+    val amount: Double,
+    val paymentMode: String,
+    val payTo: String = ""
+)
+
 /** The desktop app's own embedded SQLite database — plain JDBC for now (Room multiplatform,
  * reusing the Android app's 45 migrations as-is, lands in a later batch). Lives in the
  * OS-standard per-user app-data folder, created automatically on first run: no server, no
@@ -151,6 +173,19 @@ object DesktopDatabase {
                         "id INTEGER PRIMARY KEY AUTOINCREMENT, purchaseId INTEGER NOT NULL, " +
                         "name TEXT NOT NULL, qty REAL NOT NULL, price REAL NOT NULL, " +
                         "taxPercent REAL NOT NULL, lineTotal REAL NOT NULL)"
+                )
+                st.execute(
+                    "CREATE TABLE IF NOT EXISTS receipts (" +
+                        "id INTEGER PRIMARY KEY AUTOINCREMENT, receiptNo TEXT NOT NULL, " +
+                        "customerName TEXT NOT NULL, dateMillis INTEGER NOT NULL, " +
+                        "amount REAL NOT NULL, paymentMode TEXT NOT NULL DEFAULT 'Cash')"
+                )
+                st.execute(
+                    "CREATE TABLE IF NOT EXISTS expenses (" +
+                        "id INTEGER PRIMARY KEY AUTOINCREMENT, voucherNo TEXT NOT NULL, " +
+                        "dateMillis INTEGER NOT NULL, description TEXT NOT NULL, " +
+                        "amount REAL NOT NULL, paymentMode TEXT NOT NULL DEFAULT 'Cash', " +
+                        "payTo TEXT NOT NULL DEFAULT '')"
                 )
             }
         }
@@ -423,6 +458,86 @@ object DesktopDatabase {
             throw e
         } finally {
             connection.autoCommit = true
+        }
+    }
+
+    fun allReceipts(): List<Receipt> {
+        connection.createStatement().use { st ->
+            st.executeQuery("SELECT * FROM receipts ORDER BY dateMillis DESC, id DESC").use { rs ->
+                val out = mutableListOf<Receipt>()
+                while (rs.next()) {
+                    out += Receipt(
+                        id = rs.getLong("id"), receiptNo = rs.getString("receiptNo"),
+                        customerName = rs.getString("customerName"), dateMillis = rs.getLong("dateMillis"),
+                        amount = rs.getDouble("amount"), paymentMode = rs.getString("paymentMode")
+                    )
+                }
+                return out
+            }
+        }
+    }
+
+    fun addReceipt(customerName: String, amount: Double, paymentMode: String) {
+        val receiptNo = connection.createStatement().use { st ->
+            st.executeQuery("SELECT COUNT(*) AS n FROM receipts").use { rs -> rs.next(); "RCT-" + (rs.getInt("n") + 1).toString().padStart(4, '0') }
+        }
+        connection.prepareStatement(
+            "INSERT INTO receipts (receiptNo, customerName, dateMillis, amount, paymentMode) VALUES (?, ?, ?, ?, ?)"
+        ).use { ps ->
+            ps.setString(1, receiptNo)
+            ps.setString(2, customerName)
+            ps.setLong(3, System.currentTimeMillis())
+            ps.setDouble(4, amount)
+            ps.setString(5, paymentMode)
+            ps.executeUpdate()
+        }
+    }
+
+    fun deleteReceipt(id: Long) {
+        connection.prepareStatement("DELETE FROM receipts WHERE id = ?").use { ps ->
+            ps.setLong(1, id)
+            ps.executeUpdate()
+        }
+    }
+
+    fun allExpenses(): List<Expense> {
+        connection.createStatement().use { st ->
+            st.executeQuery("SELECT * FROM expenses ORDER BY dateMillis DESC, id DESC").use { rs ->
+                val out = mutableListOf<Expense>()
+                while (rs.next()) {
+                    out += Expense(
+                        id = rs.getLong("id"), voucherNo = rs.getString("voucherNo"),
+                        dateMillis = rs.getLong("dateMillis"), description = rs.getString("description"),
+                        amount = rs.getDouble("amount"), paymentMode = rs.getString("paymentMode"),
+                        payTo = rs.getString("payTo")
+                    )
+                }
+                return out
+            }
+        }
+    }
+
+    fun addExpense(description: String, amount: Double, paymentMode: String, payTo: String) {
+        val voucherNo = connection.createStatement().use { st ->
+            st.executeQuery("SELECT COUNT(*) AS n FROM expenses").use { rs -> rs.next(); "PAY-" + (rs.getInt("n") + 1).toString().padStart(4, '0') }
+        }
+        connection.prepareStatement(
+            "INSERT INTO expenses (voucherNo, dateMillis, description, amount, paymentMode, payTo) VALUES (?, ?, ?, ?, ?, ?)"
+        ).use { ps ->
+            ps.setString(1, voucherNo)
+            ps.setLong(2, System.currentTimeMillis())
+            ps.setString(3, description)
+            ps.setDouble(4, amount)
+            ps.setString(5, paymentMode)
+            ps.setString(6, payTo)
+            ps.executeUpdate()
+        }
+    }
+
+    fun deleteExpense(id: Long) {
+        connection.prepareStatement("DELETE FROM expenses WHERE id = ?").use { ps ->
+            ps.setLong(1, id)
+            ps.executeUpdate()
         }
     }
 }
