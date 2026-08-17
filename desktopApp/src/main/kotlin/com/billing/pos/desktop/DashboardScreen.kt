@@ -80,7 +80,10 @@ fun DashboardScreen() {
 
     val tile = openTile
     if (tile != null) {
-        TileDetailScreen(tile.label, onBack = { openTile = null })
+        when (tile.label) {
+            "Customers" -> CustomersScreen(onBack = { openTile = null })
+            else -> TileDetailScreen(tile.label, onBack = { openTile = null })
+        }
         return
     }
 

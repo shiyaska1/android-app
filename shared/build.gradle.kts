@@ -14,6 +14,11 @@ kotlin {
         val commonMain by getting
         val desktopMain by getting {
             dependencies {
+                // Plain embedded SQLite for the desktop target — same file-based, no-server
+                // database story as Room/SQLite already gives the Android app. Full Room
+                // multiplatform (reusing the Android app's 45 migrations as-is) lands in a later
+                // batch; this gets a real, working desktop database shipping today.
+                implementation("org.xerial:sqlite-jdbc:3.46.1.3")
             }
         }
     }
