@@ -88,6 +88,7 @@ fun DashboardScreen() {
             "Purchase" -> PurchasesScreen(onBack = { openTile = null })
             "Receipts" -> ReceiptsScreen(onBack = { openTile = null })
             "Payments" -> PaymentsScreen(onBack = { openTile = null })
+            "Cash Book" -> CashBookScreen(onBack = { openTile = null })
             else -> TileDetailScreen(tile.label, onBack = { openTile = null })
         }
         return
