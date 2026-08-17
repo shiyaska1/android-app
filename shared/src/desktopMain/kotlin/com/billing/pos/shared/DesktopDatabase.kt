@@ -65,6 +65,29 @@ data class BillLine(
 
 data class BillWithLines(val bill: Bill, val lines: List<BillLine>)
 
+/** Core subset of the Android app's Purchase entity — enough to record a real purchase. */
+data class Purchase(
+    val id: Long = 0,
+    val purchaseNo: String,
+    val dateMillis: Long,
+    val supplierId: Long,
+    val supplierName: String,
+    val subTotal: Double,
+    val taxTotal: Double,
+    val grandTotal: Double
+)
+
+/** Core subset of the Android app's PurchaseItem entity. */
+data class PurchaseLine(
+    val id: Long = 0,
+    val purchaseId: Long,
+    val name: String,
+    val qty: Double,
+    val price: Double,
+    val taxPercent: Double,
+    val lineTotal: Double
+)
+
 /** The desktop app's own embedded SQLite database — plain JDBC for now (Room multiplatform,
  * reusing the Android app's 45 migrations as-is, lands in a later batch). Lives in the
  * OS-standard per-user app-data folder, created automatically on first run: no server, no
@@ -113,6 +136,19 @@ object DesktopDatabase {
                 st.execute(
                     "CREATE TABLE IF NOT EXISTS bill_items (" +
                         "id INTEGER PRIMARY KEY AUTOINCREMENT, billId INTEGER NOT NULL, " +
+                        "name TEXT NOT NULL, qty REAL NOT NULL, price REAL NOT NULL, " +
+                        "taxPercent REAL NOT NULL, lineTotal REAL NOT NULL)"
+                )
+                st.execute(
+                    "CREATE TABLE IF NOT EXISTS purchases (" +
+                        "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+                        "purchaseNo TEXT NOT NULL, dateMillis INTEGER NOT NULL, " +
+                        "supplierId INTEGER NOT NULL, supplierName TEXT NOT NULL, " +
+                        "subTotal REAL NOT NULL, taxTotal REAL NOT NULL, grandTotal REAL NOT NULL)"
+                )
+                st.execute(
+                    "CREATE TABLE IF NOT EXISTS purchase_items (" +
+                        "id INTEGER PRIMARY KEY AUTOINCREMENT, purchaseId INTEGER NOT NULL, " +
                         "name TEXT NOT NULL, qty REAL NOT NULL, price REAL NOT NULL, " +
                         "taxPercent REAL NOT NULL, lineTotal REAL NOT NULL)"
                 )
@@ -307,6 +343,81 @@ object DesktopDatabase {
             }
             connection.commit()
             return Bill(billId, billNo, dateMillis, customerId, customerName, subTotal, taxTotal, grandTotal)
+        } catch (e: Exception) {
+            connection.rollback()
+            throw e
+        } finally {
+            connection.autoCommit = true
+        }
+    }
+
+    fun allPurchases(): List<Purchase> {
+        connection.createStatement().use { st ->
+            st.executeQuery("SELECT * FROM purchases ORDER BY dateMillis DESC, id DESC").use { rs ->
+                val out = mutableListOf<Purchase>()
+                while (rs.next()) {
+                    out += Purchase(
+                        id = rs.getLong("id"), purchaseNo = rs.getString("purchaseNo"),
+                        dateMillis = rs.getLong("dateMillis"), supplierId = rs.getLong("supplierId"),
+                        supplierName = rs.getString("supplierName"), subTotal = rs.getDouble("subTotal"),
+                        taxTotal = rs.getDouble("taxTotal"), grandTotal = rs.getDouble("grandTotal")
+                    )
+                }
+                return out
+            }
+        }
+    }
+
+    private fun nextPurchaseNo(): String {
+        connection.createStatement().use { st ->
+            st.executeQuery("SELECT COUNT(*) AS n FROM purchases").use { rs ->
+                rs.next()
+                return "PUR-" + (rs.getInt("n") + 1).toString().padStart(4, '0')
+            }
+        }
+    }
+
+    /** Saves a purchase and its lines in one transaction, same shape as [saveBill]. */
+    fun savePurchase(supplierId: Long, supplierName: String, lines: List<PurchaseLine>): Purchase {
+        val subTotal = lines.sumOf { it.qty * it.price }
+        val taxTotal = lines.sumOf { it.qty * it.price * it.taxPercent / 100.0 }
+        val grandTotal = subTotal + taxTotal
+        val purchaseNo = nextPurchaseNo()
+        val dateMillis = System.currentTimeMillis()
+
+        connection.autoCommit = false
+        try {
+            val purchaseId = connection.prepareStatement(
+                "INSERT INTO purchases (purchaseNo, dateMillis, supplierId, supplierName, subTotal, taxTotal, grandTotal) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                java.sql.Statement.RETURN_GENERATED_KEYS
+            ).use { ps ->
+                ps.setString(1, purchaseNo)
+                ps.setLong(2, dateMillis)
+                ps.setLong(3, supplierId)
+                ps.setString(4, supplierName)
+                ps.setDouble(5, subTotal)
+                ps.setDouble(6, taxTotal)
+                ps.setDouble(7, grandTotal)
+                ps.executeUpdate()
+                ps.generatedKeys.use { keys -> keys.next(); keys.getLong(1) }
+            }
+            connection.prepareStatement(
+                "INSERT INTO purchase_items (purchaseId, name, qty, price, taxPercent, lineTotal) VALUES (?, ?, ?, ?, ?, ?)"
+            ).use { ps ->
+                lines.forEach { l ->
+                    val lineTotal = l.qty * l.price * (1 + l.taxPercent / 100.0)
+                    ps.setLong(1, purchaseId)
+                    ps.setString(2, l.name)
+                    ps.setDouble(3, l.qty)
+                    ps.setDouble(4, l.price)
+                    ps.setDouble(5, l.taxPercent)
+                    ps.setDouble(6, lineTotal)
+                    ps.addBatch()
+                }
+                ps.executeBatch()
+            }
+            connection.commit()
+            return Purchase(purchaseId, purchaseNo, dateMillis, supplierId, supplierName, subTotal, taxTotal, grandTotal)
         } catch (e: Exception) {
             connection.rollback()
             throw e
