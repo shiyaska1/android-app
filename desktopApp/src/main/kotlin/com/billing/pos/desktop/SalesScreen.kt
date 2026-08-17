@@ -15,6 +15,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Print
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
@@ -42,6 +43,8 @@ import androidx.compose.ui.unit.dp
 import com.billing.pos.shared.BillLine
 import com.billing.pos.shared.Customer
 import com.billing.pos.shared.DesktopDatabase
+import com.billing.pos.shared.InvoicePdf
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -85,7 +88,7 @@ fun SalesScreen(onBack: () -> Unit) {
         } else {
             LazyColumn(Modifier.fillMaxSize().padding(pad).padding(horizontal = 16.dp)) {
                 items(bills, key = { it.id }) { b ->
-                    Row(Modifier.fillMaxWidth().padding(vertical = 10.dp)) {
+                    Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text(b.billNo, fontWeight = FontWeight.Bold)
                             Text(
@@ -94,11 +97,30 @@ fun SalesScreen(onBack: () -> Unit) {
                             )
                         }
                         Text("₹${"%.2f".format(b.grandTotal)}", fontWeight = FontWeight.Bold)
+                        IconButton(onClick = { savePdfFor(b) }) {
+                            Icon(Icons.Filled.Print, "Print / Save PDF")
+                        }
                     }
                     HorizontalDivider()
                 }
             }
         }
+    }
+}
+
+/** Generates the invoice PDF and prompts a native save-file dialog — Swing's JFileChooser works
+ * fine standalone on desktop JVM even inside a Compose app, no extra windowing setup needed. */
+private fun savePdfFor(bill: com.billing.pos.shared.Bill) {
+    val lines = DesktopDatabase.linesFor(bill.id)
+    val chooser = javax.swing.JFileChooser().apply {
+        selectedFile = File("${bill.billNo}.pdf")
+        fileFilter = javax.swing.filechooser.FileNameExtensionFilter("PDF files", "pdf")
+    }
+    if (chooser.showSaveDialog(null) == javax.swing.JFileChooser.APPROVE_OPTION) {
+        var file = chooser.selectedFile
+        if (!file.name.endsWith(".pdf", ignoreCase = true)) file = File(file.parentFile, file.name + ".pdf")
+        InvoicePdf.generate(bill, lines, file)
+        javax.swing.JOptionPane.showMessageDialog(null, "Saved to ${file.absolutePath}")
     }
 }
 

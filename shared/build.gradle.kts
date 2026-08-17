@@ -23,6 +23,9 @@ kotlin {
                 // reference implementation, not the Android-bundled fork) — lets the desktop
                 // backup code follow the same JSONObject/JSONArray shape.
                 implementation("org.json:json:20240303")
+                // Android's PDF code (android.graphics.pdf.PdfDocument) doesn't exist on desktop
+                // JVM — Apache PDFBox is the standard replacement for generating invoice PDFs here.
+                implementation("org.apache.pdfbox:pdfbox:3.0.3")
             }
         }
     }
