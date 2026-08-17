@@ -122,6 +122,12 @@ object DesktopDatabase {
         File(dir, "pos_billing.db")
     }
 
+    /** Shown in Settings for transparency — where the local data actually lives on disk. */
+    fun databaseFilePath(): String = dbFile.absolutePath
+
+    /** Same per-user app-data folder as the database — used for staging backup zips. */
+    fun appDataDir(): File = dbFile.parentFile
+
     private val connection: Connection by lazy {
         Class.forName("org.sqlite.JDBC")
         DriverManager.getConnection("jdbc:sqlite:${dbFile.absolutePath}").also { conn ->
@@ -187,7 +193,26 @@ object DesktopDatabase {
                         "amount REAL NOT NULL, paymentMode TEXT NOT NULL DEFAULT 'Cash', " +
                         "payTo TEXT NOT NULL DEFAULT '')"
                 )
+                st.execute(
+                    "CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
+                )
             }
+        }
+    }
+
+    // ---- simple key-value settings (Cloud backup sync Push/Pull URL, Org/Device ID, ...) ----
+    fun getSetting(key: String, default: String = ""): String {
+        connection.prepareStatement("SELECT value FROM settings WHERE key = ?").use { ps ->
+            ps.setString(1, key)
+            ps.executeQuery().use { rs -> return if (rs.next()) rs.getString("value") else default }
+        }
+    }
+
+    fun setSetting(key: String, value: String) {
+        connection.prepareStatement("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)").use { ps ->
+            ps.setString(1, key)
+            ps.setString(2, value)
+            ps.executeUpdate()
         }
     }
 
@@ -540,4 +565,40 @@ object DesktopDatabase {
             ps.executeUpdate()
         }
     }
+
+    fun allBillLines(): List<BillLine> {
+        connection.createStatement().use { st ->
+            st.executeQuery("SELECT * FROM bill_items").use { rs ->
+                val out = mutableListOf<BillLine>()
+                while (rs.next()) {
+                    out += BillLine(
+                        id = rs.getLong("id"), billId = rs.getLong("billId"), name = rs.getString("name"),
+                        qty = rs.getDouble("qty"), price = rs.getDouble("price"),
+                        taxPercent = rs.getDouble("taxPercent"), lineTotal = rs.getDouble("lineTotal")
+                    )
+                }
+                return out
+            }
+        }
+    }
+
+    fun allPurchaseLines(): List<PurchaseLine> {
+        connection.createStatement().use { st ->
+            st.executeQuery("SELECT * FROM purchase_items").use { rs ->
+                val out = mutableListOf<PurchaseLine>()
+                while (rs.next()) {
+                    out += PurchaseLine(
+                        id = rs.getLong("id"), purchaseId = rs.getLong("purchaseId"), name = rs.getString("name"),
+                        qty = rs.getDouble("qty"), price = rs.getDouble("price"),
+                        taxPercent = rs.getDouble("taxPercent"), lineTotal = rs.getDouble("lineTotal")
+                    )
+                }
+                return out
+            }
+        }
+    }
+
+    /** Direct JDBC access for the backup/restore code (BackupSync.kt), which needs bulk
+     * table-agnostic reads/writes that don't fit the typed per-entity functions above. */
+    fun rawConnection(): Connection = connection
 }

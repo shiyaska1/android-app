@@ -93,6 +93,7 @@ fun DashboardScreen() {
             "Trial Balance" -> TrialBalanceScreen(onBack = { openTile = null })
             "Profit & Loss" -> ProfitLossScreen(onBack = { openTile = null })
             "Balance Sheet" -> BalanceSheetScreen(onBack = { openTile = null })
+            "Settings", "Backup" -> SettingsScreen(onBack = { openTile = null })
             else -> TileDetailScreen(tile.label, onBack = { openTile = null })
         }
         return

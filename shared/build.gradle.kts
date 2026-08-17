@@ -19,6 +19,10 @@ kotlin {
                 // multiplatform (reusing the Android app's 45 migrations as-is) lands in a later
                 // batch; this gets a real, working desktop database shipping today.
                 implementation("org.xerial:sqlite-jdbc:3.46.1.3")
+                // Same JSON library the Android app's backup format is built on (plain-JVM
+                // reference implementation, not the Android-bundled fork) — lets the desktop
+                // backup code follow the same JSONObject/JSONArray shape.
+                implementation("org.json:json:20240303")
             }
         }
     }
