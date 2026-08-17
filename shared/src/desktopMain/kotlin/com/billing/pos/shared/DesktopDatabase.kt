@@ -30,6 +30,16 @@ data class Item(
     val unit: String = "PCS"
 )
 
+/** Mirrors the Android app's Supplier entity column-for-column. */
+data class Supplier(
+    val id: Long = 0,
+    val name: String,
+    val phone: String = "",
+    val address: String = "",
+    val gstin: String = "",
+    val isDefault: Boolean = false
+)
+
 /** The desktop app's own embedded SQLite database — plain JDBC for now (Room multiplatform,
  * reusing the Android app's 45 migrations as-is, lands in a later batch). Lives in the
  * OS-standard per-user app-data folder, created automatically on first run: no server, no
@@ -60,6 +70,13 @@ object DesktopDatabase {
                         "purchasePrice REAL NOT NULL DEFAULT 0, taxPercent REAL NOT NULL DEFAULT 0, " +
                         "barcode TEXT NOT NULL DEFAULT '', category TEXT NOT NULL DEFAULT '', " +
                         "unit TEXT NOT NULL DEFAULT 'PCS')"
+                )
+                st.execute(
+                    "CREATE TABLE IF NOT EXISTS suppliers (" +
+                        "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+                        "name TEXT NOT NULL, phone TEXT NOT NULL DEFAULT '', " +
+                        "address TEXT NOT NULL DEFAULT '', gstin TEXT NOT NULL DEFAULT '', " +
+                        "isDefault INTEGER NOT NULL DEFAULT 0)"
                 )
             }
         }
@@ -130,6 +147,38 @@ object DesktopDatabase {
 
     fun deleteItem(id: Long) {
         connection.prepareStatement("DELETE FROM items WHERE id = ?").use { ps ->
+            ps.setLong(1, id)
+            ps.executeUpdate()
+        }
+    }
+
+    fun allSuppliers(): List<Supplier> {
+        connection.createStatement().use { st ->
+            st.executeQuery("SELECT * FROM suppliers ORDER BY name").use { rs ->
+                val out = mutableListOf<Supplier>()
+                while (rs.next()) {
+                    out += Supplier(
+                        id = rs.getLong("id"), name = rs.getString("name"),
+                        phone = rs.getString("phone"), address = rs.getString("address"),
+                        gstin = rs.getString("gstin"), isDefault = rs.getInt("isDefault") != 0
+                    )
+                }
+                return out
+            }
+        }
+    }
+
+    fun addSupplier(name: String, phone: String, address: String) {
+        connection.prepareStatement("INSERT INTO suppliers (name, phone, address) VALUES (?, ?, ?)").use { ps ->
+            ps.setString(1, name)
+            ps.setString(2, phone)
+            ps.setString(3, address)
+            ps.executeUpdate()
+        }
+    }
+
+    fun deleteSupplier(id: Long) {
+        connection.prepareStatement("DELETE FROM suppliers WHERE id = ?").use { ps ->
             ps.setLong(1, id)
             ps.executeUpdate()
         }
