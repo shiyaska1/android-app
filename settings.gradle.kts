@@ -23,3 +23,5 @@ dependencyResolutionManagement {
 
 rootProject.name = "POSBilling"
 include(":app")
+include(":shared")
+include(":desktopApp")

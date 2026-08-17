@@ -9,6 +9,8 @@
 .cxx
 local.properties
 /app/build/
+/shared/build/
+/desktopApp/build/
 
 # Play Store upload keystore — never commit
 upload-keystore.jks

@@ -1,0 +1,73 @@
+name: Windows Desktop Build
+
+# Builds the Windows installer (.msi/.exe) for the desktop app in the cloud on every push to
+# main, and on-demand from the Actions tab. jpackage bundles its own Java runtime into the
+# installer, so the end user runs the .exe/.msi with nothing else to install.
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write   # needed to publish releases
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.13
+
+      - name: Build Windows installer
+        shell: bash
+        run: |
+          set -o pipefail
+          gradle :desktopApp:packageDistributionForCurrentOS --stacktrace 2>&1 | tee build-log.txt
+
+      # A failed compile publishes its log as a release asset, so the errors are
+      # readable without Actions log access.
+      - name: Publish build log on failure
+        if: failure()
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: desktop-buildlog-${{ github.run_number }}
+          name: Desktop build log ${{ github.run_number }}
+          files: build-log.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        continue-on-error: true
+        with:
+          name: pos-billing-windows-installer
+          path: |
+            desktopApp/build/compose/binaries/main/msi/*.msi
+            desktopApp/build/compose/binaries/main/exe/*.exe
+          if-no-files-found: error
+
+      - name: Publish installer to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: desktop-v${{ github.run_number }}
+          name: POS Billing for Windows v${{ github.run_number }}
+          body: |
+            Windows installer built automatically from commit ${{ github.sha }}.
+            Download the `.msi` or `.exe` below and run it — no other software required,
+            the app bundles its own runtime and database.
+          files: |
+            desktopApp/build/compose/binaries/main/msi/*.msi
+            desktopApp/build/compose/binaries/main/exe/*.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
