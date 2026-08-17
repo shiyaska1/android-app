@@ -14,6 +14,7 @@ dependencies {
     implementation(project(":shared"))
     implementation(compose.desktop.currentOs)
     implementation(compose.material3)
+    implementation(compose.materialIconsExtended)
 }
 
 compose.desktop {
@@ -24,7 +25,7 @@ compose.desktop {
             // resulting .exe/.msi with nothing else to install, no separate Java setup.
             targetFormats(TargetFormat.Exe, TargetFormat.Msi)
             packageName = "POS Billing"
-            packageVersion = "1.0.0"
+            packageVersion = "1.0.1"
             windows {
                 menuGroup = "POS Billing"
                 shortcut = true
